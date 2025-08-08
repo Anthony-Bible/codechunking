@@ -1,0 +1,11 @@
+# Development configuration overrides
+database:
+  user: dev
+  password: dev
+
+log:
+  level: debug
+  format: text
+
+# Gemini API key should be set via environment variable:
+# export CODECHUNK_GEMINI_API_KEY=your-api-key

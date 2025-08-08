@@ -1,0 +1,32 @@
+# Production configuration overrides
+api:
+  read_timeout: 30s
+  write_timeout: 30s
+
+worker:
+  concurrency: 20
+  job_timeout: 60m
+
+database:
+  sslmode: require
+  max_connections: 100
+  max_idle_connections: 20
+
+nats:
+  max_reconnects: 10
+  reconnect_wait: 5s
+
+gemini:
+  max_retries: 5
+  timeout: 60s
+
+log:
+  level: error
+  format: json
+
+# Production secrets should be set via environment variables:
+# CODECHUNK_DATABASE_USER
+# CODECHUNK_DATABASE_PASSWORD
+# CODECHUNK_DATABASE_HOST
+# CODECHUNK_GEMINI_API_KEY
+# CODECHUNK_NATS_URL

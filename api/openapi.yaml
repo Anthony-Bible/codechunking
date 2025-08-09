@@ -1,0 +1,652 @@
+openapi: 3.0.3
+info:
+  title: Code Chunking Repository Indexing API
+  description: |
+    API for submitting code repositories for indexing, chunking, and embedding generation.
+    This service processes Git repositories, extracts code chunks using AST parsing,
+    and generates vector embeddings for semantic search capabilities.
+  version: 1.0.0
+  contact:
+    name: Code Chunking API Support
+    email: support@codechunking.dev
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Development server
+  - url: https://api.codechunking.dev/v1
+    description: Production server
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Returns the health status of the API service
+      operationId: getHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "healthy"
+                timestamp: "2025-01-08T10:30:00Z"
+                version: "1.0.0"
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /repositories:
+    post:
+      summary: Submit repository for indexing
+      description: |
+        Submits a Git repository URL for asynchronous indexing and processing.
+        The repository will be cloned, analyzed, and chunked into semantic units.
+      operationId: createRepository
+      tags:
+        - Repositories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRepositoryRequest'
+            examples:
+              github_repo:
+                summary: Public GitHub repository
+                value:
+                  url: "https://github.com/golang/go"
+                  name: "golang/go"
+                  description: "The Go programming language"
+                  default_branch: "master"
+              gitlab_repo:
+                summary: GitLab repository
+                value:
+                  url: "https://gitlab.com/gitlab-org/gitlab"
+                  name: "gitlab-org/gitlab"
+      responses:
+        '202':
+          description: Repository accepted for indexing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryResponse'
+              example:
+                id: "123e4567-e89b-12d3-a456-426614174000"
+                url: "https://github.com/golang/go"
+                name: "golang/go"
+                description: "The Go programming language"
+                default_branch: "master"
+                status: "pending"
+                created_at: "2025-01-08T10:30:00Z"
+                updated_at: "2025-01-08T10:30:00Z"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "INVALID_URL"
+                message: "The provided URL is not a valid Git repository"
+                details:
+                  url: "https://example.com/not-a-repo"
+        '409':
+          description: Repository already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "REPOSITORY_EXISTS"
+                message: "Repository with this URL already exists"
+                details:
+                  existing_id: "456e7890-e89b-12d3-a456-426614174001"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      summary: List repositories
+      description: |
+        Returns a paginated list of repositories that have been submitted for indexing.
+        Results can be filtered by status and sorted by various fields.
+      operationId: listRepositories
+      tags:
+        - Repositories
+      parameters:
+        - name: status
+          in: query
+          description: Filter repositories by status
+          required: false
+          schema:
+            $ref: '#/components/schemas/RepositoryStatus'
+          example: "completed"
+        - name: limit
+          in: query
+          description: Maximum number of repositories to return (1-100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          example: 20
+        - name: offset
+          in: query
+          description: Number of repositories to skip for pagination
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          example: 0
+        - name: sort
+          in: query
+          description: Sort field and direction
+          required: false
+          schema:
+            type: string
+            enum: ["created_at:asc", "created_at:desc", "updated_at:asc", "updated_at:desc", "name:asc", "name:desc"]
+            default: "created_at:desc"
+          example: "created_at:desc"
+      responses:
+        '200':
+          description: List of repositories
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryListResponse'
+              example:
+                repositories:
+                  - id: "123e4567-e89b-12d3-a456-426614174000"
+                    url: "https://github.com/golang/go"
+                    name: "golang/go"
+                    status: "completed"
+                    created_at: "2025-01-08T10:30:00Z"
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 1
+                  has_more: false
+
+  /repositories/{id}:
+    get:
+      summary: Get repository details
+      description: |
+        Returns detailed information about a specific repository including
+        its indexing status, statistics, and metadata.
+      operationId: getRepository
+      tags:
+        - Repositories
+      parameters:
+        - name: id
+          in: path
+          description: Repository UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Repository details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryResponse'
+              example:
+                id: "123e4567-e89b-12d3-a456-426614174000"
+                url: "https://github.com/golang/go"
+                name: "golang/go"
+                description: "The Go programming language"
+                default_branch: "master"
+                last_indexed_at: "2025-01-08T11:00:00Z"
+                last_commit_hash: "abc123def456789"
+                total_files: 1250
+                total_chunks: 5000
+                status: "completed"
+                created_at: "2025-01-08T10:30:00Z"
+                updated_at: "2025-01-08T11:00:00Z"
+        '404':
+          description: Repository not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "REPOSITORY_NOT_FOUND"
+                message: "Repository with the specified ID was not found"
+
+    delete:
+      summary: Delete repository
+      description: |
+        Removes a repository and all its associated data including code chunks,
+        embeddings, and indexing jobs. This operation is irreversible.
+      operationId: deleteRepository
+      tags:
+        - Repositories
+      parameters:
+        - name: id
+          in: path
+          description: Repository UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '204':
+          description: Repository successfully deleted
+        '404':
+          description: Repository not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Repository is currently being processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "REPOSITORY_PROCESSING"
+                message: "Cannot delete repository while indexing is in progress"
+
+  /repositories/{id}/jobs:
+    get:
+      summary: Get repository indexing jobs
+      description: |
+        Returns a list of indexing jobs for a specific repository,
+        including their status, progress, and error details.
+      operationId: getRepositoryJobs
+      tags:
+        - Repositories
+        - Jobs
+      parameters:
+        - name: id
+          in: path
+          description: Repository UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        - name: limit
+          in: query
+          description: Maximum number of jobs to return (1-50)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+        - name: offset
+          in: query
+          description: Number of jobs to skip for pagination
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: List of indexing jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexingJobListResponse'
+              example:
+                jobs:
+                  - id: "789e0123-e89b-12d3-a456-426614174000"
+                    repository_id: "123e4567-e89b-12d3-a456-426614174000"
+                    status: "completed"
+                    started_at: "2025-01-08T10:35:00Z"
+                    completed_at: "2025-01-08T11:00:00Z"
+                    files_processed: 1250
+                    chunks_created: 5000
+                pagination:
+                  limit: 10
+                  offset: 0
+                  total: 1
+                  has_more: false
+        '404':
+          description: Repository not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /repositories/{id}/jobs/{job_id}:
+    get:
+      summary: Get specific indexing job details
+      description: |
+        Returns detailed information about a specific indexing job including
+        progress, error messages, and processing statistics.
+      operationId: getIndexingJob
+      tags:
+        - Jobs
+      parameters:
+        - name: id
+          in: path
+          description: Repository UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: job_id
+          in: path
+          description: Job UUID
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Indexing job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexingJobResponse'
+        '404':
+          description: Repository or job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - version
+      properties:
+        status:
+          type: string
+          enum: ["healthy", "degraded", "unhealthy"]
+          description: Overall health status
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the health check
+        version:
+          type: string
+          description: API version
+        dependencies:
+          type: object
+          description: Status of external dependencies
+          properties:
+            database:
+              type: string
+              enum: ["healthy", "unhealthy"]
+            nats:
+              type: string
+              enum: ["healthy", "unhealthy"]
+            gemini_api:
+              type: string
+              enum: ["healthy", "unhealthy"]
+
+    CreateRepositoryRequest:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          format: uri
+          pattern: '^https?://(github\.com|gitlab\.com|bitbucket\.org)/.+$'
+          description: Git repository URL (GitHub, GitLab, or Bitbucket)
+          example: "https://github.com/golang/go"
+        name:
+          type: string
+          maxLength: 255
+          description: Human-readable repository name
+          example: "golang/go"
+        description:
+          type: string
+          maxLength: 1000
+          description: Repository description
+          example: "The Go programming language"
+        default_branch:
+          type: string
+          maxLength: 100
+          description: Default branch name to index
+          default: "main"
+          example: "master"
+
+    RepositoryResponse:
+      type: object
+      required:
+        - id
+        - url
+        - name
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique repository identifier
+        url:
+          type: string
+          format: uri
+          description: Git repository URL
+        name:
+          type: string
+          description: Repository name
+        description:
+          type: string
+          nullable: true
+          description: Repository description
+        default_branch:
+          type: string
+          nullable: true
+          description: Default branch name
+        last_indexed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last successful indexing timestamp
+        last_commit_hash:
+          type: string
+          nullable: true
+          description: Hash of the last indexed commit
+        total_files:
+          type: integer
+          minimum: 0
+          description: Total number of files indexed
+        total_chunks:
+          type: integer
+          minimum: 0
+          description: Total number of code chunks generated
+        status:
+          $ref: '#/components/schemas/RepositoryStatus'
+        created_at:
+          type: string
+          format: date-time
+          description: Repository creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Repository last update timestamp
+
+    RepositoryStatus:
+      type: string
+      enum:
+        - pending
+        - cloning
+        - processing
+        - completed
+        - failed
+        - archived
+      description: |
+        Repository indexing status:
+        - pending: Queued for processing
+        - cloning: Repository is being cloned
+        - processing: Files are being analyzed and chunked
+        - completed: Indexing completed successfully
+        - failed: Indexing failed with errors
+        - archived: Repository has been archived
+
+    RepositoryListResponse:
+      type: object
+      required:
+        - repositories
+        - pagination
+      properties:
+        repositories:
+          type: array
+          items:
+            $ref: '#/components/schemas/RepositoryResponse'
+        pagination:
+          $ref: '#/components/schemas/PaginationResponse'
+
+    IndexingJobResponse:
+      type: object
+      required:
+        - id
+        - repository_id
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique job identifier
+        repository_id:
+          type: string
+          format: uuid
+          description: Associated repository ID
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Job start timestamp
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Job completion timestamp
+        error_message:
+          type: string
+          nullable: true
+          description: Error message if job failed
+        files_processed:
+          type: integer
+          minimum: 0
+          description: Number of files processed
+        chunks_created:
+          type: integer
+          minimum: 0
+          description: Number of chunks created
+        created_at:
+          type: string
+          format: date-time
+          description: Job creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Job last update timestamp
+
+    JobStatus:
+      type: string
+      enum:
+        - pending
+        - running
+        - completed
+        - failed
+        - cancelled
+      description: |
+        Indexing job status:
+        - pending: Queued for processing
+        - running: Currently being processed
+        - completed: Successfully completed
+        - failed: Failed with errors
+        - cancelled: Cancelled by user or system
+
+    IndexingJobListResponse:
+      type: object
+      required:
+        - jobs
+        - pagination
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/IndexingJobResponse'
+        pagination:
+          $ref: '#/components/schemas/PaginationResponse'
+
+    PaginationResponse:
+      type: object
+      required:
+        - limit
+        - offset
+        - total
+        - has_more
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          description: Number of items per page
+        offset:
+          type: integer
+          minimum: 0
+          description: Number of items skipped
+        total:
+          type: integer
+          minimum: 0
+          description: Total number of items
+        has_more:
+          type: boolean
+          description: Whether more items are available
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code
+          enum:
+            - INVALID_REQUEST
+            - INVALID_URL
+            - REPOSITORY_EXISTS
+            - REPOSITORY_NOT_FOUND
+            - REPOSITORY_PROCESSING
+            - JOB_NOT_FOUND
+            - INTERNAL_ERROR
+            - SERVICE_UNAVAILABLE
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          description: Additional error details
+          additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+          description: Error occurrence timestamp

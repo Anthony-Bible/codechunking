@@ -37,6 +37,29 @@ type MessagePublisher interface {
 	PublishIndexingJob(ctx context.Context, repositoryID uuid.UUID, repositoryURL string) error
 }
 
+// MessagePublisherHealth defines health monitoring capabilities for message publishers
+type MessagePublisherHealth interface {
+	GetConnectionHealth() MessagePublisherHealthStatus
+	GetMessageMetrics() MessagePublisherMetrics
+}
+
+// MessagePublisherHealthStatus represents the health status of a message publisher
+type MessagePublisherHealthStatus struct {
+	Connected        bool   `json:"connected"`
+	LastError        string `json:"last_error,omitempty"`
+	Uptime           string `json:"uptime"`
+	Reconnects       int    `json:"reconnects"`
+	JetStreamEnabled bool   `json:"jetstream_enabled"`
+	CircuitBreaker   string `json:"circuit_breaker"`
+}
+
+// MessagePublisherMetrics represents message publishing metrics
+type MessagePublisherMetrics struct {
+	PublishedCount int64  `json:"published_count"`
+	FailedCount    int64  `json:"failed_count"`
+	AverageLatency string `json:"average_latency"`
+}
+
 // RepositoryFilters represents filters for repository queries
 type RepositoryFilters struct {
 	Status *valueobject.RepositoryStatus

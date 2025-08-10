@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"codechunking/internal/adapter/inbound/api/util"
 	"codechunking/internal/application/common"
 )
 
@@ -228,7 +229,7 @@ func NewRateLimitingMiddleware(config RateLimitConfig) func(http.Handler) http.H
 func (sm *SecurityMiddleware) RateLimit(config RateLimitConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			clientIP := sm.getClientIP(r)
+			clientIP := util.ClientIP(r)
 
 			sm.mutex.Lock()
 			client, exists := sm.clients[clientIP]
@@ -265,28 +266,6 @@ func (sm *SecurityMiddleware) RateLimit(config RateLimitConfig) func(http.Handle
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-// getClientIP extracts client IP from request
-func (sm *SecurityMiddleware) getClientIP(r *http.Request) string {
-	// Try X-Forwarded-For header first
-	xForwardedFor := r.Header.Get("X-Forwarded-For")
-	if xForwardedFor != "" {
-		ips := strings.Split(xForwardedFor, ",")
-		if len(ips) > 0 {
-			return strings.TrimSpace(ips[0])
-		}
-	}
-
-	// Try X-Real-IP header
-	xRealIP := r.Header.Get("X-Real-IP")
-	if xRealIP != "" {
-		return xRealIP
-	}
-
-	// Fall back to RemoteAddr
-	host, _, _ := strings.Cut(r.RemoteAddr, ":")
-	return host
 }
 
 // NewContentTypeValidationMiddleware creates content type validation middleware
@@ -356,14 +335,11 @@ func CreateSecurityMiddlewareStack() func(http.Handler) http.Handler {
 
 // Helper function to write security error responses
 func (sm *SecurityMiddleware) writeSecurityError(w http.ResponseWriter, message string, statusCode int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-
 	errorResp := map[string]interface{}{
 		"error":   message,
 		"code":    statusCode,
 		"message": "Security validation failed",
 	}
 
-	json.NewEncoder(w).Encode(errorResp)
+	WriteJSON(w, statusCode, errorResp)
 }

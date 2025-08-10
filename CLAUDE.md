@@ -24,6 +24,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `make install-tools` - Install goreman, migrate CLI, cobra-cli
 - `make psql` - Connect to development PostgreSQL database
 - `make nats-stream-info` - Show NATS JetStream information
+- `ast-grep` - Search for AST nodes in Go source code, favor this over regex for code parsing tasks
 
 ## Architecture Overview
 

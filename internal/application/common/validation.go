@@ -6,19 +6,9 @@ import (
 	"strings"
 
 	"codechunking/internal/application/common/security"
+	"codechunking/internal/domain/valueobject"
 	"github.com/google/uuid"
 )
-
-// ValidRepositoryStatuses defines all valid repository statuses
-var ValidRepositoryStatuses = map[string]bool{
-	"":           true, // Empty means no filter
-	"pending":    true,
-	"cloning":    true,
-	"processing": true,
-	"completed":  true,
-	"failed":     true,
-	"archived":   true,
-}
 
 // ValidJobStatuses defines all valid job statuses
 var ValidJobStatuses = map[string]bool{
@@ -88,7 +78,8 @@ func ValidateRepositoryStatus(status string) error {
 		return NewValidationError("status", "contains malicious SQL")
 	}
 
-	if !ValidRepositoryStatuses[status] {
+	// Use domain layer validation with allowEmpty=true for filtering
+	if err := valueobject.ValidateRepositoryStatusString(status, true); err != nil {
 		return NewValidationError("status", "invalid status")
 	}
 	return nil

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -37,16 +36,13 @@ func (h *HealthHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	// Add performance and NATS-specific headers
 	h.addHealthHeaders(w, response, time.Since(start))
 
-	w.Header().Set("Content-Type", "application/json")
-
 	// Return 503 if status is unhealthy, 200 otherwise
 	statusCode := http.StatusOK
 	if response.Status == "unhealthy" {
 		statusCode = http.StatusServiceUnavailable
 	}
 
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(response)
+	WriteJSON(w, statusCode, response)
 }
 
 // addHealthHeaders adds performance and NATS-specific headers to the response

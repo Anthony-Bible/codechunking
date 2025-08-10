@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"codechunking/internal/adapter/inbound/api/util"
 	"github.com/google/uuid"
 )
 
@@ -153,7 +154,7 @@ func NewLoggingMiddleware(logger Logger) func(http.Handler) http.Handler {
 				"status":     wrapped.statusCode,
 				"duration":   duration,
 				"user_agent": r.Header.Get("User-Agent"),
-				"remote_ip":  getClientIP(r),
+				"remote_ip":  util.ClientIP(r),
 			})
 
 			if r.URL.RawQuery != "" {
@@ -163,22 +164,6 @@ func NewLoggingMiddleware(logger Logger) func(http.Handler) http.Handler {
 			requestLogger.Infof("HTTP request completed")
 		})
 	}
-}
-
-// getClientIP extracts the client IP address from the request
-func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header first (for proxies/load balancers)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return xff
-	}
-
-	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
-	}
-
-	// Fall back to RemoteAddr
-	return r.RemoteAddr
 }
 
 // CORSMiddleware adds CORS headers

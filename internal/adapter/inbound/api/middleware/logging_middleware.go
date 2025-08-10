@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"codechunking/internal/adapter/inbound/api/util"
 	"github.com/google/uuid"
 )
 
@@ -391,7 +392,7 @@ func buildHTTPLogEntry(config LoggingConfig, correlationID string, r *http.Reque
 	}
 
 	// Add client IP
-	clientIP := getClientIP(r)
+	clientIP := util.ClientIP(r)
 	if clientIP != "" {
 		request["client_ip"] = clientIP
 	}
@@ -515,26 +516,6 @@ func getRequestSize(r *http.Request) int64 {
 		return r.ContentLength
 	}
 	return 0
-}
-
-func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		ips := strings.Split(xff, ",")
-		return strings.TrimSpace(ips[0])
-	}
-
-	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
-	}
-
-	// Use remote address
-	ip := r.RemoteAddr
-	if colonIndex := strings.LastIndex(ip, ":"); colonIndex != -1 {
-		ip = ip[:colonIndex]
-	}
-	return ip
 }
 
 func addPerformanceMetrics(request map[string]interface{}, r *http.Request, rw *responseWriter, duration time.Duration, config LoggingConfig) {

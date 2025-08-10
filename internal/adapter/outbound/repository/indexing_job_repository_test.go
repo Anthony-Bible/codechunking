@@ -171,7 +171,8 @@ func TestIndexingJobRepository_FindByRepositoryID(t *testing.T) {
 	// Create test repositories
 	repoRepo := NewPostgreSQLRepositoryRepository(pool)
 	testRepo1 := createTestRepository(t)
-	testRepo2URL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo2")
+	uniqueID2 := uuid.New().String()
+	testRepo2URL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo2-" + uniqueID2)
 	testRepo2 := entity.NewRepository(testRepo2URL, "Test Repository 2", nil, nil)
 
 	ctx := context.Background()
@@ -466,6 +467,14 @@ func TestIndexingJobRepository_Update(t *testing.T) {
 				updatedJob, err := jobRepo.FindByID(ctx, jobToUpdate.ID())
 				if err != nil {
 					t.Errorf("Failed to find updated job: %v", err)
+				}
+
+				// For archived jobs, FindByID returns nil (soft deleted), so skip verification
+				if updatedJob == nil {
+					if !jobToUpdate.IsDeleted() {
+						t.Error("Job not found but should not be deleted")
+					}
+					return
 				}
 
 				if updatedJob.UpdatedAt().Equal(originalUpdatedAt) {

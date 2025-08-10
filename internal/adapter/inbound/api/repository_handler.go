@@ -26,15 +26,14 @@ func NewRepositoryHandler(repositoryService inbound.RepositoryService, errorHand
 	}
 }
 
-// CreateRepository handles POST /repositories
+// CreateRepository handles POST /repositories with comprehensive request processing
 func (h *RepositoryHandler) CreateRepository(w http.ResponseWriter, r *http.Request) {
 	var request dto.CreateRepositoryRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	if err := h.decodeAndValidateJSON(r, &request); err != nil {
 		h.errorHandler.HandleValidationError(w, r, err)
 		return
 	}
 
-	// Validate request
 	if err := h.validateCreateRepositoryRequest(request); err != nil {
 		h.errorHandler.HandleValidationError(w, r, err)
 		return
@@ -51,20 +50,15 @@ func (h *RepositoryHandler) CreateRepository(w http.ResponseWriter, r *http.Requ
 
 // GetRepository handles GET /repositories/{id}
 func (h *RepositoryHandler) GetRepository(w http.ResponseWriter, r *http.Request) {
-	params := ExtractPathParams(r)
-	id, err := h.extractUUIDFromPath(params, "id")
+	id, err := h.extractRepositoryIDFromPath(r)
 	if err != nil {
 		h.errorHandler.HandleValidationError(w, r, err)
 		return
 	}
 
-	response, err := h.repositoryService.GetRepository(r.Context(), id)
-	if err != nil {
-		h.errorHandler.HandleServiceError(w, r, err)
-		return
-	}
-
-	h.writeJSONResponse(w, 0, response)
+	h.handleServiceCall(w, r, func() (interface{}, error) {
+		return h.repositoryService.GetRepository(r.Context(), id)
+	}, http.StatusOK)
 }
 
 // ListRepositories handles GET /repositories
@@ -82,13 +76,12 @@ func (h *RepositoryHandler) ListRepositories(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	h.writeJSONResponse(w, 0, response)
+	h.writeJSONResponse(w, http.StatusOK, response)
 }
 
 // DeleteRepository handles DELETE /repositories/{id}
 func (h *RepositoryHandler) DeleteRepository(w http.ResponseWriter, r *http.Request) {
-	params := ExtractPathParams(r)
-	id, err := h.extractUUIDFromPath(params, "id")
+	id, err := h.extractRepositoryIDFromPath(r)
 	if err != nil {
 		h.errorHandler.HandleValidationError(w, r, err)
 		return
@@ -105,52 +98,40 @@ func (h *RepositoryHandler) DeleteRepository(w http.ResponseWriter, r *http.Requ
 
 // GetRepositoryJobs handles GET /repositories/{id}/jobs
 func (h *RepositoryHandler) GetRepositoryJobs(w http.ResponseWriter, r *http.Request) {
-	params := ExtractPathParams(r)
-	repositoryID, err := h.extractUUIDFromPath(params, "id")
+	repositoryID, err := h.extractRepositoryIDFromPath(r)
 	if err != nil {
 		h.errorHandler.HandleValidationError(w, r, err)
 		return
 	}
 
 	query := h.parseIndexingJobListQuery(r)
-
 	if err := h.validateIndexingJobListQuery(query); err != nil {
 		h.errorHandler.HandleValidationError(w, r, err)
 		return
 	}
 
-	response, err := h.repositoryService.GetRepositoryJobs(r.Context(), repositoryID, query)
-	if err != nil {
-		h.errorHandler.HandleServiceError(w, r, err)
-		return
-	}
-
-	h.writeJSONResponse(w, 0, response)
+	h.handleServiceCall(w, r, func() (interface{}, error) {
+		return h.repositoryService.GetRepositoryJobs(r.Context(), repositoryID, query)
+	}, http.StatusOK)
 }
 
 // GetIndexingJob handles GET /repositories/{id}/jobs/{job_id}
 func (h *RepositoryHandler) GetIndexingJob(w http.ResponseWriter, r *http.Request) {
-	params := ExtractPathParams(r)
-
-	repositoryID, err := h.extractUUIDFromPath(params, "id")
+	repositoryID, err := h.extractRepositoryIDFromPath(r)
 	if err != nil {
 		h.errorHandler.HandleValidationError(w, r, err)
 		return
 	}
 
-	jobID, err := h.extractUUIDFromPath(params, "job_id")
+	jobID, err := h.extractJobIDFromPath(r)
 	if err != nil {
 		h.errorHandler.HandleValidationError(w, r, err)
 		return
 	}
 
-	response, err := h.repositoryService.GetIndexingJob(r.Context(), repositoryID, jobID)
-	if err != nil {
-		h.errorHandler.HandleServiceError(w, r, err)
-		return
-	}
-
-	h.writeJSONResponse(w, 0, response)
+	h.handleServiceCall(w, r, func() (interface{}, error) {
+		return h.repositoryService.GetIndexingJob(r.Context(), repositoryID, jobID)
+	}, http.StatusOK)
 }
 
 // parseRepositoryListQuery extracts query parameters for repository listing
@@ -181,12 +162,17 @@ func (h *RepositoryHandler) parseIndexingJobListQuery(r *http.Request) dto.Index
 	return query
 }
 
-// validateCreateRepositoryRequest validates the create repository request
+// validateCreateRepositoryRequest validates the create repository request with comprehensive checks
 func (h *RepositoryHandler) validateCreateRepositoryRequest(request dto.CreateRepositoryRequest) error {
 	if request.URL == "" {
-		return NewValidationError("url", "URL is required")
+		return NewValidationError("url", "Repository URL is required and cannot be empty")
 	}
-	// Additional validation will be done by the domain layer
+
+	// Basic URL format validation (additional validation will be done by the domain layer)
+	if len(request.URL) > 2048 {
+		return NewValidationError("url", "Repository URL is too long (maximum 2048 characters)")
+	}
+
 	return nil
 }
 
@@ -200,28 +186,33 @@ func (h *RepositoryHandler) validateIndexingJobListQuery(query dto.IndexingJobLi
 	return h.validatePaginationParams(query.Limit, query.Offset, 50)
 }
 
-// extractUUIDFromPath extracts and validates a UUID from URL path variables
-func (h *RepositoryHandler) extractUUIDFromPath(vars map[string]string, paramName string) (uuid.UUID, error) {
-	idStr, ok := vars[paramName]
-	if !ok {
-		return uuid.Nil, NewValidationError(paramName, paramName+" ID is required")
-	}
-
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		return uuid.Nil, NewValidationError(paramName, "invalid UUID format")
-	}
-
-	return id, nil
+// jsonResponseWriter encapsulates JSON response writing with improved error handling
+type jsonResponseWriter struct {
+	writer http.ResponseWriter
 }
 
-// writeJSONResponse writes a JSON response with the appropriate headers
-func (h *RepositoryHandler) writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	if statusCode != 0 {
-		w.WriteHeader(statusCode)
+// newJSONResponseWriter creates a new JSON response writer
+func newJSONResponseWriter(w http.ResponseWriter) *jsonResponseWriter {
+	return &jsonResponseWriter{writer: w}
+}
+
+// writeResponse writes a JSON response with proper headers and comprehensive error handling
+func (jw *jsonResponseWriter) writeResponse(statusCode int, data interface{}) {
+	jw.writer.Header().Set("Content-Type", "application/json")
+	jw.writer.WriteHeader(statusCode)
+
+	if err := json.NewEncoder(jw.writer).Encode(data); err != nil {
+		// Log error in production (placeholder for now)
+		// Since we've already written headers, we can't change the response
+		// This should be extremely rare with well-formed data
+		_ = err // TODO: Add proper logging
 	}
-	json.NewEncoder(w).Encode(data)
+}
+
+// writeJSONResponse writes a JSON response using the improved response writer
+func (h *RepositoryHandler) writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
+	respWriter := newJSONResponseWriter(w)
+	respWriter.writeResponse(statusCode, data)
 }
 
 // parseIntQueryParam parses an integer query parameter with default value
@@ -234,13 +225,121 @@ func (h *RepositoryHandler) parseIntQueryParam(r *http.Request, paramName string
 	return defaultValue
 }
 
-// validatePaginationParams validates common pagination parameters
-func (h *RepositoryHandler) validatePaginationParams(limit, offset, maxLimit int) error {
-	if limit < 1 || limit > maxLimit {
-		return NewValidationError("limit", fmt.Sprintf("limit must be between 1 and %d", maxLimit))
+// paginationValidator provides reusable pagination validation logic
+type paginationValidator struct {
+	maxLimit int
+}
+
+// newPaginationValidator creates a new pagination validator with specified max limit
+func newPaginationValidator(maxLimit int) *paginationValidator {
+	return &paginationValidator{maxLimit: maxLimit}
+}
+
+// validate validates pagination parameters with descriptive error messages
+func (pv *paginationValidator) validate(limit, offset int) error {
+	if err := pv.validateLimit(limit); err != nil {
+		return err
 	}
-	if offset < 0 {
-		return NewValidationError("offset", "offset must be non-negative")
+	return pv.validateOffset(offset)
+}
+
+// validateLimit validates the limit parameter
+func (pv *paginationValidator) validateLimit(limit int) error {
+	if limit < 1 {
+		return NewValidationError("limit", "limit must be at least 1")
+	}
+	if limit > pv.maxLimit {
+		return NewValidationError("limit", fmt.Sprintf("limit cannot exceed %d", pv.maxLimit))
 	}
 	return nil
+}
+
+// validateOffset validates the offset parameter
+func (pv *paginationValidator) validateOffset(offset int) error {
+	if offset < 0 {
+		return NewValidationError("offset", "offset must be non-negative (0 or greater)")
+	}
+	return nil
+}
+
+// validatePaginationParams validates common pagination parameters using the improved validator
+func (h *RepositoryHandler) validatePaginationParams(limit, offset, maxLimit int) error {
+	validator := newPaginationValidator(maxLimit)
+	return validator.validate(limit, offset)
+}
+
+// Helper methods for common operations
+
+// decodeAndValidateJSON decodes JSON from request body with proper error handling
+func (h *RepositoryHandler) decodeAndValidateJSON(r *http.Request, v interface{}) error {
+	if r.Body == nil {
+		return NewValidationError("body", "Request body is required")
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields() // Strict JSON parsing
+
+	if err := decoder.Decode(v); err != nil {
+		return NewValidationError("body", fmt.Sprintf("Invalid JSON format: %v", err))
+	}
+
+	return nil
+}
+
+// pathParameterExtractor provides clean, production-ready path parameter extraction
+type pathParameterExtractor struct {
+	request *http.Request
+}
+
+// newPathParameterExtractor creates a new path parameter extractor
+func newPathParameterExtractor(r *http.Request) *pathParameterExtractor {
+	return &pathParameterExtractor{request: r}
+}
+
+// extractRepositoryID extracts and validates a repository ID from the path
+func (p *pathParameterExtractor) extractRepositoryID() (uuid.UUID, error) {
+	return p.extractUUIDPathValue("id", "repository")
+}
+
+// extractJobID extracts and validates a job ID from the path
+func (p *pathParameterExtractor) extractJobID() (uuid.UUID, error) {
+	return p.extractUUIDPathValue("job_id", "job")
+}
+
+// extractUUIDPathValue extracts a UUID path parameter with descriptive error handling
+func (p *pathParameterExtractor) extractUUIDPathValue(paramName, resourceType string) (uuid.UUID, error) {
+	paramValue := p.request.PathValue(paramName)
+	if paramValue == "" {
+		return uuid.Nil, NewValidationError(paramName, fmt.Sprintf("%s ID is required in URL path", resourceType))
+	}
+
+	id, err := uuid.Parse(paramValue)
+	if err != nil {
+		return uuid.Nil, NewValidationError(paramName, fmt.Sprintf("invalid %s UUID format: %s", resourceType, paramValue))
+	}
+
+	return id, nil
+}
+
+// extractRepositoryIDFromPath is a specialized method for extracting repository IDs
+func (h *RepositoryHandler) extractRepositoryIDFromPath(r *http.Request) (uuid.UUID, error) {
+	extractor := newPathParameterExtractor(r)
+	return extractor.extractRepositoryID()
+}
+
+// extractJobIDFromPath is a specialized method for extracting job IDs
+func (h *RepositoryHandler) extractJobIDFromPath(r *http.Request) (uuid.UUID, error) {
+	extractor := newPathParameterExtractor(r)
+	return extractor.extractJobID()
+}
+
+// handleServiceCall wraps service calls with consistent error handling
+func (h *RepositoryHandler) handleServiceCall(w http.ResponseWriter, r *http.Request, serviceCall func() (interface{}, error), successStatus int) {
+	response, err := serviceCall()
+	if err != nil {
+		h.errorHandler.HandleServiceError(w, r, err)
+		return
+	}
+
+	h.writeJSONResponse(w, successStatus, response)
 }

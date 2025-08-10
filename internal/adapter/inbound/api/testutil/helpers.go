@@ -2,7 +2,6 @@ package testutil
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -47,37 +46,39 @@ func CreateRequestWithPathParams(method, url string, pathParams map[string]strin
 	req := httptest.NewRequest(method, url, nil)
 
 	// In Go 1.22+, path parameters are handled by the ServeMux automatically
-	// We simulate this by adding them to the request context for testing
-	ctx := req.Context()
-	for key, value := range pathParams {
-		ctx = context.WithValue(ctx, pathParamKey(key), value)
+	// We simulate this by setting the path values directly on the request
+	// This uses the internal http.Request field that PathValue() reads from
+	if len(pathParams) > 0 {
+		// Create a copy of the request with path values
+		req = req.Clone(req.Context())
+		// Use SetPathValue to properly set path parameters for Go 1.22+
+		for key, value := range pathParams {
+			req.SetPathValue(key, value)
+		}
 	}
 
-	return req.WithContext(ctx)
+	return req
 }
 
 // CreateJSONRequestWithPathParams creates an HTTP request with JSON body and path parameters
 func CreateJSONRequestWithPathParams(method, url string, body interface{}, pathParams map[string]string) *http.Request {
 	req := CreateJSONRequest(method, url, body)
 
-	// Add path parameters to context
-	ctx := req.Context()
-	for key, value := range pathParams {
-		ctx = context.WithValue(ctx, pathParamKey(key), value)
+	// Set path parameters using Go 1.22+ SetPathValue
+	if len(pathParams) > 0 {
+		req = req.Clone(req.Context())
+		for key, value := range pathParams {
+			req.SetPathValue(key, value)
+		}
 	}
 
-	return req.WithContext(ctx)
+	return req
 }
 
-// pathParamKey is used as context key for path parameters in tests
-type pathParamKey string
-
-// GetPathParam extracts a path parameter from the test request context
+// GetPathParam extracts a path parameter from the request using Go 1.22+ PathValue
+// This function is kept for backward compatibility in tests, but now uses PathValue
 func GetPathParam(r *http.Request, key string) string {
-	if value, ok := r.Context().Value(pathParamKey(key)).(string); ok {
-		return value
-	}
-	return ""
+	return r.PathValue(key)
 }
 
 // ParseJSONResponse parses the JSON response from ResponseRecorder

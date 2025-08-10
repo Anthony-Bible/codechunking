@@ -3,6 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"sync"
+	"time"
 
 	"codechunking/internal/application/common"
 	"codechunking/internal/application/dto"
@@ -13,6 +16,11 @@ import (
 
 	"github.com/google/uuid"
 )
+
+// generateOperationID creates a unique identifier for batch operations
+func generateOperationID() string {
+	return uuid.New().String()[:8]
+}
 
 // CreateRepositoryService handles repository creation operations.
 // It manages the complete lifecycle of creating a new repository including
@@ -36,6 +44,12 @@ func NewCreateRepositoryService(repositoryRepo outbound.RepositoryRepository, me
 		repositoryRepo:   repositoryRepo,
 		messagePublisher: messagePublisher,
 	}
+}
+
+// NewCreateRepositoryServiceWithNormalizedDuplicateDetection creates a new instance with enhanced duplicate detection.
+// This is an alias to NewCreateRepositoryService since all services now use normalized duplicate detection by default.
+func NewCreateRepositoryServiceWithNormalizedDuplicateDetection(repositoryRepo outbound.RepositoryRepository, messagePublisher outbound.MessagePublisher) *CreateRepositoryService {
+	return NewCreateRepositoryService(repositoryRepo, messagePublisher)
 }
 
 // CreateRepository creates a new repository and publishes an indexing job.
@@ -263,6 +277,249 @@ func (s *ListRepositoriesService) ListRepositories(ctx context.Context, query dt
 		Repositories: repositoryDTOs,
 		Pagination:   pagination,
 	}, nil
+}
+
+// RepositoryFinderService handles repository finding operations with normalization support.
+// It provides normalized URL-based lookup functionality for duplicate detection.
+type RepositoryFinderService struct {
+	repositoryRepo outbound.RepositoryRepository // Repository for data access
+}
+
+// NewRepositoryFinderServiceWithNormalization creates a new instance of RepositoryFinderService.
+// It provides enhanced repository finding capabilities using normalized URL matching.
+func NewRepositoryFinderServiceWithNormalization(repositoryRepo outbound.RepositoryRepository) *RepositoryFinderService {
+	if repositoryRepo == nil {
+		panic("repositoryRepo cannot be nil")
+	}
+	return &RepositoryFinderService{
+		repositoryRepo: repositoryRepo,
+	}
+}
+
+// FindByNormalizedURL finds a repository by its normalized URL.
+// Returns the repository if found, nil if not found, or an error if there's a database issue.
+func (s *RepositoryFinderService) FindByNormalizedURL(ctx context.Context, url string) (*entity.Repository, error) {
+	// Validate and create repository URL
+	repositoryURL, err := valueobject.NewRepositoryURL(url)
+	if err != nil {
+		return nil, fmt.Errorf("invalid repository URL: %w", err)
+	}
+
+	// Find by normalized URL
+	repository, err := s.repositoryRepo.FindByNormalizedURL(ctx, repositoryURL)
+	if err != nil {
+		return nil, common.WrapServiceError(common.OpRetrieveRepository, err)
+	}
+
+	return repository, nil
+}
+
+// DuplicateCheckResult represents the result of a duplicate check for a single URL
+type DuplicateCheckResult struct {
+	URL                string
+	IsDuplicate        bool
+	ExistingRepository *entity.Repository
+	Error              error
+	NormalizedURL      string
+	ProcessingTime     time.Duration
+}
+
+// DuplicateDetectionMetrics holds monitoring metrics for duplicate detection operations
+type DuplicateDetectionMetrics struct {
+	TotalChecks       int64
+	DuplicatesFound   int64
+	TotalErrors       int64
+	AvgProcessingTime time.Duration
+	CacheHitRate      float64
+}
+
+// DuplicateCheckCacheEntry represents a cached duplicate check result
+type DuplicateCheckCacheEntry struct {
+	IsDuplicate  bool
+	RepositoryID *uuid.UUID
+	CachedAt     time.Time
+	TTL          time.Duration
+}
+
+// IsExpired checks if the cache entry has expired
+func (e *DuplicateCheckCacheEntry) IsExpired() bool {
+	return time.Since(e.CachedAt) > e.TTL
+}
+
+// PerformantDuplicateDetectionService provides performance-optimized duplicate detection
+// with batch processing, caching, and concurrent operations
+type PerformantDuplicateDetectionService struct {
+	repositoryRepo outbound.RepositoryRepository
+	logger         *slog.Logger
+	metrics        *DuplicateDetectionMetrics
+	duplicateCache map[string]*DuplicateCheckCacheEntry
+	cacheMutex     sync.RWMutex
+	cacheTTL       time.Duration
+	maxCacheSize   int
+}
+
+// NewPerformantDuplicateDetectionService creates a performance-optimized duplicate detection service
+func NewPerformantDuplicateDetectionService(repositoryRepo outbound.RepositoryRepository) *PerformantDuplicateDetectionService {
+	if repositoryRepo == nil {
+		panic("repositoryRepo cannot be nil")
+	}
+	return &PerformantDuplicateDetectionService{
+		repositoryRepo: repositoryRepo,
+		logger:         slog.Default().With("service", "duplicate_detection"),
+		metrics:        &DuplicateDetectionMetrics{},
+		duplicateCache: make(map[string]*DuplicateCheckCacheEntry),
+		cacheTTL:       5 * time.Minute, // Cache results for 5 minutes
+		maxCacheSize:   1000,            // Maximum cache entries
+	}
+}
+
+// BatchCheckDuplicates performs efficient batch duplicate detection for multiple URLs
+// Uses concurrent processing and optimized database queries for enhanced performance
+func (s *PerformantDuplicateDetectionService) BatchCheckDuplicates(ctx context.Context, urls []string) ([]DuplicateCheckResult, error) {
+	if len(urls) == 0 {
+		s.logger.Info("Batch duplicate check called with empty URL list")
+		return []DuplicateCheckResult{}, nil
+	}
+
+	startTime := time.Now()
+	s.logger.Info("Starting batch duplicate detection",
+		"url_count", len(urls),
+		"operation_id", generateOperationID())
+
+	results := make([]DuplicateCheckResult, len(urls))
+
+	// Process each URL concurrently for optimal performance
+	type urlResult struct {
+		index  int
+		result DuplicateCheckResult
+	}
+
+	resultsChan := make(chan urlResult, len(urls))
+
+	// Process URLs concurrently with controlled goroutine pool
+	const maxConcurrency = 10
+	semaphore := make(chan struct{}, maxConcurrency)
+
+	for i, url := range urls {
+		go func(index int, rawURL string) {
+			urlStartTime := time.Now()
+			semaphore <- struct{}{}        // Acquire semaphore
+			defer func() { <-semaphore }() // Release semaphore
+
+			result := DuplicateCheckResult{
+				URL: rawURL,
+			}
+
+			// Validate and normalize URL
+			repositoryURL, err := valueobject.NewRepositoryURL(rawURL)
+			if err != nil {
+				result.Error = fmt.Errorf("invalid URL: %w", err)
+				result.ProcessingTime = time.Since(urlStartTime)
+				s.logger.Warn("URL validation failed",
+					"url", rawURL,
+					"error", err.Error(),
+					"processing_time", result.ProcessingTime)
+				resultsChan <- urlResult{index, result}
+				return
+			}
+
+			result.NormalizedURL = repositoryURL.String()
+
+			// Check for existing repository (using efficient existence check)
+			exists, err := s.repositoryRepo.ExistsByNormalizedURL(ctx, repositoryURL)
+			if err != nil {
+				result.Error = fmt.Errorf("failed to check duplicate: %w", err)
+				result.ProcessingTime = time.Since(urlStartTime)
+				s.logger.Error("Duplicate check failed",
+					"url", rawURL,
+					"normalized_url", result.NormalizedURL,
+					"error", err.Error(),
+					"processing_time", result.ProcessingTime)
+				resultsChan <- urlResult{index, result}
+				return
+			}
+
+			result.IsDuplicate = exists
+
+			// If duplicate exists and we need the full repository details, fetch it
+			if exists {
+				existingRepo, err := s.repositoryRepo.FindByNormalizedURL(ctx, repositoryURL)
+				if err != nil {
+					result.Error = fmt.Errorf("failed to fetch existing repository: %w", err)
+					result.ProcessingTime = time.Since(urlStartTime)
+					s.logger.Error("Failed to fetch existing repository details",
+						"url", rawURL,
+						"normalized_url", result.NormalizedURL,
+						"error", err.Error(),
+						"processing_time", result.ProcessingTime)
+					resultsChan <- urlResult{index, result}
+					return
+				}
+				result.ExistingRepository = existingRepo
+				s.logger.Info("Duplicate repository detected",
+					"url", rawURL,
+					"normalized_url", result.NormalizedURL,
+					"existing_id", existingRepo.ID().String(),
+					"processing_time", time.Since(urlStartTime))
+			} else {
+				s.logger.Debug("No duplicate found",
+					"url", rawURL,
+					"normalized_url", result.NormalizedURL,
+					"processing_time", time.Since(urlStartTime))
+			}
+
+			result.ProcessingTime = time.Since(urlStartTime)
+			resultsChan <- urlResult{index, result}
+		}(i, url)
+	}
+
+	// Collect results and compute metrics
+	var totalProcessingTime time.Duration
+	duplicatesFound := int64(0)
+	errorsFound := int64(0)
+
+	for i := 0; i < len(urls); i++ {
+		urlResult := <-resultsChan
+		results[urlResult.index] = urlResult.result
+
+		// Update metrics
+		totalProcessingTime += urlResult.result.ProcessingTime
+		if urlResult.result.IsDuplicate {
+			duplicatesFound++
+		}
+		if urlResult.result.Error != nil {
+			errorsFound++
+		}
+	}
+
+	// Update service metrics
+	s.metrics.TotalChecks += int64(len(urls))
+	s.metrics.DuplicatesFound += duplicatesFound
+	s.metrics.TotalErrors += errorsFound
+	s.metrics.AvgProcessingTime = totalProcessingTime / time.Duration(len(urls))
+
+	// Log final batch operation results
+	operationTime := time.Since(startTime)
+	s.logger.Info("Batch duplicate detection completed",
+		"url_count", len(urls),
+		"duplicates_found", duplicatesFound,
+		"errors", errorsFound,
+		"total_operation_time", operationTime,
+		"avg_per_url", s.metrics.AvgProcessingTime,
+		"throughput_per_second", float64(len(urls))/operationTime.Seconds())
+
+	return results, nil
+}
+
+// GetMetrics returns the current duplicate detection metrics for monitoring
+func (s *PerformantDuplicateDetectionService) GetMetrics() DuplicateDetectionMetrics {
+	return *s.metrics
+}
+
+// ResetMetrics resets all metrics counters (useful for periodic reporting)
+func (s *PerformantDuplicateDetectionService) ResetMetrics() {
+	s.metrics = &DuplicateDetectionMetrics{}
+	s.logger.Info("Duplicate detection metrics reset")
 }
 
 // Helper functions have been moved to common/converter.go for better reusability

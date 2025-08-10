@@ -29,7 +29,7 @@ func NewPostgreSQLIndexingJobRepository(pool *pgxpool.Pool) *PostgreSQLIndexingJ
 // Save saves an indexing job to the database
 func (r *PostgreSQLIndexingJobRepository) Save(ctx context.Context, job *entity.IndexingJob) error {
 	if job == nil {
-		return fmt.Errorf("indexing job cannot be nil")
+		return ErrInvalidArgument
 	}
 
 	query := `
@@ -65,7 +65,7 @@ func (r *PostgreSQLIndexingJobRepository) Save(ctx context.Context, job *entity.
 // FindByID finds an indexing job by its ID
 func (r *PostgreSQLIndexingJobRepository) FindByID(ctx context.Context, id uuid.UUID) (*entity.IndexingJob, error) {
 	if id == uuid.Nil {
-		return nil, fmt.Errorf("id cannot be nil")
+		return nil, ErrInvalidArgument
 	}
 
 	query := `
@@ -80,15 +80,15 @@ func (r *PostgreSQLIndexingJobRepository) FindByID(ctx context.Context, id uuid.
 
 	var repositoryID uuid.UUID
 	var statusStr string
-	var startedAt, completedAt, deletedAt *string
+	var startedAt, completedAt, deletedAt *time.Time
 	var errorMessage *string
 	var filesProcessed, chunksCreated int
-	var createdAtStr, updatedAtStr string
+	var createdAt, updatedAt time.Time
 
 	err := row.Scan(
 		&id, &repositoryID, &statusStr, &startedAt, &completedAt,
 		&errorMessage, &filesProcessed, &chunksCreated,
-		&createdAtStr, &updatedAtStr, &deletedAt,
+		&createdAt, &updatedAt, &deletedAt,
 	)
 	if err != nil {
 		if IsNotFoundError(err) {
@@ -97,11 +97,21 @@ func (r *PostgreSQLIndexingJobRepository) FindByID(ctx context.Context, id uuid.
 		return nil, WrapError(err, "find indexing job by ID")
 	}
 
-	return r.scanIndexingJob(id, repositoryID, statusStr, startedAt, completedAt, errorMessage, filesProcessed, chunksCreated, createdAtStr, updatedAtStr, deletedAt)
+	return r.scanIndexingJob(id, repositoryID, statusStr, startedAt, completedAt, errorMessage, filesProcessed, chunksCreated, createdAt, updatedAt, deletedAt)
 }
 
 // FindByRepositoryID finds indexing jobs by repository ID with filters
 func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(ctx context.Context, repositoryID uuid.UUID, filters outbound.IndexingJobFilters) ([]*entity.IndexingJob, int, error) {
+	if repositoryID == uuid.Nil {
+		return nil, 0, ErrInvalidArgument
+	}
+	if filters.Limit <= 0 {
+		return nil, 0, ErrInvalidArgument
+	}
+	if filters.Offset < 0 {
+		return nil, 0, ErrInvalidArgument
+	}
+
 	var whereConditions []string
 	var args []interface{}
 	argIndex := 1
@@ -156,21 +166,21 @@ func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(ctx context.Context
 	for rows.Next() {
 		var id, repoID uuid.UUID
 		var statusStr string
-		var startedAt, completedAt, deletedAt *string
+		var startedAt, completedAt, deletedAt *time.Time
 		var errorMessage *string
 		var filesProcessed, chunksCreated int
-		var createdAtStr, updatedAtStr string
+		var createdAt, updatedAt time.Time
 
 		err := rows.Scan(
 			&id, &repoID, &statusStr, &startedAt, &completedAt,
 			&errorMessage, &filesProcessed, &chunksCreated,
-			&createdAtStr, &updatedAtStr, &deletedAt,
+			&createdAt, &updatedAt, &deletedAt,
 		)
 		if err != nil {
 			return nil, 0, WrapError(err, "scan indexing job row")
 		}
 
-		job, err := r.scanIndexingJob(id, repoID, statusStr, startedAt, completedAt, errorMessage, filesProcessed, chunksCreated, createdAtStr, updatedAtStr, deletedAt)
+		job, err := r.scanIndexingJob(id, repoID, statusStr, startedAt, completedAt, errorMessage, filesProcessed, chunksCreated, createdAt, updatedAt, deletedAt)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -188,7 +198,7 @@ func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(ctx context.Context
 // Update updates an indexing job in the database
 func (r *PostgreSQLIndexingJobRepository) Update(ctx context.Context, job *entity.IndexingJob) error {
 	if job == nil {
-		return fmt.Errorf("indexing job cannot be nil")
+		return ErrInvalidArgument
 	}
 
 	query := `
@@ -225,7 +235,7 @@ func (r *PostgreSQLIndexingJobRepository) Update(ctx context.Context, job *entit
 // Delete soft-deletes an indexing job by setting deleted_at
 func (r *PostgreSQLIndexingJobRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	if id == uuid.Nil {
-		return fmt.Errorf("id cannot be nil")
+		return ErrInvalidArgument
 	}
 
 	query := `
@@ -248,51 +258,13 @@ func (r *PostgreSQLIndexingJobRepository) Delete(ctx context.Context, id uuid.UU
 
 // scanIndexingJob is a helper function to convert database row to IndexingJob entity
 func (r *PostgreSQLIndexingJobRepository) scanIndexingJob(
-	id, repositoryID uuid.UUID, statusStr string, startedAtStr, completedAtStr *string,
-	errorMessage *string, filesProcessed, chunksCreated int, createdAtStr, updatedAtStr string, deletedAtStr *string,
+	id, repositoryID uuid.UUID, statusStr string, startedAt, completedAt *time.Time,
+	errorMessage *string, filesProcessed, chunksCreated int, createdAt, updatedAt time.Time, deletedAt *time.Time,
 ) (*entity.IndexingJob, error) {
 	// Parse status
 	status, err := valueobject.NewJobStatus(statusStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid job status: %w", err)
-	}
-
-	// Parse timestamps
-	createdAt, err := parseTimestamp(createdAtStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid created_at timestamp: %w", err)
-	}
-
-	updatedAt, err := parseTimestamp(updatedAtStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid updated_at timestamp: %w", err)
-	}
-
-	var startedAt *time.Time
-	if startedAtStr != nil {
-		parsed, err := parseTimestamp(*startedAtStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid started_at timestamp: %w", err)
-		}
-		startedAt = &parsed
-	}
-
-	var completedAt *time.Time
-	if completedAtStr != nil {
-		parsed, err := parseTimestamp(*completedAtStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid completed_at timestamp: %w", err)
-		}
-		completedAt = &parsed
-	}
-
-	var deletedAt *time.Time
-	if deletedAtStr != nil {
-		parsed, err := parseTimestamp(*deletedAtStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid deleted_at timestamp: %w", err)
-		}
-		deletedAt = &parsed
 	}
 
 	return entity.RestoreIndexingJob(

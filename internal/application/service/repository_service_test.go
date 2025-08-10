@@ -67,6 +67,19 @@ func (m *MockRepositoryRepository) Exists(ctx context.Context, url valueobject.R
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockRepositoryRepository) ExistsByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (bool, error) {
+	args := m.Called(ctx, url)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockRepositoryRepository) FindByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error) {
+	args := m.Called(ctx, url)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*entity.Repository), args.Error(1)
+}
+
 // Mock message publisher for testing
 type MockMessagePublisher struct {
 	mock.Mock

@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"codechunking/internal/port/outbound"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // TestDatabaseErrors tests various database error scenarios
@@ -129,7 +132,9 @@ func TestConstraintViolations(t *testing.T) {
 		// Try to save a malformed repository (this would require bypassing domain validation)
 		// For this test, we'll create a scenario where required data is somehow missing
 
-		testRepo := createTestRepository(t)
+		// Create repository with unique URL to avoid constraint violations
+		testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/not-null-test")
+		testRepo := entity.NewRepository(testURL, "Not Null Test Repo", nil, nil)
 		err := repoRepo.Save(ctx, testRepo)
 		// Should succeed with valid repository
 		if err != nil {
@@ -450,59 +455,170 @@ func TestDatabaseSpecificErrors(t *testing.T) {
 }
 
 // Error type checking functions
-// These don't exist yet, so all tests will fail
-
 func isConnectionError(err error) bool {
-	// Implementation doesn't exist yet
-	return false
+	if err == nil {
+		return false
+	}
+	// Check for wrapped connection errors
+	if errors.Is(err, ErrConnectionFailed) {
+		return true
+	}
+	// Check for common connection error messages
+	errorStr := err.Error()
+	return strings.Contains(errorStr, "closed pool") ||
+		strings.Contains(errorStr, "connection refused") ||
+		strings.Contains(errorStr, "connection failed")
 }
 
 func isUniqueConstraintError(err error) bool {
-	// Implementation doesn't exist yet
-	return false
+	if err == nil {
+		return false
+	}
+	// Check for wrapped constraint errors
+	if errors.Is(err, ErrAlreadyExists) {
+		return true
+	}
+	// Check PostgreSQL error codes in wrapped errors
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return true
+	}
+	return strings.Contains(err.Error(), "unique constraint") ||
+		strings.Contains(err.Error(), "record already exists")
 }
 
 func isForeignKeyConstraintError(err error) bool {
-	// Implementation doesn't exist yet
-	return false
+	if err == nil {
+		return false
+	}
+	// Check for wrapped foreign key errors
+	if errors.Is(err, ErrForeignKeyViolation) {
+		return true
+	}
+	// Check PostgreSQL error codes in wrapped errors
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+		return true
+	}
+	return strings.Contains(err.Error(), "foreign key") ||
+		strings.Contains(err.Error(), "foreign key violation")
 }
 
 func isCheckConstraintError(err error) bool {
-	// Implementation doesn't exist yet
-	return false
+	if err == nil {
+		return false
+	}
+	// Check PostgreSQL error codes in wrapped errors
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23514" {
+		return true
+	}
+	return strings.Contains(err.Error(), "check constraint")
 }
 
 func isNotFoundError(err error) bool {
-	// Implementation doesn't exist yet
-	return false
+	if err == nil {
+		return false
+	}
+	// Check for wrapped not found errors
+	if errors.Is(err, ErrNotFound) {
+		return true
+	}
+	return strings.Contains(err.Error(), "not found") ||
+		strings.Contains(err.Error(), "record not found")
 }
 
 func isContextCancelledError(err error) bool {
-	// Implementation doesn't exist yet
-	return false
+	if err == nil {
+		return false
+	}
+	// Check for context cancellation
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	return strings.Contains(err.Error(), "context canceled") ||
+		strings.Contains(err.Error(), "context cancelled")
 }
 
 func isContextTimeoutError(err error) bool {
-	// Implementation doesn't exist yet
-	return false
+	if err == nil {
+		return false
+	}
+	// Check for context timeout
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	return strings.Contains(err.Error(), "context deadline exceeded") ||
+		strings.Contains(err.Error(), "timeout")
 }
 
 func isInvalidArgumentError(err error) bool {
-	// Implementation doesn't exist yet
-	return false
+	if err == nil {
+		return false
+	}
+	// Check for wrapped invalid argument errors
+	if errors.Is(err, ErrInvalidArgument) {
+		return true
+	}
+	// Check for invalid argument error messages
+	errorStr := err.Error()
+	return strings.Contains(errorStr, "cannot be nil") ||
+		strings.Contains(errorStr, "invalid argument") ||
+		strings.Contains(errorStr, "must be positive") ||
+		strings.Contains(errorStr, "cannot be negative") ||
+		strings.Contains(errorStr, "invalid sort") ||
+		strings.Contains(errorStr, "invalid field") ||
+		strings.Contains(errorStr, "invalid direction")
 }
 
 func isTableNotFoundError(err error) bool {
-	// Implementation doesn't exist yet
-	return false
+	if err == nil {
+		return false
+	}
+	// Check PostgreSQL error codes for table not found
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "42P01" {
+		return true
+	}
+	return strings.Contains(err.Error(), "relation") && strings.Contains(err.Error(), "does not exist")
 }
 
 func isColumnNotFoundError(err error) bool {
-	// Implementation doesn't exist yet
-	return false
+	if err == nil {
+		return false
+	}
+	// Check PostgreSQL error codes for column not found
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "42703" {
+		return true
+	}
+	return strings.Contains(err.Error(), "column") && strings.Contains(err.Error(), "does not exist")
 }
 
 func getViolatedConstraint(err error) string {
-	// Implementation doesn't exist yet
+	if err == nil {
+		return ""
+	}
+
+	// Check for ConstraintError first (our custom error type)
+	var constraintErr *ConstraintError
+	if errors.As(err, &constraintErr) {
+		return constraintErr.ConstraintName
+	}
+
+	// Extract constraint name from PostgreSQL error, unwrapping through multiple layers
+	var pgErr *pgconn.PgError
+	currentErr := err
+	for currentErr != nil {
+		if errors.As(currentErr, &pgErr) {
+			return pgErr.ConstraintName
+		}
+		// Try to unwrap to next level
+		if unwrapped := errors.Unwrap(currentErr); unwrapped != nil {
+			currentErr = unwrapped
+		} else {
+			break
+		}
+	}
 	return ""
 }

@@ -16,7 +16,7 @@ type ErrorCode string
 const (
 	ErrorCodeInvalidRequest       ErrorCode = "INVALID_REQUEST"
 	ErrorCodeInvalidURL           ErrorCode = "INVALID_URL"
-	ErrorCodeRepositoryExists     ErrorCode = "REPOSITORY_EXISTS"
+	ErrorCodeRepositoryExists     ErrorCode = "REPOSITORY_ALREADY_EXISTS"
 	ErrorCodeRepositoryNotFound   ErrorCode = "REPOSITORY_NOT_FOUND"
 	ErrorCodeRepositoryProcessing ErrorCode = "REPOSITORY_PROCESSING"
 	ErrorCodeJobNotFound          ErrorCode = "JOB_NOT_FOUND"

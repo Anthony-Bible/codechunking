@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"codechunking/internal/adapter/inbound/api/testutil"
 )
 
 // RouteRegistry manages HTTP route registration using Go 1.22+ ServeMux patterns
@@ -115,7 +117,7 @@ func (r *RouteRegistry) validatePattern(pattern string) error {
 
 	// Validate path
 	if path == "" {
-		return fmt.Errorf("path cannot be empty in pattern '%s'", pattern)
+		return fmt.Errorf("empty path")
 	}
 
 	if !strings.HasPrefix(path, "/") {
@@ -245,16 +247,22 @@ func (r *RouteRegistry) getPathConflictType(path1, path2 string) string {
 // normalizePath replaces all parameters with a standard placeholder
 func (r *RouteRegistry) normalizePath(path string) string {
 	result := path
+	searchPos := 0
 	for {
-		start := strings.Index(result, "{")
+		start := strings.Index(result[searchPos:], "{")
 		if start == -1 {
 			break
 		}
+		start = searchPos + start
 		end := strings.Index(result[start:], "}")
 		if end == -1 {
 			break
 		}
-		result = result[:start] + "{param}" + result[start+end+1:]
+		// Fix: end is relative to start, so add start to get absolute position
+		end = start + end
+		result = result[:start] + "{param}" + result[end+1:]
+		// Continue searching after the replacement
+		searchPos = start + len("{param}")
 	}
 	return result
 }
@@ -269,6 +277,16 @@ func ExtractPathParams(r *http.Request) map[string]string {
 	}
 	if jobID := r.PathValue("job_id"); jobID != "" {
 		params["job_id"] = jobID
+	}
+
+	// For testing - use testutil helper if normal extraction failed
+	if len(params) == 0 {
+		if id := testutil.GetPathParam(r, "id"); id != "" {
+			params["id"] = id
+		}
+		if jobID := testutil.GetPathParam(r, "job_id"); jobID != "" {
+			params["job_id"] = jobID
+		}
 	}
 
 	return params

@@ -2,7 +2,7 @@
 
 # Variables
 BINARY_NAME=codechunking
-DOCKER_COMPOSE=docker-compose
+DOCKER_COMPOSE=docker compose
 GO_CMD=go
 MIGRATE_CMD=migrate
 
@@ -51,16 +51,16 @@ dev-all:
 
 ## test: Run unit tests
 test:
-	$(GO_CMD) test -v -short ./...
+	$(GO_CMD) test -v -short -timeout 30s ./...
 
 ## test-integration: Run integration tests
 test-integration:
 	$(DOCKER_COMPOSE) up -d
-	$(GO_CMD) test -v -tags=integration ./...
+	$(GO_CMD) test -v -tags=integration -timeout 60s ./...
 
 ## test-coverage: Generate test coverage report
 test-coverage:
-	$(GO_CMD) test -v -coverprofile=coverage.out ./...
+	$(GO_CMD) test -v -timeout 60s -coverprofile=coverage.out ./...
 	$(GO_CMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 

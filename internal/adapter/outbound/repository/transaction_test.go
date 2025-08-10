@@ -308,7 +308,8 @@ func TestTransactionManager_DeadlockHandling(t *testing.T) {
 
 	// Create two test repositories
 	testRepo1 := createTestRepository(t)
-	testRepo2URL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo2")
+	uniqueID2 := uuid.New().String()
+	testRepo2URL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo2-" + uniqueID2)
 	testRepo2 := entity.NewRepository(testRepo2URL, "Test Repository 2", nil, nil)
 
 	err := repoRepo.Save(ctx, testRepo1)
@@ -434,7 +435,7 @@ func TestTransactionManager_LongRunningTransaction(t *testing.T) {
 			t.Error("Expected timeout error but got none")
 		}
 
-		if ctx.Err() == nil {
+		if timeoutCtx.Err() == nil {
 			t.Error("Expected context to be cancelled due to timeout")
 		}
 	})

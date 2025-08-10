@@ -18,6 +18,9 @@ type RepositoryRepository interface {
 	Update(ctx context.Context, repository *entity.Repository) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	Exists(ctx context.Context, url valueobject.RepositoryURL) (bool, error)
+	// Normalized URL duplicate detection methods
+	ExistsByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (bool, error)
+	FindByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error)
 }
 
 // IndexingJobRepository defines the outbound port for indexing job persistence

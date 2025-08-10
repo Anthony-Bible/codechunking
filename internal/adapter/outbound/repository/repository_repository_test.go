@@ -17,10 +17,10 @@ func setupTestDB(t *testing.T) *pgxpool.Pool {
 	config := DatabaseConfig{
 		Host:     "localhost",
 		Port:     5432,
-		Database: "codechunking_test",
-		Username: "postgres",
-		Password: "password",
-		Schema:   "codechunking",
+		Database: "codechunking",
+		Username: "dev",
+		Password: "dev",
+		Schema:   "public",
 	}
 
 	// This will fail because NewDatabaseConnection doesn't exist yet
@@ -53,9 +53,11 @@ func cleanupTestData(t *testing.T, pool *pgxpool.Pool) {
 	}
 }
 
-// createTestRepository creates a test repository entity
+// createTestRepository creates a test repository entity with a unique URL
 func createTestRepository(t *testing.T) *entity.Repository {
-	testURL, err := valueobject.NewRepositoryURL("https://github.com/test/repo")
+	// Generate unique URL using UUID to avoid collisions
+	uniqueID := uuid.New().String()
+	testURL, err := valueobject.NewRepositoryURL("https://github.com/test/repo-" + uniqueID)
 	if err != nil {
 		t.Fatalf("Failed to create test URL: %v", err)
 	}
@@ -87,7 +89,8 @@ func TestRepositoryRepository_Save(t *testing.T) {
 		{
 			name: "Repository with nil description should save successfully",
 			repository: func() *entity.Repository {
-				testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo-no-desc")
+				uniqueID := uuid.New().String()
+				testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo-no-desc-" + uniqueID)
 				return entity.NewRepository(testURL, "Test Repository No Desc", nil, nil)
 			}(),
 			expectError: false,
@@ -95,7 +98,8 @@ func TestRepositoryRepository_Save(t *testing.T) {
 		{
 			name: "Repository with empty name should save successfully",
 			repository: func() *entity.Repository {
-				testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo-empty-name")
+				uniqueID := uuid.New().String()
+				testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo-empty-name-" + uniqueID)
 				return entity.NewRepository(testURL, "", nil, nil)
 			}(),
 			expectError: false,
@@ -304,14 +308,19 @@ func TestRepositoryRepository_FindAll(t *testing.T) {
 	// Create and save multiple test repositories
 	repositories := []*entity.Repository{}
 	for i := 0; i < 15; i++ {
-		testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo" + string(rune('a'+i)))
+		uniqueID := uuid.New().String()
+		testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo-findall-" + uniqueID)
 		description := "Test repository " + string(rune('A'+i))
 		testRepo := entity.NewRepository(testURL, "Test Repository "+string(rune('A'+i)), &description, nil)
 
 		// Set different statuses for testing filters
 		if i < 5 {
+			// Valid transition path: pending -> cloning -> processing -> completed
+			_ = testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
+			_ = testRepo.UpdateStatus(valueobject.RepositoryStatusProcessing)
 			_ = testRepo.UpdateStatus(valueobject.RepositoryStatusCompleted)
 		} else if i < 10 {
+			// Valid transition path: pending -> failed
 			_ = testRepo.UpdateStatus(valueobject.RepositoryStatusFailed)
 		}
 		// Rest remain as pending
@@ -592,22 +601,43 @@ func TestRepositoryRepository_Update(t *testing.T) {
 					t.Errorf("Expected no error but got: %v", err)
 				}
 
-				// Verify the update was persisted
-				updatedRepo, err := repo.FindByID(ctx, repoToUpdate.ID())
-				if err != nil {
-					t.Errorf("Failed to find updated repository: %v", err)
-				}
+				// For archived repositories, skip verification since FindByID filters them out
+				if repoToUpdate.IsDeleted() {
+					// Just verify that the repository was successfully updated in the database
+					// by attempting to find it (which should return nil for archived repos)
+					archivedRepo, err := repo.FindByID(ctx, repoToUpdate.ID())
+					if err != nil {
+						t.Errorf("Unexpected error when looking for archived repository: %v", err)
+						return
+					}
+					if archivedRepo != nil {
+						t.Error("Expected archived repository to not be found by FindByID")
+						return
+					}
+				} else {
+					// Verify the update was persisted for non-archived repositories
+					updatedRepo, err := repo.FindByID(ctx, repoToUpdate.ID())
+					if err != nil {
+						t.Errorf("Failed to find updated repository: %v", err)
+						return
+					}
 
-				if updatedRepo.UpdatedAt().Equal(originalUpdatedAt) {
-					t.Error("Expected UpdatedAt timestamp to be changed")
-				}
+					if updatedRepo == nil {
+						t.Error("Expected to find updated repository but got nil")
+						return
+					}
 
-				if updatedRepo.Name() != repoToUpdate.Name() {
-					t.Errorf("Expected updated name %s, got %s", repoToUpdate.Name(), updatedRepo.Name())
-				}
+					if updatedRepo.UpdatedAt().Equal(originalUpdatedAt) {
+						t.Error("Expected UpdatedAt timestamp to be changed")
+					}
 
-				if updatedRepo.Status() != repoToUpdate.Status() {
-					t.Errorf("Expected updated status %s, got %s", repoToUpdate.Status(), updatedRepo.Status())
+					if updatedRepo.Name() != repoToUpdate.Name() {
+						t.Errorf("Expected updated name %s, got %s", repoToUpdate.Name(), updatedRepo.Name())
+					}
+
+					if updatedRepo.Status() != repoToUpdate.Status() {
+						t.Errorf("Expected updated status %s, got %s", repoToUpdate.Status(), updatedRepo.Status())
+					}
 				}
 			}
 		})

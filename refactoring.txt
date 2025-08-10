@@ -1,0 +1,141 @@
+Refactoring Opportunities (DRY + Performance)
+
+1) Unify Repository Status Validation
+- Location: internal/application/common/validation.go (ValidRepositoryStatuses), internal/domain/valueobject/repository_status.go (validRepositoryStatuses)
+- Issue: Two separate sources of truth for valid repository statuses (string map vs value object map).
+- Proposal: Remove ValidRepositoryStatuses from application/common and validate via valueobject.NewRepositoryStatus or valueobject.AllRepositoryStatuses(). Provide a helper in common that proxies to the valueobject to keep call sites minimal.
+- Benefit: Single source of truth, eliminates drift; simpler validation logic.
+
+2) Consolidate ValidationError types across layers
+- Location: 
+  - internal/adapter/inbound/api/validation_error.go
+  - internal/application/common/validation.go (ValidationError)
+  - internal/application/dto/error.go (DTO ValidationError + details)
+- Issue: Three similar validation error representations with overlapping fields create duplication and conversion noise.
+- Proposal: Keep dto.ValidationError for wire format; define a single internal error type (e.g., internal/application/common/errors.ValidationError) implementing error and carrying Field/Message/Value. API and services use this one type and the error handler converts to dto.ValidationError for responses. Remove duplicate struct(s) or alias api.ValidationError to the shared type.
+- Benefit: DRY error handling, fewer conversions, consistent messaging.
+
+3) De-duplicate client IP extraction
+- Location: 
+  - internal/adapter/inbound/api/middleware.go (getClientIP)
+  - internal/adapter/inbound/api/security_middleware.go (getClientIP method)
+- Issue: Two similar implementations for extracting client IP.
+- Proposal: Extract a shared util (e.g., internal/adapter/inbound/api/util/net.go: ClientIP(r *http.Request) string) and use it in both middleware. Remove the duplicate method; call the util from both.
+- Benefit: DRY, one fix point for proxy header precedence.
+
+4) Merge security header middlewares
+- Location: 
+  - internal/adapter/inbound/api/middleware.go (NewSecurityMiddleware)
+  - internal/adapter/inbound/api/security_middleware.go (NewSecurityHeadersMiddleware)
+- Issue: Both set overlapping security headers with slightly different values.
+- Proposal: Keep a single NewSecurityHeadersMiddleware(config) with options for HSTS, CSP, referrer policy, etc., and have NewSecurityMiddleware delegate to it or remove it. Ensure HTTPS check for HSTS remains.
+- Benefit: DRY, consistent headers, easier to tune.
+
+5) Collapse CORS middleware variants
+- Location: 
+  - internal/adapter/inbound/api/middleware.go (NewCORSMiddleware, NewCORSMiddlewareWithConfig)
+- Issue: Two implementations; one hardcoded, one configurable.
+- Proposal: Keep only NewCORSMiddlewareWithConfig with a default config (constant). Make NewCORSMiddleware a thin wrapper that calls the configurable version with defaults.
+- Benefit: Single code path, easier maintenance.
+
+6) Avoid redundant URL normalization on persistence
+- Location: internal/adapter/outbound/repository/repository_repository.go (Save, Update, ExistsByNormalizedURL, FindByNormalizedURL)
+- Issue: valueobject.NewRepositoryURL already stores a normalized URL. Repository layer re-normalizes repository.URL().String() again, wasting CPU and making it impossible to persist the original raw URL separately.
+- Proposal: 
+  - Extend valueobject.RepositoryURL to retain both raw and normalized forms (e.g., fields raw, normalized; String() returns normalized). Add methods Raw() and Normalized().
+  - In repository persistence, use Raw() for the url column and Normalized() for normalized_url. If retaining raw isn’t desired, at least stop re-normalizing and use repository.URL().String() for normalized_url directly.
+- Benefit: Less work per write/update, ability to display original user input, clearer intent.
+
+7) Remove dead code: scanRepository
+- Location: internal/adapter/outbound/repository/repository_repository.go (scanRepository)
+- Issue: Unused helper that parses timestamps from strings; all call sites use scanRepositoryFromTime.
+- Proposal: Delete scanRepository or add unit usage if truly needed. Prefer a single scanning path.
+- Benefit: Smaller surface area, less cognitive load.
+
+8) Hoist method set for route validation
+- Location: internal/adapter/inbound/api/routes.go (validatePattern: validMethods map)
+- Issue: Reallocates the same map on every call.
+- Proposal: Move validMethods to a package-level var or const set and reference it.
+- Benefit: Minor allocation savings, cleaner code.
+
+9) Cache DB health metrics or make ping optional
+- Location: internal/adapter/outbound/repository/connection.go (DatabaseHealthChecker.GetMetrics)
+- Issue: Calls pool.Ping on every metrics read to compute response time; can be heavy under frequent scrapes.
+- Proposal: 
+  - Add simple caching with TTL (e.g., 2–5s) or a boolean parameter to include ping timing. Store last metrics and timestamp in DatabaseHealthChecker and return cached metrics within TTL.
+- Benefit: Reduced DB load under monitoring, steadier performance.
+
+10) Reduce map copying in DefaultLogger
+- Location: internal/adapter/inbound/api/middleware.go (DefaultLogger.WithField/WithFields)
+- Issue: Each call copies the entire fields map to a new map. For hot paths, this allocates and copies repeatedly.
+- Proposal: Use a small immutable log context type that holds a parent pointer and only materializes to a flat map at write time, or reuse a map with copy-on-write semantics. Alternatively, use a structured logger (zap/slog) already present elsewhere.
+- Benefit: Fewer allocations in request logging.
+
+11) Consolidate repository/indexing query builders
+- Location: 
+  - internal/adapter/outbound/repository/repository_repository.go (FindAll)
+  - internal/adapter/outbound/repository/indexing_job_repository.go (FindByRepositoryID)
+- Issue: Count/data query construction patterns are duplicated.
+- Proposal: Extract a small helper to assemble LIMIT/OFFSET and ORDER BY safely, and share a function that executes count + data queries given base query, where clause, args. Keep it private within the package.
+- Benefit: Less duplication, consistent pagination behavior.
+
+12) ServiceFactory duplication for repo constructions
+- Location: cmd/api.go (CreateHealthService, CreateRepositoryService)
+- Issue: Repeats construction of repositoryRepo, indexingJobRepo, messagePublisher.
+- Proposal: Add a helper on ServiceFactory (e.g., buildDependencies or repoDeps()) returning the three dependencies; reuse in both constructors. Optionally, memoize the pgx pool in ServiceFactory to reuse the same pool for all services.
+- Benefit: DRY and fewer connections, improved startup performance.
+
+13) Centralize JSON response writing
+- Location: 
+  - internal/adapter/inbound/api/repository_handler.go (jsonResponseWriter + writeJSONResponse)
+  - internal/adapter/inbound/api/error_handler.go (writeErrorResponse)
+- Issue: Two separate JSON writing helpers with similar responsibilities.
+- Proposal: Extract a shared response helper (e.g., package apiutil with WriteJSON) and use it from both places. Ensure consistent headers and error handling.
+- Benefit: DRY, consistent responses.
+
+14) Minor: replace string concatenation in CORS headers
+- Location: internal/adapter/inbound/api/middleware.go (NewCORSMiddleware)
+- Issue: Builds allowed headers string manually.
+- Proposal: Use strings.Join for requested headers to avoid extra spaces/commas handling and improve clarity.
+- Benefit: Readability; negligible perf.
+
+15) Make default middleware toggles truly configurable
+- Location: cmd/api.go (shouldEnableDefaultMiddleware always true)
+- Issue: Hardcoded true; divergence from config intent.
+- Proposal: Add config flags (e.g., API.EnableDefaultMiddleware, API.CORS, API.SecurityHeaders) and wire them in ServiceFactory.CreateServer.
+- Benefit: Predictable behavior and easier tuning without code changes.
+
+16) Reuse concurrency primitives in duplicate detection
+- Location: internal/application/service/repository_service.go (PerformantDuplicateDetectionService.BatchCheckDuplicates)
+- Issue: Ad-hoc semaphore + channel management; correct but verbose.
+- Proposal: Use errgroup.Group with a bounded worker pool pattern, or a worker pool helper to reduce boilerplate and improve readability. Also consider early return if all URLs are invalid to cut work.
+- Benefit: Maintainability; similar or better performance.
+
+17) Avoid repeated normalization in repository repository ExistsByNormalizedURL/FindByNormalizedURL
+- Location: internal/adapter/outbound/repository/repository_repository.go
+- Issue: Both methods normalize again; if valueobject.RepositoryURL stores normalized form, pass that normalized value through to repo calls (or accept string) to avoid repeated normalization.
+- Proposal: Change signatures to accept valueobject.RepositoryURL or a pre-normalized string; use it directly.
+- Benefit: Fewer allocations/computations per call.
+
+18) Consider pooling json.Encoder or using http.ResponseWriter.Write for small payloads
+- Location: internal/adapter/inbound/api/* (all handlers writing JSON)
+- Issue: New encoder per request; fine generally, but high-QPS paths might benefit from pooling or using a high-performance logger/encoder.
+- Proposal: Optional micro-optimization: use jsoniter or encoder pooling behind an interface if profiling shows JSON as a hotspot.
+- Benefit: Potential latency reduction under load.
+
+19) Normalize route pattern validation errors
+- Location: internal/adapter/inbound/api/routes.go
+- Issue: Some error messages are constructed inline; test utility mentions detailed errors. Centralizing messages/constants can reduce churn and repeated strings.
+- Proposal: Extract error message constants and helper constructors for consistent phrasing across validations.
+- Benefit: DRY messaging, easier tests.
+
+20) Memoize database pool in ServiceFactory
+- Location: cmd/api.go (ServiceFactory.createDatabasePool, called in multiple Create* methods)
+- Issue: Each service creation can create a new pool if called multiple times.
+- Proposal: Add a field on ServiceFactory to hold a *pgxpool.Pool and initialize it once (sync.Once), reuse across services; expose graceful Close on shutdown.
+- Benefit: Connection reuse, faster startup, fewer DB resources.
+
+Notes
+- Unrelated but observed: internal/adapter/inbound/api/security_middleware.go duplicates some blocks in file (likely intentional split regions in our view). If truly duplicated in source, deduplicate.
+- Before large refactors, add focused tests around validation/status and persistence to ensure behavior parity.
+

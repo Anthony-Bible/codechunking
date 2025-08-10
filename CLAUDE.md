@@ -67,3 +67,4 @@ This is a production-grade code chunking and semantic search system using hexago
 - **IMPORTANT** you MUST Use tdd, the @agent-red-phase-tester for writing failing tests, @agent-green-phase-implementer for getting tests passing, and finally @agent-tdd-refactor-specialist for the refactor phase of tdd, this will ensure a well written and clean program and code
 - try keeping files to 500 lines and not above 1000 lines to help with reaadability and parsability
 - When running go test ./... AlWAYS use a timeout like go test ./... -timeout 10s
+- When commiting use conventional commits

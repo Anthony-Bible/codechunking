@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -398,5 +400,474 @@ func TestConnectionPool_HealthCheck(t *testing.T) {
 
 	if metrics.ActiveConnections < 0 {
 		t.Error("Expected active connections >= 0")
+	}
+}
+
+// =============================================================================
+// TTL-Based Caching Tests for DatabaseHealthChecker.GetMetrics
+// These tests define the expected caching behavior and will FAIL with the current implementation
+// =============================================================================
+
+// TestDatabaseHealthChecker_CacheBasicBehavior tests basic cache hit and miss scenarios
+func TestDatabaseHealthChecker_CacheBasicBehavior(t *testing.T) {
+	config := DatabaseConfig{
+		Host:     "localhost",
+		Port:     5432,
+		Database: "codechunking",
+		Username: "dev",
+		Password: "dev",
+		Schema:   "public",
+	}
+
+	pool, err := NewDatabaseConnection(config)
+	if err != nil {
+		t.Fatalf("Failed to create connection pool: %v", err)
+	}
+	defer pool.Close()
+
+	// Test cache configuration
+	cacheConfig := HealthCheckCacheConfig{
+		TTL:     3 * time.Second,
+		Enabled: true,
+	}
+
+	// This constructor should accept cache configuration (will fail - doesn't exist yet)
+	healthChecker := NewDatabaseHealthCheckerWithCache(pool, cacheConfig)
+	ctx := context.Background()
+
+	// First call - should cache the metrics
+	metrics1 := healthChecker.GetMetrics(ctx)
+	if metrics1 == nil {
+		t.Fatal("Expected metrics but got nil")
+	}
+
+	// Second call immediately after - should return cached metrics
+	metrics2 := healthChecker.GetMetrics(ctx)
+	if metrics2 == nil {
+		t.Fatal("Expected cached metrics but got nil")
+	}
+
+	// Cached metrics should be identical (same ResponseTime, same values)
+	if metrics1.ResponseTime != metrics2.ResponseTime {
+		t.Errorf("Expected cached metrics to have identical ResponseTime: %v != %v",
+			metrics1.ResponseTime, metrics2.ResponseTime)
+	}
+
+	if metrics1.TotalConnections != metrics2.TotalConnections {
+		t.Errorf("Expected cached metrics to have identical TotalConnections: %d != %d",
+			metrics1.TotalConnections, metrics2.TotalConnections)
+	}
+
+	if metrics1.ActiveConnections != metrics2.ActiveConnections {
+		t.Errorf("Expected cached metrics to have identical ActiveConnections: %d != %d",
+			metrics1.ActiveConnections, metrics2.ActiveConnections)
+	}
+
+	if metrics1.IdleConnections != metrics2.IdleConnections {
+		t.Errorf("Expected cached metrics to have identical IdleConnections: %d != %d",
+			metrics1.IdleConnections, metrics2.IdleConnections)
+	}
+}
+
+// TestDatabaseHealthChecker_CacheTTLExpiration tests that cache expires after TTL
+func TestDatabaseHealthChecker_CacheTTLExpiration(t *testing.T) {
+	config := DatabaseConfig{
+		Host:     "localhost",
+		Port:     5432,
+		Database: "codechunking",
+		Username: "dev",
+		Password: "dev",
+		Schema:   "public",
+	}
+
+	pool, err := NewDatabaseConnection(config)
+	if err != nil {
+		t.Fatalf("Failed to create connection pool: %v", err)
+	}
+	defer pool.Close()
+
+	// Short TTL for testing
+	cacheConfig := HealthCheckCacheConfig{
+		TTL:     100 * time.Millisecond,
+		Enabled: true,
+	}
+
+	// This constructor should accept cache configuration (will fail - doesn't exist yet)
+	healthChecker := NewDatabaseHealthCheckerWithCache(pool, cacheConfig)
+	ctx := context.Background()
+
+	// First call - caches metrics
+	metrics1 := healthChecker.GetMetrics(ctx)
+	if metrics1 == nil {
+		t.Fatal("Expected metrics but got nil")
+	}
+
+	// Second call within TTL - should return cached metrics
+	time.Sleep(50 * time.Millisecond) // Half the TTL
+	metrics2 := healthChecker.GetMetrics(ctx)
+
+	// Should be cached (identical ResponseTime)
+	if metrics1.ResponseTime != metrics2.ResponseTime {
+		t.Errorf("Expected cached metrics within TTL to have identical ResponseTime")
+	}
+
+	// Third call after TTL expiry - should fetch fresh metrics
+	time.Sleep(100 * time.Millisecond) // Wait for TTL to expire
+	metrics3 := healthChecker.GetMetrics(ctx)
+
+	// Should be fresh (potentially different ResponseTime)
+	// We can't guarantee different values, but the behavior should be to fetch fresh data
+	if metrics3 == nil {
+		t.Fatal("Expected fresh metrics after TTL expiry but got nil")
+	}
+
+	// The implementation should have called pool.Ping() again for fresh metrics
+	// This is indirectly tested by ensuring the caching mechanism respects TTL
+}
+
+// TestDatabaseHealthChecker_CacheConcurrentAccess tests thread safety
+func TestDatabaseHealthChecker_CacheConcurrentAccess(t *testing.T) {
+	config := DatabaseConfig{
+		Host:     "localhost",
+		Port:     5432,
+		Database: "codechunking",
+		Username: "dev",
+		Password: "dev",
+		Schema:   "public",
+	}
+
+	pool, err := NewDatabaseConnection(config)
+	if err != nil {
+		t.Fatalf("Failed to create connection pool: %v", err)
+	}
+	defer pool.Close()
+
+	cacheConfig := HealthCheckCacheConfig{
+		TTL:     2 * time.Second,
+		Enabled: true,
+	}
+
+	// This constructor should accept cache configuration (will fail - doesn't exist yet)
+	healthChecker := NewDatabaseHealthCheckerWithCache(pool, cacheConfig)
+	ctx := context.Background()
+
+	const numGoroutines = 50
+	const callsPerGoroutine = 10
+
+	var wg sync.WaitGroup
+	metricsChan := make(chan *HealthMetrics, numGoroutines*callsPerGoroutine)
+	errorChan := make(chan error, numGoroutines*callsPerGoroutine)
+
+	// Launch concurrent goroutines calling GetMetrics
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(routineID int) {
+			defer wg.Done()
+			for j := 0; j < callsPerGoroutine; j++ {
+				metrics := healthChecker.GetMetrics(ctx)
+				if metrics == nil {
+					errorChan <- fmt.Errorf("goroutine %d call %d: got nil metrics", routineID, j)
+					continue
+				}
+				metricsChan <- metrics
+			}
+		}(i)
+	}
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+	close(metricsChan)
+	close(errorChan)
+
+	// Check for errors
+	for err := range errorChan {
+		t.Error(err)
+	}
+
+	// Collect all metrics
+	var allMetrics []*HealthMetrics
+	for metrics := range metricsChan {
+		allMetrics = append(allMetrics, metrics)
+	}
+
+	if len(allMetrics) != numGoroutines*callsPerGoroutine {
+		t.Errorf("Expected %d metrics, got %d", numGoroutines*callsPerGoroutine, len(allMetrics))
+	}
+
+	// Verify that most calls returned cached metrics (should have similar ResponseTime values)
+	// This test primarily ensures no race conditions occur
+}
+
+// TestDatabaseHealthChecker_CacheConfiguration tests different cache configurations
+func TestDatabaseHealthChecker_CacheConfiguration(t *testing.T) {
+	config := DatabaseConfig{
+		Host:     "localhost",
+		Port:     5432,
+		Database: "codechunking",
+		Username: "dev",
+		Password: "dev",
+		Schema:   "public",
+	}
+
+	pool, err := NewDatabaseConnection(config)
+	if err != nil {
+		t.Fatalf("Failed to create connection pool: %v", err)
+	}
+	defer pool.Close()
+
+	tests := []struct {
+		name        string
+		cacheConfig HealthCheckCacheConfig
+		expectCache bool
+	}{
+		{
+			name: "Cache enabled with 2 second TTL",
+			cacheConfig: HealthCheckCacheConfig{
+				TTL:     2 * time.Second,
+				Enabled: true,
+			},
+			expectCache: true,
+		},
+		{
+			name: "Cache enabled with 5 second TTL",
+			cacheConfig: HealthCheckCacheConfig{
+				TTL:     5 * time.Second,
+				Enabled: true,
+			},
+			expectCache: true,
+		},
+		{
+			name: "Cache disabled",
+			cacheConfig: HealthCheckCacheConfig{
+				TTL:     2 * time.Second,
+				Enabled: false,
+			},
+			expectCache: false,
+		},
+		{
+			name: "Zero TTL (should disable caching)",
+			cacheConfig: HealthCheckCacheConfig{
+				TTL:     0,
+				Enabled: true,
+			},
+			expectCache: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// This constructor should accept cache configuration (will fail - doesn't exist yet)
+			healthChecker := NewDatabaseHealthCheckerWithCache(pool, tt.cacheConfig)
+			ctx := context.Background()
+
+			// Get metrics twice
+			metrics1 := healthChecker.GetMetrics(ctx)
+			metrics2 := healthChecker.GetMetrics(ctx)
+
+			if metrics1 == nil || metrics2 == nil {
+				t.Fatal("Expected metrics but got nil")
+			}
+
+			if tt.expectCache {
+				// Should be cached - identical ResponseTime
+				if metrics1.ResponseTime != metrics2.ResponseTime {
+					t.Errorf("Expected cached metrics to have identical ResponseTime when caching enabled")
+				}
+			} else {
+				// Should not be cached - potentially different ResponseTime
+				// We can't guarantee different values, but behavior should be to fetch fresh each time
+				// The test primarily validates that the configuration is respected
+			}
+		})
+	}
+}
+
+// TestDatabaseHealthChecker_CachePerformance tests that caching improves performance
+func TestDatabaseHealthChecker_CachePerformance(t *testing.T) {
+	config := DatabaseConfig{
+		Host:     "localhost",
+		Port:     5432,
+		Database: "codechunking",
+		Username: "dev",
+		Password: "dev",
+		Schema:   "public",
+	}
+
+	pool, err := NewDatabaseConnection(config)
+	if err != nil {
+		t.Fatalf("Failed to create connection pool: %v", err)
+	}
+	defer pool.Close()
+
+	ctx := context.Background()
+
+	// Test without caching (current behavior)
+	nonCachedChecker := NewDatabaseHealthChecker(pool)
+
+	// Time multiple calls without caching
+	nonCachedStart := time.Now()
+	for i := 0; i < 10; i++ {
+		metrics := nonCachedChecker.GetMetrics(ctx)
+		if metrics == nil {
+			t.Fatal("Expected metrics but got nil")
+		}
+	}
+	nonCachedDuration := time.Since(nonCachedStart)
+
+	// Test with caching
+	cacheConfig := HealthCheckCacheConfig{
+		TTL:     5 * time.Second,
+		Enabled: true,
+	}
+
+	// This constructor should accept cache configuration (will fail - doesn't exist yet)
+	cachedChecker := NewDatabaseHealthCheckerWithCache(pool, cacheConfig)
+
+	// Time multiple calls with caching (first call populates cache, rest use cache)
+	cachedStart := time.Now()
+	for i := 0; i < 10; i++ {
+		metrics := cachedChecker.GetMetrics(ctx)
+		if metrics == nil {
+			t.Fatal("Expected cached metrics but got nil")
+		}
+	}
+	cachedDuration := time.Since(cachedStart)
+
+	// Cached calls should be significantly faster
+	// First call will be similar speed, but subsequent 9 calls should be much faster
+	if cachedDuration >= nonCachedDuration {
+		t.Errorf("Expected cached calls to be faster. Non-cached: %v, Cached: %v",
+			nonCachedDuration, cachedDuration)
+	}
+
+	// Log the performance difference for information
+	t.Logf("Performance improvement: Non-cached: %v, Cached: %v (%.2fx faster)",
+		nonCachedDuration, cachedDuration, float64(nonCachedDuration)/float64(cachedDuration))
+}
+
+// TestDatabaseHealthChecker_CacheWithNilPool tests cache behavior with nil pool
+func TestDatabaseHealthChecker_CacheWithNilPool(t *testing.T) {
+	cacheConfig := HealthCheckCacheConfig{
+		TTL:     2 * time.Second,
+		Enabled: true,
+	}
+
+	// This constructor should accept cache configuration (will fail - doesn't exist yet)
+	healthChecker := NewDatabaseHealthCheckerWithCache(nil, cacheConfig)
+	ctx := context.Background()
+
+	// Should handle nil pool gracefully
+	metrics := healthChecker.GetMetrics(ctx)
+	if metrics != nil {
+		t.Error("Expected nil metrics for nil pool but got metrics")
+	}
+}
+
+// TestDatabaseHealthChecker_CacheContextCancellation tests cache behavior with context cancellation
+func TestDatabaseHealthChecker_CacheContextCancellation(t *testing.T) {
+	config := DatabaseConfig{
+		Host:     "localhost",
+		Port:     5432,
+		Database: "codechunking",
+		Username: "dev",
+		Password: "dev",
+		Schema:   "public",
+	}
+
+	pool, err := NewDatabaseConnection(config)
+	if err != nil {
+		t.Fatalf("Failed to create connection pool: %v", err)
+	}
+	defer pool.Close()
+
+	cacheConfig := HealthCheckCacheConfig{
+		TTL:     5 * time.Second,
+		Enabled: true,
+	}
+
+	// This constructor should accept cache configuration (will fail - doesn't exist yet)
+	healthChecker := NewDatabaseHealthCheckerWithCache(pool, cacheConfig)
+
+	// First call to populate cache
+	ctx1 := context.Background()
+	metrics1 := healthChecker.GetMetrics(ctx1)
+	if metrics1 == nil {
+		t.Fatal("Expected metrics but got nil")
+	}
+
+	// Second call with cancelled context - should still return cached metrics
+	ctx2, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	metrics2 := healthChecker.GetMetrics(ctx2)
+	if metrics2 == nil {
+		t.Fatal("Expected cached metrics even with cancelled context")
+	}
+
+	// Cached metrics should be returned despite context cancellation
+	if metrics1.ResponseTime != metrics2.ResponseTime {
+		t.Error("Expected cached metrics to be identical even with cancelled context")
+	}
+}
+
+// TestDatabaseHealthChecker_CacheMetricsFreshness tests that cached metrics represent accurate state
+func TestDatabaseHealthChecker_CacheMetricsFreshness(t *testing.T) {
+	config := DatabaseConfig{
+		Host:     "localhost",
+		Port:     5432,
+		Database: "codechunking",
+		Username: "dev",
+		Password: "dev",
+		Schema:   "public",
+	}
+
+	pool, err := NewDatabaseConnection(config)
+	if err != nil {
+		t.Fatalf("Failed to create connection pool: %v", err)
+	}
+	defer pool.Close()
+
+	cacheConfig := HealthCheckCacheConfig{
+		TTL:     500 * time.Millisecond,
+		Enabled: true,
+	}
+
+	// This constructor should accept cache configuration (will fail - doesn't exist yet)
+	healthChecker := NewDatabaseHealthCheckerWithCache(pool, cacheConfig)
+	ctx := context.Background()
+
+	// Get initial metrics
+	initialMetrics := healthChecker.GetMetrics(ctx)
+	if initialMetrics == nil {
+		t.Fatal("Expected initial metrics but got nil")
+	}
+
+	// Cached call should return same metrics
+	cachedMetrics := healthChecker.GetMetrics(ctx)
+	if cachedMetrics.ResponseTime != initialMetrics.ResponseTime {
+		t.Error("Expected cached metrics to have identical ResponseTime")
+	}
+
+	// Wait for cache to expire
+	time.Sleep(600 * time.Millisecond)
+
+	// Fresh call should potentially have different metrics
+	freshMetrics := healthChecker.GetMetrics(ctx)
+	if freshMetrics == nil {
+		t.Fatal("Expected fresh metrics after cache expiry but got nil")
+	}
+
+	// Fresh metrics should be valid
+	if freshMetrics.TotalConnections < 0 {
+		t.Error("Expected valid TotalConnections in fresh metrics")
+	}
+	if freshMetrics.ActiveConnections < 0 {
+		t.Error("Expected valid ActiveConnections in fresh metrics")
+	}
+	if freshMetrics.IdleConnections < 0 {
+		t.Error("Expected valid IdleConnections in fresh metrics")
+	}
+	if freshMetrics.ResponseTime < 0 {
+		t.Error("Expected valid ResponseTime in fresh metrics")
 	}
 }

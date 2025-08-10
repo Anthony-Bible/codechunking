@@ -19,6 +19,81 @@ type RepositoryResult struct {
 	URL string
 }
 
+// RepositoryProcessingRequest represents a repository processing request
+type RepositoryProcessingRequest struct {
+	RepositoryID string
+	URL          string
+	Publisher    interface{} // NATSPublisher interface
+}
+
+// IndexingJobRequest represents an indexing job request
+type IndexingJobRequest struct {
+	RepositoryID string
+	URL          string
+	Publisher    interface{} // NATSPublisher interface
+}
+
+// NATSJobMessage represents a NATS job message
+type NATSJobMessage struct {
+	CorrelationID string
+	RepositoryID  string
+	URL           string
+}
+
+// ErrorScenario represents an error scenario for testing
+type ErrorScenario struct {
+	Component    string
+	ErrorType    string
+	ErrorMessage string
+}
+
+// AsyncJobRequest represents an async job request
+type AsyncJobRequest struct {
+	Type         string
+	RepositoryID string
+	Priority     string
+}
+
+// AsyncJobResult represents an async job result
+type AsyncJobResult struct {
+	JobID        string
+	Status       string
+	RepositoryID string
+	Duration     time.Duration
+}
+
+// Mock service interfaces for correlation testing
+
+// MockRepositoryService interface for testing correlation
+type MockRepositoryService interface {
+	CreateRepository(ctx context.Context, req RepositoryRequest) error
+	CreateRepositoryWithResult(ctx context.Context, req RepositoryRequest) (*RepositoryResult, error)
+}
+
+// MockIndexingService interface for testing correlation
+type MockIndexingService interface {
+	ProcessRepository(ctx context.Context, req RepositoryProcessingRequest) error
+	PublishIndexingJob(ctx context.Context, req IndexingJobRequest) error
+	PublishWithErroryPublisher(ctx context.Context, req RepositoryRequest, publisher MockNATSPublisher) error
+}
+
+// MockNATSPublisher interface for testing correlation
+type MockNATSPublisher interface {
+	PublishIndexingJob(ctx context.Context, message interface{}) error
+}
+
+// MockNATSConsumer interface for testing correlation
+type MockNATSConsumer interface {
+	ProcessIndexingJob(ctx context.Context, message NATSJobMessage) error
+}
+
+// MockAsyncProcessingService interface for testing correlation
+type MockAsyncProcessingService interface {
+	StartAsyncJob(ctx context.Context, req AsyncJobRequest) (string, error)
+	ProcessJobAsync(ctx context.Context, jobID string) (*AsyncJobResult, error)
+	CompleteJob(ctx context.Context, result *AsyncJobResult) error
+}
+
 // Mock repository service
 type mockRepositoryService struct {
 	logger ApplicationLogger

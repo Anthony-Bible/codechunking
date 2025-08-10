@@ -400,7 +400,7 @@ func calculateClusterEfficiency(metrics NATSPerformanceMetrics) float64 {
 
 func calculateResourceUtilization(metrics NATSPerformanceMetrics) map[string]interface{} {
 	return map[string]interface{}{
-		"connection_density":   float64(metrics.TotalMessages) / float64(metrics.ConnectionCount),
+		"connection_density":  float64(metrics.TotalMessages) / float64(metrics.ConnectionCount),
 		"consumer_efficiency": float64(metrics.TotalMessages) / float64(metrics.ActiveConsumers),
 		"queue_health":        calculateQueueHealth(metrics.QueueDepth),
 		"error_ratio":         float64(metrics.TotalErrors) / float64(metrics.TotalMessages),
@@ -416,4 +416,3 @@ func calculateQueueHealth(queueDepth int) string {
 		return "high_pressure"
 	}
 }
-

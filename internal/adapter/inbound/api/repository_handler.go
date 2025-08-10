@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"codechunking/internal/application/common"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/port/inbound"
 
@@ -165,12 +166,12 @@ func (h *RepositoryHandler) parseIndexingJobListQuery(r *http.Request) dto.Index
 // validateCreateRepositoryRequest validates the create repository request with comprehensive checks
 func (h *RepositoryHandler) validateCreateRepositoryRequest(request dto.CreateRepositoryRequest) error {
 	if request.URL == "" {
-		return NewValidationError("url", "Repository URL is required and cannot be empty")
+		return common.NewValidationError("url", "Repository URL is required and cannot be empty")
 	}
 
 	// Basic URL format validation (additional validation will be done by the domain layer)
 	if len(request.URL) > 2048 {
-		return NewValidationError("url", "Repository URL is too long (maximum 2048 characters)")
+		return common.NewValidationError("url", "Repository URL is too long (maximum 2048 characters)")
 	}
 
 	return nil
@@ -187,32 +188,13 @@ func (h *RepositoryHandler) validateIndexingJobListQuery(query dto.IndexingJobLi
 }
 
 // jsonResponseWriter encapsulates JSON response writing with improved error handling
-type jsonResponseWriter struct {
-	writer http.ResponseWriter
-}
-
-// newJSONResponseWriter creates a new JSON response writer
-func newJSONResponseWriter(w http.ResponseWriter) *jsonResponseWriter {
-	return &jsonResponseWriter{writer: w}
-}
-
-// writeResponse writes a JSON response with proper headers and comprehensive error handling
-func (jw *jsonResponseWriter) writeResponse(statusCode int, data interface{}) {
-	jw.writer.Header().Set("Content-Type", "application/json")
-	jw.writer.WriteHeader(statusCode)
-
-	if err := json.NewEncoder(jw.writer).Encode(data); err != nil {
+// writeJSONResponse writes a JSON response using the pooled encoder
+func (h *RepositoryHandler) writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
+	if err := WriteJSON(w, statusCode, data); err != nil {
 		// Log error in production (placeholder for now)
-		// Since we've already written headers, we can't change the response
 		// This should be extremely rare with well-formed data
 		_ = err // TODO: Add proper logging
 	}
-}
-
-// writeJSONResponse writes a JSON response using the improved response writer
-func (h *RepositoryHandler) writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
-	respWriter := newJSONResponseWriter(w)
-	respWriter.writeResponse(statusCode, data)
 }
 
 // parseIntQueryParam parses an integer query parameter with default value
@@ -246,10 +228,10 @@ func (pv *paginationValidator) validate(limit, offset int) error {
 // validateLimit validates the limit parameter
 func (pv *paginationValidator) validateLimit(limit int) error {
 	if limit < 1 {
-		return NewValidationError("limit", "limit must be at least 1")
+		return common.NewValidationError("limit", "limit must be at least 1")
 	}
 	if limit > pv.maxLimit {
-		return NewValidationError("limit", fmt.Sprintf("limit cannot exceed %d", pv.maxLimit))
+		return common.NewValidationError("limit", fmt.Sprintf("limit cannot exceed %d", pv.maxLimit))
 	}
 	return nil
 }
@@ -257,7 +239,7 @@ func (pv *paginationValidator) validateLimit(limit int) error {
 // validateOffset validates the offset parameter
 func (pv *paginationValidator) validateOffset(offset int) error {
 	if offset < 0 {
-		return NewValidationError("offset", "offset must be non-negative (0 or greater)")
+		return common.NewValidationError("offset", "offset must be non-negative (0 or greater)")
 	}
 	return nil
 }
@@ -273,14 +255,14 @@ func (h *RepositoryHandler) validatePaginationParams(limit, offset, maxLimit int
 // decodeAndValidateJSON decodes JSON from request body with proper error handling
 func (h *RepositoryHandler) decodeAndValidateJSON(r *http.Request, v interface{}) error {
 	if r.Body == nil {
-		return NewValidationError("body", "Request body is required")
+		return common.NewValidationError("body", "Request body is required")
 	}
 
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields() // Strict JSON parsing
 
 	if err := decoder.Decode(v); err != nil {
-		return NewValidationError("body", fmt.Sprintf("Invalid JSON format: %v", err))
+		return common.NewValidationError("body", fmt.Sprintf("Invalid JSON format: %v", err))
 	}
 
 	return nil
@@ -310,12 +292,12 @@ func (p *pathParameterExtractor) extractJobID() (uuid.UUID, error) {
 func (p *pathParameterExtractor) extractUUIDPathValue(paramName, resourceType string) (uuid.UUID, error) {
 	paramValue := p.request.PathValue(paramName)
 	if paramValue == "" {
-		return uuid.Nil, NewValidationError(paramName, fmt.Sprintf("%s ID is required in URL path", resourceType))
+		return uuid.Nil, common.NewValidationError(paramName, fmt.Sprintf("%s ID is required in URL path", resourceType))
 	}
 
 	id, err := uuid.Parse(paramValue)
 	if err != nil {
-		return uuid.Nil, NewValidationError(paramName, fmt.Sprintf("invalid %s UUID format: %s", resourceType, paramValue))
+		return uuid.Nil, common.NewValidationError(paramName, fmt.Sprintf("invalid %s UUID format: %s", resourceType, paramValue))
 	}
 
 	return id, nil

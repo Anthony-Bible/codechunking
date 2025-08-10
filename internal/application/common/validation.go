@@ -29,21 +29,10 @@ var ValidJobStatuses = map[string]bool{
 	"cancelled": true,
 }
 
-// ValidationError represents a validation error with context
-type ValidationError struct {
-	Field   string
-	Message string
-}
-
-// Error implements the error interface
-func (e ValidationError) Error() string {
-	return fmt.Sprintf("validation failed for field '%s': %s", e.Field, e.Message)
-}
-
 // ValidateRepositoryURL validates that a repository URL is not empty
 func ValidateRepositoryURL(url string) error {
 	if strings.TrimSpace(url) == "" {
-		return ValidationError{Field: "url", Message: "URL is required"}
+		return NewValidationError("url", "URL is required")
 	}
 	return nil
 }
@@ -56,7 +45,7 @@ func ValidateRepositoryName(name *string) error {
 
 	// Length validation
 	if len(*name) > 255 {
-		return ValidationError{Field: "name", Message: "exceeds maximum length"}
+		return NewValidationError("name", "exceeds maximum length")
 	}
 
 	// Use shared security validator for comprehensive checks
@@ -65,27 +54,27 @@ func ValidateRepositoryName(name *string) error {
 
 	// Security validation: XSS prevention
 	if err := validator.ValidateXSSAttacks(*name); err != nil {
-		return ValidationError{Field: "name", Message: "contains malicious content"}
+		return NewValidationError("name", "contains malicious content")
 	}
 
 	// Security validation: SQL injection prevention
 	if err := validator.ValidateSQLInjection(*name); err != nil {
-		return ValidationError{Field: "name", Message: "contains malicious SQL"}
+		return NewValidationError("name", "contains malicious SQL")
 	}
 
 	// Security validation: control characters
 	if err := validator.ValidateControlCharacters(*name); err != nil {
-		return ValidationError{Field: "name", Message: "contains control characters"}
+		return NewValidationError("name", "contains control characters")
 	}
 
 	// Security validation: suspicious unicode
 	if err := unicodeValidator.ValidateUnicodeAttacks(*name); err != nil {
-		return ValidationError{Field: "name", Message: "contains suspicious unicode"}
+		return NewValidationError("name", "contains suspicious unicode")
 	}
 
 	// Security validation: path traversal
 	if err := validator.ValidatePathTraversal(*name); err != nil {
-		return ValidationError{Field: "name", Message: "path traversal detected"}
+		return NewValidationError("name", "path traversal detected")
 	}
 
 	return nil
@@ -96,11 +85,11 @@ func ValidateRepositoryStatus(status string) error {
 	// Security validation: SQL injection prevention using shared utilities
 	validator := security.NewInjectionValidator(security.DefaultConfig())
 	if err := validator.ValidateSQLInjection(status); err != nil {
-		return ValidationError{Field: "status", Message: "contains malicious SQL"}
+		return NewValidationError("status", "contains malicious SQL")
 	}
 
 	if !ValidRepositoryStatuses[status] {
-		return ValidationError{Field: "status", Message: "invalid status"}
+		return NewValidationError("status", "invalid status")
 	}
 	return nil
 }
@@ -108,7 +97,7 @@ func ValidateRepositoryStatus(status string) error {
 // ValidateJobStatus validates job status
 func ValidateJobStatus(status string) error {
 	if !ValidJobStatuses[status] {
-		return ValidationError{Field: "status", Message: fmt.Sprintf("invalid status: %s", status)}
+		return NewValidationError("status", fmt.Sprintf("invalid status: %s", status))
 	}
 	return nil
 }
@@ -116,7 +105,7 @@ func ValidateJobStatus(status string) error {
 // ValidateUUID validates that a UUID is not nil/empty
 func ValidateUUID(id uuid.UUID, fieldName string) error {
 	if id == uuid.Nil {
-		return ValidationError{Field: fieldName, Message: fmt.Sprintf("%s is required", fieldName)}
+		return NewValidationError(fieldName, fmt.Sprintf("%s is required", fieldName))
 	}
 	return nil
 }
@@ -124,10 +113,7 @@ func ValidateUUID(id uuid.UUID, fieldName string) error {
 // ValidatePaginationLimit validates pagination limit constraints
 func ValidatePaginationLimit(limit int, maxLimit int, fieldName string) error {
 	if limit > maxLimit {
-		return ValidationError{
-			Field:   fieldName,
-			Message: fmt.Sprintf("limit exceeds maximum of %d", maxLimit),
-		}
+		return NewValidationError(fieldName, fmt.Sprintf("limit exceeds maximum of %d", maxLimit))
 	}
 	return nil
 }
@@ -139,7 +125,7 @@ func ValidateSortParameter(sortParam string) error {
 	// Use shared security validator for SQL injection check
 	validator := security.NewInjectionValidator(security.DefaultConfig())
 	if err := validator.ValidateSQLInjection(sortParam); err != nil {
-		return ValidationError{Field: "sort", Message: "contains malicious SQL"}
+		return NewValidationError("sort", "contains malicious SQL")
 	}
 
 	// Check for additional SQL keywords that might not be caught by above
@@ -147,18 +133,18 @@ func ValidateSortParameter(sortParam string) error {
 	lowerParam := strings.ToLower(sortParam)
 	for _, keyword := range sqlKeywords {
 		if strings.Contains(lowerParam, keyword) {
-			return ValidationError{Field: "sort", Message: "contains malicious SQL"}
+			return NewValidationError("sort", "contains malicious SQL")
 		}
 	}
 
 	// Parse sort parameter format: field:direction
 	if !strings.Contains(sortParam, ":") {
-		return ValidationError{Field: "sort", Message: "invalid format"}
+		return NewValidationError("sort", "invalid format")
 	}
 
 	parts := strings.Split(sortParam, ":")
 	if len(parts) != 2 || parts[1] == "" {
-		return ValidationError{Field: "sort", Message: "invalid format"}
+		return NewValidationError("sort", "invalid format")
 	}
 
 	field, direction := parts[0], parts[1]
@@ -171,12 +157,12 @@ func ValidateSortParameter(sortParam string) error {
 	}
 
 	if !validFields[field] {
-		return ValidationError{Field: "sort", Message: "invalid field"}
+		return NewValidationError("sort", "invalid field")
 	}
 
 	// Validate direction
 	if direction != "asc" && direction != "desc" {
-		return ValidationError{Field: "sort", Message: "invalid sort direction"}
+		return NewValidationError("sort", "invalid sort direction")
 	}
 
 	return nil
@@ -187,12 +173,12 @@ func ValidatePaginationLimitString(limitStr string) error {
 	// Use shared security validator
 	validator := security.NewInjectionValidator(security.DefaultConfig())
 	if err := validator.ValidateSQLInjection(limitStr); err != nil {
-		return ValidationError{Field: "limit", Message: "contains malicious SQL"}
+		return NewValidationError("limit", "contains malicious SQL")
 	}
 
 	_, err := strconv.Atoi(limitStr)
 	if err != nil {
-		return ValidationError{Field: "limit", Message: "invalid limit"}
+		return NewValidationError("limit", "invalid limit")
 	}
 
 	return nil
@@ -203,12 +189,12 @@ func ValidateOffsetParameter(offsetStr string) error {
 	// Use shared security validator
 	validator := security.NewInjectionValidator(security.DefaultConfig())
 	if err := validator.ValidateSQLInjection(offsetStr); err != nil {
-		return ValidationError{Field: "offset", Message: "contains malicious SQL"}
+		return NewValidationError("offset", "contains malicious SQL")
 	}
 
 	_, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		return ValidationError{Field: "offset", Message: "invalid offset"}
+		return NewValidationError("offset", "invalid offset")
 	}
 
 	return nil
@@ -221,7 +207,7 @@ func ValidateQueryParameters(params map[string]string) error {
 
 	for key, value := range params {
 		if err := validator.ValidateSQLInjection(value); err != nil {
-			return ValidationError{Field: key, Message: "contains malicious SQL"}
+			return NewValidationError(key, "contains malicious SQL")
 		}
 
 		// Validate specific parameters
@@ -256,27 +242,27 @@ func ValidateJSONField(fieldName, value string) error {
 
 	// Check for protocol attacks first (most specific)
 	if err := validator.ValidateProtocolAttacks(value); err != nil {
-		return ValidationError{Field: fieldName, Message: "malicious protocol detected"}
+		return NewValidationError(fieldName, "malicious protocol detected")
 	}
 
 	if err := validator.ValidateXSSAttacks(value); err != nil {
-		return ValidationError{Field: fieldName, Message: "malicious content detected"}
+		return NewValidationError(fieldName, "malicious content detected")
 	}
 
 	if err := validator.ValidateSQLInjection(value); err != nil {
-		return ValidationError{Field: fieldName, Message: "contains malicious SQL"}
+		return NewValidationError(fieldName, "contains malicious SQL")
 	}
 
 	if err := validator.ValidateControlCharacters(value); err != nil {
-		return ValidationError{Field: fieldName, Message: "control characters detected"}
+		return NewValidationError(fieldName, "control characters detected")
 	}
 
 	if err := unicodeValidator.ValidateUnicodeAttacks(value); err != nil {
-		return ValidationError{Field: fieldName, Message: "suspicious unicode detected"}
+		return NewValidationError(fieldName, "suspicious unicode detected")
 	}
 
 	if err := validator.ValidatePathTraversal(value); err != nil {
-		return ValidationError{Field: fieldName, Message: "path traversal detected"}
+		return NewValidationError(fieldName, "path traversal detected")
 	}
 
 	return nil
@@ -306,16 +292,16 @@ func (ev *EnhancedValidator) ValidateAllSecurityThreats(fieldName, value string)
 	// Run all security validations using shared utilities
 	if err := ev.injectionValidator.ValidateAllInjections(value); err != nil {
 		if secViol, ok := err.(*security.SecurityViolation); ok {
-			return ValidationError{Field: fieldName, Message: secViol.Message}
+			return NewValidationError(fieldName, secViol.Message)
 		}
-		return ValidationError{Field: fieldName, Message: err.Error()}
+		return NewValidationError(fieldName, err.Error())
 	}
 
 	if err := ev.unicodeValidator.ValidateUnicodeAttacks(value); err != nil {
 		if secViol, ok := err.(*security.SecurityViolation); ok {
-			return ValidationError{Field: fieldName, Message: secViol.Message}
+			return NewValidationError(fieldName, secViol.Message)
 		}
-		return ValidationError{Field: fieldName, Message: err.Error()}
+		return NewValidationError(fieldName, err.Error())
 	}
 
 	return nil
@@ -333,17 +319,17 @@ func (ev *EnhancedValidator) ValidateWithCustomRules(fieldName, value string, ru
 		switch rule {
 		case "no_special_chars":
 			if strings.ContainsAny(value, "!@#$%^&*()+={}[]|\\:;\"'<>?,./") {
-				return ValidationError{Field: fieldName, Message: "contains special characters"}
+				return NewValidationError(fieldName, "contains special characters")
 			}
 		case "ascii_only":
 			for _, r := range value {
 				if r > 127 {
-					return ValidationError{Field: fieldName, Message: "contains non-ASCII characters"}
+					return NewValidationError(fieldName, "contains non-ASCII characters")
 				}
 			}
 		case "no_whitespace":
 			if strings.ContainsAny(value, " \t\n\r") {
-				return ValidationError{Field: fieldName, Message: "contains whitespace"}
+				return NewValidationError(fieldName, "contains whitespace")
 			}
 		}
 	}

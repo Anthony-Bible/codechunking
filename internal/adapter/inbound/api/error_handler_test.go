@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"codechunking/internal/application/common"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/domain/errors/domain"
 
@@ -24,7 +25,7 @@ func TestDefaultErrorHandler_HandleValidationError(t *testing.T) {
 	}{
 		{
 			name:           "validation_error_returns_400_with_field_details",
-			err:            NewValidationError("url", "URL is required"),
+			err:            common.NewValidationError("url", "URL is required"),
 			expectedStatus: http.StatusBadRequest,
 			validateFunc: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				assert.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
@@ -51,7 +52,7 @@ func TestDefaultErrorHandler_HandleValidationError(t *testing.T) {
 		},
 		{
 			name:           "validation_error_with_value_includes_value_in_response",
-			err:            NewValidationErrorWithValue("id", "invalid UUID format", "invalid-uuid"),
+			err:            common.NewValidationErrorWithValue("id", "invalid UUID format", "invalid-uuid"),
 			expectedStatus: http.StatusBadRequest,
 			validateFunc: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				var response dto.ErrorResponse
@@ -240,7 +241,7 @@ func TestDefaultErrorHandler_ResponseFormat(t *testing.T) {
 		recorder := httptest.NewRecorder()
 
 		// Execute
-		errorHandler.HandleValidationError(recorder, req, NewValidationError("field", "message"))
+		errorHandler.HandleValidationError(recorder, req, common.NewValidationError("field", "message"))
 
 		// Assert
 		assert.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
@@ -250,12 +251,12 @@ func TestDefaultErrorHandler_ResponseFormat(t *testing.T) {
 func TestValidationError_Error(t *testing.T) {
 	tests := []struct {
 		name            string
-		validationError ValidationError
+		validationError common.ValidationError
 		expectedMessage string
 	}{
 		{
 			name: "validation_error_without_value",
-			validationError: ValidationError{
+			validationError: common.ValidationError{
 				Field:   "url",
 				Message: "URL is required",
 			},
@@ -263,7 +264,7 @@ func TestValidationError_Error(t *testing.T) {
 		},
 		{
 			name: "validation_error_with_value",
-			validationError: ValidationError{
+			validationError: common.ValidationError{
 				Field:   "id",
 				Message: "invalid UUID format",
 				Value:   "invalid-uuid",
@@ -272,7 +273,7 @@ func TestValidationError_Error(t *testing.T) {
 		},
 		{
 			name: "validation_error_with_empty_value",
-			validationError: ValidationError{
+			validationError: common.ValidationError{
 				Field:   "name",
 				Message: "name cannot be empty",
 				Value:   "",
@@ -290,7 +291,7 @@ func TestValidationError_Error(t *testing.T) {
 
 func TestNewValidationError_Constructors(t *testing.T) {
 	t.Run("NewValidationError_creates_error_without_value", func(t *testing.T) {
-		err := NewValidationError("field", "message")
+		err := common.NewValidationError("field", "message")
 
 		assert.Equal(t, "field", err.Field)
 		assert.Equal(t, "message", err.Message)
@@ -298,7 +299,7 @@ func TestNewValidationError_Constructors(t *testing.T) {
 	})
 
 	t.Run("NewValidationErrorWithValue_creates_error_with_value", func(t *testing.T) {
-		err := NewValidationErrorWithValue("field", "message", "value")
+		err := common.NewValidationErrorWithValue("field", "message", "value")
 
 		assert.Equal(t, "field", err.Field)
 		assert.Equal(t, "message", err.Message)
@@ -318,7 +319,7 @@ func TestErrorHandler_Integration(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/repositories", nil)
 			recorder := httptest.NewRecorder()
 
-			validationErr := NewValidationError("url", "URL is required")
+			validationErr := common.NewValidationError("url", "URL is required")
 			errorHandler.HandleValidationError(recorder, req, validationErr)
 
 			assert.Equal(t, http.StatusBadRequest, recorder.Code)

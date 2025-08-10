@@ -1,10 +1,10 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
+	"codechunking/internal/application/common"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/domain/errors/domain"
 )
@@ -25,19 +25,13 @@ func NewDefaultErrorHandler() ErrorHandler {
 
 // HandleValidationError handles validation errors by returning 400 Bad Request
 func (h *DefaultErrorHandler) HandleValidationError(w http.ResponseWriter, r *http.Request, err error) {
-	var validationErr ValidationError
+	var validationErr common.ValidationError
 	if errors.As(err, &validationErr) {
 		response := dto.NewErrorResponse(
 			dto.ErrorCodeInvalidRequest,
 			"Validation failed",
 			dto.ValidationErrorDetails{
-				Errors: []dto.ValidationError{
-					{
-						Field:   validationErr.Field,
-						Message: validationErr.Message,
-						Value:   validationErr.Value,
-					},
-				},
+				Errors: []dto.ValidationError{validationErr.ToDTO()},
 			},
 		)
 		h.writeErrorResponse(w, http.StatusBadRequest, response)
@@ -101,7 +95,5 @@ func (h *DefaultErrorHandler) HandleServiceError(w http.ResponseWriter, r *http.
 
 // writeErrorResponse writes an error response as JSON
 func (h *DefaultErrorHandler) writeErrorResponse(w http.ResponseWriter, statusCode int, response dto.ErrorResponse) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(response)
+	WriteJSON(w, statusCode, response)
 }

@@ -392,6 +392,7 @@ func TestConnectionPool_HealthCheck(t *testing.T) {
 	metrics := healthChecker.GetMetrics(ctx)
 	if metrics == nil {
 		t.Error("Expected health metrics but got nil")
+		return
 	}
 
 	if metrics.TotalConnections == 0 {
@@ -673,11 +674,9 @@ func TestDatabaseHealthChecker_CacheConfiguration(t *testing.T) {
 				if metrics1.ResponseTime != metrics2.ResponseTime {
 					t.Errorf("Expected cached metrics to have identical ResponseTime when caching enabled")
 				}
-			} else {
-				// Should not be cached - potentially different ResponseTime
-				// We can't guarantee different values, but behavior should be to fetch fresh each time
-				// The test primarily validates that the configuration is respected
 			}
+			// Note: When caching is disabled, we can't guarantee different ResponseTime values
+			// The test primarily validates that the configuration is respected
 		})
 	}
 }

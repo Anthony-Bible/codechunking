@@ -261,7 +261,11 @@ func TestNATSMessagePublisher_EnsureStream_Success(t *testing.T) {
 	// Connect first
 	err = publisher.(*NATSMessagePublisher).Connect()
 	require.NoError(t, err)
-	defer publisher.(*NATSMessagePublisher).Disconnect()
+	defer func() {
+		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
+			t.Logf("Failed to disconnect: %v", err)
+		}
+	}()
 
 	// This test will fail because EnsureStream is not implemented
 	err = publisher.(*NATSMessagePublisher).EnsureStream()
@@ -279,7 +283,11 @@ func TestNATSMessagePublisher_EnsureStream_StreamConfiguration(t *testing.T) {
 
 	err = publisher.(*NATSMessagePublisher).Connect()
 	require.NoError(t, err)
-	defer publisher.(*NATSMessagePublisher).Disconnect()
+	defer func() {
+		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
+			t.Logf("Failed to disconnect: %v", err)
+		}
+	}()
 
 	t.Run("creates INDEXING stream with correct configuration", func(t *testing.T) {
 		// This test will fail because stream creation is not implemented
@@ -332,7 +340,9 @@ func TestNATSMessagePublisher_EnsureStream_Failures(t *testing.T) {
 			name: "insufficient permissions",
 			setup: func(p *NATSMessagePublisher) {
 				// Connect and set test error mode for insufficient permissions
-				p.Connect()
+				if err := p.Connect(); err != nil {
+					t.Errorf("Failed to connect: %v", err)
+				}
 				p.SetTestErrorMode("insufficient_permissions")
 			},
 			expectedErr: "insufficient permissions to create stream",
@@ -341,7 +351,9 @@ func TestNATSMessagePublisher_EnsureStream_Failures(t *testing.T) {
 			name: "jetstream not enabled",
 			setup: func(p *NATSMessagePublisher) {
 				// Connect and set test error mode for JetStream not enabled
-				p.Connect()
+				if err := p.Connect(); err != nil {
+					t.Errorf("Failed to connect: %v", err)
+				}
 				p.SetTestErrorMode("jetstream_not_enabled")
 			},
 			expectedErr: "JetStream not enabled on server",
@@ -381,7 +393,11 @@ func TestNATSMessagePublisher_StreamInfo(t *testing.T) {
 
 	err = publisher.(*NATSMessagePublisher).Connect()
 	require.NoError(t, err)
-	defer publisher.(*NATSMessagePublisher).Disconnect()
+	defer func() {
+		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
+			t.Logf("Failed to disconnect: %v", err)
+		}
+	}()
 
 	// Ensure stream exists first
 	err = publisher.(*NATSMessagePublisher).EnsureStream()
@@ -409,7 +425,11 @@ func TestNATSMessagePublisher_ConsumerSetup(t *testing.T) {
 
 	err = publisher.(*NATSMessagePublisher).Connect()
 	require.NoError(t, err)
-	defer publisher.(*NATSMessagePublisher).Disconnect()
+	defer func() {
+		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
+			t.Logf("Failed to disconnect: %v", err)
+		}
+	}()
 
 	// Ensure stream exists first
 	err = publisher.(*NATSMessagePublisher).EnsureStream()
@@ -437,7 +457,11 @@ func TestNATSMessagePublisher_PublishIndexingJob_Success(t *testing.T) {
 
 	err = publisher.(*NATSMessagePublisher).Connect()
 	require.NoError(t, err)
-	defer publisher.(*NATSMessagePublisher).Disconnect()
+	defer func() {
+		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
+			t.Logf("Failed to disconnect: %v", err)
+		}
+	}()
 
 	err = publisher.(*NATSMessagePublisher).EnsureStream()
 	require.NoError(t, err)
@@ -491,7 +515,11 @@ func TestNATSMessagePublisher_PublishIndexingJob_MessageFormat(t *testing.T) {
 
 	err = publisher.(*NATSMessagePublisher).Connect()
 	require.NoError(t, err)
-	defer publisher.(*NATSMessagePublisher).Disconnect()
+	defer func() {
+		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
+			t.Logf("Failed to disconnect: %v", err)
+		}
+	}()
 
 	err = publisher.(*NATSMessagePublisher).EnsureStream()
 	require.NoError(t, err)
@@ -548,7 +576,11 @@ func TestNATSMessagePublisher_PublishIndexingJob_InvalidInput(t *testing.T) {
 
 	err = publisher.(*NATSMessagePublisher).Connect()
 	require.NoError(t, err)
-	defer publisher.(*NATSMessagePublisher).Disconnect()
+	defer func() {
+		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
+			t.Logf("Failed to disconnect: %v", err)
+		}
+	}()
 
 	err = publisher.(*NATSMessagePublisher).EnsureStream()
 	require.NoError(t, err)
@@ -614,7 +646,11 @@ func TestNATSMessagePublisher_PublishIndexingJob_ContextHandling(t *testing.T) {
 
 	err = publisher.(*NATSMessagePublisher).Connect()
 	require.NoError(t, err)
-	defer publisher.(*NATSMessagePublisher).Disconnect()
+	defer func() {
+		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
+			t.Logf("Failed to disconnect: %v", err)
+		}
+	}()
 
 	err = publisher.(*NATSMessagePublisher).EnsureStream()
 	require.NoError(t, err)
@@ -667,7 +703,11 @@ func TestNATSMessagePublisher_PublishIndexingJob_Concurrency(t *testing.T) {
 
 	err = publisher.(*NATSMessagePublisher).Connect()
 	require.NoError(t, err)
-	defer publisher.(*NATSMessagePublisher).Disconnect()
+	defer func() {
+		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
+			t.Logf("Failed to disconnect: %v", err)
+		}
+	}()
 
 	err = publisher.(*NATSMessagePublisher).EnsureStream()
 	require.NoError(t, err)
@@ -754,7 +794,11 @@ func TestNATSMessagePublisher_ErrorHandling_NetworkFailures(t *testing.T) {
 
 			err = publisher.(*NATSMessagePublisher).Connect()
 			require.NoError(t, err)
-			defer publisher.(*NATSMessagePublisher).Disconnect()
+			defer func() {
+				if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
+					t.Logf("Failed to disconnect: %v", err)
+				}
+			}()
 
 			err = publisher.(*NATSMessagePublisher).EnsureStream()
 			require.NoError(t, err)
@@ -797,7 +841,11 @@ func TestNATSMessagePublisher_ErrorHandling_RetryLogic(t *testing.T) {
 
 	err = publisher.(*NATSMessagePublisher).Connect()
 	require.NoError(t, err)
-	defer publisher.(*NATSMessagePublisher).Disconnect()
+	defer func() {
+		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
+			t.Logf("Failed to disconnect: %v", err)
+		}
+	}()
 
 	err = publisher.(*NATSMessagePublisher).EnsureStream()
 	require.NoError(t, err)
@@ -934,7 +982,11 @@ func TestNATSMessagePublisher_ErrorHandling_JetStreamErrors(t *testing.T) {
 
 	err = publisher.(*NATSMessagePublisher).Connect()
 	require.NoError(t, err)
-	defer publisher.(*NATSMessagePublisher).Disconnect()
+	defer func() {
+		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
+			t.Logf("Failed to disconnect: %v", err)
+		}
+	}()
 
 	tests := []struct {
 		name        string

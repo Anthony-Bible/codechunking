@@ -48,8 +48,12 @@ func init() {
 	rootCmd.PersistentFlags().String("log-format", "json", "Log format (json, text)")
 
 	// Bind flags to viper
-	viper.BindPFlag("log.level", rootCmd.PersistentFlags().Lookup("log-level"))
-	viper.BindPFlag("log.format", rootCmd.PersistentFlags().Lookup("log-format"))
+	if err := viper.BindPFlag("log.level", rootCmd.PersistentFlags().Lookup("log-level")); err != nil {
+		fmt.Fprintf(os.Stderr, "Error binding log-level flag: %v\n", err)
+	}
+	if err := viper.BindPFlag("log.format", rootCmd.PersistentFlags().Lookup("log-format")); err != nil {
+		fmt.Fprintf(os.Stderr, "Error binding log-format flag: %v\n", err)
+	}
 }
 
 func initConfig() {

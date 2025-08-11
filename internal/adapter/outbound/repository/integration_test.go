@@ -151,14 +151,12 @@ func TestSoftDeleteFunctionality(t *testing.T) {
 		}
 
 		// Create multiple jobs for repository
-		var jobs []*entity.IndexingJob
 		for i := 0; i < 3; i++ {
 			job := createTestIndexingJob(t, testRepo.ID())
 			err = jobRepo.Save(ctx, job)
 			if err != nil {
 				t.Fatalf("Failed to save job %d: %v", i, err)
 			}
-			jobs = append(jobs, job)
 		}
 
 		// Delete repository (should cascade to jobs if implemented)

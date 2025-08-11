@@ -128,9 +128,6 @@ func (n *natsApplicationLogger) LogNATSConnectionEvent(ctx context.Context, even
 		originalComponent := appLogger.component
 		defer func() { appLogger.component = originalComponent }()
 
-		// Add operation to the component temporarily for this log
-		appLogger.component = appLogger.component
-
 		// Create a new log entry with operation
 		correlationID := getOrGenerateCorrelationID(ctx)
 		entry := LogEntry{
@@ -348,71 +345,5 @@ func (n *natsApplicationLogger) logNATSEntry(ctx context.Context, level, message
 			jsonData, _ := json.Marshal(entry)
 			appLogger.logger.Println(string(jsonData))
 		}
-	}
-}
-
-// Performance calculation helper functions
-func calculateThroughput(messageSize int64, duration time.Duration) float64 {
-	if duration == 0 {
-		return 0
-	}
-	// Calculate MB/s
-	megabytes := float64(messageSize) / (1024 * 1024)
-	seconds := duration.Seconds()
-	return megabytes / seconds
-}
-
-func calculateDeliveryEfficiency(event NATSConsumeEvent) float64 {
-	totalTime := event.ProcessingTime + event.AckTime + event.QueuedTime
-	if totalTime == 0 {
-		return 100.0
-	}
-	// Efficiency based on processing time vs total time
-	efficiency := (float64(event.ProcessingTime) / float64(totalTime)) * 100
-	return efficiency
-}
-
-func calculateStreamEfficiency(event JetStreamEvent) float64 {
-	if event.Duration == 0 {
-		return 100.0
-	}
-	// Simple efficiency metric based on operation duration
-	baselineMs := 10.0 // 10ms baseline for stream operations
-	actualMs := float64(event.Duration.Milliseconds())
-	efficiency := (baselineMs / actualMs) * 100
-	if efficiency > 100 {
-		efficiency = 100
-	}
-	return efficiency
-}
-
-func calculateClusterEfficiency(metrics NATSPerformanceMetrics) float64 {
-	if metrics.PublishRate == 0 || metrics.ConsumeRate == 0 {
-		return 0
-	}
-	// Balance between publish and consume rates
-	balance := (metrics.ConsumeRate / metrics.PublishRate) * 100
-	if balance > 100 {
-		balance = 100
-	}
-	return balance
-}
-
-func calculateResourceUtilization(metrics NATSPerformanceMetrics) map[string]interface{} {
-	return map[string]interface{}{
-		"connection_density":  float64(metrics.TotalMessages) / float64(metrics.ConnectionCount),
-		"consumer_efficiency": float64(metrics.TotalMessages) / float64(metrics.ActiveConsumers),
-		"queue_health":        calculateQueueHealth(metrics.QueueDepth),
-		"error_ratio":         float64(metrics.TotalErrors) / float64(metrics.TotalMessages),
-	}
-}
-
-func calculateQueueHealth(queueDepth int) string {
-	if queueDepth < 100 {
-		return "healthy"
-	} else if queueDepth < 1000 {
-		return "moderate"
-	} else {
-		return "high_pressure"
 	}
 }

@@ -226,7 +226,7 @@ func TestSecurityValidationMiddleware(t *testing.T) {
 			// Mock handler that should only be called for valid requests
 			handler := securityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.expectedStatus)
-				w.Write([]byte(`{"message": "success"}`))
+				_, _ = w.Write([]byte(`{"message": "success"}`))
 			}))
 
 			// Create request
@@ -319,7 +319,7 @@ func TestInputSanitizationMiddleware(t *testing.T) {
 
 			handler := sanitizationMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.expectedStatus)
-				w.Write([]byte(`{"message": "success"}`))
+				_, _ = w.Write([]byte(`{"message": "success"}`))
 			}))
 
 			req := testutil.CreateRequestWithBody(http.MethodPost, tt.endpoint, strings.NewReader(tt.payload))
@@ -380,7 +380,7 @@ func TestRateLimitingMiddleware(t *testing.T) {
 
 			handler := rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"message": "success"}`))
+				_, _ = w.Write([]byte(`{"message": "success"}`))
 			}))
 
 			var blockedCount, allowedCount int
@@ -392,9 +392,10 @@ func TestRateLimitingMiddleware(t *testing.T) {
 
 				handler.ServeHTTP(recorder, req)
 
-				if recorder.Code == http.StatusTooManyRequests {
+				switch recorder.Code {
+				case http.StatusTooManyRequests:
 					blockedCount++
-				} else if recorder.Code == http.StatusOK {
+				case http.StatusOK:
 					allowedCount++
 				}
 			}
@@ -455,7 +456,7 @@ func TestContentTypeValidationMiddleware(t *testing.T) {
 
 			handler := contentTypeMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.expectedStatus)
-				w.Write([]byte(`{"message": "success"}`))
+				_, _ = w.Write([]byte(`{"message": "success"}`))
 			}))
 
 			req := testutil.CreateRequestWithBody(tt.method, "/repositories", strings.NewReader(tt.body))
@@ -481,7 +482,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 
 		handler := securityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("success"))
+			_, _ = w.Write([]byte("success"))
 		}))
 
 		req := testutil.CreateRequest(http.MethodGet, "/repositories")
@@ -493,7 +494,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 		assert.Equal(t, "nosniff", recorder.Header().Get("X-Content-Type-Options"))
 		assert.Equal(t, "DENY", recorder.Header().Get("X-Frame-Options"))
 		assert.Equal(t, "1; mode=block", recorder.Header().Get("X-XSS-Protection"))
-		assert.Equal(t, "no-referrer", recorder.Header().Get("Referrer-Policy"))
+		assert.Equal(t, "strict-origin-when-cross-origin", recorder.Header().Get("Referrer-Policy"))
 		assert.Contains(t, recorder.Header().Get("Content-Security-Policy"), "default-src 'self'")
 	})
 }

@@ -330,21 +330,6 @@ func (ev *EnhancedValidator) ValidateWithCustomRules(fieldName, value string, ru
 
 // BackwardCompatibility functions - these maintain the original API while using shared utilities
 
-// containsXSSContent maintains backward compatibility
-func containsXSSContent(input string) bool {
-	return security.ContainsXSSContent(input)
-}
-
-// containsSQLInjectionContent maintains backward compatibility
-func containsSQLInjectionContent(input string) bool {
-	return security.ContainsSQLInjectionContent(input)
-}
-
-// containsPathTraversal maintains backward compatibility
-func containsPathTraversal(input string) bool {
-	return security.ContainsPathTraversal(input)
-}
-
 // containsControlCharacters maintains backward compatibility
 func containsControlCharacters(input string) bool {
 	return security.ContainsControlCharacters(input)

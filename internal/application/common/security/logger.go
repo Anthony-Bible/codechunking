@@ -63,7 +63,6 @@ type AccessEvent struct {
 type DefaultSecurityLogger struct {
 	config  *Config
 	metrics SecurityMetrics
-	mutex   sync.RWMutex
 }
 
 // NewDefaultSecurityLogger creates a new default security logger

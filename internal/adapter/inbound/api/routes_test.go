@@ -312,11 +312,17 @@ func TestRouteRegistry_PathParameterExtraction(t *testing.T) {
 
 			// Override handlers with parameter capture for testing
 			if strings.Contains(tt.path, "/jobs/") {
-				registry.RegisterRoute("GET /repositories/{id}/jobs/{job_id}", paramCapture)
+				if err := registry.RegisterRoute("GET /repositories/{id}/jobs/{job_id}", paramCapture); err != nil {
+					t.Errorf("Failed to register route: %v", err)
+				}
 			} else if strings.Contains(tt.path, "/jobs") {
-				registry.RegisterRoute("GET /repositories/{id}/jobs", paramCapture)
+				if err := registry.RegisterRoute("GET /repositories/{id}/jobs", paramCapture); err != nil {
+					t.Errorf("Failed to register route: %v", err)
+				}
 			} else if strings.Contains(tt.path, "/repositories/") {
-				registry.RegisterRoute("GET /repositories/{id}", paramCapture)
+				if err := registry.RegisterRoute("GET /repositories/{id}", paramCapture); err != nil {
+					t.Errorf("Failed to register route: %v", err)
+				}
 			}
 
 			mux := registry.BuildServeMux()

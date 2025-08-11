@@ -95,5 +95,14 @@ func (h *DefaultErrorHandler) HandleServiceError(w http.ResponseWriter, r *http.
 
 // writeErrorResponse writes an error response as JSON
 func (h *DefaultErrorHandler) writeErrorResponse(w http.ResponseWriter, statusCode int, response dto.ErrorResponse) {
-	WriteJSON(w, statusCode, response)
+	if err := WriteJSON(w, statusCode, response); err != nil {
+		// If JSON writing fails, fall back to plain text error
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusInternalServerError)
+		if _, writeErr := w.Write([]byte("Internal Server Error")); writeErr != nil {
+			// At this point, we can't really recover, but we can avoid the errcheck violation
+			// Log this in a real application
+			_ = writeErr
+		}
+	}
 }

@@ -175,7 +175,6 @@ func (r *PostgreSQLRepositoryRepository) FindAll(ctx context.Context, filters ou
 	if filters.Status != nil {
 		whereConditions = append(whereConditions, fmt.Sprintf("status = $%d", argIndex))
 		args = append(args, filters.Status.String())
-		argIndex++
 	}
 
 	// Build where clause
@@ -459,64 +458,6 @@ func (r *PostgreSQLRepositoryRepository) scanRepositoryFromTime(
 		lastIndexedAt, lastCommitHash, totalFiles, totalChunks,
 		status, createdAt, updatedAt, deletedAt,
 	), nil
-}
-
-// scanRepository is a helper function to convert database row to Repository entity
-func (r *PostgreSQLRepositoryRepository) scanRepository(
-	id uuid.UUID, urlStr, name string, description, defaultBranch, lastCommitHash *string,
-	lastIndexedAtStr *string, totalFiles, totalChunks int, statusStr, createdAtStr, updatedAtStr string, deletedAtStr *string,
-) (*entity.Repository, error) {
-	// Parse URL
-	url, err := valueobject.NewRepositoryURL(urlStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid repository URL: %w", err)
-	}
-
-	// Parse status
-	status, err := valueobject.NewRepositoryStatus(statusStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid repository status: %w", err)
-	}
-
-	// Parse timestamps
-	createdAt, err := parseTimestamp(createdAtStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid created_at timestamp: %w", err)
-	}
-
-	updatedAt, err := parseTimestamp(updatedAtStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid updated_at timestamp: %w", err)
-	}
-
-	var lastIndexedAt *time.Time
-	if lastIndexedAtStr != nil {
-		parsed, err := parseTimestamp(*lastIndexedAtStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid last_indexed_at timestamp: %w", err)
-		}
-		lastIndexedAt = &parsed
-	}
-
-	var deletedAt *time.Time
-	if deletedAtStr != nil {
-		parsed, err := parseTimestamp(*deletedAtStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid deleted_at timestamp: %w", err)
-		}
-		deletedAt = &parsed
-	}
-
-	return entity.RestoreRepository(
-		id, url, name, description, defaultBranch,
-		lastIndexedAt, lastCommitHash, totalFiles, totalChunks,
-		status, createdAt, updatedAt, deletedAt,
-	), nil
-}
-
-// parseTimestamp parses a timestamp string from the database
-func parseTimestamp(timestamp string) (time.Time, error) {
-	return time.Parse("2006-01-02T15:04:05.999999-07:00", timestamp)
 }
 
 // validateSortParameter validates the sort parameter format and fields

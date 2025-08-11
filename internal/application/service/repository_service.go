@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"codechunking/internal/application/common"
@@ -353,7 +352,6 @@ type PerformantDuplicateDetectionService struct {
 	logger         *slog.Logger
 	metrics        *DuplicateDetectionMetrics
 	duplicateCache map[string]*DuplicateCheckCacheEntry
-	cacheMutex     sync.RWMutex
 	cacheTTL       time.Duration
 	maxCacheSize   int
 }

@@ -504,18 +504,6 @@ func isForeignKeyConstraintError(err error) bool {
 		strings.Contains(err.Error(), "foreign key violation")
 }
 
-func isCheckConstraintError(err error) bool {
-	if err == nil {
-		return false
-	}
-	// Check PostgreSQL error codes in wrapped errors
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23514" {
-		return true
-	}
-	return strings.Contains(err.Error(), "check constraint")
-}
-
 func isNotFoundError(err error) bool {
 	if err == nil {
 		return false

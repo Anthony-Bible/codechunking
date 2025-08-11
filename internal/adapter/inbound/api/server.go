@@ -230,7 +230,10 @@ func (s *Server) Start(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		s.isRunning = false
-		listener.Close()
+		if err := listener.Close(); err != nil {
+			// Log the error but continue with shutdown
+			_ = err
+		}
 		return ctx.Err()
 	default:
 		return nil

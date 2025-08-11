@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"codechunking/internal/adapter/inbound/api/util"
@@ -93,7 +95,7 @@ func (l *DefaultLogger) logWithLevel(level, template string, args ...interface{}
 		}
 	}
 
-	fmt.Fprintln(l.output, logEntry)
+	_, _ = fmt.Fprintln(l.output, logEntry)
 }
 
 // NewTestLogger creates a logger for testing that writes to the given writer
@@ -208,7 +210,7 @@ func NewErrorHandlingMiddleware() func(http.Handler) http.Handler {
 				}
 				w.WriteHeader(http.StatusInternalServerError)
 				errorResponse := fmt.Sprintf(`{"error": "Request cancelled", "request_id": "%s"}`, requestID)
-				w.Write([]byte(errorResponse))
+				_, _ = w.Write([]byte(errorResponse))
 				return
 			}
 
@@ -235,7 +237,7 @@ func NewErrorHandlingMiddleware() func(http.Handler) http.Handler {
 					// Return structured error response
 					w.WriteHeader(http.StatusInternalServerError)
 					errorResponse := fmt.Sprintf(`{"error": "Internal Server Error", "request_id": "%s"}`, requestID)
-					w.Write([]byte(errorResponse))
+					_, _ = w.Write([]byte(errorResponse))
 				}
 			}()
 
@@ -255,25 +257,145 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
-// SecurityMiddleware adds basic security headers
-func NewSecurityMiddleware() func(http.Handler) http.Handler {
+// SecurityHeadersConfig defines configuration for unified security headers middleware
+type SecurityHeadersConfig struct {
+	ReferrerPolicy string // "strict-origin-when-cross-origin", "no-referrer", etc.
+	CSPPolicy      string // "basic", "comprehensive", or custom CSP string
+	HStsEnabled    *bool  // Enable HSTS header (nil = use default)
+	HStsMaxAge     int    // Max age for HSTS in seconds
+	HStsSubdomains *bool  // Include subdomains in HSTS (nil = use default)
+	HStsPreload    *bool  // Include preload in HSTS (nil = use default)
+	XFrameOptions  string // "DENY", "SAMEORIGIN", etc.
+	XContentType   string // "nosniff"
+	XXSSProtection string // "1; mode=block", "0", etc.
+}
+
+// NewUnifiedSecurityMiddleware creates a configurable security headers middleware
+func NewUnifiedSecurityMiddleware(config *SecurityHeadersConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Security headers for production
-			w.Header().Set("X-Content-Type-Options", "nosniff")
-			w.Header().Set("X-Frame-Options", "DENY")
-			w.Header().Set("X-XSS-Protection", "1; mode=block")
-			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-			w.Header().Set("Content-Security-Policy", "default-src 'self'")
+			// Apply default values if config is nil or empty
+			cfg := getSecurityConfig(config)
 
-			// Only set HSTS if over HTTPS
-			if r.TLS != nil {
-				w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			// Set basic security headers
+			if cfg.XContentType != "" {
+				w.Header().Set("X-Content-Type-Options", cfg.XContentType)
+			}
+			if cfg.XFrameOptions != "" {
+				w.Header().Set("X-Frame-Options", cfg.XFrameOptions)
+			}
+			if cfg.XXSSProtection != "" {
+				w.Header().Set("X-XSS-Protection", cfg.XXSSProtection)
+			}
+			if cfg.ReferrerPolicy != "" {
+				w.Header().Set("Referrer-Policy", cfg.ReferrerPolicy)
+			}
+
+			// Set CSP policy
+			cspPolicy := getCSPPolicy(cfg.CSPPolicy)
+			if cspPolicy != "" {
+				w.Header().Set("Content-Security-Policy", cspPolicy)
+			}
+
+			// Set HSTS only if enabled and over HTTPS
+			if cfg.HStsEnabled != nil && *cfg.HStsEnabled && r.TLS != nil {
+				hstsValue := buildHSTSValue(cfg)
+				w.Header().Set("Strict-Transport-Security", hstsValue)
 			}
 
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// getSecurityConfig returns a config with default values applied
+func getSecurityConfig(config *SecurityHeadersConfig) *SecurityHeadersConfig {
+	cfg := SecurityHeadersConfig{}
+	if config != nil {
+		cfg = *config
+	}
+
+	// Apply defaults for empty values
+	if cfg.ReferrerPolicy == "" {
+		cfg.ReferrerPolicy = "strict-origin-when-cross-origin"
+	}
+	if cfg.CSPPolicy == "" {
+		cfg.CSPPolicy = "basic"
+	}
+	if cfg.XFrameOptions == "" {
+		cfg.XFrameOptions = "DENY"
+	}
+	if cfg.XContentType == "" {
+		cfg.XContentType = "nosniff"
+	}
+	if cfg.XXSSProtection == "" {
+		cfg.XXSSProtection = "1; mode=block"
+	}
+	// HSTS defaults
+	if cfg.HStsMaxAge == 0 {
+		cfg.HStsMaxAge = 31536000 // 1 year
+	}
+
+	// Handle HSTS configuration with pointer bools for better API design
+	if config == nil {
+		// Nil config means use all defaults for backward compatibility
+		cfg.HStsEnabled = boolPtr(true)
+		cfg.HStsSubdomains = boolPtr(true)
+		cfg.HStsPreload = boolPtr(false)
+	} else {
+		// Apply defaults for nil pointer values
+		if cfg.HStsEnabled == nil {
+			cfg.HStsEnabled = boolPtr(true) // Default enable HSTS for empty config
+		}
+		if cfg.HStsSubdomains == nil {
+			cfg.HStsSubdomains = boolPtr(true) // Default include subdomains
+		}
+		if cfg.HStsPreload == nil {
+			cfg.HStsPreload = boolPtr(false) // Default no preload
+		}
+	}
+
+	return &cfg
+}
+
+// boolPtr is a helper function to create bool pointers
+func boolPtr(b bool) *bool {
+	return &b
+}
+
+// getCSPPolicy returns the appropriate CSP policy based on configuration
+func getCSPPolicy(policy string) string {
+	switch policy {
+	case "basic":
+		return "default-src 'self'"
+	case "comprehensive":
+		return "default-src 'self'; script-src 'self'; object-src 'none'"
+	case "":
+		return "default-src 'self'"
+	default:
+		// Custom CSP string
+		return policy
+	}
+}
+
+// buildHSTSValue constructs the HSTS header value based on configuration
+func buildHSTSValue(cfg *SecurityHeadersConfig) string {
+	parts := []string{"max-age=" + strconv.Itoa(cfg.HStsMaxAge)}
+
+	if cfg.HStsSubdomains != nil && *cfg.HStsSubdomains {
+		parts = append(parts, "includeSubDomains")
+	}
+	if cfg.HStsPreload != nil && *cfg.HStsPreload {
+		parts = append(parts, "preload")
+	}
+
+	return strings.Join(parts, "; ")
+}
+
+// SecurityMiddleware adds basic security headers (backward compatibility)
+func NewSecurityMiddleware() func(http.Handler) http.Handler {
+	// Delegate to unified implementation with default config
+	return NewUnifiedSecurityMiddleware(nil)
 }
 
 // Middleware type for middleware chains

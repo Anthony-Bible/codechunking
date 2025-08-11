@@ -783,13 +783,6 @@ func getLoggerOutputByOperation(logger interface{}, operation string) string {
 	return ""
 }
 
-// Test helper function to reset buffer after reading
-func resetLoggerBuffer(logger interface{}) {
-	if appLogger, ok := logger.(*applicationLoggerImpl); ok && appLogger.buffer != nil {
-		appLogger.buffer.Reset()
-	}
-}
-
 // GetLoggerPerformanceMetrics returns current performance metrics
 func GetLoggerPerformanceMetrics() map[string]interface{} {
 	return map[string]interface{}{

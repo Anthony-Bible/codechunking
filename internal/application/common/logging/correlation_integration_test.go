@@ -69,7 +69,9 @@ func TestCorrelationIntegration_HTTPToServiceLayer(t *testing.T) {
 				}
 
 				w.WriteHeader(http.StatusCreated)
-				w.Write([]byte(`{"id": "repo-123", "status": "created"}`))
+				if _, err := w.Write([]byte(`{"id": "repo-123", "status": "created"}`)); err != nil {
+					t.Logf("Failed to write response: %v", err)
+				}
 			})
 
 			// Wrap handler with logging middleware
@@ -219,7 +221,9 @@ func TestCorrelationIntegration_EndToEndWorkflow(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "workflow_completed", "repository_id": "` + repoResult.ID + `"}`))
+		if _, err := w.Write([]byte(`{"status": "workflow_completed", "repository_id": "` + repoResult.ID + `"}`)); err != nil {
+			t.Logf("Failed to write response: %v", err)
+		}
 	})
 
 	// Wrap with logging middleware
@@ -423,7 +427,9 @@ func TestCorrelationIntegration_ConcurrentRequests(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(`{"correlation_id": "` + correlationID + `"}`))
+		if _, err := w.Write([]byte(`{"correlation_id": "` + correlationID + `"}`)); err != nil {
+			t.Logf("Failed to write response: %v", err)
+		}
 	})
 
 	// Wrap with logging middleware
@@ -545,7 +551,9 @@ func TestCorrelationIntegration_AsyncProcessing(t *testing.T) {
 	operations := make([]string, len(asyncLogOutputs))
 	for i, logOutput := range asyncLogOutputs {
 		var logEntry LogEntry
-		json.Unmarshal([]byte(logOutput), &logEntry)
+		if err := json.Unmarshal([]byte(logOutput), &logEntry); err != nil {
+			t.Errorf("Failed to unmarshal log entry: %v", err)
+		}
 		operations[i] = logEntry.Operation
 	}
 

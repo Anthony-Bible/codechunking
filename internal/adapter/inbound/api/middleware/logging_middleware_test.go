@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -83,7 +84,9 @@ func TestStructuredLoggingMiddleware_RequestLogging(t *testing.T) {
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tt.responseStatus)
-				w.Write([]byte(tt.responseBody))
+				if _, err := w.Write([]byte(tt.responseBody)); err != nil {
+					t.Errorf("Failed to write response body: %v", err)
+				}
 			})
 
 			// Create structured logging middleware
@@ -184,7 +187,9 @@ func TestStructuredLoggingMiddleware_CorrelationIDHandling(t *testing.T) {
 				assert.NotEmpty(t, correlationID, "Correlation ID should be available in handler context")
 
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"status": "ok"}`))
+				if _, err := w.Write([]byte(`{"status": "ok"}`)); err != nil {
+					t.Errorf("Failed to write response: %v", err)
+				}
 			})
 
 			config := LoggingConfig{
@@ -212,7 +217,9 @@ func TestStructuredLoggingMiddleware_CorrelationIDHandling(t *testing.T) {
 
 			if tt.expectNewID {
 				assert.NotEqual(t, tt.incomingCorrelationID, responseCorrelationID)
-				assert.True(t, isValidUUID(responseCorrelationID), "Generated correlation ID should be valid UUID")
+				// Check if correlation ID matches UUID format (8-4-4-4-12 hex digits)
+				uuidPattern := regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+				assert.True(t, uuidPattern.MatchString(responseCorrelationID), "Generated correlation ID should be valid UUID")
 			}
 
 			// Verify log entry contains correct correlation ID
@@ -252,10 +259,10 @@ func TestStructuredLoggingMiddleware_ErrorHandling(t *testing.T) {
 				// Simulate context cancellation
 				ctx, cancel := context.WithCancel(r.Context())
 				cancel()
-				select {
-				case <-ctx.Done():
-					w.WriteHeader(http.StatusRequestTimeout)
-					w.Write([]byte(`{"error": "Request cancelled"}`))
+				<-ctx.Done()
+				w.WriteHeader(http.StatusRequestTimeout)
+				if _, err := w.Write([]byte(`{"error": "Request cancelled"}`)); err != nil {
+					t.Errorf("Failed to write error response: %v", err)
 				}
 			},
 			expectError:    true,
@@ -266,7 +273,9 @@ func TestStructuredLoggingMiddleware_ErrorHandling(t *testing.T) {
 			name: "application error",
 			handlerBehavior: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(`{"error": "Invalid input"}`))
+				if _, err := w.Write([]byte(`{"error": "Invalid input"}`)); err != nil {
+					t.Logf("Failed to write response: %v", err)
+				}
 			},
 			expectError:    false, // 4xx is client error, not server error
 			expectedStatus: 400,
@@ -276,7 +285,9 @@ func TestStructuredLoggingMiddleware_ErrorHandling(t *testing.T) {
 			name: "server error",
 			handlerBehavior: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte(`{"error": "Database connection failed"}`))
+				if _, err := w.Write([]byte(`{"error": "Database connection failed"}`)); err != nil {
+					t.Logf("Failed to write response: %v", err)
+				}
 			},
 			expectError:    true,
 			expectedStatus: 500,
@@ -377,7 +388,9 @@ func TestStructuredLoggingMiddleware_PerformanceLogging(t *testing.T) {
 				response := strings.Repeat("x", tt.responseSize)
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(response))
+				if _, err := w.Write([]byte(response)); err != nil {
+					t.Logf("Failed to write response: %v", err)
+				}
 			})
 
 			config := LoggingConfig{
@@ -490,7 +503,9 @@ func TestStructuredLoggingMiddleware_SecurityLogging(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"status": "ok"}`))
+				if _, err := w.Write([]byte(`{"status": "ok"}`)); err != nil {
+					t.Logf("Failed to write response: %v", err)
+				}
 			})
 
 			config := LoggingConfig{
@@ -597,7 +612,9 @@ func TestStructuredLoggingMiddleware_FilteringAndSampling(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"status": "ok"}`))
+				if _, err := w.Write([]byte(`{"status": "ok"}`)); err != nil {
+					t.Logf("Failed to write response: %v", err)
+				}
 			})
 
 			middleware := NewStructuredLoggingMiddleware(tt.config)
@@ -610,10 +627,9 @@ func TestStructuredLoggingMiddleware_FilteringAndSampling(t *testing.T) {
 
 				wrappedHandler.ServeHTTP(recorder, req)
 
-				if hasLogOutput() {
+				if logOutput := getMiddlewareLogOutput(); logOutput != "" {
 					logCount++
 				}
-				clearLogOutput()
 			}
 
 			if tt.config.SampleRate > 0 && tt.config.SampleRate < 1 {

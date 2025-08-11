@@ -186,7 +186,7 @@ func TestWriteJSON_ErrorHandling(t *testing.T) {
 		{
 			name:        "function_type",
 			statusCode:  http.StatusOK,
-			data:        func() { return },
+			data:        func() {},
 			expectedErr: true,
 			errorMsg:    "json: unsupported type",
 		},

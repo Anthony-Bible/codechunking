@@ -306,7 +306,6 @@ func TestRepositoryRepository_FindAll(t *testing.T) {
 	ctx := context.Background()
 
 	// Create and save multiple test repositories
-	repositories := []*entity.Repository{}
 	for i := 0; i < 15; i++ {
 		uniqueID := uuid.New().String()
 		testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo-findall-" + uniqueID)
@@ -329,7 +328,6 @@ func TestRepositoryRepository_FindAll(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to save test repository %d: %v", i, err)
 		}
-		repositories = append(repositories, testRepo)
 	}
 
 	tests := []struct {

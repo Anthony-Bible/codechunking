@@ -12,9 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"codechunking/internal/adapter/inbound/api"
-	"codechunking/internal/adapter/inbound/api/testutil"
-	"codechunking/internal/application/dto"
 	"codechunking/internal/config"
 
 	"github.com/google/uuid"
@@ -92,7 +89,7 @@ func TestAPICommand_Integration(t *testing.T) {
 			defer func() {
 				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer shutdownCancel()
-				server.Shutdown(shutdownCtx)
+				_ = server.Shutdown(shutdownCtx)
 			}()
 
 			// Wait a moment for server to be fully ready
@@ -119,7 +116,7 @@ func TestAPICommand_GracefulShutdown(t *testing.T) {
 				// Make a quick request to ensure server is working
 				resp, err := http.Get(baseURL + "/health")
 				require.NoError(t, err)
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 			},
 			shutdownFunc: func(t *testing.T, server APIServer, baseURL string) {
@@ -137,7 +134,7 @@ func TestAPICommand_GracefulShutdown(t *testing.T) {
 				go func() {
 					resp, err := http.Get(baseURL + "/health?slow=true")
 					if err == nil {
-						resp.Body.Close()
+						_ = resp.Body.Close()
 					}
 				}()
 				time.Sleep(100 * time.Millisecond) // Let request start
@@ -210,13 +207,13 @@ func TestAPICommand_GracefulShutdown(t *testing.T) {
 func TestAPICommand_ConfigurationIntegration(t *testing.T) {
 	t.Run("loads_configuration_from_environment", func(t *testing.T) {
 		// Set environment variables
-		os.Setenv("CODECHUNK_API_HOST", "127.0.0.1")
-		os.Setenv("CODECHUNK_API_PORT", "0")
-		os.Setenv("CODECHUNK_API_READ_TIMEOUT", "15s")
+		_ = os.Setenv("CODECHUNK_API_HOST", "127.0.0.1")
+		_ = os.Setenv("CODECHUNK_API_PORT", "0")
+		_ = os.Setenv("CODECHUNK_API_READ_TIMEOUT", "15s")
 		defer func() {
-			os.Unsetenv("CODECHUNK_API_HOST")
-			os.Unsetenv("CODECHUNK_API_PORT")
-			os.Unsetenv("CODECHUNK_API_READ_TIMEOUT")
+			_ = os.Unsetenv("CODECHUNK_API_HOST")
+			_ = os.Unsetenv("CODECHUNK_API_PORT")
+			_ = os.Unsetenv("CODECHUNK_API_READ_TIMEOUT")
 		}()
 
 		// Create server using configuration loading
@@ -237,13 +234,13 @@ func TestAPICommand_ConfigurationIntegration(t *testing.T) {
 		defer func() {
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer shutdownCancel()
-			server.Shutdown(shutdownCtx)
+			_ = server.Shutdown(shutdownCtx)
 		}()
 
 		// Verify server is working
 		resp, err := http.Get(baseURL + "/health")
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
 
@@ -266,11 +263,11 @@ database:
 
 		tmpFile, err := os.CreateTemp("", "test-config-*.yaml")
 		require.NoError(t, err)
-		defer os.Remove(tmpFile.Name())
+		defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 		_, err = tmpFile.WriteString(configContent)
 		require.NoError(t, err)
-		tmpFile.Close()
+		_ = tmpFile.Close()
 
 		// Load configuration from file
 		cfg, err := LoadAPIConfigurationFromFile(tmpFile.Name())
@@ -293,13 +290,13 @@ database:
 		defer func() {
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer shutdownCancel()
-			server.Shutdown(shutdownCtx)
+			_ = server.Shutdown(shutdownCtx)
 		}()
 
 		// Verify server is working
 		resp, err := http.Get(baseURL + "/health")
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
 }
@@ -493,7 +490,7 @@ func (tr testHandlerResponse) writeResponse(w http.ResponseWriter) {
 	}
 
 	w.WriteHeader(tr.statusCode)
-	w.Write([]byte(tr.body))
+	_, _ = w.Write([]byte(tr.body))
 }
 
 // createHealthHandler creates the health endpoint handler with cleaner structure
@@ -569,7 +566,7 @@ func startServerListener(httpServer *http.Server) (net.Listener, error) {
 
 	// Start server in goroutine
 	go func() {
-		httpServer.Serve(listener)
+		_ = httpServer.Serve(listener)
 	}()
 
 	return listener, nil
@@ -585,23 +582,6 @@ type APIServer interface {
 	Shutdown(ctx context.Context) error
 	Address() string
 	IsRunning() bool
-}
-
-// testAPIServer is a wrapper around api.Server that implements APIServer interface
-type testAPIServer struct {
-	server *api.Server
-}
-
-func (t *testAPIServer) Shutdown(ctx context.Context) error {
-	return t.server.Shutdown(ctx)
-}
-
-func (t *testAPIServer) Address() string {
-	return t.server.Address()
-}
-
-func (t *testAPIServer) IsRunning() bool {
-	return t.server.IsRunning()
 }
 
 // simpleTestServer is a minimal test server implementation
@@ -820,7 +800,7 @@ func createCustomTimeoutConfig(readTimeout, writeTimeout time.Duration) *config.
 func validateHealthEndpoint(t *testing.T, baseURL string) {
 	resp, err := http.Get(baseURL + "/health")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
@@ -864,7 +844,7 @@ func validateAllAPIRoutes(t *testing.T, baseURL string) {
 func (tc apiRouteTestCase) validate(t *testing.T, baseURL string) {
 	resp, err := tc.makeRequest(baseURL)
 	require.NoError(t, err, "Route %s %s should not error", tc.method, tc.path)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, tc.expectedStatus, resp.StatusCode,
 		"Route %s %s should return %d", tc.method, tc.path, tc.expectedStatus)
@@ -905,56 +885,9 @@ func validateCustomTimeouts(t *testing.T, baseURL string) {
 
 	resp, err := client.Get(baseURL + "/health")
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-}
-
-// createMockHealthService creates a mock health service for testing
-func createMockHealthService() *testutil.MockHealthService {
-	mockHealth := testutil.NewMockHealthService()
-
-	// Set up default healthy response
-	mockHealth.ExpectGetHealth(&dto.HealthResponse{
-		Status:    "healthy",
-		Version:   "1.0.0",
-		Timestamp: time.Now(),
-		Dependencies: map[string]dto.DependencyStatus{
-			"database":          {Status: "healthy"},
-			"message_queue":     {Status: "healthy"},
-			"embedding_service": {Status: "healthy"},
-		},
-	}, nil)
-
-	return mockHealth
-}
-
-// createMockRepositoryService creates a mock repository service for testing
-func createMockRepositoryService() *testutil.MockRepositoryService {
-	mockRepo := testutil.NewMockRepositoryService()
-
-	// Set up default responses for list repositories (empty list)
-	mockRepo.ExpectListRepositories(&dto.RepositoryListResponse{
-		Repositories: []dto.RepositoryResponse{},
-		Pagination: dto.PaginationResponse{
-			Total:   0,
-			Limit:   10,
-			Offset:  0,
-			HasMore: false,
-		},
-	}, nil)
-
-	// Set up default response for create repository
-	mockRepo.ExpectCreateRepository(&dto.RepositoryResponse{
-		ID:        uuid.New(),
-		URL:       "https://github.com/test/repo",
-		Name:      "repo",
-		Status:    "pending",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}, nil)
-
-	return mockRepo
 }
 
 // Additional integration tests for middleware interaction
@@ -978,13 +911,13 @@ func TestAPICommand_MiddlewareIntegration(t *testing.T) {
 		defer func() {
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer shutdownCancel()
-			server.Shutdown(shutdownCtx)
+			_ = server.Shutdown(shutdownCtx)
 		}()
 
 		// Make request and check that it was logged
 		resp, err := http.Get(baseURL + "/health")
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		// In a real implementation, we would check log output
 		// For now, just verify the request succeeded
@@ -1009,7 +942,7 @@ func TestAPICommand_MiddlewareIntegration(t *testing.T) {
 		defer func() {
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer shutdownCancel()
-			server.Shutdown(shutdownCtx)
+			_ = server.Shutdown(shutdownCtx)
 		}()
 
 		// Test various endpoints for CORS headers
@@ -1018,7 +951,7 @@ func TestAPICommand_MiddlewareIntegration(t *testing.T) {
 		for _, endpoint := range endpoints {
 			resp, err := http.Get(baseURL + endpoint)
 			require.NoError(t, err, "Endpoint %s should respond", endpoint)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Should have CORS headers
 			assert.Equal(t, "*", resp.Header.Get("Access-Control-Allow-Origin"),

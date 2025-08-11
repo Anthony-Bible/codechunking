@@ -320,22 +320,21 @@ func (h *HealthServiceAdapter) ClearCache() {
 
 // evaluateNATSStatusPriority determines NATS health status based on a strict priority order
 // Priority order (highest to lowest):
-// 1. Metrics validation (invalid metrics override all else)
-// 2. Authentication/Authorization errors (highest priority - security issues)
-// 3. Circuit breaker "open" state (protection mechanism active)
-// 4. Circuit breaker "half-open" state (recovery testing)
-// 5. Connection status (fundamental connectivity)
-// 6. Version incompatibility (root cause - often causes JetStream unavailability)
-// 7. JetStream availability (feature availability)
-// 8. Connection stability (high reconnect count)
-// 9. Performance degradation (response time issues)
+// 1. Authentication/Authorization errors (highest priority - security issues)
+// 2. Circuit breaker "open" state (protection mechanism active)
+// 3. Circuit breaker "half-open" state (recovery testing)
+// 4. Connection status (fundamental connectivity)
+// 5. Version incompatibility (root cause - often causes JetStream unavailability)
+// 6. JetStream availability (feature availability)
+// 7. Connection stability (high reconnect count)
+// 8. Performance degradation (response time issues)
 func (h *HealthServiceAdapter) evaluateNATSStatusPriority(healthStatus outbound.MessagePublisherHealthStatus, metrics outbound.MessagePublisherMetrics) (dto.DependencyStatusValue, string) {
-	// Priority 1: Metrics validation (highest priority)
+	// Priority 1: Invalid metrics validation (highest priority - data integrity issues)
 	if status, message, handled := h.checkMetricsValidation(metrics); handled {
 		return status, message
 	}
 
-	// Priority 2: Authentication/Authorization errors
+	// Priority 2: Authentication/Authorization errors (security issues)
 	if status, message, handled := h.checkAuthenticationErrors(healthStatus); handled {
 		return status, message
 	}
@@ -345,32 +344,32 @@ func (h *HealthServiceAdapter) evaluateNATSStatusPriority(healthStatus outbound.
 		return status, message
 	}
 
-	// Priority 4: Circuit breaker "half-open" state
+	// Priority 3: Circuit breaker "half-open" state
 	if status, message, handled := h.checkCircuitBreakerHalfOpen(healthStatus, metrics); handled {
 		return status, message
 	}
 
-	// Priority 5: Connection status
+	// Priority 4: Connection status
 	if status, message, handled := h.checkConnectionStatus(healthStatus); handled {
 		return status, message
 	}
 
-	// Priority 6: Version incompatibility
+	// Priority 5: Version incompatibility
 	if status, message, handled := h.checkVersionIncompatibility(healthStatus); handled {
 		return status, message
 	}
 
-	// Priority 7: JetStream availability
+	// Priority 6: JetStream availability
 	if status, message, handled := h.checkJetStreamAvailability(healthStatus); handled {
 		return status, message
 	}
 
-	// Priority 8: Connection stability (high reconnect count)
+	// Priority 7: Connection stability (high reconnect count)
 	if status, message, handled := h.checkConnectionStability(healthStatus); handled {
 		return status, message
 	}
 
-	// Priority 9: Performance degradation (only if still healthy)
+	// Priority 8: Performance degradation (only if still healthy)
 	if status, message, handled := h.checkPerformanceDegradation(healthStatus, metrics); handled {
 		return status, message
 	}
@@ -379,35 +378,7 @@ func (h *HealthServiceAdapter) evaluateNATSStatusPriority(healthStatus outbound.
 	return dto.DependencyStatusHealthy, ""
 }
 
-// checkMetricsValidation checks for invalid metrics (Priority 1)
-func (h *HealthServiceAdapter) checkMetricsValidation(metrics outbound.MessagePublisherMetrics) (dto.DependencyStatusValue, string, bool) {
-	// Check for negative counts
-	if metrics.PublishedCount < 0 || metrics.FailedCount < 0 {
-		return dto.DependencyStatusUnhealthy, "NATS invalid metrics", true
-	}
-
-	// Check for invalid latency format
-	if metrics.AverageLatency != "" {
-		// Empty string is considered invalid
-		if metrics.AverageLatency == "" {
-			return dto.DependencyStatusUnhealthy, "NATS invalid metrics", true
-		}
-		// Check for invalid formats (not ending with "ms", "s", "ns", "us")
-		if !strings.HasSuffix(metrics.AverageLatency, "ms") &&
-			!strings.HasSuffix(metrics.AverageLatency, "s") &&
-			!strings.HasSuffix(metrics.AverageLatency, "ns") &&
-			!strings.HasSuffix(metrics.AverageLatency, "us") {
-			return dto.DependencyStatusUnhealthy, "NATS invalid metrics", true
-		}
-	} else {
-		// Empty latency string is invalid
-		return dto.DependencyStatusUnhealthy, "NATS invalid metrics", true
-	}
-
-	return dto.DependencyStatusHealthy, "", false
-}
-
-// checkAuthenticationErrors checks for authentication/authorization failures (Priority 2)
+// checkAuthenticationErrors checks for authentication/authorization failures (Priority 1)
 func (h *HealthServiceAdapter) checkAuthenticationErrors(healthStatus outbound.MessagePublisherHealthStatus) (dto.DependencyStatusValue, string, bool) {
 	lastErrLower := strings.ToLower(healthStatus.LastError)
 	if strings.Contains(healthStatus.LastError, "Authorization Violation") ||
@@ -533,6 +504,30 @@ func (h *HealthServiceAdapter) checkPerformanceDegradation(healthStatus outbound
 	return dto.DependencyStatusHealthy, "", false
 }
 
+// checkMetricsValidation validates metrics for data integrity issues (Priority 1)
+func (h *HealthServiceAdapter) checkMetricsValidation(metrics outbound.MessagePublisherMetrics) (dto.DependencyStatusValue, string, bool) {
+	// Check for negative values which indicate data corruption or invalid state
+	if metrics.PublishedCount < 0 || metrics.FailedCount < 0 {
+		return dto.DependencyStatusUnhealthy, "invalid metrics detected", true
+	}
+
+	// Check for invalid latency format - empty string is also considered invalid
+	if metrics.AverageLatency == "" {
+		return dto.DependencyStatusUnhealthy, "invalid metrics detected", true
+	}
+
+	if metrics.AverageLatency != "0s" {
+		// Try to parse the latency to verify it's in a valid format
+		latencyStr := strings.TrimSuffix(metrics.AverageLatency, "ms")
+		latencyStr = strings.TrimSuffix(latencyStr, "s")
+		if _, err := strconv.ParseFloat(latencyStr, 64); err != nil {
+			return dto.DependencyStatusUnhealthy, "invalid metrics detected", true
+		}
+	}
+
+	return dto.DependencyStatusHealthy, "", false
+}
+
 // adjustMetricsForVersionIncompatibility modifies metrics for version incompatibility scenarios
 func (h *HealthServiceAdapter) adjustMetricsForVersionIncompatibility(metrics *outbound.MessagePublisherMetrics, healthStatus outbound.MessagePublisherHealthStatus) {
 	lastErrLower := strings.ToLower(healthStatus.LastError)
@@ -545,10 +540,32 @@ func (h *HealthServiceAdapter) adjustMetricsForVersionIncompatibility(metrics *o
 	}
 }
 
-// buildNATSHealthDetails creates the detailed health information for NATS with sanitized metrics
+// buildNATSHealthDetails creates the detailed health information for NATS
 func (h *HealthServiceAdapter) buildNATSHealthDetails(healthStatus outbound.MessagePublisherHealthStatus, metrics outbound.MessagePublisherMetrics) dto.NATSHealthDetails {
-	// Sanitize metrics
-	sanitizedMetrics := h.sanitizeMetrics(metrics)
+	// Sanitize metrics - negative values should be set to 0
+	sanitizedPublishedCount := metrics.PublishedCount
+	if sanitizedPublishedCount < 0 {
+		sanitizedPublishedCount = 0
+	}
+
+	sanitizedFailedCount := metrics.FailedCount
+	if sanitizedFailedCount < 0 {
+		sanitizedFailedCount = 0
+	}
+
+	// Sanitize latency - invalid formats should be set to "0s"
+	sanitizedLatency := metrics.AverageLatency
+	if sanitizedLatency != "" && sanitizedLatency != "0s" {
+		// Try to parse the latency to verify it's in a valid format
+		latencyStr := strings.TrimSuffix(sanitizedLatency, "ms")
+		latencyStr = strings.TrimSuffix(latencyStr, "s")
+		if _, err := strconv.ParseFloat(latencyStr, 64); err != nil {
+			sanitizedLatency = "0s"
+		}
+	}
+	if sanitizedLatency == "" {
+		sanitizedLatency = "0s"
+	}
 
 	return dto.NATSHealthDetails{
 		Connected:        healthStatus.Connected,
@@ -558,33 +575,9 @@ func (h *HealthServiceAdapter) buildNATSHealthDetails(healthStatus outbound.Mess
 		JetStreamEnabled: healthStatus.JetStreamEnabled,
 		CircuitBreaker:   healthStatus.CircuitBreaker,
 		MessageMetrics: dto.NATSMessageMetrics{
-			PublishedCount: sanitizedMetrics.PublishedCount,
-			FailedCount:    sanitizedMetrics.FailedCount,
-			AverageLatency: sanitizedMetrics.AverageLatency,
+			PublishedCount: sanitizedPublishedCount,
+			FailedCount:    sanitizedFailedCount,
+			AverageLatency: sanitizedLatency,
 		},
 	}
-}
-
-// sanitizeMetrics sanitizes invalid metric values to safe defaults
-func (h *HealthServiceAdapter) sanitizeMetrics(metrics outbound.MessagePublisherMetrics) outbound.MessagePublisherMetrics {
-	sanitized := metrics
-
-	// Sanitize negative counts to zero
-	if sanitized.PublishedCount < 0 {
-		sanitized.PublishedCount = 0
-	}
-	if sanitized.FailedCount < 0 {
-		sanitized.FailedCount = 0
-	}
-
-	// Sanitize invalid latency format
-	if sanitized.AverageLatency == "" ||
-		(!strings.HasSuffix(sanitized.AverageLatency, "ms") &&
-			!strings.HasSuffix(sanitized.AverageLatency, "s") &&
-			!strings.HasSuffix(sanitized.AverageLatency, "ns") &&
-			!strings.HasSuffix(sanitized.AverageLatency, "us")) {
-		sanitized.AverageLatency = "0s"
-	}
-
-	return sanitized
 }

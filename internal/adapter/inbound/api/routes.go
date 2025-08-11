@@ -27,17 +27,31 @@ func NewRouteRegistry() *RouteRegistry {
 // RegisterAPIRoutes registers all API routes with their handlers
 func (r *RouteRegistry) RegisterAPIRoutes(healthHandler *HealthHandler, repositoryHandler *RepositoryHandler) {
 	// Health endpoint
-	r.RegisterRoute("GET /health", http.HandlerFunc(healthHandler.GetHealth))
+	if err := r.RegisterRoute("GET /health", http.HandlerFunc(healthHandler.GetHealth)); err != nil {
+		panic(fmt.Errorf("failed to register health route: %w", err))
+	}
 
 	// Repository endpoints
-	r.RegisterRoute("POST /repositories", http.HandlerFunc(repositoryHandler.CreateRepository))
-	r.RegisterRoute("GET /repositories", http.HandlerFunc(repositoryHandler.ListRepositories))
-	r.RegisterRoute("GET /repositories/{id}", http.HandlerFunc(repositoryHandler.GetRepository))
-	r.RegisterRoute("DELETE /repositories/{id}", http.HandlerFunc(repositoryHandler.DeleteRepository))
+	if err := r.RegisterRoute("POST /repositories", http.HandlerFunc(repositoryHandler.CreateRepository)); err != nil {
+		panic(fmt.Errorf("failed to register create repository route: %w", err))
+	}
+	if err := r.RegisterRoute("GET /repositories", http.HandlerFunc(repositoryHandler.ListRepositories)); err != nil {
+		panic(fmt.Errorf("failed to register list repositories route: %w", err))
+	}
+	if err := r.RegisterRoute("GET /repositories/{id}", http.HandlerFunc(repositoryHandler.GetRepository)); err != nil {
+		panic(fmt.Errorf("failed to register get repository route: %w", err))
+	}
+	if err := r.RegisterRoute("DELETE /repositories/{id}", http.HandlerFunc(repositoryHandler.DeleteRepository)); err != nil {
+		panic(fmt.Errorf("failed to register delete repository route: %w", err))
+	}
 
 	// Repository job endpoints
-	r.RegisterRoute("GET /repositories/{id}/jobs", http.HandlerFunc(repositoryHandler.GetRepositoryJobs))
-	r.RegisterRoute("GET /repositories/{id}/jobs/{job_id}", http.HandlerFunc(repositoryHandler.GetIndexingJob))
+	if err := r.RegisterRoute("GET /repositories/{id}/jobs", http.HandlerFunc(repositoryHandler.GetRepositoryJobs)); err != nil {
+		panic(fmt.Errorf("failed to register repository jobs route: %w", err))
+	}
+	if err := r.RegisterRoute("GET /repositories/{id}/jobs/{job_id}", http.HandlerFunc(repositoryHandler.GetIndexingJob)); err != nil {
+		panic(fmt.Errorf("failed to register indexing job route: %w", err))
+	}
 }
 
 // RegisterRoute registers a single route with the given pattern and handler
@@ -146,7 +160,8 @@ func (r *RouteRegistry) validateParameterSyntax(path, pattern string) error {
 
 	// Find all parameters and validate syntax
 	for i := 0; i < len(path); i++ {
-		if path[i] == '{' {
+		switch path[i] {
+		case '{':
 			braceCount++
 
 			// Find matching closing brace
@@ -172,7 +187,7 @@ func (r *RouteRegistry) validateParameterSyntax(path, pattern string) error {
 			paramNames[paramName] = true
 
 			i += closing + 1
-		} else if path[i] == '}' {
+		case '}':
 			// Unmatched closing brace
 			return fmt.Errorf("invalid parameter syntax in pattern '%s': unmatched closing brace at position %d", pattern, i)
 		}
@@ -188,7 +203,7 @@ func isValidParameterName(name string) bool {
 	}
 
 	for _, r := range name {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
 			return false
 		}
 	}
@@ -216,7 +231,7 @@ func (r *RouteRegistry) checkRouteConflict(newPattern string) error {
 		existingMethod, existingPath := strings.TrimSpace(existingParts[0]), strings.TrimSpace(existingParts[1])
 
 		// Same method, check for path conflicts
-		if strings.ToUpper(newMethod) == strings.ToUpper(existingMethod) {
+		if strings.EqualFold(newMethod, existingMethod) {
 			if conflictType := r.getPathConflictType(newPath, existingPath); conflictType != "" {
 				return fmt.Errorf("route conflict detected: pattern '%s' conflicts with existing pattern '%s' (%s)",
 					newPattern, existingPattern, conflictType)

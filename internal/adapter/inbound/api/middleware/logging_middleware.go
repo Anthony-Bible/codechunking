@@ -176,7 +176,7 @@ func NewStructuredLoggingMiddleware(config LoggingConfig) func(http.Handler) htt
 				if !checkRateLimit(config.MaxRequestsPerSecond) {
 					atomic.AddInt64(&globalMiddlewareMetrics.droppedRequests, 1)
 					w.WriteHeader(http.StatusTooManyRequests)
-					w.Write([]byte(`{"error": "Rate limit exceeded"}`))
+					_, _ = w.Write([]byte(`{"error": "Rate limit exceeded"}`))
 					return
 				}
 			}
@@ -208,7 +208,7 @@ func NewStructuredLoggingMiddleware(config LoggingConfig) func(http.Handler) htt
 				if err := recover(); err != nil {
 					logPanicRecovery(config, correlationID, r, err)
 					rw.WriteHeader(http.StatusInternalServerError)
-					rw.Write([]byte(`{"error": "Internal server error"}`))
+					_, _ = rw.Write([]byte(`{"error": "Internal server error"}`))
 				}
 			}()
 
@@ -282,9 +282,9 @@ func startHTTPMemoryMonitor(config LoggingConfig) {
 
 			if config.MaxMemoryMB > 0 && currentMB > config.MaxMemoryMB {
 				// Could implement memory pressure response here
-				logBuffer.WriteString(fmt.Sprintf(
+				fmt.Fprintf(logBuffer,
 					`{"timestamp":"%s","level":"WARN","message":"High memory usage in middleware","memory_mb":%d}`+"\n",
-					time.Now().UTC().Format(time.RFC3339), currentMB))
+					time.Now().UTC().Format(time.RFC3339), currentMB)
 			}
 		}
 	}()
@@ -317,10 +317,6 @@ func (p *httpLogEntryPool) getHTTPLogEntry() *HTTPLogEntry {
 		delete(entry.Response, k)
 	}
 	return entry
-}
-
-func (p *httpLogEntryPool) putHTTPLogEntry(entry *HTTPLogEntry) {
-	p.pool.Put(entry)
 }
 
 // Async version of HTTP request logging
@@ -590,14 +586,6 @@ func getMiddlewareLogOutput() string {
 	return output
 }
 
-func hasLogOutput() bool {
-	return logBuffer.Len() > 0
-}
-
-func clearLogOutput() {
-	logBuffer.Reset()
-}
-
 // GetMiddlewareLogOutput is an exported version for cross-package testing
 func GetMiddlewareLogOutput() string {
 	return getMiddlewareLogOutput()
@@ -616,10 +604,6 @@ func GetMiddlewarePerformanceMetrics() map[string]interface{} {
 	}
 }
 
-func isValidUUID(s string) bool {
-	return len(s) == 36 && strings.Count(s, "-") == 4
-}
-
 func isValidCorrelationID(s string) bool {
 	// More lenient validation - allow any non-empty string that looks like a reasonable ID
 	// This allows both UUIDs and custom correlation IDs like "existing-correlation-123"
@@ -628,7 +612,7 @@ func isValidCorrelationID(s string) bool {
 	}
 	// Allow alphanumeric, hyphens, and underscores
 	for _, r := range s {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' && r != '_' {
 			return false
 		}
 	}

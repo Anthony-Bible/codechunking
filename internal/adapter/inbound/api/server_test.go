@@ -208,7 +208,9 @@ func TestServer_Start(t *testing.T) {
 				// Cleanup: stop server if it started successfully
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 				defer cancel()
-				server.Shutdown(shutdownCtx)
+				if err := server.Shutdown(shutdownCtx); err != nil {
+					t.Errorf("Failed to shutdown server: %v", err)
+				}
 			}
 		})
 	}

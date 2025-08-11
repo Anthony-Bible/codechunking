@@ -114,12 +114,10 @@ func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(ctx context.Context
 
 	var whereConditions []string
 	var args []interface{}
-	argIndex := 1
 
 	// Base query with repository filter
 	baseQuery := `FROM codechunking.indexing_jobs WHERE repository_id = $1 AND deleted_at IS NULL`
 	args = append(args, repositoryID)
-	argIndex++
 
 	// Build where clause (currently no additional filters, but structure is ready)
 	whereClause := ""

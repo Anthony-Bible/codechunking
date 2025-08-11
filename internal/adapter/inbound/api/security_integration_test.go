@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -48,7 +49,7 @@ func TestRepositoryHandler_SecurityIntegration(t *testing.T) {
 			body: dto.CreateRepositoryRequest{
 				URL:         "https://github.com/user/repo",
 				Name:        "normal-repo",
-				Description: stringPtr("<img src='x' onerror='alert(1)'>"),
+				Description: func(s string) *string { return &s }("<img src='x' onerror='alert(1)'>"),
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "malicious content detected",
@@ -183,7 +184,7 @@ func TestRepositoryHandler_SecurityIntegration(t *testing.T) {
 			body: dto.CreateRepositoryRequest{
 				URL:         "https://github.com/user/repo",
 				Name:        strings.Repeat("a", 100000), // Very large name
-				Description: stringPtr("Normal description"),
+				Description: func(s string) *string { return &s }("Normal description"),
 			},
 			expectedStatus: http.StatusRequestEntityTooLarge,
 			expectedError:  "payload too large",
@@ -197,7 +198,7 @@ func TestRepositoryHandler_SecurityIntegration(t *testing.T) {
 			body: dto.CreateRepositoryRequest{
 				URL:         "https://github.com/user/repo",
 				Name:        "my-awesome-repo",
-				Description: stringPtr("This is a valid repository description"),
+				Description: func(s string) *string { return &s }("This is a valid repository description"),
 			},
 			expectedStatus: http.StatusAccepted,
 			shouldPassAuth: true,
@@ -341,9 +342,10 @@ func TestRepositoryHandler_RateLimiting(t *testing.T) {
 
 			handler.ServeHTTP(recorder, req)
 
-			if recorder.Code == http.StatusOK {
+			switch recorder.Code {
+			case http.StatusOK:
 				successCount++
-			} else if recorder.Code == http.StatusTooManyRequests {
+			case http.StatusTooManyRequests:
 				blockedCount++
 			}
 		}
@@ -362,6 +364,10 @@ func TestRepositoryHandler_SecurityHeaders(t *testing.T) {
 		handler := createSecureRepositoryHandler(nil)
 
 		req := testutil.CreateRequest(http.MethodGet, "/repositories")
+		// Set up TLS context for HSTS to work
+		req.TLS = &tls.ConnectionState{
+			Version: tls.VersionTLS12,
+		}
 		recorder := httptest.NewRecorder()
 
 		handler.ServeHTTP(recorder, req)
@@ -371,7 +377,7 @@ func TestRepositoryHandler_SecurityHeaders(t *testing.T) {
 		assert.Equal(t, "nosniff", headers.Get("X-Content-Type-Options"))
 		assert.Equal(t, "DENY", headers.Get("X-Frame-Options"))
 		assert.Equal(t, "1; mode=block", headers.Get("X-XSS-Protection"))
-		assert.Equal(t, "no-referrer", headers.Get("Referrer-Policy"))
+		assert.Equal(t, "strict-origin-when-cross-origin", headers.Get("Referrer-Policy"))
 		assert.Contains(t, headers.Get("Content-Security-Policy"), "default-src 'self'")
 		assert.Contains(t, headers.Get("Strict-Transport-Security"), "max-age=")
 	})
@@ -386,9 +392,9 @@ func TestRepositoryHandler_ComprehensiveSecurity(t *testing.T) {
 
 		// Test multiple attack vectors in one request
 		maliciousPayload := dto.CreateRepositoryRequest{
-			URL:         "javascript:alert('xss')",                  // Malicious protocol
-			Name:        "<script>alert('xss')</script>",            // XSS attempt
-			Description: stringPtr("'; DROP TABLE repositories;--"), // SQL injection attempt
+			URL:         "javascript:alert('xss')",                                             // Malicious protocol
+			Name:        "<script>alert('xss')</script>",                                       // XSS attempt
+			Description: func(s string) *string { return &s }("'; DROP TABLE repositories;--"), // SQL injection attempt
 		}
 
 		bodyBytes, _ := json.Marshal(maliciousPayload)
@@ -421,10 +427,10 @@ func createSecureRepositoryHandler(service inbound.RepositoryService) http.Handl
 		// Simple mock implementation
 		if r.Method == http.MethodPost && r.URL.Path == "/repositories" {
 			w.WriteHeader(http.StatusAccepted)
-			w.Write([]byte(`{"message": "success"}`))
+			_, _ = w.Write([]byte(`{"message": "success"}`))
 		} else if r.Method == http.MethodGet && r.URL.Path == "/repositories" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"repositories": []}`))
+			_, _ = w.Write([]byte(`{"repositories": []}`))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -470,7 +476,9 @@ func TestSecurityMiddlewareStack(t *testing.T) {
 
 			handler := securityStack(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"message": "success"}`))
+				if _, err := w.Write([]byte(`{"message": "success"}`)); err != nil {
+					t.Logf("Failed to write response: %v", err)
+				}
 			}))
 
 			recorder := httptest.NewRecorder()

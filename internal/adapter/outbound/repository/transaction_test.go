@@ -425,10 +425,8 @@ func TestTransactionManager_LongRunningTransaction(t *testing.T) {
 			}
 
 			// Simulate long-running operation that exceeds timeout
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+			<-ctx.Done()
+			return ctx.Err()
 		})
 
 		if err == nil {

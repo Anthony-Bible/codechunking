@@ -118,34 +118,6 @@ func (sm *SecurityMiddleware) validateHeaders(r *http.Request) error {
 	return nil
 }
 
-// validateBody validates request body for security issues
-func (sm *SecurityMiddleware) validateBody(w http.ResponseWriter, r *http.Request) error {
-	// Read body
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		sm.writeSecurityError(w, "malformed request", http.StatusBadRequest)
-		return err
-	}
-	r.Body = io.NopCloser(bytes.NewReader(body))
-
-	// Check body size
-	if len(body) > 64*1024 { // 64KB limit to catch test payload
-		sm.writeSecurityError(w, "payload too large", http.StatusRequestEntityTooLarge)
-		return fmt.Errorf("payload too large")
-	}
-
-	// Validate JSON content
-	if r.Header.Get("Content-Type") == "application/json" ||
-		strings.HasPrefix(r.Header.Get("Content-Type"), "application/json;") {
-		if err := sm.validateJSONContent(body); err != nil {
-			sm.writeSecurityError(w, err.Error(), http.StatusBadRequest)
-			return err
-		}
-	}
-
-	return nil
-}
-
 // validateBodyForViolations validates request body for security issues without writing response
 func (sm *SecurityMiddleware) validateBodyForViolations(r *http.Request) error {
 	// Read body
@@ -297,7 +269,7 @@ func NewSecurityHeadersMiddleware() func(http.Handler) http.Handler {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("X-Frame-Options", "DENY")
 			w.Header().Set("X-XSS-Protection", "1; mode=block")
-			w.Header().Set("Referrer-Policy", "no-referrer")
+			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; object-src 'none'")
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 
@@ -341,5 +313,8 @@ func (sm *SecurityMiddleware) writeSecurityError(w http.ResponseWriter, message 
 		"message": "Security validation failed",
 	}
 
-	WriteJSON(w, statusCode, errorResp)
+	if err := WriteJSON(w, statusCode, errorResp); err != nil {
+		// Log error but don't expose it to client for security reasons
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
 }

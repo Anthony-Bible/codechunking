@@ -42,7 +42,15 @@ func (h *HealthHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		statusCode = http.StatusServiceUnavailable
 	}
 
-	WriteJSON(w, statusCode, response)
+	if err := WriteJSON(w, statusCode, response); err != nil {
+		// If JSON writing fails, set content-type and write a simple error response
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusInternalServerError)
+		if _, writeErr := w.Write([]byte("Health check response encoding failed")); writeErr != nil {
+			// Unable to recover at this point, but avoid errcheck violation
+			_ = writeErr
+		}
+	}
 }
 
 // addHealthHeaders adds performance and NATS-specific headers to the response

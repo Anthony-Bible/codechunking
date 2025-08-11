@@ -189,7 +189,6 @@ func TestIndexingJobRepository_FindByRepositoryID(t *testing.T) {
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 
 	// Create multiple indexing jobs for repository 1
-	var repo1Jobs []*entity.IndexingJob
 	for i := 0; i < 15; i++ {
 		job := createTestIndexingJob(t, testRepo1.ID())
 
@@ -207,7 +206,6 @@ func TestIndexingJobRepository_FindByRepositoryID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to save test job %d for repo 1: %v", i, err)
 		}
-		repo1Jobs = append(repo1Jobs, job)
 	}
 
 	// Create a few jobs for repository 2

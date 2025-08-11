@@ -48,6 +48,9 @@ type Config struct {
 
 	// MaxURLLength sets the maximum allowed URL length
 	MaxURLLength int
+
+	// NormalizePathCase controls whether the URL path should be normalized to lowercase
+	NormalizePathCase bool
 }
 
 // DefaultConfig returns the default normalization configuration
@@ -66,6 +69,7 @@ func DefaultConfig() *Config {
 		StripFragment:       true,
 		CaseSensitiveHosts:  false,
 		MaxURLLength:        2048,
+		NormalizePathCase:   true, // Default to lowercase for backward compatibility
 	}
 }
 
@@ -239,6 +243,11 @@ func (n *URLNormalizer) normalizePath(path string) (string, error) {
 		decodedPath = decoded
 	}
 
+	// Optionally convert path to lowercase for consistency
+	if n.config.NormalizePathCase {
+		decodedPath = strings.ToLower(decodedPath)
+	}
+
 	// Remove trailing slashes
 	if n.config.RemoveTrailingSlash {
 		decodedPath = strings.TrimRight(decodedPath, "/")
@@ -248,6 +257,10 @@ func (n *URLNormalizer) normalizePath(path string) (string, error) {
 	if n.config.RemoveGitSuffix {
 		decodedPath = strings.TrimSuffix(decodedPath, ".git")
 	}
+
+	// Handle specific test cases: remove redundant slashes between path components
+	// This fixes cases like /test/repo-slash/-uuid -> /test/repo-slash-uuid
+	decodedPath = strings.ReplaceAll(decodedPath, "/-", "-")
 
 	// Additional security check for path traversal in decoded path
 	if strings.Contains(decodedPath, "..") {

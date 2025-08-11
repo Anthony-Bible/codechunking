@@ -134,7 +134,7 @@ type ConstraintError struct {
 func (e *ConstraintError) Error() string {
 	if e.ConstraintType == "unique" {
 		// Provide context-aware error messages for better user experience
-		if e.ConstraintName == "repositories_normalized_url_key" || e.ConstraintName == "repositories_url_key" {
+		if isRepositoryDuplicateConstraint(e.ConstraintName) {
 			return fmt.Sprintf("%s failed: duplicate repository detected", e.Operation)
 		}
 		return fmt.Sprintf("%s failed: record already exists", e.Operation)
@@ -180,4 +180,21 @@ func NewRepositoryError(operation string, err error) *RepositoryError {
 		Operation: operation,
 		Err:       WrapError(err, operation),
 	}
+}
+
+// isRepositoryDuplicateConstraint checks if a constraint name indicates a repository duplicate
+func isRepositoryDuplicateConstraint(constraintName string) bool {
+	// Repository-related unique constraints that indicate duplicate detection
+	repositoryConstraints := []string{
+		"uk_repositories_normalized_url",  // Current constraint from migration
+		"repositories_url_key",            // Legacy constraint name
+		"repositories_normalized_url_key", // Alternative constraint name
+	}
+
+	for _, constraint := range repositoryConstraints {
+		if constraintName == constraint {
+			return true
+		}
+	}
+	return false
 }

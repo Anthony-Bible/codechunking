@@ -518,3 +518,319 @@ func TestMiddleware_Configuration(t *testing.T) {
 		assert.Equal(t, "Content-Type", recorder.Header().Get("Access-Control-Allow-Headers"))
 	})
 }
+
+// === FAILING TESTS FOR CORS MIDDLEWARE REFACTORING (RED PHASE) ===
+// These tests define the expected behavior after refactoring and will initially fail
+
+func TestDefaultCORSConfig_Constants(t *testing.T) {
+	t.Run("default_cors_config_has_correct_hardcoded_values", func(t *testing.T) {
+		// This test will fail until DefaultCORSConfig constant is created
+		config := DefaultCORSConfig
+
+		// Verify default origins
+		assert.Equal(t, []string{"*"}, config.AllowedOrigins, "Default origin should be '*'")
+
+		// Verify default methods
+		expectedMethods := []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
+		assert.Equal(t, expectedMethods, config.AllowedMethods, "Default methods should match hardcoded values")
+
+		// Verify default headers (basic ones, without dynamic request headers)
+		expectedHeaders := []string{"Content-Type", "Authorization"}
+		assert.Equal(t, expectedHeaders, config.AllowedHeaders, "Default headers should be Content-Type and Authorization")
+
+		// Verify default max age
+		assert.Equal(t, 86400, config.MaxAge, "Default max age should be 86400 seconds")
+	})
+}
+
+func TestNewCORSMiddleware_UsesDefaultConfig(t *testing.T) {
+	t.Run("new_cors_middleware_delegates_to_configurable_version", func(t *testing.T) {
+		// This test will fail until NewCORSMiddleware is refactored to use DefaultCORSConfig
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+
+		// Create middleware using the hardcoded version (current)
+		hardcodedMiddleware := NewCORSMiddleware()
+		hardcodedHandler := hardcodedMiddleware(nextHandler)
+
+		// Create middleware using configurable version with DefaultCORSConfig (expected after refactor)
+		// This should produce identical results - test will fail until refactored
+		configurableHandler := NewCORSMiddlewareWithConfig(DefaultCORSConfig)(nextHandler)
+
+		testCases := []struct {
+			name           string
+			method         string
+			requestHeaders string
+		}{
+			{"simple_get_request", http.MethodGet, ""},
+			{"preflight_options_request", http.MethodOptions, ""},
+			{"preflight_with_custom_headers", http.MethodOptions, "X-Custom-Header, X-API-Key"},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				// Test hardcoded version
+				reqHardcoded := testutil.CreateRequest(tc.method, "/test")
+				if tc.requestHeaders != "" {
+					reqHardcoded.Header.Set("Access-Control-Request-Headers", tc.requestHeaders)
+				}
+				recorderHardcoded := httptest.NewRecorder()
+				hardcodedHandler.ServeHTTP(recorderHardcoded, reqHardcoded)
+
+				// Test configurable version with DefaultCORSConfig
+				reqConfigurable := testutil.CreateRequest(tc.method, "/test")
+				if tc.requestHeaders != "" {
+					reqConfigurable.Header.Set("Access-Control-Request-Headers", tc.requestHeaders)
+				}
+				recorderConfigurable := httptest.NewRecorder()
+				configurableHandler.ServeHTTP(recorderConfigurable, reqConfigurable)
+
+				// Both should produce identical results
+				assert.Equal(t, recorderHardcoded.Code, recorderConfigurable.Code,
+					"Status codes should match between hardcoded and configurable versions")
+				assert.Equal(t, recorderHardcoded.Header().Get("Access-Control-Allow-Origin"),
+					recorderConfigurable.Header().Get("Access-Control-Allow-Origin"),
+					"Allow-Origin headers should match")
+				assert.Equal(t, recorderHardcoded.Header().Get("Access-Control-Allow-Methods"),
+					recorderConfigurable.Header().Get("Access-Control-Allow-Methods"),
+					"Allow-Methods headers should match")
+
+				// For basic headers (without dynamic request headers), they should match exactly
+				if tc.requestHeaders == "" {
+					assert.Equal(t, recorderHardcoded.Header().Get("Access-Control-Allow-Headers"),
+						recorderConfigurable.Header().Get("Access-Control-Allow-Headers"),
+						"Allow-Headers should match for basic requests")
+				}
+			})
+		}
+	})
+}
+
+func TestCORSMiddlewareWithConfig_UsesStringsJoin(t *testing.T) {
+	t.Run("header_building_uses_strings_join_without_extra_spaces", func(t *testing.T) {
+		// This test will fail until string concatenation is replaced with strings.Join
+		config := CORSConfig{
+			AllowedOrigins: []string{"https://example.com"},
+			AllowedMethods: []string{"GET", "POST", "PUT"},
+			AllowedHeaders: []string{"Content-Type", "Authorization", "X-API-Key"},
+			MaxAge:         3600,
+		}
+
+		middleware := NewCORSMiddlewareWithConfig(config)
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := testutil.CreateRequest(http.MethodGet, "/test")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+
+		// Verify clean comma-separated values without extra spaces
+		methodsHeader := recorder.Header().Get("Access-Control-Allow-Methods")
+		assert.Equal(t, "GET, POST, PUT", methodsHeader,
+			"Methods should be joined with ', ' separator (no extra spaces)")
+
+		headersHeader := recorder.Header().Get("Access-Control-Allow-Headers")
+		assert.Equal(t, "Content-Type, Authorization, X-API-Key", headersHeader,
+			"Headers should be joined with ', ' separator (no extra spaces)")
+	})
+
+	t.Run("empty_slices_produce_empty_headers", func(t *testing.T) {
+		// Test edge case: empty configuration slices
+		config := CORSConfig{
+			AllowedOrigins: []string{}, // Empty
+			AllowedMethods: []string{}, // Empty
+			AllowedHeaders: []string{}, // Empty
+			MaxAge:         0,
+		}
+
+		middleware := NewCORSMiddlewareWithConfig(config)
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := testutil.CreateRequest(http.MethodGet, "/test")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+
+		// Empty slices should not set headers (or set empty headers)
+		assert.Empty(t, recorder.Header().Get("Access-Control-Allow-Origin"),
+			"Empty origins should not set Allow-Origin header")
+		assert.Empty(t, recorder.Header().Get("Access-Control-Allow-Methods"),
+			"Empty methods should not set Allow-Methods header")
+		assert.Empty(t, recorder.Header().Get("Access-Control-Allow-Headers"),
+			"Empty headers should not set Allow-Headers header")
+	})
+}
+
+func TestCORSMiddlewareWithConfig_MaxAgeHandling(t *testing.T) {
+	t.Run("max_age_header_set_only_for_options_requests", func(t *testing.T) {
+		// This test will fail until Max-Age handling is properly implemented
+		config := CORSConfig{
+			AllowedOrigins: []string{"*"},
+			AllowedMethods: []string{"GET", "POST"},
+			AllowedHeaders: []string{"Content-Type"},
+			MaxAge:         7200,
+		}
+
+		middleware := NewCORSMiddlewareWithConfig(config)
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		// Test OPTIONS request - should include Max-Age
+		optionsReq := testutil.CreateRequest(http.MethodOptions, "/test")
+		optionsRecorder := httptest.NewRecorder()
+		handler.ServeHTTP(optionsRecorder, optionsReq)
+
+		assert.Equal(t, "7200", optionsRecorder.Header().Get("Access-Control-Max-Age"),
+			"OPTIONS requests should include Max-Age header")
+
+		// Test non-OPTIONS request - should NOT include Max-Age
+		getReq := testutil.CreateRequest(http.MethodGet, "/test")
+		getRecorder := httptest.NewRecorder()
+		handler.ServeHTTP(getRecorder, getReq)
+
+		assert.Empty(t, getRecorder.Header().Get("Access-Control-Max-Age"),
+			"Non-OPTIONS requests should not include Max-Age header")
+	})
+
+	t.Run("zero_max_age_not_set_in_header", func(t *testing.T) {
+		// Test edge case: zero MaxAge should not set header or set it appropriately
+		config := CORSConfig{
+			AllowedOrigins: []string{"*"},
+			AllowedMethods: []string{"GET"},
+			AllowedHeaders: []string{"Content-Type"},
+			MaxAge:         0, // Zero value
+		}
+
+		middleware := NewCORSMiddlewareWithConfig(config)
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := testutil.CreateRequest(http.MethodOptions, "/test")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+
+		maxAge := recorder.Header().Get("Access-Control-Max-Age")
+		// Either empty (not set) or "0" - both are valid behaviors
+		assert.True(t, maxAge == "" || maxAge == "0",
+			"Zero MaxAge should either not set header or set to '0'")
+	})
+}
+
+func TestCORSMiddlewareWithConfig_OptionsRequestStatusCode(t *testing.T) {
+	t.Run("options_request_returns_204_not_200", func(t *testing.T) {
+		// This test highlights the inconsistency: hardcoded returns 204, configurable returns 200
+		// After refactoring, both should be consistent (probably 204 for preflight)
+		config := CORSConfig{
+			AllowedOrigins: []string{"*"},
+			AllowedMethods: []string{"GET", "POST"},
+			AllowedHeaders: []string{"Content-Type"},
+			MaxAge:         3600,
+		}
+
+		middleware := NewCORSMiddlewareWithConfig(config)
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+
+		req := testutil.CreateRequest(http.MethodOptions, "/test")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+
+		// Currently returns 200, but should return 204 for consistency with hardcoded version
+		assert.Equal(t, http.StatusNoContent, recorder.Code,
+			"OPTIONS preflight requests should return 204 No Content, not 200 OK")
+	})
+}
+
+func TestBackwardCompatibility_ExactBehaviorPreservation(t *testing.T) {
+	t.Run("hardcoded_middleware_behavior_exactly_preserved", func(t *testing.T) {
+		// This comprehensive test ensures that after refactoring, the behavior
+		// is preserved exactly, including edge cases and specific formatting
+
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("success"))
+		})
+
+		// Current hardcoded middleware
+		hardcodedMiddleware := NewCORSMiddleware()
+		hardcodedHandler := hardcodedMiddleware(nextHandler)
+
+		testCases := []struct {
+			name           string
+			method         string
+			origin         string
+			requestHeaders string
+			expectedStatus int
+			checkMaxAge    bool
+		}{
+			{
+				name:           "simple_get_preserves_exact_behavior",
+				method:         http.MethodGet,
+				origin:         "https://example.com",
+				expectedStatus: http.StatusOK,
+				checkMaxAge:    false,
+			},
+			{
+				name:           "options_request_preserves_204_and_max_age",
+				method:         http.MethodOptions,
+				origin:         "https://test.com",
+				expectedStatus: http.StatusNoContent,
+				checkMaxAge:    true,
+			},
+			{
+				name:           "custom_headers_appended_correctly",
+				method:         http.MethodOptions,
+				origin:         "https://api.com",
+				requestHeaders: "X-Custom-Header, X-API-Key",
+				expectedStatus: http.StatusNoContent,
+				checkMaxAge:    true,
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				req := testutil.CreateRequest(tc.method, "/test")
+				if tc.origin != "" {
+					req.Header.Set("Origin", tc.origin)
+				}
+				if tc.requestHeaders != "" {
+					req.Header.Set("Access-Control-Request-Headers", tc.requestHeaders)
+				}
+
+				recorder := httptest.NewRecorder()
+				hardcodedHandler.ServeHTTP(recorder, req)
+
+				// Verify exact current behavior is preserved
+				assert.Equal(t, tc.expectedStatus, recorder.Code, "Status code must be preserved")
+				assert.Equal(t, "*", recorder.Header().Get("Access-Control-Allow-Origin"),
+					"Origin header must be exactly '*'")
+				assert.Equal(t, "GET, POST, PUT, DELETE, OPTIONS",
+					recorder.Header().Get("Access-Control-Allow-Methods"),
+					"Methods header must match exactly")
+
+				// Verify headers include defaults and any requested headers
+				allowedHeaders := recorder.Header().Get("Access-Control-Allow-Headers")
+				assert.Contains(t, allowedHeaders, "Content-Type", "Must include Content-Type")
+				assert.Contains(t, allowedHeaders, "Authorization", "Must include Authorization")
+
+				if tc.requestHeaders != "" {
+					// Should include both default headers and requested headers with proper formatting
+					expectedPattern := "Content-Type, Authorization, " + tc.requestHeaders
+					assert.Equal(t, expectedPattern, allowedHeaders,
+						"Custom headers should be appended with exact formatting")
+				}
+
+				if tc.checkMaxAge {
+					assert.Equal(t, "86400", recorder.Header().Get("Access-Control-Max-Age"),
+						"Max-Age must be exactly '86400'")
+				}
+			})
+		}
+	})
+}

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"codechunking/internal/domain/entity"
-	"codechunking/internal/domain/normalization"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 
@@ -34,12 +33,6 @@ func (r *PostgreSQLRepositoryRepository) Save(ctx context.Context, repository *e
 		return ErrInvalidArgument
 	}
 
-	// Get normalized URL for duplicate detection
-	normalizedURL, err := normalization.NormalizeRepositoryURL(repository.URL().String())
-	if err != nil {
-		return WrapError(err, "normalize repository URL")
-	}
-
 	query := `
 		INSERT INTO codechunking.repositories (
 			id, url, normalized_url, name, description, default_branch, last_indexed_at, 
@@ -50,10 +43,10 @@ func (r *PostgreSQLRepositoryRepository) Save(ctx context.Context, repository *e
 		)`
 
 	qi := GetQueryInterface(ctx, r.pool)
-	_, err = qi.Exec(ctx, query,
+	_, err := qi.Exec(ctx, query,
 		repository.ID(),
-		repository.URL().String(),
-		normalizedURL,
+		repository.URL().Raw(),
+		repository.URL().Normalized(),
 		repository.Name(),
 		repository.Description(),
 		repository.DefaultBranch(),
@@ -293,12 +286,6 @@ func (r *PostgreSQLRepositoryRepository) Update(ctx context.Context, repository 
 		return ErrInvalidArgument
 	}
 
-	// Get normalized URL for duplicate detection
-	normalizedURL, err := normalization.NormalizeRepositoryURL(repository.URL().String())
-	if err != nil {
-		return WrapError(err, "normalize repository URL")
-	}
-
 	query := `
 		UPDATE codechunking.repositories 
 		SET url = $2, normalized_url = $3, name = $4, description = $5, default_branch = $6, 
@@ -309,8 +296,8 @@ func (r *PostgreSQLRepositoryRepository) Update(ctx context.Context, repository 
 	qi := GetQueryInterface(ctx, r.pool)
 	result, err := qi.Exec(ctx, query,
 		repository.ID(),
-		repository.URL().String(),
-		normalizedURL,
+		repository.URL().Raw(),
+		repository.URL().Normalized(),
 		repository.Name(),
 		repository.Description(),
 		repository.DefaultBranch(),
@@ -373,17 +360,11 @@ func (r *PostgreSQLRepositoryRepository) Exists(ctx context.Context, url valueob
 
 // ExistsByNormalizedURL checks if a repository with the given normalized URL exists
 func (r *PostgreSQLRepositoryRepository) ExistsByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (bool, error) {
-	// Get normalized URL for comparison
-	normalizedURL, err := normalization.NormalizeRepositoryURL(url.String())
-	if err != nil {
-		return false, WrapError(err, "normalize repository URL")
-	}
-
 	query := `SELECT EXISTS(SELECT 1 FROM codechunking.repositories WHERE normalized_url = $1 AND deleted_at IS NULL)`
 
 	qi := GetQueryInterface(ctx, r.pool)
 	var exists bool
-	err = qi.QueryRow(ctx, query, normalizedURL).Scan(&exists)
+	err := qi.QueryRow(ctx, query, url.Normalized()).Scan(&exists)
 	if err != nil {
 		return false, WrapError(err, "check repository exists by normalized URL")
 	}
@@ -393,12 +374,6 @@ func (r *PostgreSQLRepositoryRepository) ExistsByNormalizedURL(ctx context.Conte
 
 // FindByNormalizedURL finds a repository by its normalized URL
 func (r *PostgreSQLRepositoryRepository) FindByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error) {
-	// Get normalized URL for comparison
-	normalizedURL, err := normalization.NormalizeRepositoryURL(url.String())
-	if err != nil {
-		return nil, WrapError(err, "normalize repository URL")
-	}
-
 	query := `
 		SELECT id, url, name, description, default_branch, last_indexed_at, 
 			   last_commit_hash, total_files, total_chunks, status, 
@@ -407,7 +382,7 @@ func (r *PostgreSQLRepositoryRepository) FindByNormalizedURL(ctx context.Context
 		WHERE normalized_url = $1 AND deleted_at IS NULL`
 
 	qi := GetQueryInterface(ctx, r.pool)
-	row := qi.QueryRow(ctx, query, normalizedURL)
+	row := qi.QueryRow(ctx, query, url.Normalized())
 
 	var id uuid.UUID
 	var urlStr, name, statusStr string
@@ -417,7 +392,7 @@ func (r *PostgreSQLRepositoryRepository) FindByNormalizedURL(ctx context.Context
 	var createdAt, updatedAt time.Time
 	var deletedAt *time.Time
 
-	err = row.Scan(
+	err := row.Scan(
 		&id, &urlStr, &name, &description, &defaultBranch, &lastIndexedAt,
 		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
 		&createdAt, &updatedAt, &deletedAt,

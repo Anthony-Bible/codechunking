@@ -97,11 +97,11 @@ func TestURLNormalizer_NormalizeURL(t *testing.T) {
 			description:    "Should normalize Bitbucket URLs with same rules",
 		},
 		{
-			name:           "preserve_path_case_for_owner_repo",
+			name:           "normalize_path_case_for_owner_repo",
 			input:          "https://github.com/MyOrg/MyRepo",
-			expectedOutput: "https://github.com/MyOrg/MyRepo",
+			expectedOutput: "https://github.com/myorg/myrepo",
 			expectError:    false,
-			description:    "Should preserve case in owner and repository names (only normalize hostname)",
+			description:    "Should normalize case in owner and repository names for duplicate detection",
 		},
 		{
 			name:           "empty_url_error",

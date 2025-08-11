@@ -9,9 +9,15 @@ import (
 	"codechunking/internal/domain/normalization"
 )
 
-// RepositoryURL represents a validated Git repository URL
+// RepositoryURL represents a validated Git repository URL with dual storage.
+// It maintains both the original raw input URL and its normalized form to eliminate
+// redundant normalization operations while enabling efficient duplicate detection.
+//
+// The normalization happens once during creation and the results are cached,
+// providing significant performance benefits for operations that need normalized URLs.
 type RepositoryURL struct {
-	value string
+	raw        string // Original input URL as provided by user
+	normalized string // Normalized URL used for deduplication and storage
 }
 
 // URLValidator handles URL validation with configurable security policies
@@ -31,7 +37,11 @@ func newURLValidator() *URLValidator {
 	}
 }
 
-// NewRepositoryURL creates a new RepositoryURL after comprehensive validation
+// NewRepositoryURL creates a new RepositoryURL after comprehensive validation.
+// Performs normalization once during creation and caches both raw and normalized forms,
+// eliminating redundant normalization operations in subsequent method calls.
+// This provides significant performance benefits for applications that frequently
+// access normalized URLs or perform duplicate detection.
 func NewRepositoryURL(rawURL string) (RepositoryURL, error) {
 	validator := newURLValidator()
 	return validator.validateAndCreate(rawURL)
@@ -81,27 +91,19 @@ func (uv *URLValidator) validateAndCreate(rawURL string) (RepositoryURL, error) 
 		return RepositoryURL{}, err
 	}
 
-	return RepositoryURL{value: normalizedURL}, nil
+	return RepositoryURL{raw: rawURL, normalized: normalizedURL}, nil
 }
 
 // validateSchemeBeforeParsing validates URL scheme before parsing to catch malicious protocols
 func (uv *URLValidator) validateSchemeBeforeParsing(rawURL string) error {
 	// Check for malicious schemes early
-	maliciousSchemes := []string{
-		"javascript:", "data:", "file:", "ftp:", "mailto:", "tel:", "sms:",
-		"vbscript:", "about:", "chrome:", "chrome-extension:", "resource:",
-	}
-
-	lowercaseURL := strings.ToLower(rawURL)
-	for _, scheme := range maliciousSchemes {
-		if strings.HasPrefix(lowercaseURL, scheme) {
-			return fmt.Errorf("malicious protocol detected: %s", scheme[:len(scheme)-1])
-		}
+	if err := uv.checkMaliciousSchemes(rawURL); err != nil {
+		return err
 	}
 
 	// Ensure URL has a valid scheme format (must be http:// or https://)
-	if !strings.HasPrefix(lowercaseURL, "http://") && !strings.HasPrefix(lowercaseURL, "https://") {
-		return fmt.Errorf("URL must use http or https scheme")
+	if err := uv.validateHTTPScheme(rawURL); err != nil {
+		return err
 	}
 
 	return nil
@@ -233,7 +235,8 @@ func (uv *URLValidator) validateURLStructure(rawURL string, parsedURL *url.URL) 
 	return nil
 }
 
-// NewRepositoryURLWithConfig creates a RepositoryURL with custom security configuration
+// NewRepositoryURLWithConfig creates a RepositoryURL with custom security configuration.
+// Like NewRepositoryURL, it performs normalization once and caches the results for optimal performance.
 func NewRepositoryURLWithConfig(rawURL string, config *security.Config) (RepositoryURL, error) {
 	validator := &URLValidator{
 		config:             config,
@@ -243,32 +246,54 @@ func NewRepositoryURLWithConfig(rawURL string, config *security.Config) (Reposit
 	return validator.validateAndCreate(rawURL)
 }
 
-// ValidateRepositoryURL validates a repository URL without creating the value object
+// ValidateRepositoryURL validates a repository URL without creating the value object.
+// Use this when you only need validation without the performance benefits of caching.
 func ValidateRepositoryURL(rawURL string) error {
 	validator := newURLValidator()
 	_, err := validator.validateAndCreate(rawURL)
 	return err
 }
 
-// String returns the string representation of the repository URL
+// String returns the string representation of the repository URL.
+// Returns the normalized form to maintain backward compatibility with existing code
+// that expects a consistent, normalized representation.
 func (r RepositoryURL) String() string {
-	return r.value
+	return r.normalized
 }
 
-// Value returns the underlying string value
+// Value returns the underlying string value.
+// This is an alias for String() and returns the normalized form for consistency.
 func (r RepositoryURL) Value() string {
-	return r.value
+	return r.normalized
 }
 
-// Host returns the host of the repository URL
+// Raw returns the original raw input URL exactly as provided by the user.
+// This is useful for display purposes or when the original format needs to be preserved.
+// Performance note: This avoids re-normalization since the raw value is cached.
+func (r RepositoryURL) Raw() string {
+	return r.raw
+}
+
+// Normalized returns the normalized URL used for deduplication and storage.
+// This form has consistent casing, protocol, and removes redundant elements like .git suffix.
+// Performance note: This returns the cached normalized value, eliminating redundant computation.
+func (r RepositoryURL) Normalized() string {
+	return r.normalized
+}
+
+// Host returns the hostname of the repository URL (e.g., "github.com").
+// Uses the normalized URL for consistent results.
 func (r RepositoryURL) Host() string {
-	parsedURL, _ := url.Parse(r.value) // Safe to ignore error as URL was validated during creation
+	// Safe to ignore error as URL was validated during creation
+	parsedURL, _ := url.Parse(r.normalized)
 	return parsedURL.Host
 }
 
-// Owner returns the repository owner/organization name
+// Owner returns the repository owner/organization name (e.g., "golang" from "github.com/golang/go").
+// Uses the normalized URL for consistent parsing results.
 func (r RepositoryURL) Owner() string {
-	parsedURL, _ := url.Parse(r.value)
+	// Safe to ignore error as URL was validated during creation
+	parsedURL, _ := url.Parse(r.normalized)
 	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
 	if len(pathParts) >= 1 {
 		return pathParts[0]
@@ -276,9 +301,11 @@ func (r RepositoryURL) Owner() string {
 	return ""
 }
 
-// Name returns the repository name
+// Name returns the repository name (e.g., "go" from "github.com/golang/go").
+// Uses the normalized URL for consistent parsing results.
 func (r RepositoryURL) Name() string {
-	parsedURL, _ := url.Parse(r.value)
+	// Safe to ignore error as URL was validated during creation
+	parsedURL, _ := url.Parse(r.normalized)
 	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
 	if len(pathParts) >= 2 {
 		return pathParts[1]
@@ -286,7 +313,8 @@ func (r RepositoryURL) Name() string {
 	return ""
 }
 
-// FullName returns the full repository name (owner/name)
+// FullName returns the full repository name in "owner/name" format (e.g., "golang/go").
+// Returns empty string if either owner or name cannot be determined.
 func (r RepositoryURL) FullName() string {
 	owner := r.Owner()
 	name := r.Name()
@@ -296,14 +324,43 @@ func (r RepositoryURL) FullName() string {
 	return ""
 }
 
-// CloneURL returns the URL suitable for git clone operations
+// CloneURL returns the URL suitable for git clone operations.
+// Appends .git suffix to the normalized URL to ensure compatibility with git tooling.
 func (r RepositoryURL) CloneURL() string {
-	return r.value + ".git"
+	return r.normalized + ".git"
 }
 
-// Equal compares two RepositoryURL instances
+// Equal compares two RepositoryURL instances for equality.
+// Comparison is based on normalized URLs to ensure that functionally identical
+// URLs (e.g., with/without .git suffix) are considered equal.
+// Performance note: Uses cached normalized values for efficient comparison.
 func (r RepositoryURL) Equal(other RepositoryURL) bool {
-	return r.value == other.value
+	return r.normalized == other.normalized
+}
+
+// checkMaliciousSchemes checks for dangerous URL schemes
+func (uv *URLValidator) checkMaliciousSchemes(rawURL string) error {
+	maliciousSchemes := []string{
+		"javascript:", "data:", "file:", "ftp:", "mailto:", "tel:", "sms:",
+		"vbscript:", "about:", "chrome:", "chrome-extension:", "resource:",
+	}
+
+	lowercaseURL := strings.ToLower(rawURL)
+	for _, scheme := range maliciousSchemes {
+		if strings.HasPrefix(lowercaseURL, scheme) {
+			return fmt.Errorf("malicious protocol detected: %s", scheme[:len(scheme)-1])
+		}
+	}
+	return nil
+}
+
+// validateHTTPScheme ensures URL uses only HTTP/HTTPS schemes
+func (uv *URLValidator) validateHTTPScheme(rawURL string) error {
+	lowercaseURL := strings.ToLower(rawURL)
+	if !strings.HasPrefix(lowercaseURL, "http://") && !strings.HasPrefix(lowercaseURL, "https://") {
+		return fmt.Errorf("URL must use http or https scheme")
+	}
+	return nil
 }
 
 // NormalizeRepositoryURL is now available in the normalization package

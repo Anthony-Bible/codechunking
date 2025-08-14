@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// MockMessagePublisherWithHealthMonitoring provides complete NATS health monitoring capabilities for testing
+// MockMessagePublisherWithHealthMonitoring provides complete NATS health monitoring capabilities for testing.
 type MockMessagePublisherWithHealthMonitoring struct {
 	mu sync.RWMutex
 
@@ -36,7 +36,7 @@ type PublishIndexingJobCall struct {
 	Timestamp     time.Time
 }
 
-// NewMockMessagePublisherWithHealthMonitoring creates a new mock with health monitoring
+// NewMockMessagePublisherWithHealthMonitoring creates a new mock with health monitoring.
 func NewMockMessagePublisherWithHealthMonitoring() *MockMessagePublisherWithHealthMonitoring {
 	return &MockMessagePublisherWithHealthMonitoring{
 		connectionHealth: outbound.MessagePublisherHealthStatus{
@@ -56,8 +56,12 @@ func NewMockMessagePublisherWithHealthMonitoring() *MockMessagePublisherWithHeal
 	}
 }
 
-// MessagePublisher interface implementation
-func (m *MockMessagePublisherWithHealthMonitoring) PublishIndexingJob(ctx context.Context, repositoryID uuid.UUID, repositoryURL string) error {
+// MessagePublisher interface implementation.
+func (m *MockMessagePublisherWithHealthMonitoring) PublishIndexingJob(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	repositoryURL string,
+) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -89,7 +93,7 @@ func (m *MockMessagePublisherWithHealthMonitoring) PublishIndexingJob(ctx contex
 	return nil
 }
 
-// MessagePublisherHealth interface implementation
+// MessagePublisherHealth interface implementation.
 func (m *MockMessagePublisherWithHealthMonitoring) GetConnectionHealth() outbound.MessagePublisherHealthStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -139,7 +143,7 @@ func (m *MockMessagePublisherWithHealthMonitoring) GetMessageMetrics() outbound.
 	return m.messageMetrics
 }
 
-// Test helper methods
+// Test helper methods.
 func (m *MockMessagePublisherWithHealthMonitoring) SetConnectionHealth(health outbound.MessagePublisherHealthStatus) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -202,7 +206,7 @@ func (m *MockMessagePublisherWithHealthMonitoring) Reset() {
 	}
 }
 
-// PublishError represents a publishing error for testing
+// PublishError represents a publishing error for testing.
 type PublishError struct {
 	message string
 }
@@ -211,7 +215,7 @@ func (e *PublishError) Error() string {
 	return e.message
 }
 
-// NATSHealthResponseBuilder helps create complex NATS health responses for testing
+// NATSHealthResponseBuilder helps create complex NATS health responses for testing.
 type NATSHealthResponseBuilder struct {
 	natsHealth dto.NATSHealthDetails
 }
@@ -265,7 +269,10 @@ func (b *NATSHealthResponseBuilder) WithCircuitBreaker(state string) *NATSHealth
 	return b
 }
 
-func (b *NATSHealthResponseBuilder) WithMessageMetrics(published, failed int64, avgLatency string) *NATSHealthResponseBuilder {
+func (b *NATSHealthResponseBuilder) WithMessageMetrics(
+	published, failed int64,
+	avgLatency string,
+) *NATSHealthResponseBuilder {
 	b.natsHealth.MessageMetrics = dto.NATSMessageMetrics{
 		PublishedCount: published,
 		FailedCount:    failed,
@@ -300,7 +307,7 @@ func (b *NATSHealthResponseBuilder) Build() dto.NATSHealthDetails {
 	return b.natsHealth
 }
 
-// Enhanced HealthResponseBuilder that supports NATS details
+// Enhanced HealthResponseBuilder that supports NATS details.
 type EnhancedHealthResponseBuilder struct {
 	response dto.HealthResponse
 }
@@ -325,7 +332,10 @@ func (b *EnhancedHealthResponseBuilder) WithVersion(version string) *EnhancedHea
 	return b
 }
 
-func (b *EnhancedHealthResponseBuilder) WithNATSHealth(natsHealth dto.NATSHealthDetails, status, message, responseTime string) *EnhancedHealthResponseBuilder {
+func (b *EnhancedHealthResponseBuilder) WithNATSHealth(
+	natsHealth dto.NATSHealthDetails,
+	status, message, responseTime string,
+) *EnhancedHealthResponseBuilder {
 	if b.response.Dependencies == nil {
 		b.response.Dependencies = make(map[string]dto.DependencyStatus)
 	}
@@ -341,7 +351,9 @@ func (b *EnhancedHealthResponseBuilder) WithNATSHealth(natsHealth dto.NATSHealth
 	return b
 }
 
-func (b *EnhancedHealthResponseBuilder) WithDatabaseHealth(status, message, responseTime string) *EnhancedHealthResponseBuilder {
+func (b *EnhancedHealthResponseBuilder) WithDatabaseHealth(
+	status, message, responseTime string,
+) *EnhancedHealthResponseBuilder {
 	if b.response.Dependencies == nil {
 		b.response.Dependencies = make(map[string]dto.DependencyStatus)
 	}
@@ -358,7 +370,7 @@ func (b *EnhancedHealthResponseBuilder) BuildEnhanced() dto.HealthResponse {
 	return b.response
 }
 
-// Test scenario builders for common NATS health scenarios
+// Test scenario builders for common NATS health scenarios.
 func CreateHealthyNATSScenario() dto.HealthResponse {
 	natsHealth := NewNATSHealthResponseBuilder().
 		WithConnection(true).

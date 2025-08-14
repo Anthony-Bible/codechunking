@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"codechunking/internal/config"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -15,7 +17,7 @@ var (
 	cfg     *config.Config
 )
 
-// rootCmd represents the base command when called without any subcommands
+// rootCmd represents the base command when called without any subcommands.
 var rootCmd = &cobra.Command{
 	Use:   "codechunking",
 	Short: "A code chunking and retrieval system",
@@ -83,7 +85,8 @@ func initConfig() {
 
 	// Read configuration
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if errors.As(err, &configFileNotFoundError) {
 			fmt.Fprintf(os.Stderr, "Error reading config file: %v\n", err)
 		}
 		// Config file not found; use defaults and environment
@@ -163,7 +166,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("log.format", "json")
 }
 
-// GetConfig returns the loaded configuration
+// GetConfig returns the loaded configuration.
 func GetConfig() *config.Config {
 	return cfg
 }

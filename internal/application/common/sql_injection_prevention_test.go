@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestValidateSortParameter tests SQL injection prevention in sort parameters
+// TestValidateSortParameter tests SQL injection prevention in sort parameters.
 func TestValidateSortParameter(t *testing.T) {
 	// These tests should FAIL initially - SQL injection prevention for sort parameters is not implemented
 	sqlInjectionTests := []struct {
@@ -147,7 +147,7 @@ func TestValidateSortParameter(t *testing.T) {
 	}
 }
 
-// TestValidateStatusParameter tests SQL injection prevention in status parameters
+// TestValidateStatusParameter tests SQL injection prevention in status parameters.
 func TestValidateStatusParameter(t *testing.T) {
 	// These tests should FAIL initially - status parameter validation is not comprehensive enough
 	statusTests := []struct {
@@ -235,7 +235,7 @@ func TestValidateStatusParameter(t *testing.T) {
 	}
 }
 
-// TestValidatePaginationParameters tests SQL injection prevention in pagination
+// TestValidatePaginationParameters tests SQL injection prevention in pagination.
 func TestValidatePaginationParameters(t *testing.T) {
 	// These tests should FAIL initially - pagination parameter injection prevention is not implemented
 	paginationTests := []struct {
@@ -309,7 +309,12 @@ func TestValidatePaginationParameters(t *testing.T) {
 					assert.Contains(t, limitErr.Error(), tt.errorContains, "Limit error should indicate security issue")
 				}
 				if offsetErr != nil && tt.errorContains != "" {
-					assert.Contains(t, offsetErr.Error(), tt.errorContains, "Offset error should indicate security issue")
+					assert.Contains(
+						t,
+						offsetErr.Error(),
+						tt.errorContains,
+						"Offset error should indicate security issue",
+					)
 				}
 			} else {
 				require.NoError(t, limitErr, "Valid limit should not be rejected")
@@ -319,7 +324,7 @@ func TestValidatePaginationParameters(t *testing.T) {
 	}
 }
 
-// TestValidateQueryInjection tests comprehensive query injection prevention
+// TestValidateQueryInjection tests comprehensive query injection prevention.
 func TestValidateQueryInjection(t *testing.T) {
 	// These tests should FAIL initially - comprehensive query injection prevention is not implemented
 	queryTests := []struct {

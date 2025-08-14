@@ -17,7 +17,7 @@ import (
 )
 
 // TestApplicationServiceInterfaces_MustExist verifies that all required service interfaces exist
-// These tests will fail until the actual service implementations are created
+// These tests will fail until the actual service implementations are created.
 func TestApplicationServiceInterfaces_MustExist(t *testing.T) {
 	t.Run("CreateRepositoryService interface must exist", func(t *testing.T) {
 		// This test will fail until NewCreateRepositoryService function exists
@@ -82,7 +82,7 @@ func TestApplicationServiceInterfaces_MustExist(t *testing.T) {
 	})
 }
 
-// TestRepositoryServiceBehaviorSpecification defines the expected behavior of repository services
+// TestRepositoryServiceBehaviorSpecification defines the expected behavior of repository services.
 func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 	t.Run("CreateRepositoryService behavior specification", func(t *testing.T) {
 		// Test case: Auto-generate name from URL if not provided
@@ -96,9 +96,11 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 				// Name is empty - should be generated
 			}
 
-			mockRepo.On("Exists", context.Background(), mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
+			mockRepo.On("Exists", context.Background(), mock.AnythingOfType("valueobject.RepositoryURL")).
+				Return(false, nil)
 			mockRepo.On("Save", context.Background(), mock.AnythingOfType("*entity.Repository")).Return(nil)
-			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").Return(nil)
+			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").
+				Return(nil)
 
 			response, err := service.CreateRepository(context.Background(), request)
 
@@ -117,9 +119,11 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 				Name: "golang/go",
 			}
 
-			mockRepo.On("Exists", context.Background(), mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
+			mockRepo.On("Exists", context.Background(), mock.AnythingOfType("valueobject.RepositoryURL")).
+				Return(false, nil)
 			mockRepo.On("Save", context.Background(), mock.AnythingOfType("*entity.Repository")).Return(nil)
-			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").Return(nil)
+			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").
+				Return(nil)
 
 			response, err := service.CreateRepository(context.Background(), request)
 
@@ -287,12 +291,14 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 			)
 
 			mockRepo.On("FindByID", context.Background(), repositoryID).Return(repository, nil)
-			mockRepo.On("Update", context.Background(), mock.AnythingOfType("*entity.Repository")).Run(func(args mock.Arguments) {
-				// Verify that the repository was archived
-				repo := args.Get(1).(*entity.Repository)
-				assert.True(t, repo.IsDeleted())
-				assert.Equal(t, valueobject.RepositoryStatusArchived, repo.Status())
-			}).Return(nil)
+			mockRepo.On("Update", context.Background(), mock.AnythingOfType("*entity.Repository")).
+				Run(func(args mock.Arguments) {
+					// Verify that the repository was archived
+					repo := args.Get(1).(*entity.Repository)
+					assert.True(t, repo.IsDeleted())
+					assert.Equal(t, valueobject.RepositoryStatusArchived, repo.Status())
+				}).
+				Return(nil)
 
 			err := service.DeleteRepository(context.Background(), repositoryID)
 			assert.NoError(t, err)
@@ -335,7 +341,8 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 			}
 
 			// Mock return: total=35, so 20+10=30 < 35, HasMore should be true
-			mockRepo.On("FindAll", context.Background(), mock.AnythingOfType("outbound.RepositoryFilters")).Return([]*entity.Repository{}, 35, nil)
+			mockRepo.On("FindAll", context.Background(), mock.AnythingOfType("outbound.RepositoryFilters")).
+				Return([]*entity.Repository{}, 35, nil)
 
 			response, err := service.ListRepositories(context.Background(), query)
 			require.NoError(t, err)
@@ -345,7 +352,7 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 	})
 }
 
-// TestIndexingJobServiceBehaviorSpecification defines the expected behavior of indexing job services
+// TestIndexingJobServiceBehaviorSpecification defines the expected behavior of indexing job services.
 func TestIndexingJobServiceBehaviorSpecification(t *testing.T) {
 	t.Run("CreateIndexingJobService behavior specification", func(t *testing.T) {
 		// Test case: Business rule - repository must be in eligible state
@@ -578,7 +585,7 @@ func TestIndexingJobServiceBehaviorSpecification(t *testing.T) {
 	})
 }
 
-// TestServiceErrorHandlingSpecification defines expected error handling behavior
+// TestServiceErrorHandlingSpecification defines expected error handling behavior.
 func TestServiceErrorHandlingSpecification(t *testing.T) {
 	t.Run("should wrap repository layer errors with context", func(t *testing.T) {
 		mockRepo := new(MockRepositoryRepository)

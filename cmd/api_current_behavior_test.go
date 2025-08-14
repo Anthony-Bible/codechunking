@@ -9,7 +9,7 @@ import (
 )
 
 // TestServiceFactory_shouldEnableDefaultMiddleware_CurrentBehavior tests the current
-// implementation that always returns true, demonstrating the need for refactoring
+// implementation that always returns true, demonstrating the need for refactoring.
 func TestServiceFactory_shouldEnableDefaultMiddleware_CurrentBehavior(t *testing.T) {
 	// Create minimal config
 	cfg := &config.Config{

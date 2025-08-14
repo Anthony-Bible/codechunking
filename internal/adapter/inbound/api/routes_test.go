@@ -95,9 +95,9 @@ func TestRouteRegistry_RegisterRoutes(t *testing.T) {
 
 				// Should not contain Gorilla mux specific patterns
 				for _, pattern := range patterns {
-					assert.False(t, strings.Contains(pattern, "{id:[0-9]+}"),
+					assert.NotContains(t, pattern, "{id:[0-9]+}",
 						"Should not use Gorilla mux regex patterns: %s", pattern)
-					assert.False(t, strings.Contains(pattern, "{id:.*}"),
+					assert.NotContains(t, pattern, "{id:.*}",
 						"Should not use Gorilla mux wildcard patterns: %s", pattern)
 				}
 			},
@@ -738,7 +738,11 @@ func TestRouteValidation_ErrorMessageConstants(t *testing.T) {
 				name:             "invalid_method_with_pattern",
 				pattern:          "INVALID /health",
 				expectedTemplate: "invalid HTTP method '%s' in pattern '%s': %s",
-				expectedParams:   []string{"INVALID", "INVALID /health", "must be one of GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS"},
+				expectedParams: []string{
+					"INVALID",
+					"INVALID /health",
+					"must be one of GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
+				},
 			},
 			{
 				name:             "path_without_leading_slash",

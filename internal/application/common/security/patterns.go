@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-// Patterns holds all pre-compiled security validation patterns
+// Patterns holds all pre-compiled security validation patterns.
 type Patterns struct {
 	// Git repository patterns
 	GitURL *regexp.Regexp
@@ -38,7 +38,7 @@ var (
 	patternsOnce sync.Once
 )
 
-// GetPatterns returns the singleton instance of compiled patterns
+// GetPatterns returns the singleton instance of compiled patterns.
 func GetPatterns() *Patterns {
 	patternsOnce.Do(func() {
 		patterns = compilePatterns()
@@ -46,7 +46,7 @@ func GetPatterns() *Patterns {
 	return patterns
 }
 
-// compilePatterns compiles all security patterns once at startup
+// compilePatterns compiles all security patterns once at startup.
 func compilePatterns() *Patterns {
 	p := &Patterns{}
 
@@ -78,7 +78,7 @@ func compilePatterns() *Patterns {
 	return p
 }
 
-// StringPatterns holds commonly used string patterns for efficient matching
+// StringPatterns holds commonly used string patterns for efficient matching.
 var StringPatterns = struct {
 	// XSS string patterns
 	XSSPatterns []string
@@ -135,7 +135,7 @@ var StringPatterns = struct {
 	},
 }
 
-// HTML entities that could be used for XSS
+// HTML entities that could be used for XSS.
 var HTMLEntities = map[string]string{
 	"&lt;":   "<",
 	"&gt;":   ">",
@@ -148,7 +148,7 @@ var HTMLEntities = map[string]string{
 	"&#34;":  "\"",
 }
 
-// URLEncodings maps common attack characters to their URL-encoded forms
+// URLEncodings maps common attack characters to their URL-encoded forms.
 var URLEncodings = map[string][]string{
 	"<":  {"%3C", "%3c"},
 	">":  {"%3E", "%3e"},
@@ -160,12 +160,12 @@ var URLEncodings = map[string][]string{
 	" ":  {"%20", "+"},
 }
 
-// IsPatternCompiled checks if patterns have been compiled
+// IsPatternCompiled checks if patterns have been compiled.
 func IsPatternCompiled() bool {
 	return patterns != nil
 }
 
-// ValidatePatterns ensures all patterns are properly compiled
+// ValidatePatterns ensures all patterns are properly compiled.
 func ValidatePatterns() error {
 	p := GetPatterns()
 
@@ -197,7 +197,7 @@ func ValidatePatterns() error {
 	return nil
 }
 
-// PatternError represents an error with a security pattern
+// PatternError represents an error with a security pattern.
 type PatternError struct {
 	Pattern string
 	Message string

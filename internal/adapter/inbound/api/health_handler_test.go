@@ -368,7 +368,7 @@ func TestHealthHandler_Integration(t *testing.T) {
 		assert.Len(t, mockHealthService.GetHealthCalls, 1)
 
 		// Verify error handler was not called
-		assert.Len(t, mockErrorHandler.HandleServiceErrorCalls, 0)
-		assert.Len(t, mockErrorHandler.HandleValidationErrorCalls, 0)
+		assert.Empty(t, mockErrorHandler.HandleServiceErrorCalls)
+		assert.Empty(t, mockErrorHandler.HandleValidationErrorCalls)
 	})
 }

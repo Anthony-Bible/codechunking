@@ -69,8 +69,13 @@ func TestNewSecurityHeadersMiddleware_DelegatestoUnified(t *testing.T) {
 			for _, header := range securityHeaders {
 				legacyValue := legacyRecorder.Header().Get(header)
 				unifiedValue := unifiedRecorder.Header().Get(header)
-				assert.Equal(t, unifiedValue, legacyValue,
-					"Header %s should be identical between legacy and unified middleware (delegation should ensure this)", header)
+				assert.Equal(
+					t,
+					unifiedValue,
+					legacyValue,
+					"Header %s should be identical between legacy and unified middleware (delegation should ensure this)",
+					header,
+				)
 			}
 
 			// HSTS header handling
@@ -123,8 +128,13 @@ func TestNewSecurityHeadersMiddleware_NoHardcodedHeaders(t *testing.T) {
 		// These assertions verify that legacy middleware uses unified defaults
 		for headerName, expectedValue := range expectedHeaders {
 			actualValue := recorder.Header().Get(headerName)
-			assert.Equal(t, expectedValue, actualValue,
-				"Legacy middleware should delegate to unified implementation with default config for header: %s", headerName)
+			assert.Equal(
+				t,
+				expectedValue,
+				actualValue,
+				"Legacy middleware should delegate to unified implementation with default config for header: %s",
+				headerName,
+			)
 		}
 
 		// HSTS should be present for HTTPS requests

@@ -573,7 +573,11 @@ func TestHealthServiceAdapter_NATSVersionIncompatibility(t *testing.T) {
 		natsDetails := natsStatus.Details["nats_health"].(dto.NATSHealthDetails)
 		assert.Contains(t, strings.ToLower(natsDetails.LastError), "protocol version")
 		assert.Equal(t, int64(0), natsDetails.MessageMetrics.PublishedCount) // Should be zeroed due to incompatibility
-		assert.Equal(t, int64(100), natsDetails.MessageMetrics.FailedCount)  // Should be adjusted due to incompatibility
+		assert.Equal(
+			t,
+			int64(100),
+			natsDetails.MessageMetrics.FailedCount,
+		) // Should be adjusted due to incompatibility
 	})
 }
 

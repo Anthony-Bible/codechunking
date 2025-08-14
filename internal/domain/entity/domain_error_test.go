@@ -48,10 +48,13 @@ func TestNewDomainError(t *testing.T) {
 			expected: &DomainError{message: "Unicode error: 文字化け", code: "UNICODE_ERROR"},
 		},
 		{
-			name:     "Very long message",
-			message:  "This is a very long error message that contains a lot of text to test how the domain error handles lengthy messages without any issues",
-			code:     "LONG_MESSAGE",
-			expected: &DomainError{message: "This is a very long error message that contains a lot of text to test how the domain error handles lengthy messages without any issues", code: "LONG_MESSAGE"},
+			name:    "Very long message",
+			message: "This is a very long error message that contains a lot of text to test how the domain error handles lengthy messages without any issues",
+			code:    "LONG_MESSAGE",
+			expected: &DomainError{
+				message: "This is a very long error message that contains a lot of text to test how the domain error handles lengthy messages without any issues",
+				code:    "LONG_MESSAGE",
+			},
 		},
 		{
 			name:     "Newlines in message",
@@ -267,7 +270,7 @@ func TestDomainError_ImmutabilityAfterCreation(t *testing.T) {
 	err := NewDomainError(originalMessage, originalCode)
 
 	// Access the values multiple times
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if err.Error() != originalMessage {
 			t.Errorf("Error message changed after %d accesses", i+1)
 		}
@@ -330,9 +333,9 @@ func TestDomainError_EdgeCases(t *testing.T) {
 		// Test concurrent access (should be safe as it's read-only)
 		done := make(chan bool, 10)
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			go func() {
-				for j := 0; j < 100; j++ {
+				for range 100 {
 					_ = err.Error()
 					_ = err.Message()
 					_ = err.Code()
@@ -341,7 +344,7 @@ func TestDomainError_EdgeCases(t *testing.T) {
 			}()
 		}
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			<-done
 		}
 

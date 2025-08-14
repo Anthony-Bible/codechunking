@@ -2,7 +2,7 @@ package dto
 
 import "time"
 
-// ErrorResponse represents a standardized error response
+// ErrorResponse represents a standardized error response.
 type ErrorResponse struct {
 	Error     string      `json:"error"`
 	Message   string      `json:"message"`
@@ -10,7 +10,7 @@ type ErrorResponse struct {
 	Timestamp time.Time   `json:"timestamp,omitempty"`
 }
 
-// ErrorCode represents standard error codes
+// ErrorCode represents standard error codes.
 type ErrorCode string
 
 const (
@@ -24,7 +24,7 @@ const (
 	ErrorCodeServiceUnavailable   ErrorCode = "SERVICE_UNAVAILABLE"
 )
 
-// NewErrorResponse creates a new error response
+// NewErrorResponse creates a new error response.
 func NewErrorResponse(code ErrorCode, message string, details interface{}) ErrorResponse {
 	return ErrorResponse{
 		Error:     string(code),
@@ -34,14 +34,14 @@ func NewErrorResponse(code ErrorCode, message string, details interface{}) Error
 	}
 }
 
-// ValidationError represents a validation error with field details
+// ValidationError represents a validation error with field details.
 type ValidationError struct {
 	Field   string `json:"field"`
 	Message string `json:"message"`
 	Value   string `json:"value,omitempty"`
 }
 
-// ValidationErrorDetails represents multiple validation errors
+// ValidationErrorDetails represents multiple validation errors.
 type ValidationErrorDetails struct {
 	Errors []ValidationError `json:"errors"`
 }

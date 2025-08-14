@@ -186,7 +186,7 @@ func TestNATSMessagePublisher_Integration_MessageFlow(t *testing.T) {
 		// 3. Message ordering is preserved
 		// 4. No messages are lost
 
-		assert.Equal(t, len(testMessages), 3) // Placeholder verification
+		assert.Equal(t, 3, len(testMessages)) // Placeholder verification
 	})
 
 	t.Run("message persistence across reconnections", func(t *testing.T) {
@@ -247,7 +247,7 @@ func TestNATSMessagePublisher_Integration_Performance(t *testing.T) {
 		// Publish many messages concurrently
 		errChan := make(chan error, numMessages)
 
-		for i := 0; i < numMessages; i++ {
+		for i := range numMessages {
 			go func(index int) {
 				repositoryID := uuid.New()
 				repositoryURL := fmt.Sprintf("https://github.com/perf/repo%d.git", index)
@@ -259,7 +259,7 @@ func TestNATSMessagePublisher_Integration_Performance(t *testing.T) {
 
 		// Collect results
 		successCount := 0
-		for i := 0; i < numMessages; i++ {
+		for i := range numMessages {
 			err := <-errChan
 			if err == nil {
 				successCount++

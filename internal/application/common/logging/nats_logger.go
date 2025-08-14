@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// NATS-specific event structures
+// NATS-specific event structures.
 type NATSConnectionEvent struct {
 	Type         string // CONNECTED, DISCONNECTED, RECONNECTING, CONNECTION_FAILED
 	ServerURL    string
@@ -81,7 +81,7 @@ type NATSPerformanceMetrics struct {
 	TimeWindow      time.Duration
 }
 
-// NATSApplicationLogger extends ApplicationLogger with NATS operations
+// NATSApplicationLogger extends ApplicationLogger with NATS operations.
 type NATSApplicationLogger interface {
 	ApplicationLogger
 	LogNATSConnectionEvent(ctx context.Context, event NATSConnectionEvent)
@@ -91,19 +91,19 @@ type NATSApplicationLogger interface {
 	LogNATSPerformanceMetrics(ctx context.Context, metrics NATSPerformanceMetrics)
 }
 
-// NATS logger implementation using composition
+// NATS logger implementation using composition.
 type natsApplicationLogger struct {
 	ApplicationLogger
 }
 
-// NewNATSApplicationLogger creates a NATS-enabled application logger
+// NewNATSApplicationLogger creates a NATS-enabled application logger.
 func NewNATSApplicationLogger(base ApplicationLogger) NATSApplicationLogger {
 	return &natsApplicationLogger{
 		ApplicationLogger: base,
 	}
 }
 
-// LogNATSConnectionEvent logs NATS connection events
+// LogNATSConnectionEvent logs NATS connection events.
 func (n *natsApplicationLogger) LogNATSConnectionEvent(ctx context.Context, event NATSConnectionEvent) {
 	fields := Fields{
 		"event_type":    event.Type,
@@ -176,7 +176,7 @@ func (n *natsApplicationLogger) LogNATSConnectionEvent(ctx context.Context, even
 	}
 }
 
-// LogNATSPublishEvent logs NATS message publishing events
+// LogNATSPublishEvent logs NATS message publishing events.
 func (n *natsApplicationLogger) LogNATSPublishEvent(ctx context.Context, event NATSPublishEvent) {
 	fields := Fields{
 		"subject":      event.Subject,
@@ -212,7 +212,7 @@ func (n *natsApplicationLogger) LogNATSPublishEvent(ctx context.Context, event N
 	n.logNATSEntry(ctx, level, message, operation, fields, event.Error)
 }
 
-// LogNATSConsumeEvent logs NATS message consumption events
+// LogNATSConsumeEvent logs NATS message consumption events.
 func (n *natsApplicationLogger) LogNATSConsumeEvent(ctx context.Context, event NATSConsumeEvent) {
 	fields := Fields{
 		"subject":          event.Subject,
@@ -251,7 +251,7 @@ func (n *natsApplicationLogger) LogNATSConsumeEvent(ctx context.Context, event N
 	n.logNATSEntry(ctx, level, message, operation, fields, event.Error)
 }
 
-// LogJetStreamEvent logs JetStream-specific operations
+// LogJetStreamEvent logs JetStream-specific operations.
 func (n *natsApplicationLogger) LogJetStreamEvent(ctx context.Context, event JetStreamEvent) {
 	fields := Fields{
 		"js_operation": event.Operation,
@@ -292,7 +292,7 @@ func (n *natsApplicationLogger) LogJetStreamEvent(ctx context.Context, event Jet
 	n.logNATSEntry(ctx, level, message, operation, fields, event.Error)
 }
 
-// LogNATSPerformanceMetrics logs NATS performance metrics
+// LogNATSPerformanceMetrics logs NATS performance metrics.
 func (n *natsApplicationLogger) LogNATSPerformanceMetrics(ctx context.Context, metrics NATSPerformanceMetrics) {
 	fields := Fields{
 		"publish_rate":     metrics.PublishRate,
@@ -316,8 +316,13 @@ func (n *natsApplicationLogger) LogNATSPerformanceMetrics(ctx context.Context, m
 	n.logNATSEntry(ctx, level, message, operation, fields, nil)
 }
 
-// Helper function to create NATS log entries
-func (n *natsApplicationLogger) logNATSEntry(ctx context.Context, level, message, operation string, fields Fields, err error) {
+// Helper function to create NATS log entries.
+func (n *natsApplicationLogger) logNATSEntry(
+	ctx context.Context,
+	level, message, operation string,
+	fields Fields,
+	err error,
+) {
 	if appLogger, ok := n.ApplicationLogger.(*applicationLoggerImpl); ok {
 		correlationID := getOrGenerateCorrelationID(ctx)
 		entry := LogEntry{

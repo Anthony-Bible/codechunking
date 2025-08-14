@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestStructuredLoggingMiddleware_RequestLogging tests comprehensive HTTP request logging
+// TestStructuredLoggingMiddleware_RequestLogging tests comprehensive HTTP request logging.
 func TestStructuredLoggingMiddleware_RequestLogging(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -40,7 +40,16 @@ func TestStructuredLoggingMiddleware_RequestLogging(t *testing.T) {
 				"User-Agent":    "TestClient/1.0",
 				"Authorization": "Bearer token123",
 			},
-			expectedFields: []string{"method", "path", "query", "status", "duration", "user_agent", "client_ip", "correlation_id"},
+			expectedFields: []string{
+				"method",
+				"path",
+				"query",
+				"status",
+				"duration",
+				"user_agent",
+				"client_ip",
+				"correlation_id",
+			},
 		},
 		{
 			name:           "POST request with body",
@@ -53,7 +62,15 @@ func TestStructuredLoggingMiddleware_RequestLogging(t *testing.T) {
 				"Content-Type": "application/json",
 				"User-Agent":   "API-Client/2.0",
 			},
-			expectedFields: []string{"method", "path", "status", "duration", "request_size", "response_size", "content_type"},
+			expectedFields: []string{
+				"method",
+				"path",
+				"status",
+				"duration",
+				"request_size",
+				"response_size",
+				"content_type",
+			},
 		},
 		{
 			name:           "ERROR response",
@@ -151,7 +168,7 @@ func TestStructuredLoggingMiddleware_RequestLogging(t *testing.T) {
 	}
 }
 
-// TestStructuredLoggingMiddleware_CorrelationIDHandling tests correlation ID generation and propagation
+// TestStructuredLoggingMiddleware_CorrelationIDHandling tests correlation ID generation and propagation.
 func TestStructuredLoggingMiddleware_CorrelationIDHandling(t *testing.T) {
 	tests := []struct {
 		name                  string
@@ -199,7 +216,7 @@ func TestStructuredLoggingMiddleware_CorrelationIDHandling(t *testing.T) {
 			middleware := NewStructuredLoggingMiddleware(config)
 			wrappedHandler := middleware(handler)
 
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			if tt.incomingCorrelationID != "" {
 				req.Header.Set("X-Correlation-ID", tt.incomingCorrelationID)
 			}
@@ -218,8 +235,14 @@ func TestStructuredLoggingMiddleware_CorrelationIDHandling(t *testing.T) {
 			if tt.expectNewID {
 				assert.NotEqual(t, tt.incomingCorrelationID, responseCorrelationID)
 				// Check if correlation ID matches UUID format (8-4-4-4-12 hex digits)
-				uuidPattern := regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-				assert.True(t, uuidPattern.MatchString(responseCorrelationID), "Generated correlation ID should be valid UUID")
+				uuidPattern := regexp.MustCompile(
+					`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`,
+				)
+				assert.True(
+					t,
+					uuidPattern.MatchString(responseCorrelationID),
+					"Generated correlation ID should be valid UUID",
+				)
 			}
 
 			// Verify log entry contains correct correlation ID
@@ -233,7 +256,7 @@ func TestStructuredLoggingMiddleware_CorrelationIDHandling(t *testing.T) {
 	}
 }
 
-// TestStructuredLoggingMiddleware_ErrorHandling tests error logging and handling
+// TestStructuredLoggingMiddleware_ErrorHandling tests error logging and handling.
 func TestStructuredLoggingMiddleware_ErrorHandling(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -307,7 +330,7 @@ func TestStructuredLoggingMiddleware_ErrorHandling(t *testing.T) {
 			middleware := NewStructuredLoggingMiddleware(config)
 			wrappedHandler := middleware(handler)
 
-			req := httptest.NewRequest("POST", "/test", strings.NewReader(`{"test": "data"}`))
+			req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(`{"test": "data"}`))
 			recorder := httptest.NewRecorder()
 
 			// Execute request (should not panic even if handler panics)
@@ -343,7 +366,7 @@ func TestStructuredLoggingMiddleware_ErrorHandling(t *testing.T) {
 	}
 }
 
-// TestStructuredLoggingMiddleware_PerformanceLogging tests performance metrics logging
+// TestStructuredLoggingMiddleware_PerformanceLogging tests performance metrics logging.
 func TestStructuredLoggingMiddleware_PerformanceLogging(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -404,7 +427,7 @@ func TestStructuredLoggingMiddleware_PerformanceLogging(t *testing.T) {
 			wrappedHandler := middleware(handler)
 
 			requestBody := strings.Repeat("x", tt.requestSize)
-			req := httptest.NewRequest("POST", "/test", strings.NewReader(requestBody))
+			req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(requestBody))
 			req.Header.Set("Content-Type", "application/json")
 
 			recorder := httptest.NewRecorder()
@@ -450,7 +473,7 @@ func TestStructuredLoggingMiddleware_PerformanceLogging(t *testing.T) {
 	}
 }
 
-// TestStructuredLoggingMiddleware_SecurityLogging tests security-related logging
+// TestStructuredLoggingMiddleware_SecurityLogging tests security-related logging.
 func TestStructuredLoggingMiddleware_SecurityLogging(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -521,7 +544,7 @@ func TestStructuredLoggingMiddleware_SecurityLogging(t *testing.T) {
 			if tt.requestBody != "" {
 				body = strings.NewReader(tt.requestBody)
 			}
-			req := httptest.NewRequest("POST", "/api/repositories", body)
+			req := httptest.NewRequest(http.MethodPost, "/api/repositories", body)
 
 			for key, value := range tt.headers {
 				req.Header.Set(key, value)
@@ -560,7 +583,7 @@ func TestStructuredLoggingMiddleware_SecurityLogging(t *testing.T) {
 	}
 }
 
-// TestStructuredLoggingMiddleware_FilteringAndSampling tests log filtering and sampling
+// TestStructuredLoggingMiddleware_FilteringAndSampling tests log filtering and sampling.
 func TestStructuredLoggingMiddleware_FilteringAndSampling(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -621,7 +644,7 @@ func TestStructuredLoggingMiddleware_FilteringAndSampling(t *testing.T) {
 			wrappedHandler := middleware(handler)
 
 			logCount := 0
-			for i := 0; i < tt.requests; i++ {
+			for range tt.requests {
 				req := httptest.NewRequest(tt.method, tt.path, nil)
 				recorder := httptest.NewRecorder()
 

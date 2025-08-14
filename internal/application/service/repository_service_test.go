@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Mock repository for testing
+// Mock repository for testing.
 type MockRepositoryRepository struct {
 	mock.Mock
 }
@@ -36,7 +36,10 @@ func (m *MockRepositoryRepository) FindByID(ctx context.Context, id uuid.UUID) (
 	return args.Get(0).(*entity.Repository), args.Error(1)
 }
 
-func (m *MockRepositoryRepository) FindByURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error) {
+func (m *MockRepositoryRepository) FindByURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (*entity.Repository, error) {
 	args := m.Called(ctx, url)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -44,7 +47,10 @@ func (m *MockRepositoryRepository) FindByURL(ctx context.Context, url valueobjec
 	return args.Get(0).(*entity.Repository), args.Error(1)
 }
 
-func (m *MockRepositoryRepository) FindAll(ctx context.Context, filters outbound.RepositoryFilters) ([]*entity.Repository, int, error) {
+func (m *MockRepositoryRepository) FindAll(
+	ctx context.Context,
+	filters outbound.RepositoryFilters,
+) ([]*entity.Repository, int, error) {
 	args := m.Called(ctx, filters)
 	if args.Get(0) == nil {
 		return nil, args.Int(1), args.Error(2)
@@ -67,12 +73,18 @@ func (m *MockRepositoryRepository) Exists(ctx context.Context, url valueobject.R
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockRepositoryRepository) ExistsByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (bool, error) {
+func (m *MockRepositoryRepository) ExistsByNormalizedURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (bool, error) {
 	args := m.Called(ctx, url)
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockRepositoryRepository) FindByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error) {
+func (m *MockRepositoryRepository) FindByNormalizedURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (*entity.Repository, error) {
 	args := m.Called(ctx, url)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -80,12 +92,16 @@ func (m *MockRepositoryRepository) FindByNormalizedURL(ctx context.Context, url 
 	return args.Get(0).(*entity.Repository), args.Error(1)
 }
 
-// Mock message publisher for testing
+// Mock message publisher for testing.
 type MockMessagePublisher struct {
 	mock.Mock
 }
 
-func (m *MockMessagePublisher) PublishIndexingJob(ctx context.Context, repositoryID uuid.UUID, repositoryURL string) error {
+func (m *MockMessagePublisher) PublishIndexingJob(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	repositoryURL string,
+) error {
 	args := m.Called(ctx, repositoryID, repositoryURL)
 	return args.Error(0)
 }
@@ -106,7 +122,8 @@ func TestCreateRepositoryService_CreateRepository_Success(t *testing.T) {
 	// Mock expectations
 	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
-	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").Return(nil)
+	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").
+		Return(nil)
 
 	ctx := context.Background()
 
@@ -261,7 +278,8 @@ func TestCreateRepositoryService_CreateRepository_PublishJobFails(t *testing.T) 
 	publishError := errors.New("message queue unavailable")
 	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
-	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").Return(publishError)
+	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").
+		Return(publishError)
 
 	ctx := context.Background()
 
@@ -291,7 +309,8 @@ func TestCreateRepositoryService_CreateRepository_AutoGeneratesNameFromURL(t *te
 
 	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
-	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").Return(nil)
+	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").
+		Return(nil)
 
 	ctx := context.Background()
 
@@ -777,7 +796,7 @@ func TestListRepositoriesService_ListRepositories_DatabaseError(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
-// Helper functions
+// Helper functions.
 func stringPtr(s string) *string {
 	return &s
 }

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -14,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// TestTransactionManager_BasicTransaction tests basic transaction operations
+// TestTransactionManager_BasicTransaction tests basic transaction operations.
 func TestTransactionManager_BasicTransaction(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -55,7 +56,7 @@ func TestTransactionManager_BasicTransaction(t *testing.T) {
 					}
 
 					// Force an error to trigger rollback
-					return fmt.Errorf("intentional error for rollback test")
+					return errors.New("intentional error for rollback test")
 				})
 			},
 			expectError: true,
@@ -120,7 +121,7 @@ func TestTransactionManager_BasicTransaction(t *testing.T) {
 	}
 }
 
-// TestTransactionManager_AtomicOperations tests that operations within transactions are atomic
+// TestTransactionManager_AtomicOperations tests that operations within transactions are atomic.
 func TestTransactionManager_AtomicOperations(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -205,7 +206,7 @@ func TestTransactionManager_AtomicOperations(t *testing.T) {
 	})
 }
 
-// TestTransactionManager_Isolation tests transaction isolation levels
+// TestTransactionManager_Isolation tests transaction isolation levels.
 func TestTransactionManager_Isolation(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -295,7 +296,7 @@ func TestTransactionManager_Isolation(t *testing.T) {
 	})
 }
 
-// TestTransactionManager_DeadlockHandling tests deadlock detection and handling
+// TestTransactionManager_DeadlockHandling tests deadlock detection and handling.
 func TestTransactionManager_DeadlockHandling(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -396,12 +397,16 @@ func TestTransactionManager_DeadlockHandling(t *testing.T) {
 
 		// At least one should succeed (retry mechanism should handle deadlock)
 		if err1 != nil && err2 != nil {
-			t.Errorf("Both transactions failed - retry mechanism should have resolved deadlock. TX1: %v, TX2: %v", err1, err2)
+			t.Errorf(
+				"Both transactions failed - retry mechanism should have resolved deadlock. TX1: %v, TX2: %v",
+				err1,
+				err2,
+			)
 		}
 	})
 }
 
-// TestTransactionManager_LongRunningTransaction tests handling of long-running transactions
+// TestTransactionManager_LongRunningTransaction tests handling of long-running transactions.
 func TestTransactionManager_LongRunningTransaction(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -441,7 +446,7 @@ func TestTransactionManager_LongRunningTransaction(t *testing.T) {
 
 // Helper functions
 
-// countRepositories counts the total number of repositories in the database
+// countRepositories counts the total number of repositories in the database.
 func countRepositories(t *testing.T, pool *pgxpool.Pool) int {
 	ctx := context.Background()
 	var count int
@@ -454,7 +459,7 @@ func countRepositories(t *testing.T, pool *pgxpool.Pool) int {
 	return count
 }
 
-// countIndexingJobs counts the total number of indexing jobs in the database
+// countIndexingJobs counts the total number of indexing jobs in the database.
 func countIndexingJobs(t *testing.T, pool *pgxpool.Pool) int {
 	ctx := context.Background()
 	var count int

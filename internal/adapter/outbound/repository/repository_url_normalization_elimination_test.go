@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRepositoryRepository_Save_UsesRawAndNormalizedMethods tests that Save uses Raw() and Normalized() methods
+// TestRepositoryRepository_Save_UsesRawAndNormalizedMethods tests that Save uses Raw() and Normalized() methods.
 func TestRepositoryRepository_Save_UsesRawAndNormalizedMethods(t *testing.T) {
 	// Skip if database is not available - integration test
 	if testing.Short() {
@@ -95,7 +95,7 @@ func TestRepositoryRepository_Save_UsesRawAndNormalizedMethods(t *testing.T) {
 	}
 }
 
-// TestRepositoryRepository_Update_UsesRawAndNormalizedMethods tests that Update uses Raw() and Normalized() methods
+// TestRepositoryRepository_Update_UsesRawAndNormalizedMethods tests that Update uses Raw() and Normalized() methods.
 func TestRepositoryRepository_Update_UsesRawAndNormalizedMethods(t *testing.T) {
 	// Skip if database is not available - integration test
 	if testing.Short() {
@@ -180,7 +180,7 @@ func TestRepositoryRepository_Update_UsesRawAndNormalizedMethods(t *testing.T) {
 	}
 }
 
-// TestRepositoryRepository_NoRedundantNormalization tests that normalization is not called redundantly
+// TestRepositoryRepository_NoRedundantNormalization tests that normalization is not called redundantly.
 func TestRepositoryRepository_NoRedundantNormalization(t *testing.T) {
 	// Skip if database is not available - integration test
 	if testing.Short() {
@@ -228,7 +228,7 @@ func TestRepositoryRepository_NoRedundantNormalization(t *testing.T) {
 	})
 }
 
-// TestRepositoryRepository_EliminatedNormalizationCalls tests that specific normalization calls are removed
+// TestRepositoryRepository_EliminatedNormalizationCalls tests that specific normalization calls are removed.
 func TestRepositoryRepository_EliminatedNormalizationCalls(t *testing.T) {
 	// This test documents which normalization calls should be eliminated
 

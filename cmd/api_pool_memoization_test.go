@@ -14,7 +14,7 @@ import (
 )
 
 // TestServiceFactory_MemoizedDatabasePool_BasicBehavior tests that database pool
-// creation is memoized properly - multiple calls return the same instance
+// creation is memoized properly - multiple calls return the same instance.
 func TestServiceFactory_MemoizedDatabasePool_BasicBehavior(t *testing.T) {
 	t.Run("multiple_calls_return_same_pool_instance", func(t *testing.T) {
 		// Arrange
@@ -121,7 +121,7 @@ func TestServiceFactory_MemoizedDatabasePool_BasicBehavior(t *testing.T) {
 }
 
 // TestServiceFactory_MemoizedDatabasePool_ConcurrentAccess tests thread safety
-// of the memoized database pool creation
+// of the memoized database pool creation.
 func TestServiceFactory_MemoizedDatabasePool_ConcurrentAccess(t *testing.T) {
 	t.Run("concurrent_calls_are_thread_safe", func(t *testing.T) {
 		// Arrange
@@ -144,7 +144,7 @@ func TestServiceFactory_MemoizedDatabasePool_ConcurrentAccess(t *testing.T) {
 		var wg sync.WaitGroup
 
 		// Act - Launch multiple goroutines calling GetDatabasePool concurrently
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			wg.Add(1)
 			go func(index int) {
 				defer wg.Done()
@@ -156,7 +156,7 @@ func TestServiceFactory_MemoizedDatabasePool_ConcurrentAccess(t *testing.T) {
 		wg.Wait()
 
 		// Assert - All calls should succeed and return the same pool instance
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			assert.NoError(t, errors[i], "Goroutine %d should not return error", i)
 			assert.NotNil(t, pools[i], "Goroutine %d should return non-nil pool", i)
 		}
@@ -199,7 +199,7 @@ func TestServiceFactory_MemoizedDatabasePool_ConcurrentAccess(t *testing.T) {
 		var wg sync.WaitGroup
 
 		// Act - Launch concurrent calls during slow pool creation
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			wg.Add(1)
 			go func(index int) {
 				defer wg.Done()
@@ -210,7 +210,7 @@ func TestServiceFactory_MemoizedDatabasePool_ConcurrentAccess(t *testing.T) {
 		wg.Wait()
 
 		// Assert - All should get the same pool instance
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			assert.NoError(t, errors[i], "Concurrent call %d should succeed", i)
 			assert.NotNil(t, pools[i], "Concurrent call %d should return pool", i)
 		}
@@ -224,7 +224,7 @@ func TestServiceFactory_MemoizedDatabasePool_ConcurrentAccess(t *testing.T) {
 }
 
 // TestServiceFactory_MemoizedDatabasePool_ErrorHandling tests error handling
-// in the memoization pattern
+// in the memoization pattern.
 func TestServiceFactory_MemoizedDatabasePool_ErrorHandling(t *testing.T) {
 	t.Run("error_on_first_call_allows_retry", func(t *testing.T) {
 		// Arrange - Use invalid config that will cause pool creation to fail
@@ -329,7 +329,7 @@ func TestServiceFactory_MemoizedDatabasePool_ErrorHandling(t *testing.T) {
 		var wg sync.WaitGroup
 
 		// Act - Multiple concurrent calls with invalid config
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			wg.Add(1)
 			go func(index int) {
 				defer wg.Done()
@@ -340,7 +340,7 @@ func TestServiceFactory_MemoizedDatabasePool_ErrorHandling(t *testing.T) {
 		wg.Wait()
 
 		// Assert - All should fail consistently
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			assert.Error(t, errors[i], "Concurrent call %d should fail", i)
 			assert.Nil(t, pools[i], "Concurrent call %d should return nil", i)
 		}
@@ -351,7 +351,7 @@ func TestServiceFactory_MemoizedDatabasePool_ErrorHandling(t *testing.T) {
 }
 
 // TestServiceFactory_MemoizedDatabasePool_IntegrationWithBuildDependencies tests
-// that the memoized pool integrates properly with existing buildDependencies method
+// that the memoized pool integrates properly with existing buildDependencies method.
 func TestServiceFactory_MemoizedDatabasePool_IntegrationWithBuildDependencies(t *testing.T) {
 	t.Run("build_dependencies_uses_memoized_pool", func(t *testing.T) {
 		// Arrange
@@ -458,7 +458,7 @@ func TestServiceFactory_MemoizedDatabasePool_IntegrationWithBuildDependencies(t 
 }
 
 // TestServiceFactory_MemoizedDatabasePool_CleanupAndClose tests proper cleanup
-// functionality for the memoized database pool
+// functionality for the memoized database pool.
 func TestServiceFactory_MemoizedDatabasePool_CleanupAndClose(t *testing.T) {
 	t.Run("close_method_properly_closes_memoized_pool", func(t *testing.T) {
 		// Arrange
@@ -570,7 +570,7 @@ func TestServiceFactory_MemoizedDatabasePool_CleanupAndClose(t *testing.T) {
 		closeErrors := make([]error, 3)
 
 		// Act - Concurrent close attempts
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			wg.Add(1)
 			go func(index int) {
 				defer wg.Done()
@@ -581,14 +581,14 @@ func TestServiceFactory_MemoizedDatabasePool_CleanupAndClose(t *testing.T) {
 		wg.Wait()
 
 		// Assert - All close attempts should succeed
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			assert.NoError(t, closeErrors[i], "Concurrent close %d should succeed", i)
 		}
 	})
 }
 
 // TestServiceFactory_MemoizedDatabasePool_MethodSignatures tests that the expected
-// methods exist with correct signatures for the memoization feature
+// methods exist with correct signatures for the memoization feature.
 func TestServiceFactory_MemoizedDatabasePool_MethodSignatures(t *testing.T) {
 	t.Run("get_database_pool_method_exists", func(t *testing.T) {
 		// Arrange
@@ -636,7 +636,7 @@ func TestServiceFactory_MemoizedDatabasePool_MethodSignatures(t *testing.T) {
 }
 
 // TestServiceFactory_MemoizedDatabasePool_FieldsExist tests that the ServiceFactory
-// has the expected fields for memoization
+// has the expected fields for memoization.
 func TestServiceFactory_MemoizedDatabasePool_FieldsExist(t *testing.T) {
 	t.Run("service_factory_has_memoization_fields", func(t *testing.T) {
 		// This test will fail initially because the fields don't exist yet
@@ -681,7 +681,7 @@ func serviceFactoryHasPoolErrorField(sf *ServiceFactory) bool {
 }
 
 // NewServiceFactoryWithSlowPoolCreation creates a ServiceFactory that simulates
-// slow pool creation for testing concurrent behavior
+// slow pool creation for testing concurrent behavior.
 func NewServiceFactoryWithSlowPoolCreation(cfg *config.Config, delay time.Duration) *ServiceFactory {
 	sf := NewServiceFactory(cfg)
 	sf.creationDelay = delay

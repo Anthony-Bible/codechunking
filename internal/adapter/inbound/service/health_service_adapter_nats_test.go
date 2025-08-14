@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockMessagePublisherWithHealth combines MessagePublisher and MessagePublisherHealth
+// MockMessagePublisherWithHealth combines MessagePublisher and MessagePublisherHealth.
 type MockMessagePublisherWithHealth struct {
 	// MessagePublisher methods
 	publishFunc func(ctx context.Context, repositoryID, repositoryURL string) error
@@ -46,7 +46,11 @@ func NewMockMessagePublisherWithHealth() *MockMessagePublisherWithHealth {
 	}
 }
 
-func (m *MockMessagePublisherWithHealth) PublishIndexingJob(ctx context.Context, repositoryID uuid.UUID, repositoryURL string) error {
+func (m *MockMessagePublisherWithHealth) PublishIndexingJob(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	repositoryURL string,
+) error {
 	if m.publishFunc != nil {
 		return m.publishFunc(ctx, repositoryID.String(), repositoryURL)
 	}
@@ -114,7 +118,7 @@ func TestHealthServiceAdapter_GetHealth_WithNATSHealthIntegration(t *testing.T) 
 				assert.True(t, natsDetails.Connected)
 				assert.Equal(t, "2h15m30s", natsDetails.Uptime)
 				assert.Equal(t, 3, natsDetails.Reconnects)
-				assert.Equal(t, "", natsDetails.LastError)
+				assert.Empty(t, natsDetails.LastError)
 				assert.True(t, natsDetails.JetStreamEnabled)
 				assert.Equal(t, "closed", natsDetails.CircuitBreaker)
 
@@ -294,7 +298,7 @@ func TestHealthServiceAdapter_GetHealth_NATSResponseTimeTracking(t *testing.T) {
 
 		// Actual response time should be less than test duration
 		// This ensures we're measuring the actual health check time
-		assert.True(t, duration.Milliseconds() > 0)
+		assert.Positive(t, duration.Milliseconds())
 	})
 }
 
@@ -346,7 +350,7 @@ func TestHealthServiceAdapter_GetHealth_ConcurrentAccess(t *testing.T) {
 
 		done := make(chan int, numGoroutines)
 
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			go func(index int) {
 				defer func() { done <- index }()
 				responses[index], errors[index] = service.GetHealth(context.Background())
@@ -354,12 +358,12 @@ func TestHealthServiceAdapter_GetHealth_ConcurrentAccess(t *testing.T) {
 		}
 
 		// Wait for all goroutines to complete
-		for i := 0; i < numGoroutines; i++ {
+		for range numGoroutines {
 			<-done
 		}
 
 		// All responses should be successful and consistent
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			require.NoError(t, errors[i])
 			require.NotNil(t, responses[i])
 			assert.Equal(t, "healthy", responses[i].Status)
@@ -372,7 +376,7 @@ func TestHealthServiceAdapter_GetHealth_ConcurrentAccess(t *testing.T) {
 	})
 }
 
-// Mock implementations for testing
+// Mock implementations for testing.
 type mockRepositoryRepo struct {
 	findAllResult error
 }
@@ -389,7 +393,10 @@ func (m *mockRepositoryRepo) FindByURL(ctx context.Context, url valueobject.Repo
 	return nil, nil
 }
 
-func (m *mockRepositoryRepo) FindAll(ctx context.Context, filters outbound.RepositoryFilters) ([]*entity.Repository, int, error) {
+func (m *mockRepositoryRepo) FindAll(
+	ctx context.Context,
+	filters outbound.RepositoryFilters,
+) ([]*entity.Repository, int, error) {
 	if m.findAllResult != nil {
 		return nil, 0, m.findAllResult
 	}
@@ -412,7 +419,10 @@ func (m *mockRepositoryRepo) ExistsByNormalizedURL(ctx context.Context, url valu
 	return false, nil
 }
 
-func (m *mockRepositoryRepo) FindByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error) {
+func (m *mockRepositoryRepo) FindByNormalizedURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (*entity.Repository, error) {
 	return nil, nil
 }
 
@@ -426,7 +436,11 @@ func (m *mockIndexingJobRepo) FindByID(ctx context.Context, id uuid.UUID) (*enti
 	return nil, nil
 }
 
-func (m *mockIndexingJobRepo) FindByRepositoryID(ctx context.Context, repositoryID uuid.UUID, filters outbound.IndexingJobFilters) ([]*entity.IndexingJob, int, error) {
+func (m *mockIndexingJobRepo) FindByRepositoryID(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	filters outbound.IndexingJobFilters,
+) ([]*entity.IndexingJob, int, error) {
 	return []*entity.IndexingJob{}, 0, nil
 }
 

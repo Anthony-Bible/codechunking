@@ -15,10 +15,11 @@ import (
 	"time"
 
 	"codechunking/internal/adapter/inbound/api/util"
+
 	"github.com/google/uuid"
 )
 
-// HTTP logging structures
+// HTTP logging structures.
 type HTTPLogEntry struct {
 	Timestamp     string                 `json:"timestamp"`
 	Level         string                 `json:"level"`
@@ -54,16 +55,17 @@ type LoggingConfig struct {
 	EnableResourceMetrics bool
 }
 
-// Context key for correlation ID
+// Context key for correlation ID.
 type middlewareContextKey string
 
 const (
 	CorrelationIDKey middlewareContextKey = "correlation_id"
 )
 
-// Response writer wrapper for capturing response data
+// Response writer wrapper for capturing response data.
 type responseWriter struct {
 	http.ResponseWriter
+
 	statusCode int
 	body       *bytes.Buffer
 	size       int
@@ -88,7 +90,7 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return rw.ResponseWriter.Write(b)
 }
 
-// Performance optimization structures for middleware
+// Performance optimization structures for middleware.
 type httpLogEntryPool struct {
 	pool sync.Pool
 }
@@ -108,7 +110,7 @@ type asyncHTTPLogEvent struct {
 	ts    time.Time
 }
 
-// Global optimizations
+// Global optimizations.
 var (
 	globalHTTPLogEntryPool = &httpLogEntryPool{
 		pool: sync.Pool{
@@ -123,14 +125,14 @@ var (
 	globalMiddlewareMetrics middlewareMetrics
 )
 
-// Global log buffer for testing
+// Global log buffer for testing.
 var logBuffer *bytes.Buffer
 
 func init() {
 	logBuffer = &bytes.Buffer{}
 }
 
-// NewStructuredLoggingMiddleware creates HTTP structured logging middleware with performance optimizations
+// NewStructuredLoggingMiddleware creates HTTP structured logging middleware with performance optimizations.
 func NewStructuredLoggingMiddleware(config LoggingConfig) func(http.Handler) http.Handler {
 	// Set default performance values
 	if config.AsyncBufferSize == 0 {
@@ -233,7 +235,7 @@ func NewStructuredLoggingMiddleware(config LoggingConfig) func(http.Handler) htt
 }
 
 // logHTTPRequest logs HTTP request with structured format
-// Async HTTP log processing
+// Async HTTP log processing.
 func startAsyncHTTPLogProcessor(asyncChannel chan asyncHTTPLogEvent) {
 	go func() {
 		for event := range asyncChannel {
@@ -242,7 +244,7 @@ func startAsyncHTTPLogProcessor(asyncChannel chan asyncHTTPLogEvent) {
 	}()
 }
 
-// Rate limiting for HTTP requests
+// Rate limiting for HTTP requests.
 var (
 	rateCounter   int64
 	lastRateReset time.Time
@@ -267,7 +269,7 @@ func checkRateLimit(maxPerSec int) bool {
 	return true
 }
 
-// Memory monitoring for middleware
+// Memory monitoring for middleware.
 func startHTTPMemoryMonitor(config LoggingConfig) {
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
@@ -290,14 +292,14 @@ func startHTTPMemoryMonitor(config LoggingConfig) {
 	}()
 }
 
-// Performance metrics updates
+// Performance metrics updates.
 func updateMiddlewareLatency(duration time.Duration) {
 	currentLatency := atomic.LoadInt64(&globalMiddlewareMetrics.averageLatency)
 	newLatency := (currentLatency + duration.Nanoseconds()) / 2
 	atomic.StoreInt64(&globalMiddlewareMetrics.averageLatency, newLatency)
 }
 
-// Get HTTP log entry from pool
+// Get HTTP log entry from pool.
 func (p *httpLogEntryPool) getHTTPLogEntry() *HTTPLogEntry {
 	entry := p.pool.Get().(*HTTPLogEntry)
 	// Reset fields
@@ -319,8 +321,15 @@ func (p *httpLogEntryPool) getHTTPLogEntry() *HTTPLogEntry {
 	return entry
 }
 
-// Async version of HTTP request logging
-func logHTTPRequestAsync(config LoggingConfig, correlationID string, r *http.Request, rw *responseWriter, duration time.Duration, asyncChannel chan asyncHTTPLogEvent) {
+// Async version of HTTP request logging.
+func logHTTPRequestAsync(
+	config LoggingConfig,
+	correlationID string,
+	r *http.Request,
+	rw *responseWriter,
+	duration time.Duration,
+	asyncChannel chan asyncHTTPLogEvent,
+) {
 	entry := buildHTTPLogEntry(config, correlationID, r, rw, duration)
 
 	select {
@@ -333,13 +342,25 @@ func logHTTPRequestAsync(config LoggingConfig, correlationID string, r *http.Req
 	}
 }
 
-func logHTTPRequest(config LoggingConfig, correlationID string, r *http.Request, rw *responseWriter, duration time.Duration) {
+func logHTTPRequest(
+	config LoggingConfig,
+	correlationID string,
+	r *http.Request,
+	rw *responseWriter,
+	duration time.Duration,
+) {
 	entry := buildHTTPLogEntry(config, correlationID, r, rw, duration)
 	writeHTTPLogEntry(entry)
 }
 
-// Build HTTP log entry with optimizations
-func buildHTTPLogEntry(config LoggingConfig, correlationID string, r *http.Request, rw *responseWriter, duration time.Duration) *HTTPLogEntry {
+// Build HTTP log entry with optimizations.
+func buildHTTPLogEntry(
+	config LoggingConfig,
+	correlationID string,
+	r *http.Request,
+	rw *responseWriter,
+	duration time.Duration,
+) *HTTPLogEntry {
 	// Skip logging based on level filter
 	level := determineLogLevel(config, rw.statusCode, duration)
 	if !shouldLog(config.LogLevel, level) {
@@ -436,7 +457,7 @@ func buildHTTPLogEntry(config LoggingConfig, correlationID string, r *http.Reque
 	return entry
 }
 
-// Write HTTP log entry to buffer
+// Write HTTP log entry to buffer.
 func writeHTTPLogEntry(entry *HTTPLogEntry) {
 	if entry.Message == "" {
 		return // Skip empty entries
@@ -454,7 +475,7 @@ func writeHTTPLogEntry(entry *HTTPLogEntry) {
 	logBuffer.WriteString(string(jsonData) + "\n")
 }
 
-// logPanicRecovery logs panic recovery
+// logPanicRecovery logs panic recovery.
 func logPanicRecovery(config LoggingConfig, correlationID string, r *http.Request, panicValue interface{}) {
 	entry := HTTPLogEntry{
 		Timestamp:     time.Now().UTC().Format(time.RFC3339),
@@ -475,7 +496,7 @@ func logPanicRecovery(config LoggingConfig, correlationID string, r *http.Reques
 	logBuffer.WriteString(string(jsonData) + "\n")
 }
 
-// Helper functions
+// Helper functions.
 func determineLogLevel(config LoggingConfig, statusCode int, duration time.Duration) string {
 	if statusCode >= 500 {
 		return "ERROR"
@@ -514,7 +535,13 @@ func getRequestSize(r *http.Request) int64 {
 	return 0
 }
 
-func addPerformanceMetrics(request map[string]interface{}, r *http.Request, rw *responseWriter, duration time.Duration, config LoggingConfig) {
+func addPerformanceMetrics(
+	request map[string]interface{},
+	r *http.Request,
+	rw *responseWriter,
+	duration time.Duration,
+	config LoggingConfig,
+) {
 	// Mark slow requests
 	if config.SlowRequestThreshold > 0 && duration > config.SlowRequestThreshold {
 		request["slow_request"] = true
@@ -544,7 +571,7 @@ func addSecurityChecks(request map[string]interface{}, r *http.Request, config L
 	}
 
 	// Check for potential SQL injection patterns in request body
-	if r.Method == "POST" || r.Method == "PUT" {
+	if r.Method == http.MethodPost || r.Method == http.MethodPut {
 		body, _ := io.ReadAll(r.Body)
 		r.Body = io.NopCloser(bytes.NewBuffer(body)) // Restore body
 		bodyStr := string(body)
@@ -559,7 +586,7 @@ func addSecurityChecks(request map[string]interface{}, r *http.Request, config L
 	}
 }
 
-// GetCorrelationIDFromContext extracts correlation ID from request context
+// GetCorrelationIDFromContext extracts correlation ID from request context.
 func GetCorrelationIDFromContext(ctx context.Context) string {
 	if ctx == nil {
 		return ""
@@ -570,7 +597,7 @@ func GetCorrelationIDFromContext(ctx context.Context) string {
 	return ""
 }
 
-// Test helper functions
+// Test helper functions.
 func getMiddlewareLogOutput() string {
 	if logBuffer.Len() == 0 {
 		return ""
@@ -586,12 +613,12 @@ func getMiddlewareLogOutput() string {
 	return output
 }
 
-// GetMiddlewareLogOutput is an exported version for cross-package testing
+// GetMiddlewareLogOutput is an exported version for cross-package testing.
 func GetMiddlewareLogOutput() string {
 	return getMiddlewareLogOutput()
 }
 
-// GetMiddlewarePerformanceMetrics returns current middleware performance metrics
+// GetMiddlewarePerformanceMetrics returns current middleware performance metrics.
 func GetMiddlewarePerformanceMetrics() map[string]interface{} {
 	return map[string]interface{}{
 		"total_requests":     atomic.LoadInt64(&globalMiddlewareMetrics.totalRequests),

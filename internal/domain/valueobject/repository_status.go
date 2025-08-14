@@ -1,11 +1,14 @@
 package valueobject
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
-// RepositoryStatus represents the current status of a repository in the indexing pipeline
+// RepositoryStatus represents the current status of a repository in the indexing pipeline.
 type RepositoryStatus string
 
-// Repository status constants
+// Repository status constants.
 const (
 	RepositoryStatusPending    RepositoryStatus = "pending"
 	RepositoryStatusCloning    RepositoryStatus = "cloning"
@@ -15,7 +18,7 @@ const (
 	RepositoryStatusArchived   RepositoryStatus = "archived"
 )
 
-// validStatuses contains all valid repository statuses
+// validStatuses contains all valid repository statuses.
 var validRepositoryStatuses = map[RepositoryStatus]bool{
 	RepositoryStatusPending:    true,
 	RepositoryStatusCloning:    true,
@@ -25,7 +28,7 @@ var validRepositoryStatuses = map[RepositoryStatus]bool{
 	RepositoryStatusArchived:   true,
 }
 
-// NewRepositoryStatus creates a new RepositoryStatus with validation
+// NewRepositoryStatus creates a new RepositoryStatus with validation.
 func NewRepositoryStatus(status string) (RepositoryStatus, error) {
 	s := RepositoryStatus(status)
 	if !validRepositoryStatuses[s] {
@@ -34,17 +37,17 @@ func NewRepositoryStatus(status string) (RepositoryStatus, error) {
 	return s, nil
 }
 
-// String returns the string representation of the status
+// String returns the string representation of the status.
 func (s RepositoryStatus) String() string {
 	return string(s)
 }
 
-// IsTerminal returns true if this status represents a final state
+// IsTerminal returns true if this status represents a final state.
 func (s RepositoryStatus) IsTerminal() bool {
 	return s == RepositoryStatusCompleted || s == RepositoryStatusFailed || s == RepositoryStatusArchived
 }
 
-// CanTransitionTo returns true if the status can transition to the target status
+// CanTransitionTo returns true if the status can transition to the target status.
 func (s RepositoryStatus) CanTransitionTo(target RepositoryStatus) bool {
 	transitions := map[RepositoryStatus][]RepositoryStatus{
 		RepositoryStatusPending: {
@@ -85,7 +88,7 @@ func (s RepositoryStatus) CanTransitionTo(target RepositoryStatus) bool {
 	return false
 }
 
-// AllRepositoryStatuses returns all valid repository statuses
+// AllRepositoryStatuses returns all valid repository statuses.
 func AllRepositoryStatuses() []RepositoryStatus {
 	statuses := make([]RepositoryStatus, 0, len(validRepositoryStatuses))
 	for status := range validRepositoryStatuses {
@@ -182,7 +185,7 @@ func ValidateRepositoryStatusString(status string, allowEmpty bool) error {
 		if allowEmpty {
 			return nil
 		}
-		return fmt.Errorf("invalid repository status: empty string not allowed")
+		return errors.New("invalid repository status: empty string not allowed")
 	}
 
 	if !isValid {

@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRepositoryHandler_CreateRepository_DuplicateDetection tests HTTP 409 Conflict responses for duplicates
+// TestRepositoryHandler_CreateRepository_DuplicateDetection tests HTTP 409 Conflict responses for duplicates.
 func TestRepositoryHandler_CreateRepository_DuplicateDetection(t *testing.T) {
 	tests := []struct {
 		name                 string
@@ -105,12 +105,15 @@ func TestRepositoryHandler_CreateRepository_DuplicateDetection(t *testing.T) {
 	}
 }
 
-// MockRepositoryService implements the RepositoryService interface for testing
+// MockRepositoryService implements the RepositoryService interface for testing.
 type MockRepositoryService struct {
 	mock.Mock
 }
 
-func (m *MockRepositoryService) CreateRepository(ctx context.Context, request dto.CreateRepositoryRequest) (*dto.RepositoryResponse, error) {
+func (m *MockRepositoryService) CreateRepository(
+	ctx context.Context,
+	request dto.CreateRepositoryRequest,
+) (*dto.RepositoryResponse, error) {
 	args := m.Called(ctx, request)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -126,7 +129,10 @@ func (m *MockRepositoryService) GetRepository(ctx context.Context, id uuid.UUID)
 	return args.Get(0).(*dto.RepositoryResponse), args.Error(1)
 }
 
-func (m *MockRepositoryService) ListRepositories(ctx context.Context, query dto.RepositoryListQuery) (*dto.RepositoryListResponse, error) {
+func (m *MockRepositoryService) ListRepositories(
+	ctx context.Context,
+	query dto.RepositoryListQuery,
+) (*dto.RepositoryListResponse, error) {
 	args := m.Called(ctx, query)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -139,7 +145,11 @@ func (m *MockRepositoryService) DeleteRepository(ctx context.Context, id uuid.UU
 	return args.Error(0)
 }
 
-func (m *MockRepositoryService) GetRepositoryJobs(ctx context.Context, repositoryID uuid.UUID, query dto.IndexingJobListQuery) (*dto.IndexingJobListResponse, error) {
+func (m *MockRepositoryService) GetRepositoryJobs(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	query dto.IndexingJobListQuery,
+) (*dto.IndexingJobListResponse, error) {
 	args := m.Called(ctx, repositoryID, query)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -147,7 +157,10 @@ func (m *MockRepositoryService) GetRepositoryJobs(ctx context.Context, repositor
 	return args.Get(0).(*dto.IndexingJobListResponse), args.Error(1)
 }
 
-func (m *MockRepositoryService) GetIndexingJob(ctx context.Context, repositoryID, jobID uuid.UUID) (*dto.IndexingJobResponse, error) {
+func (m *MockRepositoryService) GetIndexingJob(
+	ctx context.Context,
+	repositoryID, jobID uuid.UUID,
+) (*dto.IndexingJobResponse, error) {
 	args := m.Called(ctx, repositoryID, jobID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

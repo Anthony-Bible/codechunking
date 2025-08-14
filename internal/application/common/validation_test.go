@@ -1,6 +1,7 @@
 package common
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -8,7 +9,7 @@ import (
 )
 
 // TestValidateRepositoryStatus tests the ValidateRepositoryStatus function
-// These tests verify that the function uses domain layer validation instead of ValidRepositoryStatuses map
+// These tests verify that the function uses domain layer validation instead of ValidRepositoryStatuses map.
 func TestValidateRepositoryStatus(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -128,7 +129,8 @@ func TestValidateRepositoryStatus(t *testing.T) {
 				}
 
 				// Verify it returns ValidationError type (not domain error type)
-				validationErr, ok := err.(ValidationError)
+				var validationErr ValidationError
+				ok := errors.As(err, &validationErr)
 				if !ok {
 					t.Errorf("ValidateRepositoryStatus(%q) expected ValidationError but got %T", tt.status, err)
 					return
@@ -136,12 +138,22 @@ func TestValidateRepositoryStatus(t *testing.T) {
 
 				// Verify error field is "status"
 				if validationErr.Field != "status" {
-					t.Errorf("ValidateRepositoryStatus(%q) error field = %q, want %q", tt.status, validationErr.Field, "status")
+					t.Errorf(
+						"ValidateRepositoryStatus(%q) error field = %q, want %q",
+						tt.status,
+						validationErr.Field,
+						"status",
+					)
 				}
 
 				// Verify error message
 				if validationErr.Message != tt.wantMsg {
-					t.Errorf("ValidateRepositoryStatus(%q) error message = %q, want %q", tt.status, validationErr.Message, tt.wantMsg)
+					t.Errorf(
+						"ValidateRepositoryStatus(%q) error message = %q, want %q",
+						tt.status,
+						validationErr.Message,
+						tt.wantMsg,
+					)
 				}
 			} else {
 				if err != nil {
@@ -152,7 +164,7 @@ func TestValidateRepositoryStatus(t *testing.T) {
 	}
 }
 
-// TestValidateRepositoryStatus_DomainIntegration tests that the refactored function integrates properly with domain layer
+// TestValidateRepositoryStatus_DomainIntegration tests that the refactored function integrates properly with domain layer.
 func TestValidateRepositoryStatus_DomainIntegration(t *testing.T) {
 	// Test that all domain-valid statuses are accepted
 	allValidStatuses := []string{"pending", "cloning", "processing", "completed", "failed", "archived"}
@@ -168,13 +180,17 @@ func TestValidateRepositoryStatus_DomainIntegration(t *testing.T) {
 			// Then verify our application function accepts it
 			err := ValidateRepositoryStatus(status)
 			if err != nil {
-				t.Errorf("ValidateRepositoryStatus(%q) should accept domain-valid status but got error: %v", status, err)
+				t.Errorf(
+					"ValidateRepositoryStatus(%q) should accept domain-valid status but got error: %v",
+					status,
+					err,
+				)
 			}
 		})
 	}
 }
 
-// TestValidateRepositoryStatus_EmptyStringHandling tests that empty string handling matches filtering requirements
+// TestValidateRepositoryStatus_EmptyStringHandling tests that empty string handling matches filtering requirements.
 func TestValidateRepositoryStatus_EmptyStringHandling(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -210,7 +226,11 @@ func TestValidateRepositoryStatus_EmptyStringHandling(t *testing.T) {
 			if tt.want {
 				// Should be valid (no error)
 				if err != nil {
-					t.Errorf("ValidateRepositoryStatus(%q) should be valid for filtering but got error: %v", tt.status, err)
+					t.Errorf(
+						"ValidateRepositoryStatus(%q) should be valid for filtering but got error: %v",
+						tt.status,
+						err,
+					)
 				}
 			} else {
 				// Should be invalid (error)
@@ -219,7 +239,8 @@ func TestValidateRepositoryStatus_EmptyStringHandling(t *testing.T) {
 				}
 
 				// Should return ValidationError type
-				if _, ok := err.(ValidationError); !ok {
+				var validationError ValidationError
+				if errors.As(err, &validationError) {
 					t.Errorf("ValidateRepositoryStatus(%q) should return ValidationError but got %T", tt.status, err)
 				}
 			}
@@ -227,7 +248,7 @@ func TestValidateRepositoryStatus_EmptyStringHandling(t *testing.T) {
 	}
 }
 
-// TestValidateRepositoryStatus_SecurityValidation tests that SQL injection protection still works after refactoring
+// TestValidateRepositoryStatus_SecurityValidation tests that SQL injection protection still works after refactoring.
 func TestValidateRepositoryStatus_SecurityValidation(t *testing.T) {
 	maliciousInputs := []struct {
 		name  string
@@ -269,7 +290,8 @@ func TestValidateRepositoryStatus_SecurityValidation(t *testing.T) {
 			}
 
 			// Should return ValidationError type
-			validationErr, ok := err.(ValidationError)
+			var validationErr ValidationError
+			ok := errors.As(err, &validationErr)
 			if !ok {
 				t.Errorf("ValidateRepositoryStatus(%q) should return ValidationError but got %T", tt.input, err)
 				return
@@ -281,13 +303,17 @@ func TestValidateRepositoryStatus_SecurityValidation(t *testing.T) {
 			}
 
 			if validationErr.Message != "contains malicious SQL" {
-				t.Errorf("ValidateRepositoryStatus(%q) error message = %q, want 'contains malicious SQL'", tt.input, validationErr.Message)
+				t.Errorf(
+					"ValidateRepositoryStatus(%q) error message = %q, want 'contains malicious SQL'",
+					tt.input,
+					validationErr.Message,
+				)
 			}
 		})
 	}
 }
 
-// TestValidateRepositoryStatus_ErrorHandling tests error handling edge cases
+// TestValidateRepositoryStatus_ErrorHandling tests error handling edge cases.
 func TestValidateRepositoryStatus_ErrorHandling(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -335,7 +361,8 @@ func TestValidateRepositoryStatus_ErrorHandling(t *testing.T) {
 
 			// If error is returned, it should be ValidationError type
 			if err != nil {
-				if _, ok := err.(ValidationError); !ok {
+				var validationError ValidationError
+				if errors.As(err, &validationError) {
 					t.Errorf("ValidateRepositoryStatus(%q) should return ValidationError but got %T", tt.status, err)
 				}
 			}
@@ -343,7 +370,7 @@ func TestValidateRepositoryStatus_ErrorHandling(t *testing.T) {
 	}
 }
 
-// TestValidateRepositoryStatus_ConsistencyWithCurrentBehavior tests that refactored function maintains current behavior
+// TestValidateRepositoryStatus_ConsistencyWithCurrentBehavior tests that refactored function maintains current behavior.
 func TestValidateRepositoryStatus_ConsistencyWithCurrentBehavior(t *testing.T) {
 	// These tests verify that the refactored function behaves exactly like the current implementation
 	// for all cases that should remain unchanged
@@ -379,7 +406,8 @@ func TestValidateRepositoryStatus_ConsistencyWithCurrentBehavior(t *testing.T) {
 				}
 
 				// Verify it's ValidationError type
-				if _, ok := err.(ValidationError); !ok {
+				var validationError ValidationError
+				if errors.As(err, &validationError) {
 					t.Errorf("ValidateRepositoryStatus(%q) should return ValidationError but got %T", tt.status, err)
 				}
 			}
@@ -388,7 +416,7 @@ func TestValidateRepositoryStatus_ConsistencyWithCurrentBehavior(t *testing.T) {
 }
 
 // TestValidateRepositoryStatus_FailingRedPhaseTests - RED PHASE TDD TESTS THAT MUST FAIL
-// These tests will FAIL with current implementation and PASS after refactoring to use domain layer
+// These tests will FAIL with current implementation and PASS after refactoring to use domain layer.
 func TestValidateRepositoryStatus_FailingRedPhaseTests(t *testing.T) {
 	t.Run("SUCCESS_map_has_been_removed", func(t *testing.T) {
 		// This test now PASSES because ValidRepositoryStatuses map has been removed
@@ -451,13 +479,19 @@ func TestValidateRepositoryStatus_FailingRedPhaseTests(t *testing.T) {
 			appAccepts := (appErr == nil)
 
 			if domainAccepts != appAccepts {
-				t.Errorf("RED PHASE FAILURE - EXPECTED: Status %q - domain integration not working. Domain accepts=%t, App accepts=%t. Function must use domain layer validation.",
-					status, domainAccepts, appAccepts)
+				t.Errorf(
+					"RED PHASE FAILURE - EXPECTED: Status %q - domain integration not working. Domain accepts=%t, App accepts=%t. Function must use domain layer validation.",
+					status,
+					domainAccepts,
+					appAccepts,
+				)
 				t.Logf("Domain error: %v", domainErr)
 				t.Logf("App error: %v", appErr)
 
 				if !domainAccepts && appAccepts {
-					t.Log("ISSUE: App is more lenient than domain - likely still using map instead of domain validation")
+					t.Log(
+						"ISSUE: App is more lenient than domain - likely still using map instead of domain validation",
+					)
 				} else if domainAccepts && !appAccepts {
 					t.Log("ISSUE: App is stricter than domain - check domain integration")
 				}
@@ -485,23 +519,33 @@ func TestValidateRepositoryStatus_FailingRedPhaseTests(t *testing.T) {
 		}
 
 		// Must be ValidationError type with proper field and message
-		validationErr, ok := appErr.(ValidationError)
+		var validationErr ValidationError
+		ok := errors.As(appErr, &validationErr)
 		if !ok {
-			t.Errorf("RED PHASE FAILURE - EXPECTED: App should return ValidationError when domain returns error, got %T", appErr)
+			t.Errorf(
+				"RED PHASE FAILURE - EXPECTED: App should return ValidationError when domain returns error, got %T",
+				appErr,
+			)
 			return
 		}
 
 		if validationErr.Field != "status" {
-			t.Errorf("RED PHASE FAILURE - EXPECTED: ValidationError field should be 'status', got %q", validationErr.Field)
+			t.Errorf(
+				"RED PHASE FAILURE - EXPECTED: ValidationError field should be 'status', got %q",
+				validationErr.Field,
+			)
 		}
 
 		if validationErr.Message != "invalid status" {
-			t.Errorf("RED PHASE FAILURE - EXPECTED: ValidationError message should be 'invalid status' (standard app message), got %q", validationErr.Message)
+			t.Errorf(
+				"RED PHASE FAILURE - EXPECTED: ValidationError message should be 'invalid status' (standard app message), got %q",
+				validationErr.Message,
+			)
 		}
 	})
 }
 
-// Helper function for detecting SQL injection patterns in tests
+// Helper function for detecting SQL injection patterns in tests.
 func containsSQLInjectionPattern(input string) bool {
 	sqlPatterns := []string{"'", ";", "--", "DROP", "SELECT", "UNION"}
 	for _, pattern := range sqlPatterns {
@@ -526,19 +570,21 @@ func containsSQLInjectionPattern(input string) bool {
 // 4. Preserve SQL injection validation (must happen BEFORE domain validation)
 // 5. Maintain identical function signature and behavior for all existing use cases
 
-// TestValidateRepositoryStatus_RedPhaseRefactoring_MapElimination tests that duplicate map is removed
+// TestValidateRepositoryStatus_RedPhaseRefactoring_MapElimination tests that duplicate map is removed.
 func TestValidateRepositoryStatus_RedPhaseRefactoring_MapElimination(t *testing.T) {
 	// This test now PASSES because ValidRepositoryStatuses map has been removed
 
 	t.Log("SUCCESS: ValidRepositoryStatuses map has been removed")
 	t.Log("REFACTORING COMPLETED:")
 	t.Log("1. ✓ Removed ValidRepositoryStatuses map declaration from validation.go")
-	t.Log("2. ✓ Updated ValidateRepositoryStatus function to use valueobject.ValidateRepositoryStatusString(status, true)")
+	t.Log(
+		"2. ✓ Updated ValidateRepositoryStatus function to use valueobject.ValidateRepositoryStatusString(status, true)",
+	)
 	t.Log("3. ✓ Domain validation errors converted to ValidationError type with 'invalid status' message")
 	t.Log("4. ✓ Duplicate validation logic eliminated - domain layer is now single source of truth")
 }
 
-// TestValidateRepositoryStatus_RedPhaseRefactoring_DomainIntegration tests domain layer integration
+// TestValidateRepositoryStatus_RedPhaseRefactoring_DomainIntegration tests domain layer integration.
 func TestValidateRepositoryStatus_RedPhaseRefactoring_DomainIntegration(t *testing.T) {
 	// This test compares current behavior with expected domain-integrated behavior
 
@@ -593,11 +639,13 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_DomainIntegration(t *testi
 
 	if domainIntegrationFailures > 0 {
 		t.Errorf("RED PHASE FAILURE: %d domain integration mismatches found", domainIntegrationFailures)
-		t.Log("REQUIRED: Replace ValidRepositoryStatuses map usage with valueobject.ValidateRepositoryStatusString(status, true)")
+		t.Log(
+			"REQUIRED: Replace ValidRepositoryStatuses map usage with valueobject.ValidateRepositoryStatusString(status, true)",
+		)
 	}
 }
 
-// TestValidateRepositoryStatus_RedPhaseRefactoring_ErrorTypeConversion tests error type conversion
+// TestValidateRepositoryStatus_RedPhaseRefactoring_ErrorTypeConversion tests error type conversion.
 func TestValidateRepositoryStatus_RedPhaseRefactoring_ErrorTypeConversion(t *testing.T) {
 	// Test that domain errors are properly converted to ValidationError type
 	invalidStatuses := []string{
@@ -627,7 +675,8 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_ErrorTypeConversion(t *tes
 			}
 
 			// Must be ValidationError type (not domain error)
-			validationErr, ok := appErr.(ValidationError)
+			var validationErr ValidationError
+			ok := errors.As(appErr, &validationErr)
 			if !ok {
 				conversionFailures++
 				t.Errorf("RED PHASE FAILURE: App should return ValidationError for %q, got %T", status, appErr)
@@ -637,11 +686,19 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_ErrorTypeConversion(t *tes
 
 			// ValidationError must have correct structure
 			if validationErr.Field != "status" {
-				t.Errorf("RED PHASE FAILURE: ValidationError field should be 'status' for %q, got %q", status, validationErr.Field)
+				t.Errorf(
+					"RED PHASE FAILURE: ValidationError field should be 'status' for %q, got %q",
+					status,
+					validationErr.Field,
+				)
 			}
 
 			if validationErr.Message != "invalid status" {
-				t.Errorf("RED PHASE FAILURE: ValidationError message should be 'invalid status' for %q, got %q", status, validationErr.Message)
+				t.Errorf(
+					"RED PHASE FAILURE: ValidationError message should be 'invalid status' for %q, got %q",
+					status,
+					validationErr.Message,
+				)
 				t.Log("  REQUIRED: Use consistent 'invalid status' message like current implementation")
 			}
 		})
@@ -656,7 +713,7 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_ErrorTypeConversion(t *tes
 	}
 }
 
-// TestValidateRepositoryStatus_RedPhaseRefactoring_EmptyStringHandling tests empty string behavior
+// TestValidateRepositoryStatus_RedPhaseRefactoring_EmptyStringHandling tests empty string behavior.
 func TestValidateRepositoryStatus_RedPhaseRefactoring_EmptyStringHandling(t *testing.T) {
 	// Empty string must be allowed for filtering functionality
 
@@ -679,7 +736,7 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_EmptyStringHandling(t *tes
 	t.Log("SUCCESS: Empty string handling matches domain layer allowEmpty=true behavior")
 }
 
-// TestValidateRepositoryStatus_RedPhaseRefactoring_AllDomainStatusesAccepted tests all valid statuses
+// TestValidateRepositoryStatus_RedPhaseRefactoring_AllDomainStatusesAccepted tests all valid statuses.
 func TestValidateRepositoryStatus_RedPhaseRefactoring_AllDomainStatusesAccepted(t *testing.T) {
 	// Every status the domain considers valid should be accepted by application
 	allDomainStatuses := valueobject.AllRepositoryStatuses()
@@ -710,7 +767,7 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_AllDomainStatusesAccepted(
 	}
 }
 
-// TestValidateRepositoryStatus_RedPhaseRefactoring_SecurityPreservation tests SQL injection protection
+// TestValidateRepositoryStatus_RedPhaseRefactoring_SecurityPreservation tests SQL injection protection.
 func TestValidateRepositoryStatus_RedPhaseRefactoring_SecurityPreservation(t *testing.T) {
 	// SQL injection protection must be preserved after refactoring
 	sqlInjectionCases := []struct {
@@ -737,14 +794,19 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_SecurityPreservation(t *te
 			}
 
 			// Must be ValidationError with correct message
-			validationErr, ok := err.(ValidationError)
+			var validationErr ValidationError
+			ok := errors.As(err, &validationErr)
 			if !ok {
 				t.Errorf("RED PHASE FAILURE: SQL injection should return ValidationError for %q, got %T", tc.input, err)
 				return
 			}
 
 			if validationErr.Message != "contains malicious SQL" {
-				t.Errorf("RED PHASE FAILURE: Wrong SQL injection message for %q, got: %q", tc.input, validationErr.Message)
+				t.Errorf(
+					"RED PHASE FAILURE: Wrong SQL injection message for %q, got: %q",
+					tc.input,
+					validationErr.Message,
+				)
 			}
 		})
 	}
@@ -756,7 +818,7 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_SecurityPreservation(t *te
 	}
 }
 
-// TestValidateRepositoryStatus_RedPhaseRefactoring_ExecutionOrder tests validation order
+// TestValidateRepositoryStatus_RedPhaseRefactoring_ExecutionOrder tests validation order.
 func TestValidateRepositoryStatus_RedPhaseRefactoring_ExecutionOrder(t *testing.T) {
 	// SQL injection detection must happen BEFORE domain validation
 	// Test with input that's both SQL malicious AND domain-invalid
@@ -768,7 +830,8 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_ExecutionOrder(t *testing.
 		return
 	}
 
-	validationErr, ok := err.(ValidationError)
+	var validationErr ValidationError
+	ok := errors.As(err, &validationErr)
 	if !ok {
 		t.Errorf("RED PHASE FAILURE: Should return ValidationError, got %T", err)
 		return
@@ -783,7 +846,7 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_ExecutionOrder(t *testing.
 	}
 }
 
-// TestValidateRepositoryStatus_RedPhaseRefactoring_FunctionSignatureUnchanged tests interface preservation
+// TestValidateRepositoryStatus_RedPhaseRefactoring_FunctionSignatureUnchanged tests interface preservation.
 func TestValidateRepositoryStatus_RedPhaseRefactoring_FunctionSignatureUnchanged(t *testing.T) {
 	// Ensure refactoring doesn't break existing API contract
 
@@ -804,7 +867,8 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_FunctionSignatureUnchanged
 			t.Errorf("RED PHASE FAILURE: Invalid input %q should return error", invalidInput)
 			continue
 		}
-		if _, ok := err.(ValidationError); !ok {
+		var validationError ValidationError
+		if errors.As(err, &validationError) {
 			t.Errorf("RED PHASE FAILURE: Invalid input %q should return ValidationError, got %T", invalidInput, err)
 		}
 	}

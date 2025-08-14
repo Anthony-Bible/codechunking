@@ -1,13 +1,14 @@
 package common
 
 import (
+	"errors"
 	"testing"
 
 	"codechunking/internal/domain/valueobject"
 )
 
 // TestValidateRepositoryStatus_MapMustBeRemoved are tests that will FAIL until the ValidRepositoryStatuses map is removed
-// These tests specifically target the refactoring requirement to eliminate duplicate validation logic
+// These tests specifically target the refactoring requirement to eliminate duplicate validation logic.
 func TestValidateRepositoryStatus_MapMustBeRemoved(t *testing.T) {
 	t.Run("ValidRepositoryStatuses_map_must_not_exist", func(t *testing.T) {
 		// This test will FAIL as long as ValidRepositoryStatuses map exists
@@ -31,7 +32,7 @@ func TestValidateRepositoryStatus_MapMustBeRemoved(t *testing.T) {
 	})
 }
 
-// TestValidateRepositoryStatus_DomainLayerMustBeUsed are tests that FAIL until domain layer is used
+// TestValidateRepositoryStatus_DomainLayerMustBeUsed are tests that FAIL until domain layer is used.
 func TestValidateRepositoryStatus_DomainLayerMustBeUsed(t *testing.T) {
 	t.Run("must_delegate_to_domain_layer", func(t *testing.T) {
 		// This test creates a scenario where we can detect if domain layer is being called
@@ -69,7 +70,8 @@ func TestValidateRepositoryStatus_DomainLayerMustBeUsed(t *testing.T) {
 		}
 
 		// Should be ValidationError (application layer error type)
-		validationErr, ok := appErr.(ValidationError)
+		var validationErr ValidationError
+		ok := errors.As(appErr, &validationErr)
 		if !ok {
 			t.Errorf("REFACTORING REQUIRED: Should return ValidationError, got %T", appErr)
 			return
@@ -81,7 +83,10 @@ func TestValidateRepositoryStatus_DomainLayerMustBeUsed(t *testing.T) {
 		}
 
 		if validationErr.Message != "invalid status" {
-			t.Errorf("REFACTORING REQUIRED: ValidationError message should be 'invalid status' (standard application message), got %q", validationErr.Message)
+			t.Errorf(
+				"REFACTORING REQUIRED: ValidationError message should be 'invalid status' (standard application message), got %q",
+				validationErr.Message,
+			)
 		}
 
 		// The key requirement: behavior should match calling domain layer directly
@@ -93,12 +98,14 @@ func TestValidateRepositoryStatus_DomainLayerMustBeUsed(t *testing.T) {
 	})
 }
 
-// TestValidateRepositoryStatus_RefactoringCompletionCriteria defines what "done" looks like
+// TestValidateRepositoryStatus_RefactoringCompletionCriteria defines what "done" looks like.
 func TestValidateRepositoryStatus_RefactoringCompletionCriteria(t *testing.T) {
 	t.Run("completion_criteria_checklist", func(t *testing.T) {
 		t.Log("REFACTORING COMPLETION CRITERIA:")
 		t.Log("✓ 1. ValidRepositoryStatuses map removed from validation.go")
-		t.Log("✓ 2. ValidateRepositoryStatus function updated to call valueobject.ValidateRepositoryStatusString(status, true)")
+		t.Log(
+			"✓ 2. ValidateRepositoryStatus function updated to call valueobject.ValidateRepositoryStatusString(status, true)",
+		)
 		t.Log("✓ 3. SQL injection validation preserved")
 		t.Log("✓ 4. Domain errors converted to ValidationError")
 		t.Log("✓ 5. Function signature and external behavior unchanged")
@@ -131,7 +138,8 @@ func TestValidateRepositoryStatus_RefactoringCompletionCriteria(t *testing.T) {
 		if err == nil {
 			t.Error("POST-REFACTORING: Invalid status should fail")
 		} else {
-			if validationErr, ok := err.(ValidationError); ok {
+			var validationErr ValidationError
+			if errors.As(err, &validationErr) {
 				if validationErr.Message != "invalid status" {
 					t.Errorf("POST-REFACTORING: Should use standard message 'invalid status', got %q", validationErr.Message)
 				}
@@ -145,7 +153,8 @@ func TestValidateRepositoryStatus_RefactoringCompletionCriteria(t *testing.T) {
 		if err == nil {
 			t.Error("POST-REFACTORING: SQL injection should be caught")
 		} else {
-			if validationErr, ok := err.(ValidationError); ok {
+			var validationErr ValidationError
+			if errors.As(err, &validationErr) {
 				if validationErr.Message != "contains malicious SQL" {
 					t.Errorf("POST-REFACTORING: SQL injection should return 'contains malicious SQL', got %q", validationErr.Message)
 				}
@@ -154,7 +163,7 @@ func TestValidateRepositoryStatus_RefactoringCompletionCriteria(t *testing.T) {
 	})
 }
 
-// TestValidateRepositoryStatus_CurrentImplementationProblems identifies issues with current approach
+// TestValidateRepositoryStatus_CurrentImplementationProblems identifies issues with current approach.
 func TestValidateRepositoryStatus_CurrentImplementationProblems(t *testing.T) {
 	t.Run("duplicate_validation_logic_problem", func(t *testing.T) {
 		t.Log("PROBLEM: Duplicate validation logic exists")

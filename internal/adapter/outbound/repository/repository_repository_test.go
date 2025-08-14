@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// setupTestDB creates a test database connection pool
+// setupTestDB creates a test database connection pool.
 func setupTestDB(t *testing.T) *pgxpool.Pool {
 	config := DatabaseConfig{
 		Host:     "localhost",
@@ -35,7 +35,7 @@ func setupTestDB(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// cleanupTestData removes test data from database
+// cleanupTestData removes test data from database.
 func cleanupTestData(t *testing.T, pool *pgxpool.Pool) {
 	ctx := context.Background()
 	queries := []string{
@@ -53,7 +53,7 @@ func cleanupTestData(t *testing.T, pool *pgxpool.Pool) {
 	}
 }
 
-// createTestRepository creates a test repository entity with a unique URL
+// createTestRepository creates a test repository entity with a unique URL.
 func createTestRepository(t *testing.T) *entity.Repository {
 	// Generate unique URL using UUID to avoid collisions
 	uniqueID := uuid.New().String()
@@ -68,7 +68,7 @@ func createTestRepository(t *testing.T) *entity.Repository {
 	return entity.NewRepository(testURL, "Test Repository", &description, &defaultBranch)
 }
 
-// TestRepositoryRepository_Save tests saving repositories to database
+// TestRepositoryRepository_Save tests saving repositories to database.
 func TestRepositoryRepository_Save(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -139,7 +139,7 @@ func TestRepositoryRepository_Save(t *testing.T) {
 	}
 }
 
-// TestRepositoryRepository_FindByID tests finding repositories by ID
+// TestRepositoryRepository_FindByID tests finding repositories by ID.
 func TestRepositoryRepository_FindByID(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -221,7 +221,7 @@ func TestRepositoryRepository_FindByID(t *testing.T) {
 	}
 }
 
-// TestRepositoryRepository_FindByURL tests finding repositories by URL
+// TestRepositoryRepository_FindByURL tests finding repositories by URL.
 func TestRepositoryRepository_FindByURL(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -296,7 +296,7 @@ func TestRepositoryRepository_FindByURL(t *testing.T) {
 	}
 }
 
-// TestRepositoryRepository_FindAll tests finding repositories with filters and pagination
+// TestRepositoryRepository_FindAll tests finding repositories with filters and pagination.
 func TestRepositoryRepository_FindAll(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -306,7 +306,7 @@ func TestRepositoryRepository_FindAll(t *testing.T) {
 	ctx := context.Background()
 
 	// Create and save multiple test repositories
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		uniqueID := uuid.New().String()
 		testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo-findall-" + uniqueID)
 		description := "Test repository " + string(rune('A'+i))
@@ -512,7 +512,7 @@ func TestRepositoryRepository_FindAll(t *testing.T) {
 	}
 }
 
-// TestRepositoryRepository_Update tests updating repositories
+// TestRepositoryRepository_Update tests updating repositories.
 func TestRepositoryRepository_Update(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -642,7 +642,7 @@ func TestRepositoryRepository_Update(t *testing.T) {
 	}
 }
 
-// TestRepositoryRepository_Delete tests soft deleting repositories
+// TestRepositoryRepository_Delete tests soft deleting repositories.
 func TestRepositoryRepository_Delete(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -709,7 +709,7 @@ func TestRepositoryRepository_Delete(t *testing.T) {
 	}
 }
 
-// TestRepositoryRepository_Exists tests checking repository existence
+// TestRepositoryRepository_Exists tests checking repository existence.
 func TestRepositoryRepository_Exists(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()

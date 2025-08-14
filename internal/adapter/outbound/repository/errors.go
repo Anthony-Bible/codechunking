@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// Common error types
+// Common error types.
 var (
 	ErrNotFound            = errors.New("record not found")
 	ErrAlreadyExists       = errors.New("record already exists")
@@ -19,7 +19,7 @@ var (
 	ErrInvalidArgument     = errors.New("invalid argument")
 )
 
-// IsNotFoundError checks if an error is a "not found" error
+// IsNotFoundError checks if an error is a "not found" error.
 func IsNotFoundError(err error) bool {
 	if err == nil {
 		return false
@@ -27,7 +27,7 @@ func IsNotFoundError(err error) bool {
 	return errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrNotFound)
 }
 
-// IsConstraintViolationError checks if an error is a constraint violation
+// IsConstraintViolationError checks if an error is a constraint violation.
 func IsConstraintViolationError(err error) bool {
 	if err == nil {
 		return false
@@ -46,10 +46,11 @@ func IsConstraintViolationError(err error) bool {
 		}
 	}
 
-	return errors.Is(err, ErrConstraintViolation) || errors.Is(err, ErrAlreadyExists) || errors.Is(err, ErrForeignKeyViolation)
+	return errors.Is(err, ErrConstraintViolation) || errors.Is(err, ErrAlreadyExists) ||
+		errors.Is(err, ErrForeignKeyViolation)
 }
 
-// IsConnectionError checks if an error is a connection-related error
+// IsConnectionError checks if an error is a connection-related error.
 func IsConnectionError(err error) bool {
 	if err == nil {
 		return false
@@ -69,7 +70,7 @@ func IsConnectionError(err error) bool {
 	return errors.Is(err, ErrConnectionFailed)
 }
 
-// WrapError wraps a database error with appropriate context
+// WrapError wraps a database error with appropriate context.
 func WrapError(err error, operation string) error {
 	if err == nil {
 		return nil
@@ -123,7 +124,7 @@ func WrapError(err error, operation string) error {
 	return fmt.Errorf("%s failed: %w", operation, err)
 }
 
-// ConstraintError represents a database constraint violation error
+// ConstraintError represents a database constraint violation error.
 type ConstraintError struct {
 	Operation      string
 	ConstraintType string
@@ -160,7 +161,7 @@ func (e *ConstraintError) Is(target error) bool {
 	}
 }
 
-// RepositoryError represents a repository-specific error
+// RepositoryError represents a repository-specific error.
 type RepositoryError struct {
 	Operation string
 	Err       error
@@ -174,7 +175,7 @@ func (e *RepositoryError) Unwrap() error {
 	return e.Err
 }
 
-// NewRepositoryError creates a new repository error
+// NewRepositoryError creates a new repository error.
 func NewRepositoryError(operation string, err error) *RepositoryError {
 	return &RepositoryError{
 		Operation: operation,
@@ -182,7 +183,7 @@ func NewRepositoryError(operation string, err error) *RepositoryError {
 	}
 }
 
-// isRepositoryDuplicateConstraint checks if a constraint name indicates a repository duplicate
+// isRepositoryDuplicateConstraint checks if a constraint name indicates a repository duplicate.
 func isRepositoryDuplicateConstraint(constraintName string) bool {
 	// Repository-related unique constraints that indicate duplicate detection
 	repositoryConstraints := []string{

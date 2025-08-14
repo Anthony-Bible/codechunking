@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Service interfaces
+// Service interfaces.
 type CreateIndexingJobService interface {
 	CreateIndexingJob(ctx context.Context, request dto.CreateIndexingJobRequest) (*dto.IndexingJobResponse, error)
 }
@@ -20,21 +20,29 @@ type GetIndexingJobService interface {
 }
 
 type UpdateIndexingJobService interface {
-	UpdateIndexingJob(ctx context.Context, jobID uuid.UUID, request dto.UpdateIndexingJobRequest) (*dto.IndexingJobResponse, error)
+	UpdateIndexingJob(
+		ctx context.Context,
+		jobID uuid.UUID,
+		request dto.UpdateIndexingJobRequest,
+	) (*dto.IndexingJobResponse, error)
 }
 
 type ListIndexingJobsService interface {
-	ListIndexingJobs(ctx context.Context, repositoryID uuid.UUID, query dto.IndexingJobListQuery) (*dto.IndexingJobListResponse, error)
+	ListIndexingJobs(
+		ctx context.Context,
+		repositoryID uuid.UUID,
+		query dto.IndexingJobListQuery,
+	) (*dto.IndexingJobListResponse, error)
 }
 
 // Command Handlers
 
-// CreateIndexingJobCommandHandler handles indexing job creation commands
+// CreateIndexingJobCommandHandler handles indexing job creation commands.
 type CreateIndexingJobCommandHandler struct {
 	service CreateIndexingJobService
 }
 
-// NewCreateIndexingJobCommandHandler creates a new instance of CreateIndexingJobCommandHandler
+// NewCreateIndexingJobCommandHandler creates a new instance of CreateIndexingJobCommandHandler.
 func NewCreateIndexingJobCommandHandler(service CreateIndexingJobService) *CreateIndexingJobCommandHandler {
 	return &CreateIndexingJobCommandHandler{
 		service: service,
@@ -43,7 +51,10 @@ func NewCreateIndexingJobCommandHandler(service CreateIndexingJobService) *Creat
 
 // Handle processes a create indexing job command.
 // Validates the command and delegates to the service layer.
-func (h *CreateIndexingJobCommandHandler) Handle(ctx context.Context, command CreateIndexingJobCommand) (*dto.IndexingJobResponse, error) {
+func (h *CreateIndexingJobCommandHandler) Handle(
+	ctx context.Context,
+	command CreateIndexingJobCommand,
+) (*dto.IndexingJobResponse, error) {
 	// Validate command
 	if err := h.validateCreateCommand(command); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
@@ -58,7 +69,7 @@ func (h *CreateIndexingJobCommandHandler) Handle(ctx context.Context, command Cr
 	return h.service.CreateIndexingJob(ctx, request)
 }
 
-// validateCreateCommand validates indexing job creation command
+// validateCreateCommand validates indexing job creation command.
 func (h *CreateIndexingJobCommandHandler) validateCreateCommand(command CreateIndexingJobCommand) error {
 	if err := common.ValidateUUID(command.RepositoryID, "repository ID"); err != nil {
 		return err
@@ -66,12 +77,12 @@ func (h *CreateIndexingJobCommandHandler) validateCreateCommand(command CreateIn
 	return nil
 }
 
-// UpdateIndexingJobCommandHandler handles indexing job update commands
+// UpdateIndexingJobCommandHandler handles indexing job update commands.
 type UpdateIndexingJobCommandHandler struct {
 	service UpdateIndexingJobService
 }
 
-// NewUpdateIndexingJobCommandHandler creates a new instance of UpdateIndexingJobCommandHandler
+// NewUpdateIndexingJobCommandHandler creates a new instance of UpdateIndexingJobCommandHandler.
 func NewUpdateIndexingJobCommandHandler(service UpdateIndexingJobService) *UpdateIndexingJobCommandHandler {
 	return &UpdateIndexingJobCommandHandler{
 		service: service,
@@ -80,7 +91,10 @@ func NewUpdateIndexingJobCommandHandler(service UpdateIndexingJobService) *Updat
 
 // Handle processes an update indexing job command.
 // Validates the command and delegates to the service layer.
-func (h *UpdateIndexingJobCommandHandler) Handle(ctx context.Context, command UpdateIndexingJobCommand) (*dto.IndexingJobResponse, error) {
+func (h *UpdateIndexingJobCommandHandler) Handle(
+	ctx context.Context,
+	command UpdateIndexingJobCommand,
+) (*dto.IndexingJobResponse, error) {
 	// Validate command
 	if err := h.validateUpdateCommand(command); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
@@ -98,7 +112,7 @@ func (h *UpdateIndexingJobCommandHandler) Handle(ctx context.Context, command Up
 	return h.service.UpdateIndexingJob(ctx, command.JobID, request)
 }
 
-// validateUpdateCommand validates indexing job update command
+// validateUpdateCommand validates indexing job update command.
 func (h *UpdateIndexingJobCommandHandler) validateUpdateCommand(command UpdateIndexingJobCommand) error {
 	if err := common.ValidateUUID(command.JobID, "job ID"); err != nil {
 		return err
@@ -111,12 +125,12 @@ func (h *UpdateIndexingJobCommandHandler) validateUpdateCommand(command UpdateIn
 
 // Query Handlers
 
-// GetIndexingJobQueryHandler handles indexing job retrieval queries
+// GetIndexingJobQueryHandler handles indexing job retrieval queries.
 type GetIndexingJobQueryHandler struct {
 	service GetIndexingJobService
 }
 
-// NewGetIndexingJobQueryHandler creates a new instance of GetIndexingJobQueryHandler
+// NewGetIndexingJobQueryHandler creates a new instance of GetIndexingJobQueryHandler.
 func NewGetIndexingJobQueryHandler(service GetIndexingJobService) *GetIndexingJobQueryHandler {
 	return &GetIndexingJobQueryHandler{
 		service: service,
@@ -125,7 +139,10 @@ func NewGetIndexingJobQueryHandler(service GetIndexingJobService) *GetIndexingJo
 
 // Handle processes a get indexing job query.
 // Validates the query and delegates to the service layer.
-func (h *GetIndexingJobQueryHandler) Handle(ctx context.Context, query GetIndexingJobQuery) (*dto.IndexingJobResponse, error) {
+func (h *GetIndexingJobQueryHandler) Handle(
+	ctx context.Context,
+	query GetIndexingJobQuery,
+) (*dto.IndexingJobResponse, error) {
 	// Validate query
 	if err := common.ValidateUUID(query.RepositoryID, "repository ID"); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
@@ -138,12 +155,12 @@ func (h *GetIndexingJobQueryHandler) Handle(ctx context.Context, query GetIndexi
 	return h.service.GetIndexingJob(ctx, query.RepositoryID, query.JobID)
 }
 
-// ListIndexingJobsQueryHandler handles indexing job listing queries
+// ListIndexingJobsQueryHandler handles indexing job listing queries.
 type ListIndexingJobsQueryHandler struct {
 	service ListIndexingJobsService
 }
 
-// NewListIndexingJobsQueryHandler creates a new instance of ListIndexingJobsQueryHandler
+// NewListIndexingJobsQueryHandler creates a new instance of ListIndexingJobsQueryHandler.
 func NewListIndexingJobsQueryHandler(service ListIndexingJobsService) *ListIndexingJobsQueryHandler {
 	return &ListIndexingJobsQueryHandler{
 		service: service,
@@ -152,7 +169,10 @@ func NewListIndexingJobsQueryHandler(service ListIndexingJobsService) *ListIndex
 
 // Handle processes a list indexing jobs query.
 // Validates the query, applies defaults, and delegates to the service layer.
-func (h *ListIndexingJobsQueryHandler) Handle(ctx context.Context, query ListIndexingJobsQuery) (*dto.IndexingJobListResponse, error) {
+func (h *ListIndexingJobsQueryHandler) Handle(
+	ctx context.Context,
+	query ListIndexingJobsQuery,
+) (*dto.IndexingJobListResponse, error) {
 	// Validate query
 	if err := h.validateListQuery(query); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
@@ -171,7 +191,7 @@ func (h *ListIndexingJobsQueryHandler) Handle(ctx context.Context, query ListInd
 	return h.service.ListIndexingJobs(ctx, query.RepositoryID, dtoQuery)
 }
 
-// validateListQuery validates indexing job list query parameters
+// validateListQuery validates indexing job list query parameters.
 func (h *ListIndexingJobsQueryHandler) validateListQuery(query ListIndexingJobsQuery) error {
 	if err := common.ValidateUUID(query.RepositoryID, "repository ID"); err != nil {
 		return err

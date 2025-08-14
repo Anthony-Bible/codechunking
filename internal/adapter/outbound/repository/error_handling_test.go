@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// TestDatabaseErrors tests various database error scenarios
+// TestDatabaseErrors tests various database error scenarios.
 func TestDatabaseErrors(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -42,7 +42,7 @@ func TestDatabaseErrors(t *testing.T) {
 	})
 }
 
-// TestConstraintViolations tests database constraint violation handling
+// TestConstraintViolations tests database constraint violation handling.
 func TestConstraintViolations(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -143,7 +143,7 @@ func TestConstraintViolations(t *testing.T) {
 	})
 }
 
-// TestNotFoundScenarios tests various "not found" error scenarios
+// TestNotFoundScenarios tests various "not found" error scenarios.
 func TestNotFoundScenarios(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -226,7 +226,7 @@ func TestNotFoundScenarios(t *testing.T) {
 	})
 }
 
-// TestContextCancellation tests context cancellation handling
+// TestContextCancellation tests context cancellation handling.
 func TestContextCancellation(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -287,7 +287,7 @@ func TestContextCancellation(t *testing.T) {
 	})
 }
 
-// TestInvalidInput tests invalid input parameter handling
+// TestInvalidInput tests invalid input parameter handling.
 func TestInvalidInput(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -408,7 +408,7 @@ func TestInvalidInput(t *testing.T) {
 	})
 }
 
-// TestDatabaseSpecificErrors tests PostgreSQL-specific error scenarios
+// TestDatabaseSpecificErrors tests PostgreSQL-specific error scenarios.
 func TestDatabaseSpecificErrors(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -454,7 +454,7 @@ func TestDatabaseSpecificErrors(t *testing.T) {
 	})
 }
 
-// Error type checking functions
+// Error type checking functions.
 func isConnectionError(err error) bool {
 	if err == nil {
 		return false

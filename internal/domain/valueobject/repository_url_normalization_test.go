@@ -10,7 +10,7 @@ import (
 )
 
 // TestURLNormalizer_NormalizeURL tests comprehensive URL normalization
-// This test will FAIL initially as the NormalizeURL function doesn't exist yet
+// This test will FAIL initially as the NormalizeURL function doesn't exist yet.
 func TestURLNormalizer_NormalizeURL(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -144,7 +144,7 @@ func TestURLNormalizer_NormalizeURL(t *testing.T) {
 
 // TestURLNormalizer_EquivalentURLs tests that different URL formats for the same repository
 // are normalized to the same canonical form
-// This test will FAIL initially as the normalization functionality doesn't exist
+// This test will FAIL initially as the normalization functionality doesn't exist.
 func TestURLNormalizer_EquivalentURLs(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -225,7 +225,7 @@ func TestURLNormalizer_EquivalentURLs(t *testing.T) {
 
 // TestURLNormalizer_PreserveDistinctRepositories tests that different repositories
 // are NOT normalized to the same URL
-// This test will FAIL initially as the normalization functionality doesn't exist
+// This test will FAIL initially as the normalization functionality doesn't exist.
 func TestURLNormalizer_PreserveDistinctRepositories(t *testing.T) {
 	distinctRepositories := []string{
 		"https://github.com/owner/repo1",
@@ -261,7 +261,7 @@ func TestURLNormalizer_PreserveDistinctRepositories(t *testing.T) {
 }
 
 // TestURLNormalizer_EdgeCases tests edge cases and potential security issues
-// This test will FAIL initially as the normalization functionality doesn't exist
+// This test will FAIL initially as the normalization functionality doesn't exist.
 func TestURLNormalizer_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -331,7 +331,7 @@ func TestURLNormalizer_EdgeCases(t *testing.T) {
 }
 
 // TestRepositoryURL_NormalizedCreation tests that RepositoryURL creation uses normalization
-// This test will FAIL initially as normalization isn't integrated into RepositoryURL creation
+// This test will FAIL initially as normalization isn't integrated into RepositoryURL creation.
 func TestRepositoryURL_NormalizedCreation(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -396,7 +396,7 @@ func TestRepositoryURL_NormalizedCreation(t *testing.T) {
 	}
 }
 
-// generateLongRepoName is a helper function for testing long repository names
+// generateLongRepoName is a helper function for testing long repository names.
 func generateLongRepoName(length int) string {
 	result := make([]byte, length)
 	for i := range result {

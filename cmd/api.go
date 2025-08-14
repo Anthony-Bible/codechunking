@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	// serviceVersion defines the version string used for all services created by this factory
+	// serviceVersion defines the version string used for all services created by this factory.
 	serviceVersion = "1.0.0"
 )
 
@@ -49,7 +49,7 @@ type ServiceFactory struct {
 	creationDelay    time.Duration // Artificial delay for concurrent testing scenarios (default 0 for production)
 }
 
-// NewServiceFactory creates a new ServiceFactory
+// NewServiceFactory creates a new ServiceFactory.
 func NewServiceFactory(cfg *config.Config) *ServiceFactory {
 	return &ServiceFactory{
 		config: cfg,
@@ -238,7 +238,7 @@ func (sf *ServiceFactory) CreateRepositoryService() inbound.RepositoryService {
 	return service.NewRepositoryServiceAdapter(serviceRegistry)
 }
 
-// createDatabasePool creates a database connection pool
+// createDatabasePool creates a database connection pool.
 func (sf *ServiceFactory) createDatabasePool() (*pgxpool.Pool, error) {
 	dbConfig := repository.DatabaseConfig{
 		Host:           sf.config.Database.Host,
@@ -268,7 +268,7 @@ func (sf *ServiceFactory) createDatabasePool() (*pgxpool.Pool, error) {
 	return repository.NewDatabaseConnection(dbConfig)
 }
 
-// CreateErrorHandler creates an error handler instance
+// CreateErrorHandler creates an error handler instance.
 func (sf *ServiceFactory) CreateErrorHandler() api.ErrorHandler {
 	return api.NewDefaultErrorHandler()
 }
@@ -353,32 +353,32 @@ func (sf *ServiceFactory) shouldEnableMiddleware(configValue *bool, defaultValue
 	return defaultValue
 }
 
-// shouldEnableDefaultMiddleware determines if default middleware should be enabled
+// shouldEnableDefaultMiddleware determines if default middleware should be enabled.
 func (sf *ServiceFactory) shouldEnableDefaultMiddleware() bool {
 	return sf.shouldEnableMiddleware(sf.config.API.EnableDefaultMiddleware, middlewareDefaults.DefaultMiddleware)
 }
 
-// shouldEnableCORSMiddleware determines if CORS middleware should be enabled
+// shouldEnableCORSMiddleware determines if CORS middleware should be enabled.
 func (sf *ServiceFactory) shouldEnableCORSMiddleware() bool {
 	return sf.shouldEnableMiddleware(sf.config.API.EnableCORS, middlewareDefaults.CORS)
 }
 
-// shouldEnableSecurityMiddleware determines if security headers middleware should be enabled
+// shouldEnableSecurityMiddleware determines if security headers middleware should be enabled.
 func (sf *ServiceFactory) shouldEnableSecurityMiddleware() bool {
 	return sf.shouldEnableMiddleware(sf.config.API.EnableSecurityHeaders, middlewareDefaults.SecurityHeaders)
 }
 
-// shouldEnableLoggingMiddleware determines if logging middleware should be enabled
+// shouldEnableLoggingMiddleware determines if logging middleware should be enabled.
 func (sf *ServiceFactory) shouldEnableLoggingMiddleware() bool {
 	return sf.shouldEnableMiddleware(sf.config.API.EnableLogging, middlewareDefaults.Logging)
 }
 
-// shouldEnableErrorHandlingMiddleware determines if error handling middleware should be enabled
+// shouldEnableErrorHandlingMiddleware determines if error handling middleware should be enabled.
 func (sf *ServiceFactory) shouldEnableErrorHandlingMiddleware() bool {
 	return sf.shouldEnableMiddleware(sf.config.API.EnableErrorHandling, middlewareDefaults.ErrorHandling)
 }
 
-// apiCmd represents the api command
+// apiCmd represents the api command.
 var apiCmd = &cobra.Command{
 	Use:   "api",
 	Short: "Start the API server",
@@ -425,7 +425,7 @@ func runAPIServer(cmd *cobra.Command, args []string) {
 	gracefulShutdown(server)
 }
 
-// gracefulShutdown handles graceful server shutdown with proper signal handling
+// gracefulShutdown handles graceful server shutdown with proper signal handling.
 func gracefulShutdown(server *api.Server) {
 	// Create a channel to receive OS signals
 	sigChan := make(chan os.Signal, 1)

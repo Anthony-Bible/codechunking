@@ -3,6 +3,7 @@ package messaging
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -16,7 +17,7 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-// ConnectionHealthStatus represents the health status of NATS connection
+// ConnectionHealthStatus represents the health status of NATS connection.
 type ConnectionHealthStatus struct {
 	Connected    bool          `json:"connected"`
 	LastError    string        `json:"last_error,omitempty"`
@@ -25,7 +26,7 @@ type ConnectionHealthStatus struct {
 	LastPingTime time.Time     `json:"last_ping_time"`
 }
 
-// MessageMetrics tracks message publishing metrics
+// MessageMetrics tracks message publishing metrics.
 type MessageMetrics struct {
 	PublishedCount    int64         `json:"published_count"`
 	FailedCount       int64         `json:"failed_count"`
@@ -33,7 +34,7 @@ type MessageMetrics struct {
 	LastPublishedTime time.Time     `json:"last_published_time"`
 }
 
-// IndexingJobMessage represents a message for indexing job queue
+// IndexingJobMessage represents a message for indexing job queue.
 type IndexingJobMessage struct {
 	RepositoryID  uuid.UUID `json:"repository_id"`
 	RepositoryURL string    `json:"repository_url"`
@@ -41,7 +42,7 @@ type IndexingJobMessage struct {
 	MessageID     string    `json:"message_id"`
 }
 
-// NATSMessagePublisher provides NATS JetStream implementation of MessagePublisher
+// NATSMessagePublisher provides NATS JetStream implementation of MessagePublisher.
 type NATSMessagePublisher struct {
 	config            config.NATSConfig
 	conn              *nats.Conn
@@ -64,20 +65,20 @@ type NATSMessagePublisher struct {
 	streamExists  bool   // Track whether stream exists (for test mode)
 }
 
-// NewNATSMessagePublisher creates a new NATS message publisher
+// NewNATSMessagePublisher creates a new NATS message publisher.
 func NewNATSMessagePublisher(cfg config.NATSConfig) (outbound.MessagePublisher, error) {
 	// Validate configuration
 	if cfg.URL == "" {
-		return nil, fmt.Errorf("NATS URL cannot be empty")
+		return nil, errors.New("NATS URL cannot be empty")
 	}
 	if !strings.HasPrefix(cfg.URL, "nats://") {
-		return nil, fmt.Errorf("invalid NATS URL scheme")
+		return nil, errors.New("invalid NATS URL scheme")
 	}
 	if cfg.MaxReconnects < 0 {
-		return nil, fmt.Errorf("max reconnects cannot be negative")
+		return nil, errors.New("max reconnects cannot be negative")
 	}
 	if cfg.ReconnectWait < 0 {
-		return nil, fmt.Errorf("reconnect wait cannot be negative")
+		return nil, errors.New("reconnect wait cannot be negative")
 	}
 
 	return &NATSMessagePublisher{
@@ -87,8 +88,12 @@ func NewNATSMessagePublisher(cfg config.NATSConfig) (outbound.MessagePublisher, 
 	}, nil
 }
 
-// PublishIndexingJob publishes an indexing job message to NATS JetStream
-func (n *NATSMessagePublisher) PublishIndexingJob(ctx context.Context, repositoryID uuid.UUID, repositoryURL string) error {
+// PublishIndexingJob publishes an indexing job message to NATS JetStream.
+func (n *NATSMessagePublisher) PublishIndexingJob(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	repositoryURL string,
+) error {
 	start := time.Now()
 
 	// Check context first
@@ -101,36 +106,36 @@ func (n *NATSMessagePublisher) PublishIndexingJob(ctx context.Context, repositor
 
 	// Validate inputs first - these are user input errors, not system failures
 	if repositoryID == uuid.Nil {
-		return fmt.Errorf("repository ID cannot be nil")
+		return errors.New("repository ID cannot be nil")
 	}
 	if repositoryURL == "" {
-		return fmt.Errorf("repository URL cannot be empty")
+		return errors.New("repository URL cannot be empty")
 	}
 
 	// Validate URL format - be lenient for test URLs
 	parsedURL, err := url.Parse(repositoryURL)
 	if err != nil {
-		return fmt.Errorf("invalid repository URL format")
+		return errors.New("invalid repository URL format")
 	}
 
 	// Check for valid scheme
 	if parsedURL.Scheme == "" || parsedURL.Host == "" {
-		return fmt.Errorf("invalid repository URL format")
+		return errors.New("invalid repository URL format")
 	}
 
 	// Check for supported schemes
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("unsupported URL scheme")
+		return errors.New("unsupported URL scheme")
 	}
 
 	if !strings.HasSuffix(repositoryURL, ".git") {
-		return fmt.Errorf("repository URL must end with .git")
+		return errors.New("repository URL must end with .git")
 	}
 
 	// Check circuit breaker only after input validation
 	if n.isCircuitBreakerOpen() {
 		n.updateMetrics(false, time.Since(start))
-		return fmt.Errorf("circuit breaker open: too many recent failures")
+		return errors.New("circuit breaker open: too many recent failures")
 	}
 
 	if n.isTestMode {
@@ -142,20 +147,20 @@ func (n *NATSMessagePublisher) PublishIndexingJob(ctx context.Context, repositor
 		// In test mode, check if stream exists
 		if !n.streamExists {
 			n.updateMetrics(false, time.Since(start))
-			return fmt.Errorf("stream does not exist")
+			return errors.New("stream does not exist")
 		}
 
 		// Check for specific test error modes that simulate JetStream publish errors
 		switch n.testErrorMode {
 		case "stream_storage_full":
 			n.updateMetrics(false, time.Since(start))
-			return fmt.Errorf("stream storage exceeded")
+			return errors.New("stream storage exceeded")
 		case "message_too_large":
 			n.updateMetrics(false, time.Since(start))
-			return fmt.Errorf("message exceeds maximum size")
+			return errors.New("message exceeds maximum size")
 		case "invalid_subject":
 			n.updateMetrics(false, time.Since(start))
-			return fmt.Errorf("invalid subject")
+			return errors.New("invalid subject")
 		}
 	} else if n.js == nil {
 		n.updateMetrics(false, time.Since(start))
@@ -195,7 +200,7 @@ func (n *NATSMessagePublisher) PublishIndexingJob(ctx context.Context, repositor
 	return nil
 }
 
-// Connect establishes connection to NATS server
+// Connect establishes connection to NATS server.
 func (n *NATSMessagePublisher) Connect() error {
 	// Detect test mode early - if URL is localhost:4222, assume it's a unit test
 	// Integration tests would use a different URL or mechanism
@@ -218,7 +223,7 @@ func (n *NATSMessagePublisher) Connect() error {
 			n.updateConnectionHealth(true, nil)
 		}),
 		nats.DisconnectHandler(func(_ *nats.Conn) {
-			n.updateConnectionHealth(false, fmt.Errorf("connection lost"))
+			n.updateConnectionHealth(false, errors.New("connection lost"))
 		}),
 	}
 
@@ -230,13 +235,13 @@ func (n *NATSMessagePublisher) Connect() error {
 		// Map specific error types to expected messages for tests
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "no such host") || strings.Contains(errMsg, "nonexistent") {
-			return fmt.Errorf("failed to connect to NATS server")
+			return errors.New("failed to connect to NATS server")
 		}
 		if strings.Contains(errMsg, "invalid port") || strings.Contains(errMsg, "99999") {
-			return fmt.Errorf("connection failed")
+			return errors.New("connection failed")
 		}
 		if strings.Contains(errMsg, "i/o timeout") || strings.Contains(errMsg, "10.255.255.1") {
-			return fmt.Errorf("connection timeout")
+			return errors.New("connection timeout")
 		}
 
 		return fmt.Errorf("failed to connect to NATS: %w", err)
@@ -257,7 +262,7 @@ func (n *NATSMessagePublisher) Connect() error {
 	return nil
 }
 
-// Disconnect closes the NATS connection
+// Disconnect closes the NATS connection.
 func (n *NATSMessagePublisher) Disconnect() error {
 	if n.conn != nil {
 		n.conn.Close()
@@ -269,12 +274,12 @@ func (n *NATSMessagePublisher) Disconnect() error {
 	return nil
 }
 
-// EnsureStream creates the JetStream stream if it doesn't exist
+// EnsureStream creates the JetStream stream if it doesn't exist.
 func (n *NATSMessagePublisher) EnsureStream() error {
 	if n.isTestMode {
 		// In test mode, check if we're "connected"
 		if !n.isConnected {
-			return fmt.Errorf("not connected to NATS server")
+			return errors.New("not connected to NATS server")
 		}
 
 		// Use instance-based counter to simulate different error conditions
@@ -287,9 +292,9 @@ func (n *NATSMessagePublisher) EnsureStream() error {
 			// Check for specific test error modes
 			switch n.testErrorMode {
 			case "insufficient_permissions":
-				return fmt.Errorf("insufficient permissions to create stream")
+				return errors.New("insufficient permissions to create stream")
 			case "jetstream_not_enabled":
-				return fmt.Errorf("JetStream not enabled on server")
+				return errors.New("JetStream not enabled on server")
 			default:
 				// No error mode set, succeed and mark stream as existing
 				n.streamExists = true
@@ -303,7 +308,7 @@ func (n *NATSMessagePublisher) EnsureStream() error {
 	}
 
 	if n.js == nil {
-		return fmt.Errorf("not connected to NATS server")
+		return errors.New("not connected to NATS server")
 	}
 
 	// Stream configuration
@@ -322,10 +327,10 @@ func (n *NATSMessagePublisher) EnsureStream() error {
 		// Map specific error types to expected messages for tests
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "permissions") {
-			return fmt.Errorf("insufficient permissions to create stream")
+			return errors.New("insufficient permissions to create stream")
 		}
 		if strings.Contains(errMsg, "JetStream not enabled") || strings.Contains(errMsg, "not supported") {
-			return fmt.Errorf("JetStream not enabled on server")
+			return errors.New("JetStream not enabled on server")
 		}
 
 		// Check if stream already exists
@@ -340,14 +345,14 @@ func (n *NATSMessagePublisher) EnsureStream() error {
 }
 
 // SetTestErrorMode sets the error mode for testing purposes
-// This is only used in test mode to simulate specific error conditions
+// This is only used in test mode to simulate specific error conditions.
 func (n *NATSMessagePublisher) SetTestErrorMode(mode string) {
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
 	n.testErrorMode = mode
 }
 
-// GetConnectionHealth returns the current connection health status (outbound interface)
+// GetConnectionHealth returns the current connection health status (outbound interface).
 func (n *NATSMessagePublisher) GetConnectionHealth() outbound.MessagePublisherHealthStatus {
 	n.mutex.RLock()
 	defer n.mutex.RUnlock()
@@ -377,7 +382,7 @@ func (n *NATSMessagePublisher) GetConnectionHealth() outbound.MessagePublisherHe
 	return status
 }
 
-// GetMessageMetrics returns current message publishing metrics (outbound interface)
+// GetMessageMetrics returns current message publishing metrics (outbound interface).
 func (n *NATSMessagePublisher) GetMessageMetrics() outbound.MessagePublisherMetrics {
 	n.mutex.RLock()
 	defer n.mutex.RUnlock()
@@ -389,7 +394,7 @@ func (n *NATSMessagePublisher) GetMessageMetrics() outbound.MessagePublisherMetr
 	}
 }
 
-// updateConnectionHealth updates the connection health status
+// updateConnectionHealth updates the connection health status.
 func (n *NATSMessagePublisher) updateConnectionHealth(connected bool, err error) {
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
@@ -408,7 +413,7 @@ func (n *NATSMessagePublisher) updateConnectionHealth(connected bool, err error)
 	}
 }
 
-// updateMetrics updates message publishing metrics
+// updateMetrics updates message publishing metrics.
 func (n *NATSMessagePublisher) updateMetrics(success bool, latency time.Duration) {
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
@@ -432,7 +437,7 @@ func (n *NATSMessagePublisher) updateMetrics(success bool, latency time.Duration
 	}
 }
 
-// updateCircuitBreaker updates circuit breaker state
+// updateCircuitBreaker updates circuit breaker state.
 func (n *NATSMessagePublisher) updateCircuitBreaker(success bool) {
 	const maxFailures = 3
 	const circuitOpenDuration = 30 * time.Second
@@ -456,14 +461,14 @@ func (n *NATSMessagePublisher) updateCircuitBreaker(success bool) {
 	}
 }
 
-// isCircuitBreakerOpen checks if circuit breaker is currently open
+// isCircuitBreakerOpen checks if circuit breaker is currently open.
 func (n *NATSMessagePublisher) isCircuitBreakerOpen() bool {
 	n.mutex.RLock()
 	defer n.mutex.RUnlock()
 	return n.circuitBreakerOpen
 }
 
-// ResetCircuitBreaker resets the circuit breaker state (for testing)
+// ResetCircuitBreaker resets the circuit breaker state (for testing).
 func (n *NATSMessagePublisher) ResetCircuitBreaker() {
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
@@ -472,13 +477,17 @@ func (n *NATSMessagePublisher) ResetCircuitBreaker() {
 	n.lastFailureTime = time.Time{}
 }
 
-// tryFallbackDelivery attempts fallback delivery mechanisms when NATS is unavailable
-func (n *NATSMessagePublisher) tryFallbackDelivery(ctx context.Context, repositoryID uuid.UUID, repositoryURL string) error {
+// tryFallbackDelivery attempts fallback delivery mechanisms when NATS is unavailable.
+func (n *NATSMessagePublisher) tryFallbackDelivery(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	repositoryURL string,
+) error {
 	// Check if fallback mode is enabled (for testing graceful degradation)
 	// In normal circuit breaker scenarios, return standard error
 	if n.testErrorMode != "fallback_enabled" {
 		// Return normal connection error (circuit breaker already updated by updateMetrics)
-		return fmt.Errorf("publish failed: not connected to NATS")
+		return errors.New("publish failed: not connected to NATS")
 	}
 
 	// Log the error (minimal implementation for TDD green phase)
@@ -492,5 +501,5 @@ func (n *NATSMessagePublisher) tryFallbackDelivery(ctx context.Context, reposito
 	// (minimal implementation - no fallbacks configured)
 
 	// All fallback mechanisms failed or none are available
-	return fmt.Errorf("all message delivery mechanisms failed")
+	return errors.New("all message delivery mechanisms failed")
 }

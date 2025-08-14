@@ -4,12 +4,12 @@ Copyright © 2025 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"fmt"
+	"log/slog"
 
 	"github.com/spf13/cobra"
 )
 
-// workerCmd represents the worker command
+// workerCmd represents the worker command.
 var workerCmd = &cobra.Command{
 	Use:   "worker",
 	Short: "A brief description of your command",
@@ -20,7 +20,7 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("worker called")
+		slog.Info("worker called")
 	},
 }
 

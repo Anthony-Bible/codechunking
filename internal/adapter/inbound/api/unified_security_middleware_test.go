@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test helper functions
+// Test helper functions.
 func createHTTPSRequest(method, path string) *http.Request {
 	req := testutil.CreateRequest(method, path)
 	req.TLS = &tls.ConnectionState{
@@ -28,7 +28,15 @@ func createHTTPRequest(method, path string) *http.Request {
 func assertSecurityHeader(t *testing.T, w *httptest.ResponseRecorder, headerName, expectedValue string) {
 	t.Helper()
 	actualValue := w.Header().Get(headerName)
-	assert.Equal(t, expectedValue, actualValue, "Header %s should have value %s, got %s", headerName, expectedValue, actualValue)
+	assert.Equal(
+		t,
+		expectedValue,
+		actualValue,
+		"Header %s should have value %s, got %s",
+		headerName,
+		expectedValue,
+		actualValue,
+	)
 }
 
 func assertNoHeader(t *testing.T, w *httptest.ResponseRecorder, headerName string) {
@@ -602,7 +610,12 @@ func TestNewUnifiedSecurityMiddleware_ComprehensiveConfiguration(t *testing.T) {
 
 		// Verify all configured headers
 		assertSecurityHeader(t, w, "Referrer-Policy", "no-referrer")
-		assertSecurityHeader(t, w, "Content-Security-Policy", "default-src 'self'; script-src 'self'; object-src 'none'")
+		assertSecurityHeader(
+			t,
+			w,
+			"Content-Security-Policy",
+			"default-src 'self'; script-src 'self'; object-src 'none'",
+		)
 		assertSecurityHeader(t, w, "Strict-Transport-Security", "max-age=7776000; preload")
 		assertSecurityHeader(t, w, "X-Frame-Options", "SAMEORIGIN")
 		assertSecurityHeader(t, w, "X-Content-Type-Options", "nosniff")

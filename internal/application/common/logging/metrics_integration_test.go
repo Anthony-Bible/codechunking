@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestMetricsIntegration_PrometheusStyleMetrics tests Prometheus-style metrics integration
+// TestMetricsIntegration_PrometheusStyleMetrics tests Prometheus-style metrics integration.
 func TestMetricsIntegration_PrometheusStyleMetrics(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -130,7 +130,7 @@ func TestMetricsIntegration_PrometheusStyleMetrics(t *testing.T) {
 	}
 }
 
-// TestMetricsIntegration_ApplicationMetrics tests application-level metrics logging
+// TestMetricsIntegration_ApplicationMetrics tests application-level metrics logging.
 func TestMetricsIntegration_ApplicationMetrics(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -179,7 +179,16 @@ func TestMetricsIntegration_ApplicationMetrics(t *testing.T) {
 				},
 				Duration: time.Minute * 5,
 			},
-			expectedFields: []string{"category", "operation", "throughput", "error_rate", "latency", "resource_usage", "business_metrics", "duration"},
+			expectedFields: []string{
+				"category",
+				"operation",
+				"throughput",
+				"error_rate",
+				"latency",
+				"resource_usage",
+				"business_metrics",
+				"duration",
+			},
 		},
 		{
 			name: "NATS messaging metrics",
@@ -207,7 +216,15 @@ func TestMetricsIntegration_ApplicationMetrics(t *testing.T) {
 				},
 				Duration: time.Minute * 10,
 			},
-			expectedFields: []string{"category", "operation", "throughput", "error_rate", "latency", "resource_usage", "business_metrics"},
+			expectedFields: []string{
+				"category",
+				"operation",
+				"throughput",
+				"error_rate",
+				"latency",
+				"resource_usage",
+				"business_metrics",
+			},
 		},
 		{
 			name: "API performance metrics",
@@ -235,7 +252,15 @@ func TestMetricsIntegration_ApplicationMetrics(t *testing.T) {
 				},
 				Duration: time.Minute * 10,
 			},
-			expectedFields: []string{"category", "operation", "throughput", "error_rate", "latency", "resource_usage", "business_metrics"},
+			expectedFields: []string{
+				"category",
+				"operation",
+				"throughput",
+				"error_rate",
+				"latency",
+				"resource_usage",
+				"business_metrics",
+			},
 		},
 	}
 
@@ -289,7 +314,7 @@ func TestMetricsIntegration_ApplicationMetrics(t *testing.T) {
 	}
 }
 
-// TestMetricsIntegration_HealthMetrics tests system health metrics logging
+// TestMetricsIntegration_HealthMetrics tests system health metrics logging.
 func TestMetricsIntegration_HealthMetrics(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -484,7 +509,7 @@ func TestMetricsIntegration_HealthMetrics(t *testing.T) {
 	}
 }
 
-// TestMetricsIntegration_CustomMetrics tests custom business metrics logging
+// TestMetricsIntegration_CustomMetrics tests custom business metrics logging.
 func TestMetricsIntegration_CustomMetrics(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -616,7 +641,7 @@ func TestMetricsIntegration_CustomMetrics(t *testing.T) {
 	}
 }
 
-// TestMetricsIntegration_MetricsAggregation tests metrics aggregation and batching
+// TestMetricsIntegration_MetricsAggregation tests metrics aggregation and batching.
 func TestMetricsIntegration_MetricsAggregation(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -637,9 +662,24 @@ func TestMetricsIntegration_MetricsAggregation(t *testing.T) {
 
 	// Simulate multiple metric events that should be aggregated
 	metricEvents := []PrometheusMetric{
-		{Type: "counter", Name: "http_requests_total", Value: 1, Labels: map[string]string{"method": "GET", "status": "200"}},
-		{Type: "counter", Name: "http_requests_total", Value: 1, Labels: map[string]string{"method": "GET", "status": "200"}},
-		{Type: "counter", Name: "http_requests_total", Value: 1, Labels: map[string]string{"method": "POST", "status": "201"}},
+		{
+			Type:   "counter",
+			Name:   "http_requests_total",
+			Value:  1,
+			Labels: map[string]string{"method": "GET", "status": "200"},
+		},
+		{
+			Type:   "counter",
+			Name:   "http_requests_total",
+			Value:  1,
+			Labels: map[string]string{"method": "GET", "status": "200"},
+		},
+		{
+			Type:   "counter",
+			Name:   "http_requests_total",
+			Value:  1,
+			Labels: map[string]string{"method": "POST", "status": "201"},
+		},
 		{Type: "histogram", Name: "request_duration", Value: 0.1, Labels: map[string]string{"method": "GET"}},
 		{Type: "histogram", Name: "request_duration", Value: 0.15, Labels: map[string]string{"method": "GET"}},
 		{Type: "histogram", Name: "request_duration", Value: 0.2, Labels: map[string]string{"method": "POST"}},

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -261,7 +262,7 @@ database:
   sslmode: "require"
 `
 
-		tmpFile, err := os.CreateTemp("", "test-config-*.yaml")
+		tmpFile, err := os.CreateTemp(t.TempDir(), "test-config-*.yaml")
 		require.NoError(t, err)
 		defer func() { _ = os.Remove(tmpFile.Name()) }()
 
@@ -358,23 +359,23 @@ func TestAPICommand_ErrorScenarios(t *testing.T) {
 
 // Test helper functions that will need to be implemented
 
-// testServerSetup encapsulates test server creation and configuration
+// testServerSetup encapsulates test server creation and configuration.
 type testServerSetup struct {
 	config *config.Config
 }
 
-// newTestServerSetup creates a new test server setup helper
+// newTestServerSetup creates a new test server setup helper.
 func newTestServerSetup(cfg *config.Config) *testServerSetup {
 	return &testServerSetup{config: cfg}
 }
 
-// startTestAPIServer starts an API server for testing with improved error handling and organization
+// startTestAPIServer starts an API server for testing with improved error handling and organization.
 func startTestAPIServer(ctx context.Context, cfg *config.Config) (APIServer, string, error) {
 	setup := newTestServerSetup(cfg)
 	return setup.start()
 }
 
-// start handles the complete server startup process with cleaner error handling
+// start handles the complete server startup process with cleaner error handling.
 func (s *testServerSetup) start() (APIServer, string, error) {
 	if err := s.validateAndPrepareConfig(); err != nil {
 		return nil, "", err
@@ -400,7 +401,7 @@ func (s *testServerSetup) start() (APIServer, string, error) {
 	return testServer, baseURL, nil
 }
 
-// validateAndPrepareConfig consolidates configuration validation and preparation
+// validateAndPrepareConfig consolidates configuration validation and preparation.
 func (s *testServerSetup) validateAndPrepareConfig() error {
 	if err := validateAndSetConfigDefaults(s.config); err != nil {
 		return err
@@ -408,26 +409,26 @@ func (s *testServerSetup) validateAndPrepareConfig() error {
 	return validateConfigValues(s.config)
 }
 
-// createHTTPServer creates the HTTP server with proper error handling
+// createHTTPServer creates the HTTP server with proper error handling.
 func (s *testServerSetup) createHTTPServer() (*http.Server, error) {
 	return createTestHTTPServer(s.config), nil
 }
 
-// startListener starts the server listener with improved error handling
+// startListener starts the server listener with improved error handling.
 func (s *testServerSetup) startListener(httpServer *http.Server) (net.Listener, error) {
 	return startServerListener(httpServer)
 }
 
-// buildBaseURL constructs the base URL from the HTTP server
+// buildBaseURL constructs the base URL from the HTTP server.
 func (s *testServerSetup) buildBaseURL(httpServer *http.Server) string {
 	return buildBaseURL(httpServer)
 }
 
-// validateAndSetConfigDefaults validates and sets default configuration values
+// validateAndSetConfigDefaults validates and sets default configuration values.
 func validateAndSetConfigDefaults(cfg *config.Config) error {
 	// Check for completely empty API config first (before setting defaults)
 	if cfg.API.Host == "" && cfg.API.Port == "" && cfg.API.ReadTimeout == 0 && cfg.API.WriteTimeout == 0 {
-		return fmt.Errorf("invalid configuration: missing required config")
+		return errors.New("invalid configuration: missing required config")
 	}
 
 	// Set defaults if missing
@@ -447,7 +448,7 @@ func validateAndSetConfigDefaults(cfg *config.Config) error {
 	return nil
 }
 
-// validateConfigValues validates specific configuration values for test scenarios
+// validateConfigValues validates specific configuration values for test scenarios.
 func validateConfigValues(cfg *config.Config) error {
 	// Check for invalid configuration first
 	if cfg.API.Host == "999.999.999.999" || cfg.API.Host == "256.256.256.256" {
@@ -456,7 +457,7 @@ func validateConfigValues(cfg *config.Config) error {
 	return nil
 }
 
-// createTestHTTPServer creates an HTTP server with test routes
+// createTestHTTPServer creates an HTTP server with test routes.
 func createTestHTTPServer(cfg *config.Config) *http.Server {
 	mux := http.NewServeMux()
 
@@ -472,14 +473,14 @@ func createTestHTTPServer(cfg *config.Config) *http.Server {
 	}
 }
 
-// testHandlerResponse represents a standard test response structure
+// testHandlerResponse represents a standard test response structure.
 type testHandlerResponse struct {
 	statusCode int
 	body       string
 	headers    map[string]string
 }
 
-// writeResponse writes the test response with headers to the response writer
+// writeResponse writes the test response with headers to the response writer.
 func (tr testHandlerResponse) writeResponse(w http.ResponseWriter) {
 	// Set default CORS headers
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -493,7 +494,7 @@ func (tr testHandlerResponse) writeResponse(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(tr.body))
 }
 
-// createHealthHandler creates the health endpoint handler with cleaner structure
+// createHealthHandler creates the health endpoint handler with cleaner structure.
 func createHealthHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Add delay for slow=true parameter to test graceful shutdown
@@ -503,14 +504,17 @@ func createHealthHandler() http.HandlerFunc {
 
 		response := testHandlerResponse{
 			statusCode: http.StatusOK,
-			body:       fmt.Sprintf(`{"status":"healthy","version":"1.0.0","timestamp":"%s"}`, time.Now().Format(time.RFC3339)),
-			headers:    map[string]string{"Content-Type": "application/json"},
+			body: fmt.Sprintf(
+				`{"status":"healthy","version":"1.0.0","timestamp":"%s"}`,
+				time.Now().Format(time.RFC3339),
+			),
+			headers: map[string]string{"Content-Type": "application/json"},
 		}
 		response.writeResponse(w)
 	}
 }
 
-// createRepositoriesHandler creates the repositories endpoint handler with improved organization
+// createRepositoriesHandler creates the repositories endpoint handler with improved organization.
 func createRepositoriesHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
@@ -528,11 +532,15 @@ func createRepositoriesHandler() http.HandlerFunc {
 	}
 }
 
-// createRepositoryPostResponse creates a POST response for repository creation
+// createRepositoryPostResponse creates a POST response for repository creation.
 func createRepositoryPostResponse() testHandlerResponse {
 	now := time.Now().Format(time.RFC3339)
-	body := fmt.Sprintf(`{"id":"%s","url":"https://github.com/test/repo","name":"repo","status":"pending","created_at":"%s","updated_at":"%s"}`,
-		uuid.New().String(), now, now)
+	body := fmt.Sprintf(
+		`{"id":"%s","url":"https://github.com/test/repo","name":"repo","status":"pending","created_at":"%s","updated_at":"%s"}`,
+		uuid.New().String(),
+		now,
+		now,
+	)
 	return testHandlerResponse{
 		statusCode: http.StatusAccepted,
 		body:       body,
@@ -540,7 +548,7 @@ func createRepositoryPostResponse() testHandlerResponse {
 	}
 }
 
-// createRepositoryListResponse creates a GET response for repository listing
+// createRepositoryListResponse creates a GET response for repository listing.
 func createRepositoryListResponse() testHandlerResponse {
 	return testHandlerResponse{
 		statusCode: http.StatusOK,
@@ -549,12 +557,12 @@ func createRepositoryListResponse() testHandlerResponse {
 	}
 }
 
-// startServerListener starts the server listener and handles the server startup
+// startServerListener starts the server listener and handles the server startup.
 func startServerListener(httpServer *http.Server) (net.Listener, error) {
 	listener, err := net.Listen("tcp", httpServer.Addr)
 	if err != nil {
 		if strings.Contains(err.Error(), "address already in use") {
-			return nil, fmt.Errorf("address already in use")
+			return nil, errors.New("address already in use")
 		}
 		return nil, fmt.Errorf("failed to start server: %w", err)
 	}
@@ -572,19 +580,19 @@ func startServerListener(httpServer *http.Server) (net.Listener, error) {
 	return listener, nil
 }
 
-// buildBaseURL constructs the base URL for the test server
+// buildBaseURL constructs the base URL for the test server.
 func buildBaseURL(httpServer *http.Server) string {
 	return "http://" + httpServer.Addr
 }
 
-// APIServer interface represents the running API server for testing
+// APIServer interface represents the running API server for testing.
 type APIServer interface {
 	Shutdown(ctx context.Context) error
 	Address() string
 	IsRunning() bool
 }
 
-// simpleTestServer is a minimal test server implementation
+// simpleTestServer is a minimal test server implementation.
 type simpleTestServer struct {
 	server    *http.Server
 	listener  net.Listener
@@ -614,7 +622,7 @@ func (s *simpleTestServer) IsRunning() bool {
 	return s.isRunning
 }
 
-// LoadAPIConfiguration loads configuration for API server from environment/files
+// LoadAPIConfiguration loads configuration for API server from environment/files.
 func LoadAPIConfiguration() (*config.Config, error) {
 	v := viper.New()
 
@@ -634,7 +642,8 @@ func LoadAPIConfiguration() (*config.Config, error) {
 
 	if err := v.ReadInConfig(); err != nil {
 		// Config file not found; use defaults and environment
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if errors.As(err, &configFileNotFoundError) {
 			return nil, err
 		}
 	}
@@ -649,7 +658,7 @@ func LoadAPIConfiguration() (*config.Config, error) {
 	return cfg, nil
 }
 
-// LoadAPIConfigurationFromFile loads configuration from a specific file
+// LoadAPIConfigurationFromFile loads configuration from a specific file.
 func LoadAPIConfigurationFromFile(filename string) (*config.Config, error) {
 	v := viper.New()
 
@@ -678,7 +687,7 @@ func LoadAPIConfigurationFromFile(filename string) (*config.Config, error) {
 	return cfg, nil
 }
 
-// setTestDefaults sets default values for test configuration
+// setTestDefaults sets default values for test configuration.
 func setTestDefaults(v *viper.Viper) {
 	// API defaults
 	v.SetDefault("api.port", "8080")
@@ -717,12 +726,12 @@ func setTestDefaults(v *viper.Viper) {
 
 // Helper functions for creating test configurations
 
-// testConfigBuilder helps create test configurations with a fluent interface to reduce duplication
+// testConfigBuilder helps create test configurations with a fluent interface to reduce duplication.
 type testConfigBuilder struct {
 	config *config.Config
 }
 
-// newTestConfig creates a new test configuration builder with sensible defaults
+// newTestConfig creates a new test configuration builder with sensible defaults.
 func newTestConfig() *testConfigBuilder {
 	return &testConfigBuilder{
 		config: &config.Config{
@@ -751,8 +760,11 @@ func newTestConfig() *testConfigBuilder {
 	}
 }
 
-// withAPISettings configures API-specific settings
-func (b *testConfigBuilder) withAPISettings(host, port string, readTimeout, writeTimeout time.Duration) *testConfigBuilder {
+// withAPISettings configures API-specific settings.
+func (b *testConfigBuilder) withAPISettings(
+	host, port string,
+	readTimeout, writeTimeout time.Duration,
+) *testConfigBuilder {
 	b.config.API.Host = host
 	b.config.API.Port = port
 	b.config.API.ReadTimeout = readTimeout
@@ -760,8 +772,12 @@ func (b *testConfigBuilder) withAPISettings(host, port string, readTimeout, writ
 	return b
 }
 
-// withCustomDatabase configures custom database settings
-func (b *testConfigBuilder) withCustomDatabase(host string, port int, user, password, name, sslmode string) *testConfigBuilder {
+// withCustomDatabase configures custom database settings.
+func (b *testConfigBuilder) withCustomDatabase(
+	host string,
+	port int,
+	user, password, name, sslmode string,
+) *testConfigBuilder {
 	b.config.Database = config.DatabaseConfig{
 		Host:     host,
 		Port:     port,
@@ -773,12 +789,12 @@ func (b *testConfigBuilder) withCustomDatabase(host string, port int, user, pass
 	return b
 }
 
-// build returns the final configuration
+// build returns the final configuration.
 func (b *testConfigBuilder) build() *config.Config {
 	return b.config
 }
 
-// Convenience functions for common configurations
+// Convenience functions for common configurations.
 func createDefaultTestConfig() *config.Config {
 	return newTestConfig().build()
 }
@@ -796,7 +812,7 @@ func createCustomTimeoutConfig(readTimeout, writeTimeout time.Duration) *config.
 
 // Validation helper functions
 
-// validateHealthEndpoint validates the health endpoint response
+// validateHealthEndpoint validates the health endpoint response.
 func validateHealthEndpoint(t *testing.T, baseURL string) {
 	resp, err := http.Get(baseURL + "/health")
 	require.NoError(t, err)
@@ -818,7 +834,7 @@ func validateHealthEndpoint(t *testing.T, baseURL string) {
 	assert.Contains(t, healthResponse, "timestamp")
 }
 
-// apiRouteTestCase represents a single API route test case
+// apiRouteTestCase represents a single API route test case.
 type apiRouteTestCase struct {
 	method         string
 	path           string
@@ -826,7 +842,7 @@ type apiRouteTestCase struct {
 	expectedStatus int
 }
 
-// validateAllAPIRoutes validates all API routes work correctly using a cleaner test structure
+// validateAllAPIRoutes validates all API routes work correctly using a cleaner test structure.
 func validateAllAPIRoutes(t *testing.T, baseURL string) {
 	routes := []apiRouteTestCase{
 		{http.MethodGet, "/health", "", http.StatusOK},
@@ -840,7 +856,7 @@ func validateAllAPIRoutes(t *testing.T, baseURL string) {
 	}
 }
 
-// validate executes the API route test case with improved error handling
+// validate executes the API route test case with improved error handling.
 func (tc apiRouteTestCase) validate(t *testing.T, baseURL string) {
 	resp, err := tc.makeRequest(baseURL)
 	require.NoError(t, err, "Route %s %s should not error", tc.method, tc.path)
@@ -853,7 +869,7 @@ func (tc apiRouteTestCase) validate(t *testing.T, baseURL string) {
 	assert.Equal(t, "*", resp.Header.Get("Access-Control-Allow-Origin"))
 }
 
-// makeRequest creates and executes the HTTP request based on the test case
+// makeRequest creates and executes the HTTP request based on the test case.
 func (tc apiRouteTestCase) makeRequest(baseURL string) (*http.Response, error) {
 	switch {
 	case tc.body != "":
@@ -865,7 +881,7 @@ func (tc apiRouteTestCase) makeRequest(baseURL string) (*http.Response, error) {
 	}
 }
 
-// makeCORSPreflightRequest creates a CORS preflight request
+// makeCORSPreflightRequest creates a CORS preflight request.
 func (tc apiRouteTestCase) makeCORSPreflightRequest(baseURL string) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodOptions, baseURL+tc.path, nil)
 	if err != nil {
@@ -876,7 +892,7 @@ func (tc apiRouteTestCase) makeCORSPreflightRequest(baseURL string) (*http.Respo
 	return http.DefaultClient.Do(req)
 }
 
-// validateCustomTimeouts validates that custom timeouts are respected
+// validateCustomTimeouts validates that custom timeouts are respected.
 func validateCustomTimeouts(t *testing.T, baseURL string) {
 	// Create a request that would exceed short timeouts but should work with longer ones
 	client := &http.Client{

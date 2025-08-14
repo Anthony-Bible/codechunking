@@ -13,7 +13,7 @@ import (
 )
 
 // TestServiceFactory_shouldEnableDefaultMiddleware_ConfigurableBehavior tests that
-// shouldEnableDefaultMiddleware respects configuration values rather than always returning true
+// shouldEnableDefaultMiddleware respects configuration values rather than always returning true.
 func TestServiceFactory_shouldEnableDefaultMiddleware_ConfigurableBehavior(t *testing.T) {
 	tests := []struct {
 		name                        string
@@ -65,7 +65,7 @@ func TestServiceFactory_shouldEnableDefaultMiddleware_ConfigurableBehavior(t *te
 }
 
 // TestServiceFactory_shouldEnableDefaultMiddleware_IndividualMiddlewareToggles tests that
-// individual middleware components can be toggled independently
+// individual middleware components can be toggled independently.
 func TestServiceFactory_shouldEnableDefaultMiddleware_IndividualMiddlewareToggles(t *testing.T) {
 	tests := []struct {
 		name                 string
@@ -152,23 +152,33 @@ func TestServiceFactory_shouldEnableDefaultMiddleware_IndividualMiddlewareToggle
 
 			if tt.errorHandlingEnabled != nil {
 				errorResult := factory.shouldEnableErrorHandlingMiddleware()
-				assert.Equal(t, *tt.errorHandlingEnabled, errorResult, "Error handling middleware should respect config")
+				assert.Equal(
+					t,
+					*tt.errorHandlingEnabled,
+					errorResult,
+					"Error handling middleware should respect config",
+				)
 			}
 
 			// When all settings are nil, test default behavior
-			if tt.corsEnabled == nil && tt.securityEnabled == nil && tt.loggingEnabled == nil && tt.errorHandlingEnabled == nil {
+			if tt.corsEnabled == nil && tt.securityEnabled == nil && tt.loggingEnabled == nil &&
+				tt.errorHandlingEnabled == nil {
 				// Defaults should be reasonable (likely true for most middleware)
 				assert.True(t, factory.shouldEnableCORSMiddleware(), "CORS should default to enabled")
 				assert.True(t, factory.shouldEnableSecurityMiddleware(), "Security should default to enabled")
 				assert.True(t, factory.shouldEnableLoggingMiddleware(), "Logging should default to enabled")
-				assert.True(t, factory.shouldEnableErrorHandlingMiddleware(), "Error handling should default to enabled")
+				assert.True(
+					t,
+					factory.shouldEnableErrorHandlingMiddleware(),
+					"Error handling should default to enabled",
+				)
 			}
 		})
 	}
 }
 
 // TestServiceFactory_CreateServer_MiddlewareIntegration tests that CreateServer() properly
-// respects middleware configuration when building the server
+// respects middleware configuration when building the server.
 func TestServiceFactory_CreateServer_MiddlewareIntegration(t *testing.T) {
 	// Skip this integration test during GREEN phase due to database connection requirement
 	// CreateServer calls CreateRepositoryService which calls log.Fatalf on DB connection failures
@@ -232,7 +242,7 @@ func TestServiceFactory_CreateServer_MiddlewareIntegration(t *testing.T) {
 }
 
 // TestServiceFactory_CreateServer_SelectiveMiddleware tests that individual middleware
-// can be selectively enabled/disabled while others remain active
+// can be selectively enabled/disabled while others remain active.
 func TestServiceFactory_CreateServer_SelectiveMiddleware(t *testing.T) {
 	// Skip this integration test during GREEN phase due to database connection requirement
 	t.Skip("Skipping integration test during GREEN phase - requires database connection mocking")
@@ -311,7 +321,7 @@ func TestServiceFactory_CreateServer_SelectiveMiddleware(t *testing.T) {
 }
 
 // TestAPIConfig_MiddlewareFields_ConfigurationLoading tests that middleware configuration
-// fields are properly loaded from config files and environment variables
+// fields are properly loaded from config files and environment variables.
 func TestAPIConfig_MiddlewareFields_ConfigurationLoading(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -426,9 +436,19 @@ func TestAPIConfig_MiddlewareFields_ConfigurationLoading(t *testing.T) {
 			assert.Equal(t, tt.expectedConfig.Port, cfg.API.Port)
 
 			// Verify middleware configuration fields
-			assertBoolPtr(t, "EnableDefaultMiddleware", tt.expectedConfig.EnableDefaultMiddleware, cfg.API.EnableDefaultMiddleware)
+			assertBoolPtr(
+				t,
+				"EnableDefaultMiddleware",
+				tt.expectedConfig.EnableDefaultMiddleware,
+				cfg.API.EnableDefaultMiddleware,
+			)
 			assertBoolPtr(t, "EnableCORS", tt.expectedConfig.EnableCORS, cfg.API.EnableCORS)
-			assertBoolPtr(t, "EnableSecurityHeaders", tt.expectedConfig.EnableSecurityHeaders, cfg.API.EnableSecurityHeaders)
+			assertBoolPtr(
+				t,
+				"EnableSecurityHeaders",
+				tt.expectedConfig.EnableSecurityHeaders,
+				cfg.API.EnableSecurityHeaders,
+			)
 			assertBoolPtr(t, "EnableLogging", tt.expectedConfig.EnableLogging, cfg.API.EnableLogging)
 			assertBoolPtr(t, "EnableErrorHandling", tt.expectedConfig.EnableErrorHandling, cfg.API.EnableErrorHandling)
 		})
@@ -436,7 +456,7 @@ func TestAPIConfig_MiddlewareFields_ConfigurationLoading(t *testing.T) {
 }
 
 // TestServiceFactory_MiddlewareConfigValidation tests that middleware configuration
-// is properly validated during config loading
+// is properly validated during config loading.
 func TestServiceFactory_MiddlewareConfigValidation(t *testing.T) {
 	// Skip this integration test during GREEN phase due to database connection requirement
 	t.Skip("Skipping integration test during GREEN phase - requires database connection mocking")
@@ -501,12 +521,12 @@ func TestServiceFactory_MiddlewareConfigValidation(t *testing.T) {
 
 // Helper functions
 
-// boolPtr returns a pointer to the given boolean value
+// boolPtr returns a pointer to the given boolean value.
 func boolPtr(b bool) *bool {
 	return &b
 }
 
-// assertBoolPtr compares two boolean pointers, handling nil cases correctly
+// assertBoolPtr compares two boolean pointers, handling nil cases correctly.
 func assertBoolPtr(t *testing.T, fieldName string, expected, actual *bool) {
 	if expected == nil && actual == nil {
 		return // Both nil, test passes
@@ -520,10 +540,10 @@ func assertBoolPtr(t *testing.T, fieldName string, expected, actual *bool) {
 		return
 	}
 	// Both are non-nil, compare values
-	assert.Equal(t, *expected, *actual, fmt.Sprintf("%s values should match", fieldName))
+	assert.Equal(t, *expected, *actual, "%s values should match", fieldName)
 }
 
-// createTestConfig creates a minimal valid config for testing
+// createTestConfig creates a minimal valid config for testing.
 func createTestConfig(t *testing.T) *config.Config {
 	return &config.Config{
 		API: config.APIConfig{

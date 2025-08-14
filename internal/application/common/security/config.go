@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-// Config holds all configurable security parameters
+// Config holds all configurable security parameters.
 type Config struct {
 	// URL validation settings
 	MaxURLLength int
@@ -32,7 +32,7 @@ type Config struct {
 	CacheTTL              time.Duration
 }
 
-// RateLimitConfig configures rate limiting behavior
+// RateLimitConfig configures rate limiting behavior.
 type RateLimitConfig struct {
 	RequestsPerMinute int
 	BurstSize         int
@@ -40,7 +40,7 @@ type RateLimitConfig struct {
 	Enabled           bool
 }
 
-// ValidationLimits holds limits for various validation operations
+// ValidationLimits holds limits for various validation operations.
 type ValidationLimits struct {
 	MaxFieldLength       int
 	MaxArrayLength       int
@@ -49,7 +49,7 @@ type ValidationLimits struct {
 	MaxPatternComplexity int
 }
 
-// DefaultConfig returns a production-ready security configuration
+// DefaultConfig returns a production-ready security configuration.
 func DefaultConfig() *Config {
 	return &Config{
 		MaxURLLength: 2048,
@@ -77,7 +77,7 @@ func DefaultConfig() *Config {
 	}
 }
 
-// DevelopmentConfig returns a development-friendly configuration with relaxed limits
+// DevelopmentConfig returns a development-friendly configuration with relaxed limits.
 func DevelopmentConfig() *Config {
 	config := DefaultConfig()
 	config.RateLimit.RequestsPerMinute = 300
@@ -86,7 +86,7 @@ func DevelopmentConfig() *Config {
 	return config
 }
 
-// TestConfig returns a configuration suitable for testing
+// TestConfig returns a configuration suitable for testing.
 func TestConfig() *Config {
 	config := DefaultConfig()
 	config.RateLimit.Enabled = false
@@ -95,7 +95,7 @@ func TestConfig() *Config {
 	return config
 }
 
-// Validate ensures the configuration is valid and sets reasonable defaults
+// Validate ensures the configuration is valid and sets reasonable defaults.
 func (c *Config) Validate() error {
 	if c.MaxURLLength <= 0 {
 		c.MaxURLLength = 2048
@@ -128,7 +128,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// IsFeatureEnabled checks if a security feature is enabled
+// IsFeatureEnabled checks if a security feature is enabled.
 func (c *Config) IsFeatureEnabled(feature string) bool {
 	switch feature {
 	case "xss":

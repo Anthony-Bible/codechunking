@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIntegrationDemo demonstrates that the basic structured logging framework works
+// TestIntegrationDemo demonstrates that the basic structured logging framework works.
 func TestIntegrationDemo(t *testing.T) {
 	// Create logger with JSON output to stdout (for demonstration)
 	config := Config{
@@ -53,7 +53,7 @@ func TestIntegrationDemo(t *testing.T) {
 	t.Log("✅ Performance logging working")
 }
 
-// TestNATSLoggingDemo demonstrates NATS logging functionality
+// TestNATSLoggingDemo demonstrates NATS logging functionality.
 func TestNATSLoggingDemo(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -91,7 +91,7 @@ func TestNATSLoggingDemo(t *testing.T) {
 	t.Log("✅ NATS publish event logging working")
 }
 
-// TestMetricsLoggingDemo demonstrates metrics logging functionality
+// TestMetricsLoggingDemo demonstrates metrics logging functionality.
 func TestMetricsLoggingDemo(t *testing.T) {
 	config := Config{
 		Level:  "INFO",

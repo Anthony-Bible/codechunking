@@ -10,7 +10,7 @@ import (
 )
 
 // FuzzNormalizeRepositoryURL tests URL normalization with random inputs
-// This test will FAIL initially as the NormalizeRepositoryURL function doesn't exist yet
+// This test will FAIL initially as the NormalizeRepositoryURL function doesn't exist yet.
 func FuzzNormalizeRepositoryURL(f *testing.F) {
 	// Seed fuzzer with known test cases
 	seedURLs := []string{
@@ -68,7 +68,7 @@ func FuzzNormalizeRepositoryURL(f *testing.F) {
 }
 
 // FuzzRepositoryURLCreationWithNormalization tests RepositoryURL creation with fuzzing
-// This test will FAIL initially as normalization isn't integrated into RepositoryURL creation
+// This test will FAIL initially as normalization isn't integrated into RepositoryURL creation.
 func FuzzRepositoryURLCreationWithNormalization(f *testing.F) {
 	// Seed with valid repository URLs
 	seedURLs := []string{
@@ -111,7 +111,12 @@ func FuzzRepositoryURLCreationWithNormalization(f *testing.F) {
 		// Test that creating a RepositoryURL from the normalized URL produces the same result
 		repoURL2, err2 := NewRepositoryURL(normalizedURL)
 		if err2 != nil {
-			t.Errorf("Creating RepositoryURL from normalized URL should not fail: %s -> %s (error: %v)", url, normalizedURL, err2)
+			t.Errorf(
+				"Creating RepositoryURL from normalized URL should not fail: %s -> %s (error: %v)",
+				url,
+				normalizedURL,
+				err2,
+			)
 			return
 		}
 
@@ -122,7 +127,7 @@ func FuzzRepositoryURLCreationWithNormalization(f *testing.F) {
 }
 
 // FuzzURLEquivalenceDetection tests that equivalent URLs are detected as such
-// This test will FAIL initially as comprehensive normalization doesn't exist yet
+// This test will FAIL initially as comprehensive normalization doesn't exist yet.
 func FuzzURLEquivalenceDetection(f *testing.F) {
 	// Seed with pairs of URLs that should be equivalent
 	equivalentPairs := [][]string{
@@ -167,8 +172,13 @@ func FuzzURLEquivalenceDetection(f *testing.F) {
 
 				if createErr1 == nil && createErr2 == nil {
 					if !repoURL1.Equal(repoURL2) {
-						t.Errorf("Equivalent URLs should create equal RepositoryURL objects:\nURL1: %s -> %s\nURL2: %s -> %s",
-							url1, normalized1, url2, normalized2)
+						t.Errorf(
+							"Equivalent URLs should create equal RepositoryURL objects:\nURL1: %s -> %s\nURL2: %s -> %s",
+							url1,
+							normalized1,
+							url2,
+							normalized2,
+						)
 					}
 				}
 			} else {
@@ -188,7 +198,7 @@ func FuzzURLEquivalenceDetection(f *testing.F) {
 }
 
 // FuzzNormalizationPerformance tests performance characteristics of URL normalization
-// This test will FAIL initially as the normalization function doesn't exist yet
+// This test will FAIL initially as the normalization function doesn't exist yet.
 func FuzzNormalizationPerformance(f *testing.F) {
 	// Seed with URLs of varying complexity
 	seedURLs := []string{
@@ -235,7 +245,7 @@ func FuzzNormalizationPerformance(f *testing.F) {
 }
 
 // FuzzSecurityVulnerabilities tests for security issues in URL normalization
-// This test will FAIL initially as comprehensive security validation doesn't exist yet
+// This test will FAIL initially as comprehensive security validation doesn't exist yet.
 func FuzzSecurityVulnerabilities(f *testing.F) {
 	// Seed with potentially problematic URLs
 	seedURLs := []string{
@@ -269,7 +279,7 @@ func FuzzSecurityVulnerabilities(f *testing.F) {
 
 // Helper functions for fuzzing validation
 
-// containsControlCharacters checks if the string contains control characters
+// containsControlCharacters checks if the string contains control characters.
 func containsControlCharacters(s string) bool {
 	for _, r := range s {
 		if unicode.IsControl(r) && r != '\t' && r != '\n' && r != '\r' {
@@ -279,7 +289,7 @@ func containsControlCharacters(s string) bool {
 	return false
 }
 
-// containsSupportedHost checks if the URL contains a supported Git hosting provider
+// containsSupportedHost checks if the URL contains a supported Git hosting provider.
 func containsSupportedHost(url string) bool {
 	url = strings.ToLower(url)
 	return strings.Contains(url, "github.com") ||
@@ -287,7 +297,7 @@ func containsSupportedHost(url string) bool {
 		strings.Contains(url, "bitbucket.org")
 }
 
-// validateNormalizedURL performs consistency checks on normalized URLs
+// validateNormalizedURL performs consistency checks on normalized URLs.
 func validateNormalizedURL(t *testing.T, original, normalized string) {
 	// Normalized URL should not be empty
 	if len(normalized) == 0 {
@@ -335,7 +345,7 @@ func validateNormalizedURL(t *testing.T, original, normalized string) {
 	}
 }
 
-// validateNormalizedRepositoryURL performs validation specific to RepositoryURL objects
+// validateNormalizedRepositoryURL performs validation specific to RepositoryURL objects.
 func validateNormalizedRepositoryURL(t *testing.T, original, normalized string) {
 	// First run the general validation
 	validateNormalizedURL(t, original, normalized)
@@ -354,7 +364,7 @@ func validateNormalizedRepositoryURL(t *testing.T, original, normalized string) 
 	}
 }
 
-// validateSecurityOfNormalizedURL checks for security issues in normalized URLs
+// validateSecurityOfNormalizedURL checks for security issues in normalized URLs.
 func validateSecurityOfNormalizedURL(t *testing.T, original, normalized string) {
 	// Should not contain path traversal attempts
 	if strings.Contains(normalized, "..") {

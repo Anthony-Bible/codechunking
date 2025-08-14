@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -13,7 +14,7 @@ import (
 	"codechunking/internal/port/inbound"
 )
 
-// Server represents the HTTP API server
+// Server represents the HTTP API server.
 type Server struct {
 	config          *config.Config
 	httpServer      *http.Server
@@ -28,7 +29,7 @@ type Server struct {
 	middlewareCount int
 }
 
-// ServerBuilder provides a fluent interface for building Server instances
+// ServerBuilder provides a fluent interface for building Server instances.
 type ServerBuilder struct {
 	config        *config.Config
 	healthService inbound.HealthService
@@ -37,10 +38,10 @@ type ServerBuilder struct {
 	middleware    []MiddlewareFunc
 }
 
-// MiddlewareFunc defines the middleware function signature
+// MiddlewareFunc defines the middleware function signature.
 type MiddlewareFunc func(http.Handler) http.Handler
 
-// NewServerBuilder creates a new ServerBuilder
+// NewServerBuilder creates a new ServerBuilder.
 func NewServerBuilder(config *config.Config) *ServerBuilder {
 	return &ServerBuilder{
 		config:     config,
@@ -48,31 +49,31 @@ func NewServerBuilder(config *config.Config) *ServerBuilder {
 	}
 }
 
-// WithHealthService sets the health service
+// WithHealthService sets the health service.
 func (b *ServerBuilder) WithHealthService(service inbound.HealthService) *ServerBuilder {
 	b.healthService = service
 	return b
 }
 
-// WithRepositoryService sets the repository service
+// WithRepositoryService sets the repository service.
 func (b *ServerBuilder) WithRepositoryService(service inbound.RepositoryService) *ServerBuilder {
 	b.repoService = service
 	return b
 }
 
-// WithErrorHandler sets the error handler
+// WithErrorHandler sets the error handler.
 func (b *ServerBuilder) WithErrorHandler(handler ErrorHandler) *ServerBuilder {
 	b.errorHandler = handler
 	return b
 }
 
-// WithMiddleware adds middleware to the chain
+// WithMiddleware adds middleware to the chain.
 func (b *ServerBuilder) WithMiddleware(middleware MiddlewareFunc) *ServerBuilder {
 	b.middleware = append(b.middleware, middleware)
 	return b
 }
 
-// WithDefaultMiddleware adds the standard middleware chain
+// WithDefaultMiddleware adds the standard middleware chain.
 func (b *ServerBuilder) WithDefaultMiddleware() *ServerBuilder {
 	return b.
 		WithMiddleware(NewSecurityMiddleware()).
@@ -81,7 +82,7 @@ func (b *ServerBuilder) WithDefaultMiddleware() *ServerBuilder {
 		WithMiddleware(NewErrorHandlingMiddleware())
 }
 
-// Build creates the Server instance
+// Build creates the Server instance.
 func (b *ServerBuilder) Build() (*Server, error) {
 	// Validate required dependencies
 	if err := b.validate(); err != nil {
@@ -102,24 +103,24 @@ func (b *ServerBuilder) Build() (*Server, error) {
 	return server, nil
 }
 
-// validate ensures all required dependencies are set
+// validate ensures all required dependencies are set.
 func (b *ServerBuilder) validate() error {
 	if b.config == nil {
-		return fmt.Errorf("config is required")
+		return errors.New("config is required")
 	}
 	if b.healthService == nil {
-		return fmt.Errorf("health service is required")
+		return errors.New("health service is required")
 	}
 	if b.repoService == nil {
-		return fmt.Errorf("repository service is required")
+		return errors.New("repository service is required")
 	}
 	if b.errorHandler == nil {
-		return fmt.Errorf("error handler is required")
+		return errors.New("error handler is required")
 	}
 	return nil
 }
 
-// buildServer creates the Server with all configured components
+// buildServer creates the Server with all configured components.
 func (b *ServerBuilder) buildServer() (*Server, error) {
 	// Create route registry and register routes
 	registry := NewRouteRegistry()
@@ -167,7 +168,7 @@ func (b *ServerBuilder) buildServer() (*Server, error) {
 	}, nil
 }
 
-// createHTTPServer creates the underlying HTTP server
+// createHTTPServer creates the underlying HTTP server.
 func (b *ServerBuilder) createHTTPServer(handler http.Handler) *http.Server {
 	host := b.config.API.Host
 	if host == "" {
@@ -183,8 +184,13 @@ func (b *ServerBuilder) createHTTPServer(handler http.Handler) *http.Server {
 }
 
 // NewServer creates a new API server with the given configuration and services
-// This function maintains backward compatibility while using the new builder pattern
-func NewServer(config *config.Config, healthService inbound.HealthService, repoService inbound.RepositoryService, errorHandler ErrorHandler) (*Server, error) {
+// This function maintains backward compatibility while using the new builder pattern.
+func NewServer(
+	config *config.Config,
+	healthService inbound.HealthService,
+	repoService inbound.RepositoryService,
+	errorHandler ErrorHandler,
+) (*Server, error) {
 	return NewServerBuilder(config).
 		WithHealthService(healthService).
 		WithRepositoryService(repoService).
@@ -193,13 +199,13 @@ func NewServer(config *config.Config, healthService inbound.HealthService, repoS
 		Build()
 }
 
-// Start starts the HTTP server
+// Start starts the HTTP server.
 func (s *Server) Start(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.isRunning {
-		return fmt.Errorf("server is already running")
+		return errors.New("server is already running")
 	}
 
 	// Create listener
@@ -240,7 +246,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 }
 
-// Shutdown gracefully shuts down the HTTP server
+// Shutdown gracefully shuts down the HTTP server.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -267,12 +273,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// Address returns the server's listening address
+// Address returns the server's listening address.
 func (s *Server) Address() string {
 	return s.httpServer.Addr
 }
 
-// Host returns the server's host
+// Host returns the server's host.
 func (s *Server) Host() string {
 	host := s.config.API.Host
 	if host == "" {
@@ -281,72 +287,72 @@ func (s *Server) Host() string {
 	return host
 }
 
-// Port returns the server's port
+// Port returns the server's port.
 func (s *Server) Port() string {
 	return s.config.API.Port
 }
 
-// ReadTimeout returns the server's read timeout
+// ReadTimeout returns the server's read timeout.
 func (s *Server) ReadTimeout() time.Duration {
 	return s.config.API.ReadTimeout
 }
 
-// WriteTimeout returns the server's write timeout
+// WriteTimeout returns the server's write timeout.
 func (s *Server) WriteTimeout() time.Duration {
 	return s.config.API.WriteTimeout
 }
 
-// IsRunning returns whether the server is currently running
+// IsRunning returns whether the server is currently running.
 func (s *Server) IsRunning() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.isRunning
 }
 
-// HTTPServer returns the underlying HTTP server
+// HTTPServer returns the underlying HTTP server.
 func (s *Server) HTTPServer() *http.Server {
 	return s.httpServer
 }
 
-// MiddlewareCount returns the number of registered middleware
+// MiddlewareCount returns the number of registered middleware.
 func (s *Server) MiddlewareCount() int {
 	return s.middlewareCount
 }
 
-// HasMiddleware checks if a specific middleware type is registered
+// HasMiddleware checks if a specific middleware type is registered.
 func (s *Server) HasMiddleware(middlewareType string) bool {
 	return s.middleware[middlewareType]
 }
 
-// HasRoute checks if a specific route is registered
+// HasRoute checks if a specific route is registered.
 func (s *Server) HasRoute(pattern string) bool {
 	return s.routeRegistry.HasRoute(pattern)
 }
 
-// RouteCount returns the number of registered routes
+// RouteCount returns the number of registered routes.
 func (s *Server) RouteCount() int {
 	return s.routeRegistry.RouteCount()
 }
 
-// validateServerConfig validates the server configuration
+// validateServerConfig validates the server configuration.
 func validateServerConfig(config *config.Config) error {
 	if config == nil {
-		return fmt.Errorf("config cannot be nil")
+		return errors.New("config cannot be nil")
 	}
 
 	// Validate port
 	if config.API.Port != "" && config.API.Port != "0" {
 		if port, err := strconv.Atoi(config.API.Port); err != nil || port < 0 || port > 65535 {
-			return fmt.Errorf("invalid port")
+			return errors.New("invalid port")
 		}
 	}
 
 	// Validate timeouts
 	if config.API.ReadTimeout < 0 {
-		return fmt.Errorf("invalid timeout")
+		return errors.New("invalid timeout")
 	}
 	if config.API.WriteTimeout < 0 {
-		return fmt.Errorf("invalid timeout")
+		return errors.New("invalid timeout")
 	}
 
 	return nil

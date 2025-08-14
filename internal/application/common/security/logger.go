@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-// SecurityLogger provides structured logging for security events
+// SecurityLogger provides structured logging for security events.
 type SecurityLogger interface {
 	LogViolation(ctx context.Context, event SecurityEvent)
 	LogMetric(ctx context.Context, metric SecurityMetric)
 	LogAccess(ctx context.Context, access AccessEvent)
 }
 
-// SecurityEvent represents a security violation event
+// SecurityEvent represents a security violation event.
 type SecurityEvent struct {
 	Type             string            `json:"type"`
 	Severity         string            `json:"severity"`
@@ -30,7 +30,7 @@ type SecurityEvent struct {
 	Context          map[string]string `json:"context,omitempty"`
 }
 
-// ViolationDetails provides specific details about the security violation
+// ViolationDetails provides specific details about the security violation.
 type ViolationDetails struct {
 	Field       string `json:"field,omitempty"`
 	Value       string `json:"value,omitempty"` // Sanitized version for logging
@@ -38,7 +38,7 @@ type ViolationDetails struct {
 	Description string `json:"description,omitempty"`
 }
 
-// SecurityMetric represents security-related metrics
+// SecurityMetric represents security-related metrics.
 type SecurityMetric struct {
 	Name      string            `json:"name"`
 	Value     float64           `json:"value"`
@@ -46,7 +46,7 @@ type SecurityMetric struct {
 	Timestamp time.Time         `json:"timestamp"`
 }
 
-// AccessEvent represents successful or failed access attempts
+// AccessEvent represents successful or failed access attempts.
 type AccessEvent struct {
 	Type       string            `json:"type"` // SUCCESS, FAILURE, BLOCKED
 	Timestamp  time.Time         `json:"timestamp"`
@@ -59,13 +59,13 @@ type AccessEvent struct {
 	Context    map[string]string `json:"context,omitempty"`
 }
 
-// DefaultSecurityLogger provides a default implementation
+// DefaultSecurityLogger provides a default implementation.
 type DefaultSecurityLogger struct {
 	config  *Config
 	metrics SecurityMetrics
 }
 
-// NewDefaultSecurityLogger creates a new default security logger
+// NewDefaultSecurityLogger creates a new default security logger.
 func NewDefaultSecurityLogger(config *Config) *DefaultSecurityLogger {
 	return &DefaultSecurityLogger{
 		config:  config,
@@ -73,7 +73,7 @@ func NewDefaultSecurityLogger(config *Config) *DefaultSecurityLogger {
 	}
 }
 
-// LogViolation logs a security violation event
+// LogViolation logs a security violation event.
 func (dsl *DefaultSecurityLogger) LogViolation(ctx context.Context, event SecurityEvent) {
 	if !dsl.config.LogSecurityViolations {
 		return
@@ -141,7 +141,7 @@ func (dsl *DefaultSecurityLogger) LogViolation(ctx context.Context, event Securi
 	dsl.metrics.IncrementViolation(event.Type)
 }
 
-// LogMetric logs a security metric
+// LogMetric logs a security metric.
 func (dsl *DefaultSecurityLogger) LogMetric(ctx context.Context, metric SecurityMetric) {
 	if metric.Timestamp.IsZero() {
 		metric.Timestamp = time.Now()
@@ -159,7 +159,7 @@ func (dsl *DefaultSecurityLogger) LogMetric(ctx context.Context, metric Security
 	}
 }
 
-// LogAccess logs an access event
+// LogAccess logs an access event.
 func (dsl *DefaultSecurityLogger) LogAccess(ctx context.Context, access AccessEvent) {
 	if access.Timestamp.IsZero() {
 		access.Timestamp = time.Now()
@@ -199,7 +199,7 @@ func (dsl *DefaultSecurityLogger) LogAccess(ctx context.Context, access AccessEv
 	dsl.metrics.RecordAccess(access.Type, access.StatusCode)
 }
 
-// sanitizeLogValue sanitizes values before logging to prevent log injection
+// sanitizeLogValue sanitizes values before logging to prevent log injection.
 func (dsl *DefaultSecurityLogger) sanitizeLogValue(value string) string {
 	if len(value) == 0 {
 		return ""
@@ -218,7 +218,7 @@ func (dsl *DefaultSecurityLogger) sanitizeLogValue(value string) string {
 	return sanitized
 }
 
-// SecurityMetrics tracks security-related metrics
+// SecurityMetrics tracks security-related metrics.
 type SecurityMetrics interface {
 	IncrementViolation(violationType string)
 	RecordMetric(name string, value float64, labels map[string]string)
@@ -228,7 +228,7 @@ type SecurityMetrics interface {
 	GetMetrics() map[string]interface{}
 }
 
-// DefaultSecurityMetrics provides a default metrics implementation
+// DefaultSecurityMetrics provides a default metrics implementation.
 type DefaultSecurityMetrics struct {
 	violationCounts map[string]int64
 	accessCounts    map[string]int64
@@ -236,7 +236,7 @@ type DefaultSecurityMetrics struct {
 	mutex           sync.RWMutex
 }
 
-// NewSecurityMetrics creates a new security metrics instance
+// NewSecurityMetrics creates a new security metrics instance.
 func NewSecurityMetrics() SecurityMetrics {
 	return &DefaultSecurityMetrics{
 		violationCounts: make(map[string]int64),
@@ -245,7 +245,7 @@ func NewSecurityMetrics() SecurityMetrics {
 	}
 }
 
-// IncrementViolation increments the count for a specific violation type
+// IncrementViolation increments the count for a specific violation type.
 func (dsm *DefaultSecurityMetrics) IncrementViolation(violationType string) {
 	dsm.mutex.Lock()
 	defer dsm.mutex.Unlock()
@@ -254,7 +254,7 @@ func (dsm *DefaultSecurityMetrics) IncrementViolation(violationType string) {
 	dsm.violationCounts["total"]++
 }
 
-// RecordMetric records a custom security metric
+// RecordMetric records a custom security metric.
 func (dsm *DefaultSecurityMetrics) RecordMetric(name string, value float64, labels map[string]string) {
 	dsm.mutex.Lock()
 	defer dsm.mutex.Unlock()
@@ -263,7 +263,7 @@ func (dsm *DefaultSecurityMetrics) RecordMetric(name string, value float64, labe
 	dsm.customMetrics[name] = value
 }
 
-// RecordAccess records an access event
+// RecordAccess records an access event.
 func (dsm *DefaultSecurityMetrics) RecordAccess(accessType string, statusCode int) {
 	dsm.mutex.Lock()
 	defer dsm.mutex.Unlock()
@@ -272,7 +272,7 @@ func (dsm *DefaultSecurityMetrics) RecordAccess(accessType string, statusCode in
 	dsm.accessCounts[fmt.Sprintf("status_%d", statusCode)]++
 }
 
-// GetViolationCount returns the count for a specific violation type
+// GetViolationCount returns the count for a specific violation type.
 func (dsm *DefaultSecurityMetrics) GetViolationCount(violationType string) int64 {
 	dsm.mutex.RLock()
 	defer dsm.mutex.RUnlock()
@@ -280,7 +280,7 @@ func (dsm *DefaultSecurityMetrics) GetViolationCount(violationType string) int64
 	return dsm.violationCounts[violationType]
 }
 
-// GetTotalViolations returns the total count of all violations
+// GetTotalViolations returns the total count of all violations.
 func (dsm *DefaultSecurityMetrics) GetTotalViolations() int64 {
 	dsm.mutex.RLock()
 	defer dsm.mutex.RUnlock()
@@ -288,7 +288,7 @@ func (dsm *DefaultSecurityMetrics) GetTotalViolations() int64 {
 	return dsm.violationCounts["total"]
 }
 
-// GetMetrics returns all collected metrics
+// GetMetrics returns all collected metrics.
 func (dsm *DefaultSecurityMetrics) GetMetrics() map[string]interface{} {
 	dsm.mutex.RLock()
 	defer dsm.mutex.RUnlock()
@@ -319,7 +319,7 @@ func (dsm *DefaultSecurityMetrics) GetMetrics() map[string]interface{} {
 	return metrics
 }
 
-// CreateSecurityEvent creates a new security event
+// CreateSecurityEvent creates a new security event.
 func CreateSecurityEvent(violationType, message string, severity string) SecurityEvent {
 	return SecurityEvent{
 		Type:             violationType,
@@ -331,14 +331,14 @@ func CreateSecurityEvent(violationType, message string, severity string) Securit
 	}
 }
 
-// WithField adds field information to a security event
+// WithField adds field information to a security event.
 func (se SecurityEvent) WithField(field, value string) SecurityEvent {
 	se.ViolationDetails.Field = field
 	se.ViolationDetails.Value = value
 	return se
 }
 
-// WithContext adds context information to a security event
+// WithContext adds context information to a security event.
 func (se SecurityEvent) WithContext(key, value string) SecurityEvent {
 	if se.Context == nil {
 		se.Context = make(map[string]string)
@@ -347,7 +347,7 @@ func (se SecurityEvent) WithContext(key, value string) SecurityEvent {
 	return se
 }
 
-// WithRequest adds request information to a security event
+// WithRequest adds request information to a security event.
 func (se SecurityEvent) WithRequest(requestID, clientIP, userAgent, path, method string) SecurityEvent {
 	se.RequestID = requestID
 	se.ClientIP = clientIP
@@ -357,14 +357,14 @@ func (se SecurityEvent) WithRequest(requestID, clientIP, userAgent, path, method
 	return se
 }
 
-// NullSecurityLogger provides a no-op implementation for testing
+// NullSecurityLogger provides a no-op implementation for testing.
 type NullSecurityLogger struct{}
 
 func (nsl *NullSecurityLogger) LogViolation(ctx context.Context, event SecurityEvent) {}
 func (nsl *NullSecurityLogger) LogMetric(ctx context.Context, metric SecurityMetric)  {}
 func (nsl *NullSecurityLogger) LogAccess(ctx context.Context, access AccessEvent)     {}
 
-// NewNullSecurityLogger creates a null security logger
+// NewNullSecurityLogger creates a null security logger.
 func NewNullSecurityLogger() SecurityLogger {
 	return &NullSecurityLogger{}
 }

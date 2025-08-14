@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestBuildPaginationClause tests the pagination clause building helper
+// TestBuildPaginationClause tests the pagination clause building helper.
 func TestBuildPaginationClause(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -50,7 +50,7 @@ func TestBuildPaginationClause(t *testing.T) {
 	}
 }
 
-// TestExecuteCountAndDataQuery tests the count and data query execution helper
+// TestExecuteCountAndDataQuery tests the count and data query execution helper.
 func TestExecuteCountAndDataQuery(t *testing.T) {
 	// This test will use the actual database connection to test the query pattern
 	pool := setupTestDB(t)
@@ -137,7 +137,7 @@ func TestExecuteCountAndDataQuery(t *testing.T) {
 	}
 }
 
-// TestExecuteCountAndDataQuery_WithActualData tests the helper with real data
+// TestExecuteCountAndDataQuery_WithActualData tests the helper with real data.
 func TestExecuteCountAndDataQuery_WithActualData(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -155,13 +155,15 @@ func TestExecuteCountAndDataQuery_WithActualData(t *testing.T) {
 
 	// Test with actual data
 	totalCount, rows, err := executeCountAndDataQuery(
-		ctx, qi,
+		ctx,
+		qi,
 		"FROM codechunking.repositories WHERE deleted_at IS NULL",
 		"SELECT id, url, name, description, default_branch, last_indexed_at, last_commit_hash, total_files, total_chunks, status, created_at, updated_at, deleted_at",
 		"",
 		"ORDER BY created_at DESC",
 		[]interface{}{},
-		10, 0,
+		10,
+		0,
 	)
 
 	require.NoError(t, err)

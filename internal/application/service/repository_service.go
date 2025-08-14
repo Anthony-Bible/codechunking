@@ -17,7 +17,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// generateOperationID creates a unique identifier for batch operations
+// generateOperationID creates a unique identifier for batch operations.
 func generateOperationID() string {
 	return uuid.New().String()[:8]
 }
@@ -33,7 +33,10 @@ type CreateRepositoryService struct {
 // NewCreateRepositoryService creates a new instance of CreateRepositoryService.
 // It requires a repository repository for data persistence and a message publisher
 // for publishing indexing jobs to the message queue.
-func NewCreateRepositoryService(repositoryRepo outbound.RepositoryRepository, messagePublisher outbound.MessagePublisher) *CreateRepositoryService {
+func NewCreateRepositoryService(
+	repositoryRepo outbound.RepositoryRepository,
+	messagePublisher outbound.MessagePublisher,
+) *CreateRepositoryService {
 	if repositoryRepo == nil {
 		panic("repositoryRepo cannot be nil")
 	}
@@ -48,14 +51,20 @@ func NewCreateRepositoryService(repositoryRepo outbound.RepositoryRepository, me
 
 // NewCreateRepositoryServiceWithNormalizedDuplicateDetection creates a new instance with enhanced duplicate detection.
 // This is an alias to NewCreateRepositoryService since all services now use normalized duplicate detection by default.
-func NewCreateRepositoryServiceWithNormalizedDuplicateDetection(repositoryRepo outbound.RepositoryRepository, messagePublisher outbound.MessagePublisher) *CreateRepositoryService {
+func NewCreateRepositoryServiceWithNormalizedDuplicateDetection(
+	repositoryRepo outbound.RepositoryRepository,
+	messagePublisher outbound.MessagePublisher,
+) *CreateRepositoryService {
 	return NewCreateRepositoryService(repositoryRepo, messagePublisher)
 }
 
 // CreateRepository creates a new repository and publishes an indexing job.
 // It validates the repository URL, ensures it doesn't already exist, creates the entity,
 // saves it to the repository, publishes an indexing job, and returns the response.
-func (s *CreateRepositoryService) CreateRepository(ctx context.Context, request dto.CreateRepositoryRequest) (*dto.RepositoryResponse, error) {
+func (s *CreateRepositoryService) CreateRepository(
+	ctx context.Context,
+	request dto.CreateRepositoryRequest,
+) (*dto.RepositoryResponse, error) {
 	// Validate and create repository URL
 	repositoryURL, err := valueobject.NewRepositoryURL(request.URL)
 	if err != nil {
@@ -142,7 +151,11 @@ func NewUpdateRepositoryService(repositoryRepo outbound.RepositoryRepository) *U
 
 // UpdateRepository updates repository metadata (name, description, default branch).
 // The repository must not be in processing status to be updated.
-func (s *UpdateRepositoryService) UpdateRepository(ctx context.Context, id uuid.UUID, request dto.UpdateRepositoryRequest) (*dto.RepositoryResponse, error) {
+func (s *UpdateRepositoryService) UpdateRepository(
+	ctx context.Context,
+	id uuid.UUID,
+	request dto.UpdateRepositoryRequest,
+) (*dto.RepositoryResponse, error) {
 	// Find repository
 	repository, err := s.repositoryRepo.FindByID(ctx, id)
 	if err != nil {
@@ -238,7 +251,10 @@ func NewListRepositoriesService(repositoryRepo outbound.RepositoryRepository) *L
 
 // ListRepositories retrieves a paginated list of repositories with optional filtering.
 // Supports filtering by status and sorting by various fields.
-func (s *ListRepositoriesService) ListRepositories(ctx context.Context, query dto.RepositoryListQuery) (*dto.RepositoryListResponse, error) {
+func (s *ListRepositoriesService) ListRepositories(
+	ctx context.Context,
+	query dto.RepositoryListQuery,
+) (*dto.RepositoryListResponse, error) {
 	// Apply defaults
 	common.ApplyRepositoryListDefaults(&query)
 
@@ -287,7 +303,9 @@ type RepositoryFinderService struct {
 
 // NewRepositoryFinderServiceWithNormalization creates a new instance of RepositoryFinderService.
 // It provides enhanced repository finding capabilities using normalized URL matching.
-func NewRepositoryFinderServiceWithNormalization(repositoryRepo outbound.RepositoryRepository) *RepositoryFinderService {
+func NewRepositoryFinderServiceWithNormalization(
+	repositoryRepo outbound.RepositoryRepository,
+) *RepositoryFinderService {
 	if repositoryRepo == nil {
 		panic("repositoryRepo cannot be nil")
 	}
@@ -314,7 +332,7 @@ func (s *RepositoryFinderService) FindByNormalizedURL(ctx context.Context, url s
 	return repository, nil
 }
 
-// DuplicateCheckResult represents the result of a duplicate check for a single URL
+// DuplicateCheckResult represents the result of a duplicate check for a single URL.
 type DuplicateCheckResult struct {
 	URL                string
 	IsDuplicate        bool
@@ -324,7 +342,7 @@ type DuplicateCheckResult struct {
 	ProcessingTime     time.Duration
 }
 
-// DuplicateDetectionMetrics holds monitoring metrics for duplicate detection operations
+// DuplicateDetectionMetrics holds monitoring metrics for duplicate detection operations.
 type DuplicateDetectionMetrics struct {
 	TotalChecks       int64
 	DuplicatesFound   int64
@@ -333,7 +351,7 @@ type DuplicateDetectionMetrics struct {
 	CacheHitRate      float64
 }
 
-// DuplicateCheckCacheEntry represents a cached duplicate check result
+// DuplicateCheckCacheEntry represents a cached duplicate check result.
 type DuplicateCheckCacheEntry struct {
 	IsDuplicate  bool
 	RepositoryID *uuid.UUID
@@ -341,13 +359,13 @@ type DuplicateCheckCacheEntry struct {
 	TTL          time.Duration
 }
 
-// IsExpired checks if the cache entry has expired
+// IsExpired checks if the cache entry has expired.
 func (e *DuplicateCheckCacheEntry) IsExpired() bool {
 	return time.Since(e.CachedAt) > e.TTL
 }
 
 // PerformantDuplicateDetectionService provides performance-optimized duplicate detection
-// with batch processing, caching, and concurrent operations
+// with batch processing, caching, and concurrent operations.
 type PerformantDuplicateDetectionService struct {
 	repositoryRepo outbound.RepositoryRepository
 	logger         *slog.Logger
@@ -357,8 +375,10 @@ type PerformantDuplicateDetectionService struct {
 	maxCacheSize   int
 }
 
-// NewPerformantDuplicateDetectionService creates a performance-optimized duplicate detection service
-func NewPerformantDuplicateDetectionService(repositoryRepo outbound.RepositoryRepository) *PerformantDuplicateDetectionService {
+// NewPerformantDuplicateDetectionService creates a performance-optimized duplicate detection service.
+func NewPerformantDuplicateDetectionService(
+	repositoryRepo outbound.RepositoryRepository,
+) *PerformantDuplicateDetectionService {
 	if repositoryRepo == nil {
 		panic("repositoryRepo cannot be nil")
 	}
@@ -383,7 +403,10 @@ func NewPerformantDuplicateDetectionService(repositoryRepo outbound.RepositoryRe
 //
 // Concurrency is bounded using a semaphore pattern to prevent resource exhaustion
 // while maintaining high throughput for batch operations.
-func (s *PerformantDuplicateDetectionService) BatchCheckDuplicates(ctx context.Context, urls []string) ([]DuplicateCheckResult, error) {
+func (s *PerformantDuplicateDetectionService) BatchCheckDuplicates(
+	ctx context.Context,
+	urls []string,
+) ([]DuplicateCheckResult, error) {
 	if len(urls) == 0 {
 		s.logger.Info("Batch duplicate check called with empty URL list")
 		return []DuplicateCheckResult{}, nil
@@ -553,12 +576,12 @@ func (s *PerformantDuplicateDetectionService) processSingleURLForDuplicateCheck(
 	return nil
 }
 
-// GetMetrics returns the current duplicate detection metrics for monitoring
+// GetMetrics returns the current duplicate detection metrics for monitoring.
 func (s *PerformantDuplicateDetectionService) GetMetrics() DuplicateDetectionMetrics {
 	return *s.metrics
 }
 
-// ResetMetrics resets all metrics counters (useful for periodic reporting)
+// ResetMetrics resets all metrics counters (useful for periodic reporting).
 func (s *PerformantDuplicateDetectionService) ResetMetrics() {
 	s.metrics = &DuplicateDetectionMetrics{}
 	s.logger.Info("Duplicate detection metrics reset")

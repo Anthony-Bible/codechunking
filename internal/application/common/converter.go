@@ -7,7 +7,7 @@ import (
 	"codechunking/internal/domain/entity"
 )
 
-// EntityToRepositoryResponse converts a repository entity to response DTO
+// EntityToRepositoryResponse converts a repository entity to response DTO.
 func EntityToRepositoryResponse(repository *entity.Repository) *dto.RepositoryResponse {
 	return &dto.RepositoryResponse{
 		ID:             repository.ID(),
@@ -25,7 +25,7 @@ func EntityToRepositoryResponse(repository *entity.Repository) *dto.RepositoryRe
 	}
 }
 
-// EntityToIndexingJobResponse converts an indexing job entity to response DTO
+// EntityToIndexingJobResponse converts an indexing job entity to response DTO.
 func EntityToIndexingJobResponse(job *entity.IndexingJob) *dto.IndexingJobResponse {
 	response := &dto.IndexingJobResponse{
 		ID:             job.ID(),
@@ -51,7 +51,7 @@ func EntityToIndexingJobResponse(job *entity.IndexingJob) *dto.IndexingJobRespon
 }
 
 // ExtractRepositoryNameFromURL extracts a repository name from a URL
-// This helper function generates a reasonable default name for repositories
+// This helper function generates a reasonable default name for repositories.
 func ExtractRepositoryNameFromURL(url string) string {
 	// Extract owner/repo from GitHub-style URLs
 	url = strings.TrimSuffix(url, "/")
@@ -69,7 +69,7 @@ func ExtractRepositoryNameFromURL(url string) string {
 	return "unknown"
 }
 
-// CreatePaginationResponse creates a standardized pagination response
+// CreatePaginationResponse creates a standardized pagination response.
 func CreatePaginationResponse(limit, offset, total int) dto.PaginationResponse {
 	return dto.PaginationResponse{
 		Limit:   limit,

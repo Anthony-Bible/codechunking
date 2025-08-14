@@ -1,6 +1,7 @@
 package common
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -8,7 +9,7 @@ import (
 )
 
 // TestValidateRepositoryStatus_RefactoredBehavior tests that ValidateRepositoryStatus
-// has been refactored to use domain layer validation instead of ValidRepositoryStatuses map
+// has been refactored to use domain layer validation instead of ValidRepositoryStatuses map.
 func TestValidateRepositoryStatus_RefactoredBehavior(t *testing.T) {
 	t.Run("should_not_use_ValidRepositoryStatuses_map", func(t *testing.T) {
 		// This test will FAIL initially because the current implementation uses the map
@@ -23,12 +24,15 @@ func TestValidateRepositoryStatus_RefactoredBehavior(t *testing.T) {
 		// Test that empty string is handled the same way as domain layer (allowEmpty=true)
 		err = ValidateRepositoryStatus("")
 		if err != nil {
-			t.Errorf("ValidateRepositoryStatus('') should use domain validation with allowEmpty=true and return nil, got: %v", err)
+			t.Errorf(
+				"ValidateRepositoryStatus('') should use domain validation with allowEmpty=true and return nil, got: %v",
+				err,
+			)
 		}
 	})
 }
 
-// TestValidateRepositoryStatus_DomainLayerIntegration tests integration with domain layer
+// TestValidateRepositoryStatus_DomainLayerIntegration tests integration with domain layer.
 func TestValidateRepositoryStatus_DomainLayerIntegration(t *testing.T) {
 	t.Run("should_behave_identically_to_domain_with_allowEmpty_true", func(t *testing.T) {
 		testCases := []string{
@@ -62,7 +66,8 @@ func TestValidateRepositoryStatus_DomainLayerIntegration(t *testing.T) {
 
 					// If both return errors, application should return ValidationError
 					if domainErr != nil && appErr != nil {
-						if _, ok := appErr.(ValidationError); !ok {
+						var validationError ValidationError
+						if errors.As(appErr, &validationError) {
 							t.Errorf("Application should return ValidationError, got %T", appErr)
 						}
 					}
@@ -72,7 +77,7 @@ func TestValidateRepositoryStatus_DomainLayerIntegration(t *testing.T) {
 	})
 }
 
-// TestValidateRepositoryStatus_NoLongerUsesMap tests that the ValidRepositoryStatuses map is no longer used
+// TestValidateRepositoryStatus_NoLongerUsesMap tests that the ValidRepositoryStatuses map is no longer used.
 func TestValidateRepositoryStatus_NoLongerUsesMap(t *testing.T) {
 	t.Run("map_should_be_removed", func(t *testing.T) {
 		// This is a meta test that will fail until the map is removed
@@ -90,7 +95,8 @@ func TestValidateRepositoryStatus_NoLongerUsesMap(t *testing.T) {
 			t.Fatal("Expected error for invalid status")
 		}
 
-		validationErr, ok := err.(ValidationError)
+		var validationErr ValidationError
+		ok := errors.As(err, &validationErr)
 		if !ok {
 			t.Fatalf("Expected ValidationError, got %T", err)
 		}
@@ -105,7 +111,7 @@ func TestValidateRepositoryStatus_NoLongerUsesMap(t *testing.T) {
 	})
 }
 
-// TestValidateRepositoryStatus_RefactoringRequirements tests specific requirements for the refactoring
+// TestValidateRepositoryStatus_RefactoringRequirements tests specific requirements for the refactoring.
 func TestValidateRepositoryStatus_RefactoringRequirements(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -152,7 +158,8 @@ func TestValidateRepositoryStatus_RefactoringRequirements(t *testing.T) {
 					return
 				}
 
-				validationErr, ok := err.(ValidationError)
+				var validationErr ValidationError
+				ok := errors.As(err, &validationErr)
 				if !ok {
 					t.Errorf("Expected ValidationError but got %T for input %q", err, tt.input)
 					return
@@ -171,7 +178,7 @@ func TestValidateRepositoryStatus_RefactoringRequirements(t *testing.T) {
 	}
 }
 
-// Helper function to detect if a string contains SQL injection patterns
+// Helper function to detect if a string contains SQL injection patterns.
 func isSQLInjection(input string) bool {
 	sqlPatterns := []string{"'", ";", "--", "DROP", "SELECT", "UNION", "INSERT", "UPDATE", "DELETE"}
 	for _, pattern := range sqlPatterns {
@@ -183,7 +190,7 @@ func isSQLInjection(input string) bool {
 }
 
 // TestValidateRepositoryStatus_FailingTestsForRefactoring contains tests that SHOULD FAIL initially
-// These tests expect the refactored behavior and will guide the implementation
+// These tests expect the refactored behavior and will guide the implementation.
 func TestValidateRepositoryStatus_FailingTestsForRefactoring(t *testing.T) {
 	t.Run("domain_integration_test", func(t *testing.T) {
 		// This test expects that the function integrates with domain layer
@@ -207,11 +214,16 @@ func TestValidateRepositoryStatus_FailingTestsForRefactoring(t *testing.T) {
 						t.Errorf("Status %q: domain rejects but application allows", status)
 					} else {
 						// Application should return ValidationError, not domain error
-						if _, ok := appErr.(ValidationError); !ok {
+						var validationError ValidationError
+						if errors.As(appErr, &validationError) {
 							t.Errorf("Status %q: expected ValidationError but got %T", status, appErr)
 						}
 						// Application should convert domain error message to "invalid status"
-						validationErr := appErr.(ValidationError)
+						validationErr := func() ValidationError {
+							var target ValidationError
+							_ = errors.As(appErr, &target)
+							return target
+						}()
 						if validationErr.Message != "invalid status" {
 							t.Errorf("Status %q: expected 'invalid status' message but got %q",
 								status, validationErr.Message)

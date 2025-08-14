@@ -9,27 +9,31 @@ import (
 	"github.com/google/uuid"
 )
 
-// MockMessagePublisher provides a mock implementation of MessagePublisher for development
+// MockMessagePublisher provides a mock implementation of MessagePublisher for development.
 type MockMessagePublisher struct {
 	// Published jobs for testing/verification
 	publishedJobs []PublishedJob
 }
 
-// PublishedJob represents a job that was published
+// PublishedJob represents a job that was published.
 type PublishedJob struct {
 	RepositoryID  uuid.UUID
 	RepositoryURL string
 }
 
-// NewMockMessagePublisher creates a new mock message publisher
+// NewMockMessagePublisher creates a new mock message publisher.
 func NewMockMessagePublisher() outbound.MessagePublisher {
 	return &MockMessagePublisher{
 		publishedJobs: make([]PublishedJob, 0),
 	}
 }
 
-// PublishIndexingJob publishes an indexing job message (mock implementation)
-func (m *MockMessagePublisher) PublishIndexingJob(ctx context.Context, repositoryID uuid.UUID, repositoryURL string) error {
+// PublishIndexingJob publishes an indexing job message (mock implementation).
+func (m *MockMessagePublisher) PublishIndexingJob(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	repositoryURL string,
+) error {
 	// Log the job publication for development
 	slog.Info("Mock: Publishing indexing job", "repository_url", repositoryURL, "repository_id", repositoryID)
 
@@ -42,12 +46,12 @@ func (m *MockMessagePublisher) PublishIndexingJob(ctx context.Context, repositor
 	return nil
 }
 
-// GetPublishedJobs returns all published jobs (for testing)
+// GetPublishedJobs returns all published jobs (for testing).
 func (m *MockMessagePublisher) GetPublishedJobs() []PublishedJob {
 	return m.publishedJobs
 }
 
-// Reset clears all published jobs
+// Reset clears all published jobs.
 func (m *MockMessagePublisher) Reset() {
 	m.publishedJobs = make([]PublishedJob, 0)
 }

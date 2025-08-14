@@ -422,7 +422,7 @@ func TestHealthHandler_GetHealth_PerformanceWithNATSMetrics(t *testing.T) {
 		duration := time.Since(start)
 
 		// Health endpoint should respond quickly even with detailed metrics
-		assert.True(t, duration < 100*time.Millisecond,
+		assert.Less(t, duration, 100*time.Millisecond,
 			"Health check should complete within 100ms, took %v", duration)
 
 		assert.Equal(t, http.StatusOK, recorder.Code)
@@ -481,7 +481,7 @@ func TestHealthHandler_GetHealth_ConcurrentNATSHealthChecks(t *testing.T) {
 		responses := make([]*httptest.ResponseRecorder, numRequests)
 		done := make(chan int, numRequests)
 
-		for i := 0; i < numRequests; i++ {
+		for i := range numRequests {
 			go func(index int) {
 				defer func() { done <- index }()
 
@@ -492,12 +492,12 @@ func TestHealthHandler_GetHealth_ConcurrentNATSHealthChecks(t *testing.T) {
 		}
 
 		// Wait for all requests to complete
-		for i := 0; i < numRequests; i++ {
+		for range numRequests {
 			<-done
 		}
 
 		// All responses should be successful and consistent
-		for i := 0; i < numRequests; i++ {
+		for i := range numRequests {
 			assert.Equal(t, http.StatusOK, responses[i].Code)
 
 			var healthResp dto.HealthResponse

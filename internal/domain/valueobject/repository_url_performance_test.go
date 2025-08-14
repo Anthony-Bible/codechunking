@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRepositoryURL_NormalizationPerformance tests that normalization only happens once
+// TestRepositoryURL_NormalizationPerformance tests that normalization only happens once.
 func TestRepositoryURL_NormalizationPerformance(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -45,21 +45,21 @@ func TestRepositoryURL_NormalizationPerformance(t *testing.T) {
 
 			// THIS WILL FAIL because Raw() method doesn't exist yet
 			start = time.Now()
-			for i := 0; i < 1000; i++ {
+			for range 1000 {
 				_ = repoURL.Raw()
 			}
 			rawCallsTime := time.Since(start)
 
 			// THIS WILL FAIL because Normalized() method doesn't exist yet
 			start = time.Now()
-			for i := 0; i < 1000; i++ {
+			for range 1000 {
 				_ = repoURL.Normalized()
 			}
 			normalizedCallsTime := time.Since(start)
 
 			// String() calls should also be fast
 			start = time.Now()
-			for i := 0; i < 1000; i++ {
+			for range 1000 {
 				_ = repoURL.String()
 			}
 			stringCallsTime := time.Since(start)
@@ -90,7 +90,7 @@ func TestRepositoryURL_NormalizationPerformance(t *testing.T) {
 	}
 }
 
-// TestRepositoryURL_NoNormalizationOnMethodCalls tests that methods don't perform normalization
+// TestRepositoryURL_NoNormalizationOnMethodCalls tests that methods don't perform normalization.
 func TestRepositoryURL_NoNormalizationOnMethodCalls(t *testing.T) {
 	// Create a RepositoryURL that needs normalization
 	rawInput := "https://GitHub.com/GoLang/Go.git"
@@ -101,7 +101,7 @@ func TestRepositoryURL_NoNormalizationOnMethodCalls(t *testing.T) {
 	t.Run("Raw_method_is_constant_time", func(t *testing.T) {
 		// THIS WILL FAIL because Raw() method doesn't exist yet
 		times := make([]time.Duration, 100)
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			start := time.Now()
 			_ = repoURL.Raw()
 			times[i] = time.Since(start)
@@ -133,7 +133,7 @@ func TestRepositoryURL_NoNormalizationOnMethodCalls(t *testing.T) {
 	t.Run("Normalized_method_is_constant_time", func(t *testing.T) {
 		// THIS WILL FAIL because Normalized() method doesn't exist yet
 		times := make([]time.Duration, 100)
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			start := time.Now()
 			_ = repoURL.Normalized()
 			times[i] = time.Since(start)
@@ -161,7 +161,7 @@ func TestRepositoryURL_NoNormalizationOnMethodCalls(t *testing.T) {
 
 	t.Run("String_method_is_constant_time", func(t *testing.T) {
 		times := make([]time.Duration, 100)
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			start := time.Now()
 			_ = repoURL.String()
 			times[i] = time.Since(start)
@@ -175,12 +175,12 @@ func TestRepositoryURL_NoNormalizationOnMethodCalls(t *testing.T) {
 	})
 }
 
-// BenchmarkRepositoryURL_Creation benchmarks RepositoryURL creation (includes normalization)
+// BenchmarkRepositoryURL_Creation benchmarks RepositoryURL creation (includes normalization).
 func BenchmarkRepositoryURL_Creation(b *testing.B) {
 	testURL := "https://GitHub.com/GoLang/Go.git"
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, err := NewRepositoryURL(testURL)
 		if err != nil {
 			b.Fatal(err)
@@ -188,7 +188,7 @@ func BenchmarkRepositoryURL_Creation(b *testing.B) {
 	}
 }
 
-// BenchmarkRepositoryURL_Raw benchmarks Raw() method calls
+// BenchmarkRepositoryURL_Raw benchmarks Raw() method calls.
 func BenchmarkRepositoryURL_Raw(b *testing.B) {
 	repoURL, err := NewRepositoryURL("https://GitHub.com/GoLang/Go.git")
 	if err != nil {
@@ -197,12 +197,12 @@ func BenchmarkRepositoryURL_Raw(b *testing.B) {
 
 	b.ResetTimer()
 	// THIS WILL FAIL because Raw() method doesn't exist yet
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = repoURL.Raw()
 	}
 }
 
-// BenchmarkRepositoryURL_Normalized benchmarks Normalized() method calls
+// BenchmarkRepositoryURL_Normalized benchmarks Normalized() method calls.
 func BenchmarkRepositoryURL_Normalized(b *testing.B) {
 	repoURL, err := NewRepositoryURL("https://GitHub.com/GoLang/Go.git")
 	if err != nil {
@@ -211,12 +211,12 @@ func BenchmarkRepositoryURL_Normalized(b *testing.B) {
 
 	b.ResetTimer()
 	// THIS WILL FAIL because Normalized() method doesn't exist yet
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = repoURL.Normalized()
 	}
 }
 
-// BenchmarkRepositoryURL_String benchmarks String() method calls
+// BenchmarkRepositoryURL_String benchmarks String() method calls.
 func BenchmarkRepositoryURL_String(b *testing.B) {
 	repoURL, err := NewRepositoryURL("https://GitHub.com/GoLang/Go.git")
 	if err != nil {
@@ -224,12 +224,12 @@ func BenchmarkRepositoryURL_String(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = repoURL.String()
 	}
 }
 
-// TestRepositoryURL_NormalizationOnlyDuringCreation verifies normalization happens only once
+// TestRepositoryURL_NormalizationOnlyDuringCreation verifies normalization happens only once.
 func TestRepositoryURL_NormalizationOnlyDuringCreation(t *testing.T) {
 	// This test documents the expected behavior:
 	// 1. Normalization should happen only during NewRepositoryURL()

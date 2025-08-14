@@ -12,12 +12,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// createTestIndexingJob creates a test indexing job entity
+// createTestIndexingJob creates a test indexing job entity.
 func createTestIndexingJob(t *testing.T, repositoryID uuid.UUID) *entity.IndexingJob {
 	return entity.NewIndexingJob(repositoryID)
 }
 
-// TestIndexingJobRepository_Save tests saving indexing jobs to database
+// TestIndexingJobRepository_Save tests saving indexing jobs to database.
 func TestIndexingJobRepository_Save(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -73,7 +73,7 @@ func TestIndexingJobRepository_Save(t *testing.T) {
 	}
 }
 
-// TestIndexingJobRepository_FindByID tests finding indexing jobs by ID
+// TestIndexingJobRepository_FindByID tests finding indexing jobs by ID.
 func TestIndexingJobRepository_FindByID(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -163,7 +163,7 @@ func TestIndexingJobRepository_FindByID(t *testing.T) {
 	}
 }
 
-// TestIndexingJobRepository_FindByRepositoryID tests finding indexing jobs by repository ID with filters
+// TestIndexingJobRepository_FindByRepositoryID tests finding indexing jobs by repository ID with filters.
 func TestIndexingJobRepository_FindByRepositoryID(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -189,7 +189,7 @@ func TestIndexingJobRepository_FindByRepositoryID(t *testing.T) {
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 
 	// Create multiple indexing jobs for repository 1
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		job := createTestIndexingJob(t, testRepo1.ID())
 
 		// Set different statuses for testing filters
@@ -209,7 +209,7 @@ func TestIndexingJobRepository_FindByRepositoryID(t *testing.T) {
 	}
 
 	// Create a few jobs for repository 2
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		job := createTestIndexingJob(t, testRepo2.ID())
 		err := jobRepo.Save(ctx, job)
 		if err != nil {
@@ -358,7 +358,7 @@ func TestIndexingJobRepository_FindByRepositoryID(t *testing.T) {
 	}
 }
 
-// TestIndexingJobRepository_Update tests updating indexing jobs
+// TestIndexingJobRepository_Update tests updating indexing jobs.
 func TestIndexingJobRepository_Update(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -504,7 +504,7 @@ func TestIndexingJobRepository_Update(t *testing.T) {
 	}
 }
 
-// TestIndexingJobRepository_Delete tests soft deleting indexing jobs
+// TestIndexingJobRepository_Delete tests soft deleting indexing jobs.
 func TestIndexingJobRepository_Delete(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -593,7 +593,7 @@ func TestIndexingJobRepository_Delete(t *testing.T) {
 	}
 }
 
-// TestIndexingJobRepository_ConcurrentUpdates tests concurrent job updates
+// TestIndexingJobRepository_ConcurrentUpdates tests concurrent job updates.
 func TestIndexingJobRepository_ConcurrentUpdates(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -623,7 +623,7 @@ func TestIndexingJobRepository_ConcurrentUpdates(t *testing.T) {
 	errCh := make(chan error, numGoroutines)
 	done := make(chan bool, numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(id int) {
 			defer func() { done <- true }()
 
@@ -646,7 +646,7 @@ func TestIndexingJobRepository_ConcurrentUpdates(t *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		select {
 		case err := <-errCh:
 			t.Errorf("Concurrent update failed: %v", err)
@@ -668,7 +668,7 @@ func TestIndexingJobRepository_ConcurrentUpdates(t *testing.T) {
 	}
 }
 
-// TestIndexingJobRepository_StatusTransitions tests job status transitions are preserved
+// TestIndexingJobRepository_StatusTransitions tests job status transitions are preserved.
 func TestIndexingJobRepository_StatusTransitions(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()

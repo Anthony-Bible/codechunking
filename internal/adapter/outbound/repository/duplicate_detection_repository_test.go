@@ -14,7 +14,7 @@ import (
 )
 
 // TestPostgreSQLRepositoryRepository_NormalizedURLConstraints tests database-level duplicate prevention
-// This test will FAIL initially as normalized URL handling doesn't exist yet
+// This test will FAIL initially as normalized URL handling doesn't exist yet.
 func TestPostgreSQLRepositoryRepository_NormalizedURLConstraints(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping database integration test in short mode")
@@ -125,7 +125,7 @@ func TestPostgreSQLRepositoryRepository_NormalizedURLConstraints(t *testing.T) {
 }
 
 // TestPostgreSQLRepositoryRepository_ExistsByNormalizedURL tests normalized URL existence checking
-// This test will FAIL initially as the method doesn't exist yet
+// This test will FAIL initially as the method doesn't exist yet.
 func TestPostgreSQLRepositoryRepository_ExistsByNormalizedURL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping database integration test in short mode")
@@ -212,7 +212,7 @@ func TestPostgreSQLRepositoryRepository_ExistsByNormalizedURL(t *testing.T) {
 }
 
 // TestPostgreSQLRepositoryRepository_FindByNormalizedURL tests finding repositories by normalized URL
-// This test will FAIL initially as the method doesn't exist yet
+// This test will FAIL initially as the method doesn't exist yet.
 func TestPostgreSQLRepositoryRepository_FindByNormalizedURL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping database integration test in short mode")
@@ -291,7 +291,12 @@ func TestPostgreSQLRepositoryRepository_FindByNormalizedURL(t *testing.T) {
 			if tt.shouldFind {
 				assert.NotNil(t, foundRepo, tt.description)
 				assert.Equal(t, "test-repo", foundRepo.Name(), "Found repository should have correct name")
-				assert.Equal(t, "Test repository", *foundRepo.Description(), "Found repository should have correct description")
+				assert.Equal(
+					t,
+					"Test repository",
+					*foundRepo.Description(),
+					"Found repository should have correct description",
+				)
 			} else {
 				assert.Nil(t, foundRepo, tt.description)
 			}
@@ -300,7 +305,7 @@ func TestPostgreSQLRepositoryRepository_FindByNormalizedURL(t *testing.T) {
 }
 
 // TestPostgreSQLRepositoryRepository_NormalizedURLIndex tests database index performance for normalized URLs
-// This test will FAIL initially as the normalized URL index doesn't exist yet
+// This test will FAIL initially as the normalized URL index doesn't exist yet.
 func TestPostgreSQLRepositoryRepository_NormalizedURLIndex(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping database integration test in short mode")
@@ -338,7 +343,7 @@ func TestPostgreSQLRepositoryRepository_NormalizedURLIndex(t *testing.T) {
 }
 
 // TestPostgreSQLRepositoryRepository_NormalizedURLColumn tests that normalized URL column exists
-// This test will FAIL initially as the column doesn't exist yet
+// This test will FAIL initially as the column doesn't exist yet.
 func TestPostgreSQLRepositoryRepository_NormalizedURLColumn(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping database integration test in short mode")
@@ -378,7 +383,7 @@ func TestPostgreSQLRepositoryRepository_NormalizedURLColumn(t *testing.T) {
 }
 
 // TestPostgreSQLRepositoryRepository_NormalizedURLConstraints tests unique constraint on normalized URL
-// This test will FAIL initially as the constraint doesn't exist yet
+// This test will FAIL initially as the constraint doesn't exist yet.
 func TestPostgreSQLRepositoryRepository_NormalizedURLUniqueConstraint(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping database integration test in short mode")
@@ -418,7 +423,7 @@ func TestPostgreSQLRepositoryRepository_NormalizedURLUniqueConstraint(t *testing
 }
 
 // TestPostgreSQLRepositoryRepository_ConcurrentDuplicateDetection tests concurrent duplicate detection
-// This test will FAIL initially as normalized duplicate handling doesn't exist yet
+// This test will FAIL initially as normalized duplicate handling doesn't exist yet.
 func TestPostgreSQLRepositoryRepository_ConcurrentDuplicateDetection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping database integration test in short mode")
@@ -462,7 +467,7 @@ func TestPostgreSQLRepositoryRepository_ConcurrentDuplicateDetection(t *testing.
 	var errors []error
 	var successes int
 
-	for i := 0; i < len(urlVariations); i++ {
+	for range len(urlVariations) {
 		err := <-results
 		if err != nil {
 			errors = append(errors, err)
@@ -473,7 +478,7 @@ func TestPostgreSQLRepositoryRepository_ConcurrentDuplicateDetection(t *testing.
 
 	// Should have exactly 1 success (first one) and rest should fail due to duplicate detection
 	assert.Equal(t, 1, successes, "Should have exactly one successful repository creation")
-	assert.Equal(t, len(urlVariations)-1, len(errors), "All other attempts should fail due to duplicate detection")
+	assert.Len(t, errors, len(urlVariations)-1, "All other attempts should fail due to duplicate detection")
 
 	// All errors should be related to duplicates/constraints
 	for _, err := range errors {
@@ -483,12 +488,12 @@ func TestPostgreSQLRepositoryRepository_ConcurrentDuplicateDetection(t *testing.
 
 // Helper methods
 
-// getTestDB creates a test database connection - reuse the existing setupTestDB function
+// getTestDB creates a test database connection - reuse the existing setupTestDB function.
 func getTestDB(t *testing.T) *pgxpool.Pool {
 	return setupTestDB(t)
 }
 
-// stringPtr returns a pointer to a string (helper for optional fields)
+// stringPtr returns a pointer to a string (helper for optional fields).
 func stringPtr(s string) *string {
 	return &s
 }

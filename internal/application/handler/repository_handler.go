@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Service interfaces
+// Service interfaces.
 type CreateRepositoryService interface {
 	CreateRepository(ctx context.Context, request dto.CreateRepositoryRequest) (*dto.RepositoryResponse, error)
 }
@@ -20,7 +20,11 @@ type GetRepositoryService interface {
 }
 
 type UpdateRepositoryService interface {
-	UpdateRepository(ctx context.Context, id uuid.UUID, request dto.UpdateRepositoryRequest) (*dto.RepositoryResponse, error)
+	UpdateRepository(
+		ctx context.Context,
+		id uuid.UUID,
+		request dto.UpdateRepositoryRequest,
+	) (*dto.RepositoryResponse, error)
 }
 
 type DeleteRepositoryService interface {
@@ -53,7 +57,10 @@ func NewCreateRepositoryCommandHandler(service CreateRepositoryService) *CreateR
 
 // Handle processes a create repository command.
 // Validates the command and delegates to the service layer.
-func (h *CreateRepositoryCommandHandler) Handle(ctx context.Context, command CreateRepositoryCommand) (*dto.RepositoryResponse, error) {
+func (h *CreateRepositoryCommandHandler) Handle(
+	ctx context.Context,
+	command CreateRepositoryCommand,
+) (*dto.RepositoryResponse, error) {
 	// Validate command
 	if err := h.validateCreateCommand(command); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
@@ -71,7 +78,7 @@ func (h *CreateRepositoryCommandHandler) Handle(ctx context.Context, command Cre
 	return h.service.CreateRepository(ctx, request)
 }
 
-// validateCreateCommand validates repository creation command
+// validateCreateCommand validates repository creation command.
 func (h *CreateRepositoryCommandHandler) validateCreateCommand(command CreateRepositoryCommand) error {
 	if err := common.ValidateRepositoryURL(command.URL); err != nil {
 		return err
@@ -98,7 +105,10 @@ func NewUpdateRepositoryCommandHandler(service UpdateRepositoryService) *UpdateR
 
 // Handle processes an update repository command.
 // Validates the command and delegates to the service layer.
-func (h *UpdateRepositoryCommandHandler) Handle(ctx context.Context, command UpdateRepositoryCommand) (*dto.RepositoryResponse, error) {
+func (h *UpdateRepositoryCommandHandler) Handle(
+	ctx context.Context,
+	command UpdateRepositoryCommand,
+) (*dto.RepositoryResponse, error) {
 	// Validate command
 	if err := h.validateUpdateCommand(command); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
@@ -115,7 +125,7 @@ func (h *UpdateRepositoryCommandHandler) Handle(ctx context.Context, command Upd
 	return h.service.UpdateRepository(ctx, command.ID, request)
 }
 
-// validateUpdateCommand validates repository update command
+// validateUpdateCommand validates repository update command.
 func (h *UpdateRepositoryCommandHandler) validateUpdateCommand(command UpdateRepositoryCommand) error {
 	if err := common.ValidateUUID(command.ID, "repository ID"); err != nil {
 		return err
@@ -157,12 +167,12 @@ func (h *DeleteRepositoryCommandHandler) Handle(ctx context.Context, command Del
 
 // Query Handlers
 
-// GetRepositoryQueryHandler handles repository retrieval queries
+// GetRepositoryQueryHandler handles repository retrieval queries.
 type GetRepositoryQueryHandler struct {
 	service GetRepositoryService
 }
 
-// NewGetRepositoryQueryHandler creates a new instance of GetRepositoryQueryHandler
+// NewGetRepositoryQueryHandler creates a new instance of GetRepositoryQueryHandler.
 func NewGetRepositoryQueryHandler(service GetRepositoryService) *GetRepositoryQueryHandler {
 	return &GetRepositoryQueryHandler{
 		service: service,
@@ -171,7 +181,10 @@ func NewGetRepositoryQueryHandler(service GetRepositoryService) *GetRepositoryQu
 
 // Handle processes a get repository query.
 // Validates the query and delegates to the service layer.
-func (h *GetRepositoryQueryHandler) Handle(ctx context.Context, query GetRepositoryQuery) (*dto.RepositoryResponse, error) {
+func (h *GetRepositoryQueryHandler) Handle(
+	ctx context.Context,
+	query GetRepositoryQuery,
+) (*dto.RepositoryResponse, error) {
 	// Validate query
 	if err := common.ValidateUUID(query.ID, "repository ID"); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
@@ -181,12 +194,12 @@ func (h *GetRepositoryQueryHandler) Handle(ctx context.Context, query GetReposit
 	return h.service.GetRepository(ctx, query.ID)
 }
 
-// ListRepositoriesQueryHandler handles repository listing queries
+// ListRepositoriesQueryHandler handles repository listing queries.
 type ListRepositoriesQueryHandler struct {
 	service ListRepositoriesService
 }
 
-// NewListRepositoriesQueryHandler creates a new instance of ListRepositoriesQueryHandler
+// NewListRepositoriesQueryHandler creates a new instance of ListRepositoriesQueryHandler.
 func NewListRepositoriesQueryHandler(service ListRepositoriesService) *ListRepositoriesQueryHandler {
 	return &ListRepositoriesQueryHandler{
 		service: service,
@@ -195,7 +208,10 @@ func NewListRepositoriesQueryHandler(service ListRepositoriesService) *ListRepos
 
 // Handle processes a list repositories query.
 // Validates the query, applies defaults, and delegates to the service layer.
-func (h *ListRepositoriesQueryHandler) Handle(ctx context.Context, query ListRepositoriesQuery) (*dto.RepositoryListResponse, error) {
+func (h *ListRepositoriesQueryHandler) Handle(
+	ctx context.Context,
+	query ListRepositoriesQuery,
+) (*dto.RepositoryListResponse, error) {
 	// Validate query
 	if err := h.validateListQuery(query); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
@@ -216,7 +232,7 @@ func (h *ListRepositoriesQueryHandler) Handle(ctx context.Context, query ListRep
 	return h.service.ListRepositories(ctx, dtoQuery)
 }
 
-// validateListQuery validates repository list query parameters
+// validateListQuery validates repository list query parameters.
 func (h *ListRepositoriesQueryHandler) validateListQuery(query ListRepositoriesQuery) error {
 	if err := common.ValidateRepositoryStatus(query.Status); err != nil {
 		return err

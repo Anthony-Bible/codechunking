@@ -11,7 +11,7 @@ import (
 // It checks headers in order of precedence:
 // 1. X-Forwarded-For (first valid IP)
 // 2. X-Real-IP
-// 3. RemoteAddr (with port stripped)
+// 3. RemoteAddr (with port stripped).
 func ClientIP(r *http.Request) string {
 	if r == nil {
 		panic("request cannot be nil")

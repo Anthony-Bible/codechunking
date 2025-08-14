@@ -2,7 +2,7 @@ package common
 
 import "codechunking/internal/application/dto"
 
-// Default pagination limits
+// Default pagination limits.
 const (
 	DefaultRepositoryListLimit  = 20
 	DefaultIndexingJobListLimit = 10
@@ -11,7 +11,7 @@ const (
 	DefaultRepositoryListSort   = "created_at:desc"
 )
 
-// ApplyRepositoryListDefaults applies default values to repository list query
+// ApplyRepositoryListDefaults applies default values to repository list query.
 func ApplyRepositoryListDefaults(query *dto.RepositoryListQuery) {
 	if query.Limit == 0 {
 		query.Limit = DefaultRepositoryListLimit
@@ -21,7 +21,7 @@ func ApplyRepositoryListDefaults(query *dto.RepositoryListQuery) {
 	}
 }
 
-// ApplyIndexingJobListDefaults applies default values to indexing job list query
+// ApplyIndexingJobListDefaults applies default values to indexing job list query.
 func ApplyIndexingJobListDefaults(query *dto.IndexingJobListQuery) {
 	if query.Limit == 0 {
 		query.Limit = DefaultIndexingJobListLimit

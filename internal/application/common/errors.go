@@ -8,23 +8,23 @@ import (
 	"codechunking/internal/application/dto"
 )
 
-// ServiceError represents a service-level error with context
+// ServiceError represents a service-level error with context.
 type ServiceError struct {
 	Operation string
 	Cause     error
 }
 
-// Error implements the error interface
+// Error implements the error interface.
 func (e ServiceError) Error() string {
 	return fmt.Sprintf("failed to %s: %v", e.Operation, e.Cause)
 }
 
-// Unwrap returns the underlying error
+// Unwrap returns the underlying error.
 func (e ServiceError) Unwrap() error {
 	return e.Cause
 }
 
-// WrapServiceError wraps an error with service operation context
+// WrapServiceError wraps an error with service operation context.
 func WrapServiceError(operation string, err error) error {
 	if err == nil {
 		return nil
@@ -35,7 +35,7 @@ func WrapServiceError(operation string, err error) error {
 	}
 }
 
-// Common error operations for consistent messaging
+// Common error operations for consistent messaging.
 const (
 	OpCreateRepository      = "create repository"
 	OpUpdateRepository      = "update repository"
@@ -52,15 +52,15 @@ const (
 	OpCheckRepositoryExists = "check if repository exists"
 )
 
-// ValidationError limits and constants
+// ValidationError limits and constants.
 const (
-	// MaxFieldLength is the maximum allowed length for a field name
+	// MaxFieldLength is the maximum allowed length for a field name.
 	MaxFieldLength = 255
-	// MaxMessageLength is the maximum allowed length for an error message
+	// MaxMessageLength is the maximum allowed length for an error message.
 	MaxMessageLength = 1000
-	// DefaultField is used when field name cannot be determined or is invalid
+	// DefaultField is used when field name cannot be determined or is invalid.
 	DefaultField = "unknown_field"
-	// DefaultMessage is used when error message cannot be determined or is invalid
+	// DefaultMessage is used when error message cannot be determined or is invalid.
 	DefaultMessage = "validation failed"
 )
 
@@ -118,7 +118,7 @@ func (e ValidationError) Error() string {
 	return fmt.Sprintf("validation error on field '%s': %s (value: %s)", field, message, e.Value)
 }
 
-// ToDTO converts ValidationError to dto.ValidationError
+// ToDTO converts ValidationError to dto.ValidationError.
 func (e ValidationError) ToDTO() dto.ValidationError {
 	return dto.ValidationError{
 		Field:   e.Field,

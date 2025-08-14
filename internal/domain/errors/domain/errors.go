@@ -2,7 +2,7 @@ package domain
 
 import "errors"
 
-// Repository-related errors
+// Repository-related errors.
 var (
 	ErrRepositoryNotFound      = errors.New("repository not found")
 	ErrRepositoryAlreadyExists = errors.New("repository already exists")
@@ -10,13 +10,13 @@ var (
 	ErrRepositoryInvalidURL    = errors.New("repository URL is invalid")
 )
 
-// Job-related errors
+// Job-related errors.
 var (
 	ErrJobNotFound = errors.New("indexing job not found")
 	ErrJobFailed   = errors.New("indexing job failed")
 )
 
-// General domain errors
+// General domain errors.
 var (
 	ErrInvalidInput = errors.New("invalid input")
 	ErrUnauthorized = errors.New("unauthorized")

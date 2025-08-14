@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,27 +15,27 @@ import (
 	"codechunking/internal/application/common"
 )
 
-// SecurityMiddleware provides comprehensive security validation
+// SecurityMiddleware provides comprehensive security validation.
 type SecurityMiddleware struct {
 	// Rate limiting state
 	clients map[string]*ClientState
 	mutex   sync.RWMutex
 }
 
-// ClientState tracks rate limiting per client
+// ClientState tracks rate limiting per client.
 type ClientState struct {
 	requests []time.Time
 	mutex    sync.Mutex
 }
 
-// RateLimitConfig configures rate limiting
+// RateLimitConfig configures rate limiting.
 type RateLimitConfig struct {
 	RequestsPerMinute int
 	BurstSize         int
 	WindowSize        string
 }
 
-// NewSecurityValidationMiddleware creates a new security validation middleware
+// NewSecurityValidationMiddleware creates a new security validation middleware.
 func NewSecurityValidationMiddleware() func(http.Handler) http.Handler {
 	sm := &SecurityMiddleware{
 		clients: make(map[string]*ClientState),
@@ -43,7 +44,7 @@ func NewSecurityValidationMiddleware() func(http.Handler) http.Handler {
 	return sm.ValidateInput
 }
 
-// ValidateInput middleware validates all input for security issues
+// ValidateInput middleware validates all input for security issues.
 func (sm *SecurityMiddleware) ValidateInput(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var violations []error
@@ -86,7 +87,7 @@ func (sm *SecurityMiddleware) ValidateInput(next http.Handler) http.Handler {
 	})
 }
 
-// validateQueryParameters validates query parameters for SQL injection and other attacks
+// validateQueryParameters validates query parameters for SQL injection and other attacks.
 func (sm *SecurityMiddleware) validateQueryParameters(r *http.Request) error {
 	params := make(map[string]string)
 	for key, values := range r.URL.Query() {
@@ -96,40 +97,40 @@ func (sm *SecurityMiddleware) validateQueryParameters(r *http.Request) error {
 	}
 
 	if err := common.ValidateQueryParameters(params); err != nil {
-		return fmt.Errorf("malicious SQL detected")
+		return errors.New("malicious SQL detected")
 	}
 	return nil
 }
 
-// validateHeaders validates request headers for injection attacks
+// validateHeaders validates request headers for injection attacks.
 func (sm *SecurityMiddleware) validateHeaders(r *http.Request) error {
 	for _, values := range r.Header {
 		for _, value := range values {
 			// Check for header injection (CRLF injection)
 			if strings.Contains(value, "\r") || strings.Contains(value, "\n") {
-				return fmt.Errorf("security violation detected")
+				return errors.New("security violation detected")
 			}
 			// Also check for escaped CRLF sequences
 			if strings.Contains(value, "\\r") || strings.Contains(value, "\\n") {
-				return fmt.Errorf("header injection detected")
+				return errors.New("header injection detected")
 			}
 		}
 	}
 	return nil
 }
 
-// validateBodyForViolations validates request body for security issues without writing response
+// validateBodyForViolations validates request body for security issues without writing response.
 func (sm *SecurityMiddleware) validateBodyForViolations(r *http.Request) error {
 	// Read body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		return fmt.Errorf("malformed request")
+		return errors.New("malformed request")
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 
 	// Check body size
 	if len(body) > 64*1024 { // 64KB limit to catch test payload
-		return fmt.Errorf("payload too large")
+		return errors.New("payload too large")
 	}
 
 	// Validate JSON content
@@ -143,18 +144,18 @@ func (sm *SecurityMiddleware) validateBodyForViolations(r *http.Request) error {
 	return nil
 }
 
-// validateJSONContent validates JSON content for security issues
+// validateJSONContent validates JSON content for security issues.
 func (sm *SecurityMiddleware) validateJSONContent(body []byte) error {
 	var data map[string]interface{}
 	if err := json.Unmarshal(body, &data); err != nil {
-		return fmt.Errorf("malformed JSON")
+		return errors.New("malformed JSON")
 	}
 
 	// Recursively validate all string fields
 	return sm.validateJSONFields(data, "")
 }
 
-// validateJSONFields recursively validates JSON fields
+// validateJSONFields recursively validates JSON fields.
 func (sm *SecurityMiddleware) validateJSONFields(data interface{}, path string) error {
 	switch v := data.(type) {
 	case map[string]interface{}:
@@ -183,12 +184,12 @@ func (sm *SecurityMiddleware) validateJSONFields(data interface{}, path string) 
 	return nil
 }
 
-// NewInputSanitizationMiddleware creates input sanitization middleware
+// NewInputSanitizationMiddleware creates input sanitization middleware.
 func NewInputSanitizationMiddleware() func(http.Handler) http.Handler {
 	return NewSecurityValidationMiddleware() // Same as security validation for now
 }
 
-// NewRateLimitingMiddleware creates rate limiting middleware
+// NewRateLimitingMiddleware creates rate limiting middleware.
 func NewRateLimitingMiddleware(config RateLimitConfig) func(http.Handler) http.Handler {
 	sm := &SecurityMiddleware{
 		clients: make(map[string]*ClientState),
@@ -197,7 +198,7 @@ func NewRateLimitingMiddleware(config RateLimitConfig) func(http.Handler) http.H
 	return sm.RateLimit(config)
 }
 
-// RateLimit middleware implements rate limiting
+// RateLimit middleware implements rate limiting.
 func (sm *SecurityMiddleware) RateLimit(config RateLimitConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -240,7 +241,7 @@ func (sm *SecurityMiddleware) RateLimit(config RateLimitConfig) func(http.Handle
 	}
 }
 
-// NewContentTypeValidationMiddleware creates content type validation middleware
+// NewContentTypeValidationMiddleware creates content type validation middleware.
 func NewContentTypeValidationMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -326,7 +327,7 @@ func CreateSecurityMiddlewareStack() func(http.Handler) http.Handler {
 	}
 }
 
-// Helper function to write security error responses
+// Helper function to write security error responses.
 func (sm *SecurityMiddleware) writeSecurityError(w http.ResponseWriter, message string, statusCode int) {
 	errorResp := map[string]interface{}{
 		"error":   message,

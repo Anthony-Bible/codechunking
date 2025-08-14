@@ -18,22 +18,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockRepositoryRepositoryWithNormalization extends the mock to support normalized URL checking
+// MockRepositoryRepositoryWithNormalization extends the mock to support normalized URL checking.
 type MockRepositoryRepositoryWithNormalization struct {
 	outbound.RepositoryRepository
 	mock.Mock
 }
 
 // ExistsByNormalizedURL checks if a repository exists using normalized URL comparison
-// This method doesn't exist yet - test should FAIL
-func (m *MockRepositoryRepositoryWithNormalization) ExistsByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (bool, error) {
+// This method doesn't exist yet - test should FAIL.
+func (m *MockRepositoryRepositoryWithNormalization) ExistsByNormalizedURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (bool, error) {
 	args := m.Called(ctx, url)
 	return args.Bool(0), args.Error(1)
 }
 
 // FindByNormalizedURL finds a repository using normalized URL comparison
-// This method doesn't exist yet - test should FAIL
-func (m *MockRepositoryRepositoryWithNormalization) FindByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error) {
+// This method doesn't exist yet - test should FAIL.
+func (m *MockRepositoryRepositoryWithNormalization) FindByNormalizedURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (*entity.Repository, error) {
 	args := m.Called(ctx, url)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -41,13 +47,16 @@ func (m *MockRepositoryRepositoryWithNormalization) FindByNormalizedURL(ctx cont
 	return args.Get(0).(*entity.Repository), args.Error(1)
 }
 
-// Mock implementation methods from the original interface
+// Mock implementation methods from the original interface.
 func (m *MockRepositoryRepositoryWithNormalization) Save(ctx context.Context, repo *entity.Repository) error {
 	args := m.Called(ctx, repo)
 	return args.Error(0)
 }
 
-func (m *MockRepositoryRepositoryWithNormalization) FindByID(ctx context.Context, id uuid.UUID) (*entity.Repository, error) {
+func (m *MockRepositoryRepositoryWithNormalization) FindByID(
+	ctx context.Context,
+	id uuid.UUID,
+) (*entity.Repository, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -55,7 +64,10 @@ func (m *MockRepositoryRepositoryWithNormalization) FindByID(ctx context.Context
 	return args.Get(0).(*entity.Repository), args.Error(1)
 }
 
-func (m *MockRepositoryRepositoryWithNormalization) FindByURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error) {
+func (m *MockRepositoryRepositoryWithNormalization) FindByURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (*entity.Repository, error) {
 	args := m.Called(ctx, url)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -63,7 +75,10 @@ func (m *MockRepositoryRepositoryWithNormalization) FindByURL(ctx context.Contex
 	return args.Get(0).(*entity.Repository), args.Error(1)
 }
 
-func (m *MockRepositoryRepositoryWithNormalization) FindAll(ctx context.Context, filters outbound.RepositoryFilters) ([]*entity.Repository, int, error) {
+func (m *MockRepositoryRepositoryWithNormalization) FindAll(
+	ctx context.Context,
+	filters outbound.RepositoryFilters,
+) ([]*entity.Repository, int, error) {
 	args := m.Called(ctx, filters)
 	return args.Get(0).([]*entity.Repository), args.Int(1), args.Error(2)
 }
@@ -78,13 +93,16 @@ func (m *MockRepositoryRepositoryWithNormalization) Delete(ctx context.Context, 
 	return args.Error(0)
 }
 
-func (m *MockRepositoryRepositoryWithNormalization) Exists(ctx context.Context, url valueobject.RepositoryURL) (bool, error) {
+func (m *MockRepositoryRepositoryWithNormalization) Exists(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (bool, error) {
 	args := m.Called(ctx, url)
 	return args.Bool(0), args.Error(1)
 }
 
 // TestCreateRepositoryService_DetectDuplicatesByNormalizedURL tests duplicate detection using normalized URLs
-// This test will FAIL initially as normalized duplicate detection doesn't exist yet
+// This test will FAIL initially as normalized duplicate detection doesn't exist yet.
 func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 	tests := []struct {
 		name                  string
@@ -226,7 +244,7 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 }
 
 // TestCreateRepositoryService_NormalizedDuplicateDetectionWithDatabaseError tests error handling in normalized duplicate detection
-// This test will FAIL initially as normalized duplicate detection doesn't exist yet
+// This test will FAIL initially as normalized duplicate detection doesn't exist yet.
 func TestCreateRepositoryService_NormalizedDuplicateDetectionWithDatabaseError(t *testing.T) {
 	ctx := context.Background()
 	mockRepo := &MockRepositoryRepositoryWithNormalization{}
@@ -258,7 +276,7 @@ func TestCreateRepositoryService_NormalizedDuplicateDetectionWithDatabaseError(t
 }
 
 // TestCreateRepositoryService_FindExistingRepositoryByNormalizedURL tests finding existing repositories with normalized URL
-// This test will FAIL initially as the functionality doesn't exist yet
+// This test will FAIL initially as the functionality doesn't exist yet.
 func TestCreateRepositoryService_FindExistingRepositoryByNormalizedURL(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -308,7 +326,8 @@ func TestCreateRepositoryService_FindExistingRepositoryByNormalizedURL(t *testin
 			// Setup mocks
 			if tt.shouldFind {
 				existingRepo := createTestRepository(tt.existingURL)
-				mockRepo.On("FindByNormalizedURL", ctx, mock.AnythingOfType("valueobject.RepositoryURL")).Return(existingRepo, nil)
+				mockRepo.On("FindByNormalizedURL", ctx, mock.AnythingOfType("valueobject.RepositoryURL")).
+					Return(existingRepo, nil)
 			} else {
 				mockRepo.On("FindByNormalizedURL", ctx, mock.AnythingOfType("valueobject.RepositoryURL")).Return(nil, nil)
 			}
@@ -321,7 +340,12 @@ func TestCreateRepositoryService_FindExistingRepositoryByNormalizedURL(t *testin
 
 			if tt.shouldFind {
 				assert.NotNil(t, foundRepo, tt.description)
-				assert.Contains(t, foundRepo.URL().String(), "github.com/owner/repo", "Found repository should match expected repository")
+				assert.Contains(
+					t,
+					foundRepo.URL().String(),
+					"github.com/owner/repo",
+					"Found repository should match expected repository",
+				)
 			} else {
 				assert.Nil(t, foundRepo, tt.description)
 			}
@@ -333,7 +357,7 @@ func TestCreateRepositoryService_FindExistingRepositoryByNormalizedURL(t *testin
 }
 
 // TestDuplicateDetectionPerformance tests performance of normalized duplicate detection
-// This test will FAIL initially as the performance-optimized methods don't exist yet
+// This test will FAIL initially as the performance-optimized methods don't exist yet.
 func TestDuplicateDetectionPerformance(t *testing.T) {
 	ctx := context.Background()
 	mockRepo := &MockRepositoryRepositoryWithNormalization{}
@@ -343,7 +367,8 @@ func TestDuplicateDetectionPerformance(t *testing.T) {
 
 	// Setup mock for performance test
 	// Use mock.Anything for context to support errgroup context passing
-	mockRepo.On("ExistsByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
+	mockRepo.On("ExistsByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).
+		Return(false, nil)
 
 	urls := []string{
 		"https://github.com/owner/repo1",
@@ -379,7 +404,7 @@ func TestDuplicateDetectionPerformance(t *testing.T) {
 
 // stringPtr is defined in repository_service_test.go to avoid duplication
 
-// createTestRepository creates a test repository for mocking
+// createTestRepository creates a test repository for mocking.
 func createTestRepository(url string) *entity.Repository {
 	repoURL, _ := valueobject.NewRepositoryURL(url)
 	return entity.NewRepository(repoURL, "test-repo", stringPtr("Test repository"), stringPtr("main"))

@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// TestDatabaseConnection_NewConnection tests database connection establishment
+// TestDatabaseConnection_NewConnection tests database connection establishment.
 func TestDatabaseConnection_NewConnection(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -113,7 +113,7 @@ func TestDatabaseConnection_NewConnection(t *testing.T) {
 	}
 }
 
-// TestDatabaseConnection_ConfigValidation tests configuration validation
+// TestDatabaseConnection_ConfigValidation tests configuration validation.
 func TestDatabaseConnection_ConfigValidation(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -204,7 +204,7 @@ func TestDatabaseConnection_ConfigValidation(t *testing.T) {
 	}
 }
 
-// TestConnectionPool_Configuration tests connection pool configuration
+// TestConnectionPool_Configuration tests connection pool configuration.
 func TestConnectionPool_Configuration(t *testing.T) {
 	config := DatabaseConfig{
 		Host:            "localhost",
@@ -238,7 +238,7 @@ func TestConnectionPool_Configuration(t *testing.T) {
 	}
 }
 
-// TestConnectionPool_Concurrent tests concurrent connection usage
+// TestConnectionPool_Concurrent tests concurrent connection usage.
 func TestConnectionPool_Concurrent(t *testing.T) {
 	config := DatabaseConfig{
 		Host:           "localhost",
@@ -266,7 +266,7 @@ func TestConnectionPool_Concurrent(t *testing.T) {
 	errCh := make(chan error, numGoroutines)
 	done := make(chan bool, numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(id int) {
 			defer func() { done <- true }()
 
@@ -288,7 +288,7 @@ func TestConnectionPool_Concurrent(t *testing.T) {
 	}
 
 	// Wait for all goroutines to complete
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		select {
 		case err := <-errCh:
 			t.Errorf("Goroutine failed: %v", err)
@@ -300,7 +300,7 @@ func TestConnectionPool_Concurrent(t *testing.T) {
 	}
 }
 
-// TestConnectionPool_Stats tests connection pool statistics
+// TestConnectionPool_Stats tests connection pool statistics.
 func TestConnectionPool_Stats(t *testing.T) {
 	config := DatabaseConfig{
 		Host:           "localhost",
@@ -331,7 +331,7 @@ func TestConnectionPool_Stats(t *testing.T) {
 
 	// Acquire some connections
 	var conns []*pgxpool.Conn
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		conn, err := pool.Acquire(ctx)
 		if err != nil {
 			t.Fatalf("Failed to acquire connection: %v", err)
@@ -357,7 +357,7 @@ func TestConnectionPool_Stats(t *testing.T) {
 	}
 }
 
-// TestConnectionPool_HealthCheck tests connection pool health monitoring
+// TestConnectionPool_HealthCheck tests connection pool health monitoring.
 func TestConnectionPool_HealthCheck(t *testing.T) {
 	config := DatabaseConfig{
 		Host:           "localhost",
@@ -409,7 +409,7 @@ func TestConnectionPool_HealthCheck(t *testing.T) {
 // These tests define the expected caching behavior and will FAIL with the current implementation
 // =============================================================================
 
-// TestDatabaseHealthChecker_CacheBasicBehavior tests basic cache hit and miss scenarios
+// TestDatabaseHealthChecker_CacheBasicBehavior tests basic cache hit and miss scenarios.
 func TestDatabaseHealthChecker_CacheBasicBehavior(t *testing.T) {
 	config := DatabaseConfig{
 		Host:     "localhost",
@@ -470,7 +470,7 @@ func TestDatabaseHealthChecker_CacheBasicBehavior(t *testing.T) {
 	}
 }
 
-// TestDatabaseHealthChecker_CacheTTLExpiration tests that cache expires after TTL
+// TestDatabaseHealthChecker_CacheTTLExpiration tests that cache expires after TTL.
 func TestDatabaseHealthChecker_CacheTTLExpiration(t *testing.T) {
 	config := DatabaseConfig{
 		Host:     "localhost",
@@ -526,7 +526,7 @@ func TestDatabaseHealthChecker_CacheTTLExpiration(t *testing.T) {
 	// This is indirectly tested by ensuring the caching mechanism respects TTL
 }
 
-// TestDatabaseHealthChecker_CacheConcurrentAccess tests thread safety
+// TestDatabaseHealthChecker_CacheConcurrentAccess tests thread safety.
 func TestDatabaseHealthChecker_CacheConcurrentAccess(t *testing.T) {
 	config := DatabaseConfig{
 		Host:     "localhost",
@@ -560,11 +560,11 @@ func TestDatabaseHealthChecker_CacheConcurrentAccess(t *testing.T) {
 	errorChan := make(chan error, numGoroutines*callsPerGoroutine)
 
 	// Launch concurrent goroutines calling GetMetrics
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(routineID int) {
 			defer wg.Done()
-			for j := 0; j < callsPerGoroutine; j++ {
+			for j := range callsPerGoroutine {
 				metrics := healthChecker.GetMetrics(ctx)
 				if metrics == nil {
 					errorChan <- fmt.Errorf("goroutine %d call %d: got nil metrics", routineID, j)
@@ -599,7 +599,7 @@ func TestDatabaseHealthChecker_CacheConcurrentAccess(t *testing.T) {
 	// This test primarily ensures no race conditions occur
 }
 
-// TestDatabaseHealthChecker_CacheConfiguration tests different cache configurations
+// TestDatabaseHealthChecker_CacheConfiguration tests different cache configurations.
 func TestDatabaseHealthChecker_CacheConfiguration(t *testing.T) {
 	config := DatabaseConfig{
 		Host:     "localhost",
@@ -681,7 +681,7 @@ func TestDatabaseHealthChecker_CacheConfiguration(t *testing.T) {
 	}
 }
 
-// TestDatabaseHealthChecker_CachePerformance tests that caching improves performance
+// TestDatabaseHealthChecker_CachePerformance tests that caching improves performance.
 func TestDatabaseHealthChecker_CachePerformance(t *testing.T) {
 	config := DatabaseConfig{
 		Host:     "localhost",
@@ -705,7 +705,7 @@ func TestDatabaseHealthChecker_CachePerformance(t *testing.T) {
 
 	// Time multiple calls without caching
 	nonCachedStart := time.Now()
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		metrics := nonCachedChecker.GetMetrics(ctx)
 		if metrics == nil {
 			t.Fatal("Expected metrics but got nil")
@@ -724,7 +724,7 @@ func TestDatabaseHealthChecker_CachePerformance(t *testing.T) {
 
 	// Time multiple calls with caching (first call populates cache, rest use cache)
 	cachedStart := time.Now()
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		metrics := cachedChecker.GetMetrics(ctx)
 		if metrics == nil {
 			t.Fatal("Expected cached metrics but got nil")
@@ -744,7 +744,7 @@ func TestDatabaseHealthChecker_CachePerformance(t *testing.T) {
 		nonCachedDuration, cachedDuration, float64(nonCachedDuration)/float64(cachedDuration))
 }
 
-// TestDatabaseHealthChecker_CacheWithNilPool tests cache behavior with nil pool
+// TestDatabaseHealthChecker_CacheWithNilPool tests cache behavior with nil pool.
 func TestDatabaseHealthChecker_CacheWithNilPool(t *testing.T) {
 	cacheConfig := HealthCheckCacheConfig{
 		TTL:     2 * time.Second,
@@ -762,7 +762,7 @@ func TestDatabaseHealthChecker_CacheWithNilPool(t *testing.T) {
 	}
 }
 
-// TestDatabaseHealthChecker_CacheContextCancellation tests cache behavior with context cancellation
+// TestDatabaseHealthChecker_CacheContextCancellation tests cache behavior with context cancellation.
 func TestDatabaseHealthChecker_CacheContextCancellation(t *testing.T) {
 	config := DatabaseConfig{
 		Host:     "localhost",
@@ -809,7 +809,7 @@ func TestDatabaseHealthChecker_CacheContextCancellation(t *testing.T) {
 	}
 }
 
-// TestDatabaseHealthChecker_CacheMetricsFreshness tests that cached metrics represent accurate state
+// TestDatabaseHealthChecker_CacheMetricsFreshness tests that cached metrics represent accurate state.
 func TestDatabaseHealthChecker_CacheMetricsFreshness(t *testing.T) {
 	config := DatabaseConfig{
 		Host:     "localhost",

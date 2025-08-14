@@ -13,13 +13,13 @@ import (
 	"github.com/google/uuid"
 )
 
-// RepositoryHandler handles HTTP requests for repository operations
+// RepositoryHandler handles HTTP requests for repository operations.
 type RepositoryHandler struct {
 	repositoryService inbound.RepositoryService
 	errorHandler      ErrorHandler
 }
 
-// NewRepositoryHandler creates a new RepositoryHandler
+// NewRepositoryHandler creates a new RepositoryHandler.
 func NewRepositoryHandler(repositoryService inbound.RepositoryService, errorHandler ErrorHandler) *RepositoryHandler {
 	return &RepositoryHandler{
 		repositoryService: repositoryService,
@@ -27,7 +27,7 @@ func NewRepositoryHandler(repositoryService inbound.RepositoryService, errorHand
 	}
 }
 
-// CreateRepository handles POST /repositories with comprehensive request processing
+// CreateRepository handles POST /repositories with comprehensive request processing.
 func (h *RepositoryHandler) CreateRepository(w http.ResponseWriter, r *http.Request) {
 	var request dto.CreateRepositoryRequest
 	if err := h.decodeAndValidateJSON(r, &request); err != nil {
@@ -49,7 +49,7 @@ func (h *RepositoryHandler) CreateRepository(w http.ResponseWriter, r *http.Requ
 	h.writeJSONResponse(w, http.StatusAccepted, response)
 }
 
-// GetRepository handles GET /repositories/{id}
+// GetRepository handles GET /repositories/{id}.
 func (h *RepositoryHandler) GetRepository(w http.ResponseWriter, r *http.Request) {
 	id, err := h.extractRepositoryIDFromPath(r)
 	if err != nil {
@@ -62,7 +62,7 @@ func (h *RepositoryHandler) GetRepository(w http.ResponseWriter, r *http.Request
 	}, http.StatusOK)
 }
 
-// ListRepositories handles GET /repositories
+// ListRepositories handles GET /repositories.
 func (h *RepositoryHandler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	query := h.parseRepositoryListQuery(r)
 
@@ -80,7 +80,7 @@ func (h *RepositoryHandler) ListRepositories(w http.ResponseWriter, r *http.Requ
 	h.writeJSONResponse(w, http.StatusOK, response)
 }
 
-// DeleteRepository handles DELETE /repositories/{id}
+// DeleteRepository handles DELETE /repositories/{id}.
 func (h *RepositoryHandler) DeleteRepository(w http.ResponseWriter, r *http.Request) {
 	id, err := h.extractRepositoryIDFromPath(r)
 	if err != nil {
@@ -97,7 +97,7 @@ func (h *RepositoryHandler) DeleteRepository(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// GetRepositoryJobs handles GET /repositories/{id}/jobs
+// GetRepositoryJobs handles GET /repositories/{id}/jobs.
 func (h *RepositoryHandler) GetRepositoryJobs(w http.ResponseWriter, r *http.Request) {
 	repositoryID, err := h.extractRepositoryIDFromPath(r)
 	if err != nil {
@@ -116,7 +116,7 @@ func (h *RepositoryHandler) GetRepositoryJobs(w http.ResponseWriter, r *http.Req
 	}, http.StatusOK)
 }
 
-// GetIndexingJob handles GET /repositories/{id}/jobs/{job_id}
+// GetIndexingJob handles GET /repositories/{id}/jobs/{job_id}.
 func (h *RepositoryHandler) GetIndexingJob(w http.ResponseWriter, r *http.Request) {
 	repositoryID, err := h.extractRepositoryIDFromPath(r)
 	if err != nil {
@@ -135,7 +135,7 @@ func (h *RepositoryHandler) GetIndexingJob(w http.ResponseWriter, r *http.Reques
 	}, http.StatusOK)
 }
 
-// parseRepositoryListQuery extracts query parameters for repository listing
+// parseRepositoryListQuery extracts query parameters for repository listing.
 func (h *RepositoryHandler) parseRepositoryListQuery(r *http.Request) dto.RepositoryListQuery {
 	query := dto.DefaultRepositoryListQuery()
 
@@ -153,7 +153,7 @@ func (h *RepositoryHandler) parseRepositoryListQuery(r *http.Request) dto.Reposi
 	return query
 }
 
-// parseIndexingJobListQuery extracts query parameters for indexing job listing
+// parseIndexingJobListQuery extracts query parameters for indexing job listing.
 func (h *RepositoryHandler) parseIndexingJobListQuery(r *http.Request) dto.IndexingJobListQuery {
 	query := dto.DefaultIndexingJobListQuery()
 
@@ -163,7 +163,7 @@ func (h *RepositoryHandler) parseIndexingJobListQuery(r *http.Request) dto.Index
 	return query
 }
 
-// validateCreateRepositoryRequest validates the create repository request with comprehensive checks
+// validateCreateRepositoryRequest validates the create repository request with comprehensive checks.
 func (h *RepositoryHandler) validateCreateRepositoryRequest(request dto.CreateRepositoryRequest) error {
 	if request.URL == "" {
 		return common.NewValidationError("url", "Repository URL is required and cannot be empty")
@@ -177,18 +177,18 @@ func (h *RepositoryHandler) validateCreateRepositoryRequest(request dto.CreateRe
 	return nil
 }
 
-// validateRepositoryListQuery validates the repository list query parameters
+// validateRepositoryListQuery validates the repository list query parameters.
 func (h *RepositoryHandler) validateRepositoryListQuery(query dto.RepositoryListQuery) error {
 	return h.validatePaginationParams(query.Limit, query.Offset, 100)
 }
 
-// validateIndexingJobListQuery validates the indexing job list query parameters
+// validateIndexingJobListQuery validates the indexing job list query parameters.
 func (h *RepositoryHandler) validateIndexingJobListQuery(query dto.IndexingJobListQuery) error {
 	return h.validatePaginationParams(query.Limit, query.Offset, 50)
 }
 
 // jsonResponseWriter encapsulates JSON response writing with improved error handling
-// writeJSONResponse writes a JSON response using the pooled encoder
+// writeJSONResponse writes a JSON response using the pooled encoder.
 func (h *RepositoryHandler) writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 	if err := WriteJSON(w, statusCode, data); err != nil {
 		// Log error in production (placeholder for now)
@@ -197,7 +197,7 @@ func (h *RepositoryHandler) writeJSONResponse(w http.ResponseWriter, statusCode 
 	}
 }
 
-// parseIntQueryParam parses an integer query parameter with default value
+// parseIntQueryParam parses an integer query parameter with default value.
 func (h *RepositoryHandler) parseIntQueryParam(r *http.Request, paramName string, defaultValue int) int {
 	if paramStr := r.URL.Query().Get(paramName); paramStr != "" {
 		if value, err := strconv.Atoi(paramStr); err == nil {
@@ -207,17 +207,17 @@ func (h *RepositoryHandler) parseIntQueryParam(r *http.Request, paramName string
 	return defaultValue
 }
 
-// paginationValidator provides reusable pagination validation logic
+// paginationValidator provides reusable pagination validation logic.
 type paginationValidator struct {
 	maxLimit int
 }
 
-// newPaginationValidator creates a new pagination validator with specified max limit
+// newPaginationValidator creates a new pagination validator with specified max limit.
 func newPaginationValidator(maxLimit int) *paginationValidator {
 	return &paginationValidator{maxLimit: maxLimit}
 }
 
-// validate validates pagination parameters with descriptive error messages
+// validate validates pagination parameters with descriptive error messages.
 func (pv *paginationValidator) validate(limit, offset int) error {
 	if err := pv.validateLimit(limit); err != nil {
 		return err
@@ -225,7 +225,7 @@ func (pv *paginationValidator) validate(limit, offset int) error {
 	return pv.validateOffset(offset)
 }
 
-// validateLimit validates the limit parameter
+// validateLimit validates the limit parameter.
 func (pv *paginationValidator) validateLimit(limit int) error {
 	if limit < 1 {
 		return common.NewValidationError("limit", "limit must be at least 1")
@@ -236,7 +236,7 @@ func (pv *paginationValidator) validateLimit(limit int) error {
 	return nil
 }
 
-// validateOffset validates the offset parameter
+// validateOffset validates the offset parameter.
 func (pv *paginationValidator) validateOffset(offset int) error {
 	if offset < 0 {
 		return common.NewValidationError("offset", "offset must be non-negative (0 or greater)")
@@ -244,7 +244,7 @@ func (pv *paginationValidator) validateOffset(offset int) error {
 	return nil
 }
 
-// validatePaginationParams validates common pagination parameters using the improved validator
+// validatePaginationParams validates common pagination parameters using the improved validator.
 func (h *RepositoryHandler) validatePaginationParams(limit, offset, maxLimit int) error {
 	validator := newPaginationValidator(maxLimit)
 	return validator.validate(limit, offset)
@@ -252,7 +252,7 @@ func (h *RepositoryHandler) validatePaginationParams(limit, offset, maxLimit int
 
 // Helper methods for common operations
 
-// decodeAndValidateJSON decodes JSON from request body with proper error handling
+// decodeAndValidateJSON decodes JSON from request body with proper error handling.
 func (h *RepositoryHandler) decodeAndValidateJSON(r *http.Request, v interface{}) error {
 	if r.Body == nil {
 		return common.NewValidationError("body", "Request body is required")
@@ -268,55 +268,66 @@ func (h *RepositoryHandler) decodeAndValidateJSON(r *http.Request, v interface{}
 	return nil
 }
 
-// pathParameterExtractor provides clean, production-ready path parameter extraction
+// pathParameterExtractor provides clean, production-ready path parameter extraction.
 type pathParameterExtractor struct {
 	request *http.Request
 }
 
-// newPathParameterExtractor creates a new path parameter extractor
+// newPathParameterExtractor creates a new path parameter extractor.
 func newPathParameterExtractor(r *http.Request) *pathParameterExtractor {
 	return &pathParameterExtractor{request: r}
 }
 
-// extractRepositoryID extracts and validates a repository ID from the path
+// extractRepositoryID extracts and validates a repository ID from the path.
 func (p *pathParameterExtractor) extractRepositoryID() (uuid.UUID, error) {
 	return p.extractUUIDPathValue("id", "repository")
 }
 
-// extractJobID extracts and validates a job ID from the path
+// extractJobID extracts and validates a job ID from the path.
 func (p *pathParameterExtractor) extractJobID() (uuid.UUID, error) {
 	return p.extractUUIDPathValue("job_id", "job")
 }
 
-// extractUUIDPathValue extracts a UUID path parameter with descriptive error handling
+// extractUUIDPathValue extracts a UUID path parameter with descriptive error handling.
 func (p *pathParameterExtractor) extractUUIDPathValue(paramName, resourceType string) (uuid.UUID, error) {
 	paramValue := p.request.PathValue(paramName)
 	if paramValue == "" {
-		return uuid.Nil, common.NewValidationError(paramName, fmt.Sprintf("%s ID is required in URL path", resourceType))
+		return uuid.Nil, common.NewValidationError(
+			paramName,
+			fmt.Sprintf("%s ID is required in URL path", resourceType),
+		)
 	}
 
 	id, err := uuid.Parse(paramValue)
 	if err != nil {
-		return uuid.Nil, common.NewValidationError(paramName, fmt.Sprintf("invalid %s UUID format: %s", resourceType, paramValue))
+		return uuid.Nil, common.NewValidationError(
+			paramName,
+			fmt.Sprintf("invalid %s UUID format: %s", resourceType, paramValue),
+		)
 	}
 
 	return id, nil
 }
 
-// extractRepositoryIDFromPath is a specialized method for extracting repository IDs
+// extractRepositoryIDFromPath is a specialized method for extracting repository IDs.
 func (h *RepositoryHandler) extractRepositoryIDFromPath(r *http.Request) (uuid.UUID, error) {
 	extractor := newPathParameterExtractor(r)
 	return extractor.extractRepositoryID()
 }
 
-// extractJobIDFromPath is a specialized method for extracting job IDs
+// extractJobIDFromPath is a specialized method for extracting job IDs.
 func (h *RepositoryHandler) extractJobIDFromPath(r *http.Request) (uuid.UUID, error) {
 	extractor := newPathParameterExtractor(r)
 	return extractor.extractJobID()
 }
 
-// handleServiceCall wraps service calls with consistent error handling
-func (h *RepositoryHandler) handleServiceCall(w http.ResponseWriter, r *http.Request, serviceCall func() (interface{}, error), successStatus int) {
+// handleServiceCall wraps service calls with consistent error handling.
+func (h *RepositoryHandler) handleServiceCall(
+	w http.ResponseWriter,
+	r *http.Request,
+	serviceCall func() (interface{}, error),
+	successStatus int,
+) {
 	response, err := serviceCall()
 	if err != nil {
 		h.errorHandler.HandleServiceError(w, r, err)

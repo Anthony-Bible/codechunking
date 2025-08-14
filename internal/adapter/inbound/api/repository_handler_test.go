@@ -626,7 +626,11 @@ func TestRepositoryHandler_GetRepositoryJobs(t *testing.T) {
 			if tt.repositoryID != "" {
 				vars["id"] = tt.repositoryID
 			}
-			req := testutil.CreateRequestWithMuxVars(http.MethodGet, "/repositories/"+tt.repositoryID+"/jobs"+tt.queryParams, vars)
+			req := testutil.CreateRequestWithMuxVars(
+				http.MethodGet,
+				"/repositories/"+tt.repositoryID+"/jobs"+tt.queryParams,
+				vars,
+			)
 			recorder := httptest.NewRecorder()
 
 			// Execute
@@ -773,7 +777,11 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 			if tt.jobID != "" {
 				vars["job_id"] = tt.jobID
 			}
-			req := testutil.CreateRequestWithMuxVars(http.MethodGet, "/repositories/"+tt.repositoryID+"/jobs/"+tt.jobID, vars)
+			req := testutil.CreateRequestWithMuxVars(
+				http.MethodGet,
+				"/repositories/"+tt.repositoryID+"/jobs/"+tt.jobID,
+				vars,
+			)
 			recorder := httptest.NewRecorder()
 
 			// Execute
@@ -844,7 +852,11 @@ func TestRepositoryHandler_QueryParameterParsing(t *testing.T) {
 
 		// Create request with pagination parameters
 		vars := map[string]string{"id": testutil.TestRepositoryID1.String()}
-		req := testutil.CreateRequestWithMuxVars(http.MethodGet, "/repositories/"+testutil.TestRepositoryID1.String()+"/jobs?limit=25&offset=50", vars)
+		req := testutil.CreateRequestWithMuxVars(
+			http.MethodGet,
+			"/repositories/"+testutil.TestRepositoryID1.String()+"/jobs?limit=25&offset=50",
+			vars,
+		)
 		recorder := httptest.NewRecorder()
 
 		// Execute

@@ -1,16 +1,18 @@
 package common
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"codechunking/internal/application/common/security"
 	"codechunking/internal/domain/valueobject"
+
 	"github.com/google/uuid"
 )
 
-// ValidJobStatuses defines all valid job statuses
+// ValidJobStatuses defines all valid job statuses.
 var ValidJobStatuses = map[string]bool{
 	"pending":   true,
 	"running":   true,
@@ -19,7 +21,7 @@ var ValidJobStatuses = map[string]bool{
 	"cancelled": true,
 }
 
-// ValidateRepositoryURL validates that a repository URL is not empty
+// ValidateRepositoryURL validates that a repository URL is not empty.
 func ValidateRepositoryURL(url string) error {
 	if strings.TrimSpace(url) == "" {
 		return NewValidationError("url", "URL is required")
@@ -27,7 +29,7 @@ func ValidateRepositoryURL(url string) error {
 	return nil
 }
 
-// ValidateRepositoryName validates repository name constraints with security checks
+// ValidateRepositoryName validates repository name constraints with security checks.
 func ValidateRepositoryName(name *string) error {
 	if name == nil {
 		return nil
@@ -70,7 +72,7 @@ func ValidateRepositoryName(name *string) error {
 	return nil
 }
 
-// ValidateRepositoryStatus validates repository status with security checks
+// ValidateRepositoryStatus validates repository status with security checks.
 func ValidateRepositoryStatus(status string) error {
 	// Security validation: SQL injection prevention using shared utilities
 	validator := security.NewInjectionValidator(security.DefaultConfig())
@@ -85,7 +87,7 @@ func ValidateRepositoryStatus(status string) error {
 	return nil
 }
 
-// ValidateJobStatus validates job status
+// ValidateJobStatus validates job status.
 func ValidateJobStatus(status string) error {
 	if !ValidJobStatuses[status] {
 		return NewValidationError("status", fmt.Sprintf("invalid status: %s", status))
@@ -93,7 +95,7 @@ func ValidateJobStatus(status string) error {
 	return nil
 }
 
-// ValidateUUID validates that a UUID is not nil/empty
+// ValidateUUID validates that a UUID is not nil/empty.
 func ValidateUUID(id uuid.UUID, fieldName string) error {
 	if id == uuid.Nil {
 		return NewValidationError(fieldName, fmt.Sprintf("%s is required", fieldName))
@@ -101,7 +103,7 @@ func ValidateUUID(id uuid.UUID, fieldName string) error {
 	return nil
 }
 
-// ValidatePaginationLimit validates pagination limit constraints
+// ValidatePaginationLimit validates pagination limit constraints.
 func ValidatePaginationLimit(limit int, maxLimit int, fieldName string) error {
 	if limit > maxLimit {
 		return NewValidationError(fieldName, fmt.Sprintf("limit exceeds maximum of %d", maxLimit))
@@ -111,7 +113,7 @@ func ValidatePaginationLimit(limit int, maxLimit int, fieldName string) error {
 
 // Security validation functions required by tests
 
-// ValidateSortParameter validates sort parameters for SQL injection
+// ValidateSortParameter validates sort parameters for SQL injection.
 func ValidateSortParameter(sortParam string) error {
 	// Use shared security validator for SQL injection check
 	validator := security.NewInjectionValidator(security.DefaultConfig())
@@ -159,7 +161,7 @@ func ValidateSortParameter(sortParam string) error {
 	return nil
 }
 
-// ValidatePaginationLimitString validates pagination limit string for SQL injection
+// ValidatePaginationLimitString validates pagination limit string for SQL injection.
 func ValidatePaginationLimitString(limitStr string) error {
 	// Use shared security validator
 	validator := security.NewInjectionValidator(security.DefaultConfig())
@@ -175,7 +177,7 @@ func ValidatePaginationLimitString(limitStr string) error {
 	return nil
 }
 
-// ValidateOffsetParameter validates offset parameters for SQL injection
+// ValidateOffsetParameter validates offset parameters for SQL injection.
 func ValidateOffsetParameter(offsetStr string) error {
 	// Use shared security validator
 	validator := security.NewInjectionValidator(security.DefaultConfig())
@@ -191,7 +193,7 @@ func ValidateOffsetParameter(offsetStr string) error {
 	return nil
 }
 
-// ValidateQueryParameters validates all query parameters for security issues
+// ValidateQueryParameters validates all query parameters for security issues.
 func ValidateQueryParameters(params map[string]string) error {
 	// Use shared security validator for SQL injection checks
 	validator := security.NewInjectionValidator(security.DefaultConfig())
@@ -225,7 +227,7 @@ func ValidateQueryParameters(params map[string]string) error {
 	return nil
 }
 
-// ValidateJSONField validates individual JSON fields for security issues
+// ValidateJSONField validates individual JSON fields for security issues.
 func ValidateJSONField(fieldName, value string) error {
 	// Use shared security validators for comprehensive checks
 	validator := security.NewInjectionValidator(security.DefaultConfig())
@@ -259,14 +261,14 @@ func ValidateJSONField(fieldName, value string) error {
 	return nil
 }
 
-// EnhancedValidator provides improved validation with configurable security policies
+// EnhancedValidator provides improved validation with configurable security policies.
 type EnhancedValidator struct {
 	config             *security.Config
 	injectionValidator *security.InjectionValidator
 	unicodeValidator   *security.UnicodeValidator
 }
 
-// NewEnhancedValidator creates a new enhanced validator with custom configuration
+// NewEnhancedValidator creates a new enhanced validator with custom configuration.
 func NewEnhancedValidator(config *security.Config) *EnhancedValidator {
 	if config == nil {
 		config = security.DefaultConfig()
@@ -278,18 +280,20 @@ func NewEnhancedValidator(config *security.Config) *EnhancedValidator {
 	}
 }
 
-// ValidateAllSecurityThreats performs comprehensive security validation
+// ValidateAllSecurityThreats performs comprehensive security validation.
 func (ev *EnhancedValidator) ValidateAllSecurityThreats(fieldName, value string) error {
 	// Run all security validations using shared utilities
 	if err := ev.injectionValidator.ValidateAllInjections(value); err != nil {
-		if secViol, ok := err.(*security.SecurityViolation); ok {
+		secViol := &security.SecurityViolation{}
+		if errors.As(err, &secViol) {
 			return NewValidationError(fieldName, secViol.Message)
 		}
 		return NewValidationError(fieldName, err.Error())
 	}
 
 	if err := ev.unicodeValidator.ValidateUnicodeAttacks(value); err != nil {
-		if secViol, ok := err.(*security.SecurityViolation); ok {
+		secViol := &security.SecurityViolation{}
+		if errors.As(err, &secViol) {
 			return NewValidationError(fieldName, secViol.Message)
 		}
 		return NewValidationError(fieldName, err.Error())
@@ -298,7 +302,7 @@ func (ev *EnhancedValidator) ValidateAllSecurityThreats(fieldName, value string)
 	return nil
 }
 
-// ValidateWithCustomRules validates input with custom security rules
+// ValidateWithCustomRules validates input with custom security rules.
 func (ev *EnhancedValidator) ValidateWithCustomRules(fieldName, value string, rules []string) error {
 	// First run standard security validation
 	if err := ev.ValidateAllSecurityThreats(fieldName, value); err != nil {
@@ -330,12 +334,12 @@ func (ev *EnhancedValidator) ValidateWithCustomRules(fieldName, value string, ru
 
 // BackwardCompatibility functions - these maintain the original API while using shared utilities
 
-// containsControlCharacters maintains backward compatibility
+// containsControlCharacters maintains backward compatibility.
 func containsControlCharacters(input string) bool {
 	return security.ContainsControlCharacters(input)
 }
 
-// containsSuspiciousUnicode maintains backward compatibility
+// containsSuspiciousUnicode maintains backward compatibility.
 func containsSuspiciousUnicode(input string) bool {
 	return security.ContainsSuspiciousUnicode(input)
 }

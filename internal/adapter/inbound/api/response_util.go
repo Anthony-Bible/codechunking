@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-// Pool both encoders and their underlying buffers for maximum efficiency
+// Pool both encoders and their underlying buffers for maximum efficiency.
 type pooledEncoder struct {
 	buf     *bytes.Buffer
 	encoder *json.Encoder

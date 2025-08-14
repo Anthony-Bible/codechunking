@@ -9,13 +9,13 @@ import (
 	"codechunking/internal/port/inbound"
 )
 
-// HealthHandler handles HTTP requests for health check operations
+// HealthHandler handles HTTP requests for health check operations.
 type HealthHandler struct {
 	healthService inbound.HealthService
 	errorHandler  ErrorHandler
 }
 
-// NewHealthHandler creates a new HealthHandler
+// NewHealthHandler creates a new HealthHandler.
 func NewHealthHandler(healthService inbound.HealthService, errorHandler ErrorHandler) *HealthHandler {
 	return &HealthHandler{
 		healthService: healthService,
@@ -23,7 +23,7 @@ func NewHealthHandler(healthService inbound.HealthService, errorHandler ErrorHan
 	}
 }
 
-// GetHealth handles GET /health
+// GetHealth handles GET /health.
 func (h *HealthHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
@@ -53,7 +53,7 @@ func (h *HealthHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// addHealthHeaders adds performance and NATS-specific headers to the response
+// addHealthHeaders adds performance and NATS-specific headers to the response.
 func (h *HealthHandler) addHealthHeaders(w http.ResponseWriter, response *dto.HealthResponse, duration time.Duration) {
 	// Add health check duration header
 	w.Header().Set("X-Health-Check-Duration", fmt.Sprintf("%.2fms", float64(duration.Nanoseconds())/1e6))

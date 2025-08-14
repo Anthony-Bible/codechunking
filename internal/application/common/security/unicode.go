@@ -5,19 +5,19 @@ import (
 	"unicode"
 )
 
-// UnicodeValidator provides optimized Unicode attack detection
+// UnicodeValidator provides optimized Unicode attack detection.
 type UnicodeValidator struct {
 	config *Config
 }
 
-// NewUnicodeValidator creates a new Unicode validator
+// NewUnicodeValidator creates a new Unicode validator.
 func NewUnicodeValidator(config *Config) *UnicodeValidator {
 	return &UnicodeValidator{
 		config: config,
 	}
 }
 
-// ValidateUnicodeAttacks checks for various Unicode-based attacks
+// ValidateUnicodeAttacks checks for various Unicode-based attacks.
 func (uv *UnicodeValidator) ValidateUnicodeAttacks(input string) error {
 	if !uv.config.EnableUnicodeCheck {
 		return nil
@@ -58,7 +58,7 @@ func (uv *UnicodeValidator) ValidateUnicodeAttacks(input string) error {
 	return nil
 }
 
-// containsDirectionalOverride checks for Unicode directional override attacks
+// containsDirectionalOverride checks for Unicode directional override attacks.
 func (uv *UnicodeValidator) containsDirectionalOverride(input string) bool {
 	directionalOverrides := []rune{
 		'\u202D', // Left-to-Right Override
@@ -79,7 +79,7 @@ func (uv *UnicodeValidator) containsDirectionalOverride(input string) bool {
 	return false
 }
 
-// containsCombiningMarks checks for combining mark attacks
+// containsCombiningMarks checks for combining mark attacks.
 func (uv *UnicodeValidator) containsCombiningMarks(input string) bool {
 	for _, char := range input {
 		if unicode.In(char, unicode.Mn, unicode.Me, unicode.Mc) {
@@ -89,7 +89,7 @@ func (uv *UnicodeValidator) containsCombiningMarks(input string) bool {
 	return false
 }
 
-// containsHomographAttack detects homograph attacks (mixed scripts)
+// containsHomographAttack detects homograph attacks (mixed scripts).
 func (uv *UnicodeValidator) containsHomographAttack(input string) bool {
 	scripts := make(map[string]bool)
 
@@ -129,7 +129,7 @@ func (uv *UnicodeValidator) containsHomographAttack(input string) bool {
 	return uv.containsConfusableCharacters(input)
 }
 
-// containsConfusableCharacters checks for visually similar characters
+// containsConfusableCharacters checks for visually similar characters.
 func (uv *UnicodeValidator) containsConfusableCharacters(input string) bool {
 	// Common confusable characters that could be used in attacks
 	confusables := map[rune]bool{
@@ -154,7 +154,7 @@ func (uv *UnicodeValidator) containsConfusableCharacters(input string) bool {
 	return false
 }
 
-// containsZeroWidthAttack checks for zero-width character attacks
+// containsZeroWidthAttack checks for zero-width character attacks.
 func (uv *UnicodeValidator) containsZeroWidthAttack(input string) bool {
 	zeroWidthChars := []rune{
 		'\u200B', // Zero Width Space
@@ -175,7 +175,7 @@ func (uv *UnicodeValidator) containsZeroWidthAttack(input string) bool {
 	return false
 }
 
-// NormalizeUnicode normalizes Unicode input for consistent processing
+// NormalizeUnicode normalizes Unicode input for consistent processing.
 func (uv *UnicodeValidator) NormalizeUnicode(input string) string {
 	// Remove directional override characters
 	normalized := uv.removeDirectionalOverrides(input)
@@ -191,7 +191,7 @@ func (uv *UnicodeValidator) NormalizeUnicode(input string) string {
 	return normalized
 }
 
-// removeDirectionalOverrides removes directional override characters
+// removeDirectionalOverrides removes directional override characters.
 func (uv *UnicodeValidator) removeDirectionalOverrides(input string) string {
 	var result strings.Builder
 
@@ -207,7 +207,7 @@ func (uv *UnicodeValidator) removeDirectionalOverrides(input string) string {
 	return result.String()
 }
 
-// removeZeroWidthCharacters removes zero-width characters
+// removeZeroWidthCharacters removes zero-width characters.
 func (uv *UnicodeValidator) removeZeroWidthCharacters(input string) string {
 	var result strings.Builder
 
@@ -223,13 +223,13 @@ func (uv *UnicodeValidator) removeZeroWidthCharacters(input string) string {
 	return result.String()
 }
 
-// ContainsSuspiciousUnicode is a convenience function for backward compatibility
+// ContainsSuspiciousUnicode is a convenience function for backward compatibility.
 func ContainsSuspiciousUnicode(input string) bool {
 	validator := NewUnicodeValidator(DefaultConfig())
 	return validator.ValidateUnicodeAttacks(input) != nil
 }
 
-// SecurityViolation represents a security violation
+// SecurityViolation represents a security violation.
 type SecurityViolation struct {
 	Type    string
 	Message string
@@ -244,7 +244,7 @@ func (sv *SecurityViolation) Error() string {
 	return sv.Message
 }
 
-// GetUnicodeStats returns statistics about Unicode usage in the input
+// GetUnicodeStats returns statistics about Unicode usage in the input.
 func (uv *UnicodeValidator) GetUnicodeStats(input string) UnicodeStats {
 	stats := UnicodeStats{
 		Length:     len(input),
@@ -298,7 +298,7 @@ func (uv *UnicodeValidator) GetUnicodeStats(input string) UnicodeStats {
 	return stats
 }
 
-// UnicodeStats contains statistics about Unicode usage
+// UnicodeStats contains statistics about Unicode usage.
 type UnicodeStats struct {
 	Length     int            // Byte length
 	RuneCount  int            // Rune count

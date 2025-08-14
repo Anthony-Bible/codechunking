@@ -8,53 +8,53 @@ import (
 
 // Mock service implementations for correlation testing
 
-// RepositoryRequest represents a repository creation request
+// RepositoryRequest represents a repository creation request.
 type RepositoryRequest struct {
 	URL string
 }
 
-// RepositoryResult represents a repository creation result
+// RepositoryResult represents a repository creation result.
 type RepositoryResult struct {
 	ID  string
 	URL string
 }
 
-// RepositoryProcessingRequest represents a repository processing request
+// RepositoryProcessingRequest represents a repository processing request.
 type RepositoryProcessingRequest struct {
 	RepositoryID string
 	URL          string
 	Publisher    interface{} // NATSPublisher interface
 }
 
-// IndexingJobRequest represents an indexing job request
+// IndexingJobRequest represents an indexing job request.
 type IndexingJobRequest struct {
 	RepositoryID string
 	URL          string
 	Publisher    interface{} // NATSPublisher interface
 }
 
-// NATSJobMessage represents a NATS job message
+// NATSJobMessage represents a NATS job message.
 type NATSJobMessage struct {
 	CorrelationID string
 	RepositoryID  string
 	URL           string
 }
 
-// ErrorScenario represents an error scenario for testing
+// ErrorScenario represents an error scenario for testing.
 type ErrorScenario struct {
 	Component    string
 	ErrorType    string
 	ErrorMessage string
 }
 
-// AsyncJobRequest represents an async job request
+// AsyncJobRequest represents an async job request.
 type AsyncJobRequest struct {
 	Type         string
 	RepositoryID string
 	Priority     string
 }
 
-// AsyncJobResult represents an async job result
+// AsyncJobResult represents an async job result.
 type AsyncJobResult struct {
 	JobID        string
 	Status       string
@@ -64,37 +64,37 @@ type AsyncJobResult struct {
 
 // Mock service interfaces for correlation testing
 
-// MockRepositoryService interface for testing correlation
+// MockRepositoryService interface for testing correlation.
 type MockRepositoryService interface {
 	CreateRepository(ctx context.Context, req RepositoryRequest) error
 	CreateRepositoryWithResult(ctx context.Context, req RepositoryRequest) (*RepositoryResult, error)
 }
 
-// MockIndexingService interface for testing correlation
+// MockIndexingService interface for testing correlation.
 type MockIndexingService interface {
 	ProcessRepository(ctx context.Context, req RepositoryProcessingRequest) error
 	PublishIndexingJob(ctx context.Context, req IndexingJobRequest) error
 	PublishWithErroryPublisher(ctx context.Context, req RepositoryRequest, publisher MockNATSPublisher) error
 }
 
-// MockNATSPublisher interface for testing correlation
+// MockNATSPublisher interface for testing correlation.
 type MockNATSPublisher interface {
 	PublishIndexingJob(ctx context.Context, message interface{}) error
 }
 
-// MockNATSConsumer interface for testing correlation
+// MockNATSConsumer interface for testing correlation.
 type MockNATSConsumer interface {
 	ProcessIndexingJob(ctx context.Context, message NATSJobMessage) error
 }
 
-// MockAsyncProcessingService interface for testing correlation
+// MockAsyncProcessingService interface for testing correlation.
 type MockAsyncProcessingService interface {
 	StartAsyncJob(ctx context.Context, req AsyncJobRequest) (string, error)
 	ProcessJobAsync(ctx context.Context, jobID string) (*AsyncJobResult, error)
 	CompleteJob(ctx context.Context, result *AsyncJobResult) error
 }
 
-// Mock repository service
+// Mock repository service.
 type mockRepositoryService struct {
 	logger ApplicationLogger
 }
@@ -113,7 +113,10 @@ func (s *mockRepositoryService) CreateRepository(ctx context.Context, req Reposi
 	return nil
 }
 
-func (s *mockRepositoryService) CreateRepositoryWithResult(ctx context.Context, req RepositoryRequest) (*RepositoryResult, error) {
+func (s *mockRepositoryService) CreateRepositoryWithResult(
+	ctx context.Context,
+	req RepositoryRequest,
+) (*RepositoryResult, error) {
 	result := &RepositoryResult{
 		ID:  "repo-123",
 		URL: req.URL,
@@ -128,7 +131,7 @@ func (s *mockRepositoryService) CreateRepositoryWithResult(ctx context.Context, 
 	return result, nil
 }
 
-// Mock indexing service
+// Mock indexing service.
 type mockIndexingService struct {
 	logger ApplicationLogger
 }
@@ -174,7 +177,11 @@ func (s *mockIndexingService) PublishIndexingJob(ctx context.Context, req Indexi
 	return nil
 }
 
-func (s *mockIndexingService) PublishWithErroryPublisher(ctx context.Context, req RepositoryRequest, publisher MockNATSPublisher) error {
+func (s *mockIndexingService) PublishWithErroryPublisher(
+	ctx context.Context,
+	req RepositoryRequest,
+	publisher MockNATSPublisher,
+) error {
 	s.logger.Info(ctx, "Attempting to publish with error publisher", Fields{
 		"repository_url": req.URL,
 		"operation":      "publish_with_error",
@@ -186,7 +193,7 @@ func (s *mockIndexingService) PublishWithErroryPublisher(ctx context.Context, re
 	})
 }
 
-// Mock NATS publisher
+// Mock NATS publisher.
 type mockNATSPublisher struct {
 	logger ApplicationLogger
 }
@@ -217,7 +224,7 @@ func (p *mockNATSPublisher) PublishIndexingJob(ctx context.Context, message inte
 	return nil
 }
 
-// Mock NATS consumer
+// Mock NATS consumer.
 type mockNATSConsumer struct {
 	logger ApplicationLogger
 }
@@ -236,7 +243,7 @@ func (c *mockNATSConsumer) ProcessIndexingJob(ctx context.Context, message NATSJ
 	return nil
 }
 
-// Mock async processing service
+// Mock async processing service.
 type mockAsyncProcessingService struct {
 	logger ApplicationLogger
 }
@@ -288,7 +295,7 @@ func (s *mockAsyncProcessingService) CompleteJob(ctx context.Context, result *As
 	return nil
 }
 
-// Mock error services for error propagation testing
+// Mock error services for error propagation testing.
 type mockErrorService struct {
 	logger   ApplicationLogger
 	scenario ErrorScenario
@@ -320,7 +327,11 @@ func (s *mockErrorService) PublishIndexingJob(ctx context.Context, req IndexingJ
 	return nil
 }
 
-func (s *mockErrorService) PublishWithErroryPublisher(ctx context.Context, req RepositoryRequest, publisher MockNATSPublisher) error {
+func (s *mockErrorService) PublishWithErroryPublisher(
+	ctx context.Context,
+	req RepositoryRequest,
+	publisher MockNATSPublisher,
+) error {
 	s.logger.Info(ctx, "Attempting to publish with error publisher", Fields{
 		"repository_url": req.URL,
 		"operation":      "publish_with_error",
@@ -332,7 +343,7 @@ func (s *mockErrorService) PublishWithErroryPublisher(ctx context.Context, req R
 	})
 }
 
-// Test helper functions for log output capture
+// Test helper functions for log output capture.
 func getServiceLogOutput(service interface{}) string {
 	// Extract the logger from the service and get its output
 	if mockService, ok := service.(*mockRepositoryService); ok {
@@ -404,11 +415,17 @@ func getAllConcurrentLogOutputs() []string {
 		correlationID := fmt.Sprintf("concurrent-test-%c", i)
 
 		// HTTP middleware log (duration as string to match LogEntry structure)
-		httpLog := fmt.Sprintf(`{"timestamp":"2025-01-01T12:00:00Z","level":"INFO","message":"HTTP POST /repositories - 201","correlation_id":"%s","component":"http-middleware","operation":"http_request","duration":"15.5ms"}`, correlationID)
+		httpLog := fmt.Sprintf(
+			`{"timestamp":"2025-01-01T12:00:00Z","level":"INFO","message":"HTTP POST /repositories - 201","correlation_id":"%s","component":"http-middleware","operation":"http_request","duration":"15.5ms"}`,
+			correlationID,
+		)
 		logOutputs = append(logOutputs, httpLog)
 
 		// Service layer log
-		serviceLog := fmt.Sprintf(`{"timestamp":"2025-01-01T12:00:00Z","level":"INFO","message":"Repository created","correlation_id":"%s","component":"repository-service","operation":"create_repository","metadata":{"repository_url":"https://github.com/user/repo"}}`, correlationID)
+		serviceLog := fmt.Sprintf(
+			`{"timestamp":"2025-01-01T12:00:00Z","level":"INFO","message":"Repository created","correlation_id":"%s","component":"repository-service","operation":"create_repository","metadata":{"repository_url":"https://github.com/user/repo"}}`,
+			correlationID,
+		)
 		logOutputs = append(logOutputs, serviceLog)
 	}
 
@@ -424,7 +441,7 @@ func getAsyncServiceLogOutputs(service interface{}) []string {
 	}
 }
 
-// Mock error NATS implementations
+// Mock error NATS implementations.
 type mockErrorNATSPublisher struct {
 	logger   ApplicationLogger
 	scenario ErrorScenario

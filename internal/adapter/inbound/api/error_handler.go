@@ -9,21 +9,21 @@ import (
 	"codechunking/internal/domain/errors/domain"
 )
 
-// ErrorHandler defines methods for handling HTTP errors
+// ErrorHandler defines methods for handling HTTP errors.
 type ErrorHandler interface {
 	HandleValidationError(w http.ResponseWriter, r *http.Request, err error)
 	HandleServiceError(w http.ResponseWriter, r *http.Request, err error)
 }
 
-// DefaultErrorHandler implements ErrorHandler with standard HTTP error responses
+// DefaultErrorHandler implements ErrorHandler with standard HTTP error responses.
 type DefaultErrorHandler struct{}
 
-// NewDefaultErrorHandler creates a new DefaultErrorHandler
+// NewDefaultErrorHandler creates a new DefaultErrorHandler.
 func NewDefaultErrorHandler() ErrorHandler {
 	return &DefaultErrorHandler{}
 }
 
-// HandleValidationError handles validation errors by returning 400 Bad Request
+// HandleValidationError handles validation errors by returning 400 Bad Request.
 func (h *DefaultErrorHandler) HandleValidationError(w http.ResponseWriter, r *http.Request, err error) {
 	var validationErr common.ValidationError
 	if errors.As(err, &validationErr) {
@@ -47,7 +47,7 @@ func (h *DefaultErrorHandler) HandleValidationError(w http.ResponseWriter, r *ht
 	h.writeErrorResponse(w, http.StatusBadRequest, response)
 }
 
-// HandleServiceError handles service errors by mapping them to appropriate HTTP status codes
+// HandleServiceError handles service errors by mapping them to appropriate HTTP status codes.
 func (h *DefaultErrorHandler) HandleServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, domain.ErrRepositoryNotFound):
@@ -93,7 +93,7 @@ func (h *DefaultErrorHandler) HandleServiceError(w http.ResponseWriter, r *http.
 	}
 }
 
-// writeErrorResponse writes an error response as JSON
+// writeErrorResponse writes an error response as JSON.
 func (h *DefaultErrorHandler) writeErrorResponse(w http.ResponseWriter, statusCode int, response dto.ErrorResponse) {
 	if err := WriteJSON(w, statusCode, response); err != nil {
 		// If JSON writing fails, fall back to plain text error

@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Mock IndexingJob repository for testing
+// Mock IndexingJob repository for testing.
 type MockIndexingJobRepository struct {
 	mock.Mock
 }
@@ -36,7 +36,11 @@ func (m *MockIndexingJobRepository) FindByID(ctx context.Context, id uuid.UUID) 
 	return args.Get(0).(*entity.IndexingJob), args.Error(1)
 }
 
-func (m *MockIndexingJobRepository) FindByRepositoryID(ctx context.Context, repositoryID uuid.UUID, filters outbound.IndexingJobFilters) ([]*entity.IndexingJob, int, error) {
+func (m *MockIndexingJobRepository) FindByRepositoryID(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	filters outbound.IndexingJobFilters,
+) ([]*entity.IndexingJob, int, error) {
 	args := m.Called(ctx, repositoryID, filters)
 	if args.Get(0) == nil {
 		return nil, args.Int(1), args.Error(2)
@@ -273,7 +277,8 @@ func TestCreateIndexingJobService_CreateIndexingJob_PublishJobFails(t *testing.T
 	publishError := errors.New("message queue unavailable")
 	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(repository, nil)
 	mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
-	mockPublisher.On("PublishIndexingJob", mock.Anything, repositoryID, "https://github.com/golang/go").Return(publishError)
+	mockPublisher.On("PublishIndexingJob", mock.Anything, repositoryID, "https://github.com/golang/go").
+		Return(publishError)
 
 	ctx := context.Background()
 
@@ -853,7 +858,8 @@ func TestListIndexingJobsService_ListIndexingJobs_WithPagination(t *testing.T) {
 	}
 
 	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(repository, nil)
-	mockJobRepo.On("FindByRepositoryID", mock.Anything, repositoryID, expectedFilters).Return([]*entity.IndexingJob{}, 25, nil)
+	mockJobRepo.On("FindByRepositoryID", mock.Anything, repositoryID, expectedFilters).
+		Return([]*entity.IndexingJob{}, 25, nil)
 
 	ctx := context.Background()
 
@@ -904,7 +910,8 @@ func TestListIndexingJobsService_ListIndexingJobs_DatabaseError(t *testing.T) {
 
 	dbError := errors.New("database connection failed")
 	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(repository, nil)
-	mockJobRepo.On("FindByRepositoryID", mock.Anything, repositoryID, mock.AnythingOfType("outbound.IndexingJobFilters")).Return(nil, 0, dbError)
+	mockJobRepo.On("FindByRepositoryID", mock.Anything, repositoryID, mock.AnythingOfType("outbound.IndexingJobFilters")).
+		Return(nil, 0, dbError)
 
 	ctx := context.Background()
 
@@ -921,7 +928,7 @@ func TestListIndexingJobsService_ListIndexingJobs_DatabaseError(t *testing.T) {
 	mockJobRepo.AssertExpectations(t)
 }
 
-// Helper function
+// Helper function.
 func intPtr(i int) *int {
 	return &i
 }

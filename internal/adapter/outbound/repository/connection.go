@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -9,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// DatabaseConfig represents database connection configuration
+// DatabaseConfig represents database connection configuration.
 type DatabaseConfig struct {
 	Host            string
 	Port            int
@@ -24,27 +25,27 @@ type DatabaseConfig struct {
 	SSLMode         string
 }
 
-// Validate validates the database configuration
+// Validate validates the database configuration.
 func (c DatabaseConfig) Validate() error {
 	if c.Host == "" {
-		return fmt.Errorf("host is required")
+		return errors.New("host is required")
 	}
 	if c.Port <= 0 || c.Port > 65535 {
-		return fmt.Errorf("port must be between 1 and 65535")
+		return errors.New("port must be between 1 and 65535")
 	}
 	if c.Database == "" {
-		return fmt.Errorf("database is required")
+		return errors.New("database is required")
 	}
 	if c.Username == "" {
-		return fmt.Errorf("username is required")
+		return errors.New("username is required")
 	}
 	if c.Schema == "" {
-		return fmt.Errorf("schema is required")
+		return errors.New("schema is required")
 	}
 	return nil
 }
 
-// NewDatabaseConnection creates a new database connection pool
+// NewDatabaseConnection creates a new database connection pool.
 func NewDatabaseConnection(config DatabaseConfig) (*pgxpool.Pool, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -106,24 +107,24 @@ func NewDatabaseConnection(config DatabaseConfig) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// Default cache configuration constants
+// Default cache configuration constants.
 const (
 	DefaultCacheTTL     = 5 * time.Second
 	DefaultCacheEnabled = false
 )
 
-// HealthCheckCacheConfig represents configuration for health check metrics caching
+// HealthCheckCacheConfig represents configuration for health check metrics caching.
 type HealthCheckCacheConfig struct {
 	TTL     time.Duration
 	Enabled bool
 }
 
-// IsValid returns true if the cache configuration is valid for caching
+// IsValid returns true if the cache configuration is valid for caching.
 func (c HealthCheckCacheConfig) IsValid() bool {
 	return c.Enabled && c.TTL > 0
 }
 
-// metricsCache handles caching of health metrics with TTL support
+// metricsCache handles caching of health metrics with TTL support.
 type metricsCache struct {
 	data      *HealthMetrics
 	timestamp time.Time
@@ -131,14 +132,14 @@ type metricsCache struct {
 	config    HealthCheckCacheConfig
 }
 
-// newMetricsCache creates a new metrics cache with the given configuration
+// newMetricsCache creates a new metrics cache with the given configuration.
 func newMetricsCache(config HealthCheckCacheConfig) *metricsCache {
 	return &metricsCache{
 		config: config,
 	}
 }
 
-// get retrieves cached metrics or fetches fresh ones using the provided fetcher function
+// get retrieves cached metrics or fetches fresh ones using the provided fetcher function.
 func (c *metricsCache) get(ctx context.Context, fetcher func(context.Context) *HealthMetrics) *HealthMetrics {
 	// If caching is disabled, always fetch fresh
 	if !c.config.IsValid() {
@@ -170,29 +171,29 @@ func (c *metricsCache) get(ctx context.Context, fetcher func(context.Context) *H
 	return metrics
 }
 
-// isExpired returns true if the cached data has expired
+// isExpired returns true if the cached data has expired.
 func (c *metricsCache) isExpired() bool {
 	return time.Since(c.timestamp) >= c.config.TTL
 }
 
-// metricsCollector handles collection of database health metrics
+// metricsCollector handles collection of database health metrics.
 type metricsCollector struct {
 	pool *pgxpool.Pool
 }
 
-// newMetricsCollector creates a new metrics collector for the given pool
+// newMetricsCollector creates a new metrics collector for the given pool.
 func newMetricsCollector(pool *pgxpool.Pool) *metricsCollector {
 	return &metricsCollector{
 		pool: pool,
 	}
 }
 
-// isPoolValid returns true if the pool is valid for operations
+// isPoolValid returns true if the pool is valid for operations.
 func (c *metricsCollector) isPoolValid() bool {
 	return c.pool != nil
 }
 
-// collect gathers fresh health metrics from the database
+// collect gathers fresh health metrics from the database.
 func (c *metricsCollector) collect(ctx context.Context) *HealthMetrics {
 	if !c.isPoolValid() {
 		return nil
@@ -214,23 +215,23 @@ func (c *metricsCollector) collect(ctx context.Context) *HealthMetrics {
 	}
 }
 
-// HealthCheckerOption defines functional options for DatabaseHealthChecker
+// HealthCheckerOption defines functional options for DatabaseHealthChecker.
 type HealthCheckerOption func(*DatabaseHealthChecker)
 
-// WithCache enables caching with the specified configuration
+// WithCache enables caching with the specified configuration.
 func WithCache(config HealthCheckCacheConfig) HealthCheckerOption {
 	return func(hc *DatabaseHealthChecker) {
 		hc.cache = newMetricsCache(config)
 	}
 }
 
-// DatabaseHealthChecker checks database health with optional caching
+// DatabaseHealthChecker checks database health with optional caching.
 type DatabaseHealthChecker struct {
 	collector *metricsCollector
 	cache     *metricsCache
 }
 
-// NewDatabaseHealthChecker creates a new health checker with optional caching
+// NewDatabaseHealthChecker creates a new health checker with optional caching.
 func NewDatabaseHealthChecker(pool *pgxpool.Pool, opts ...HealthCheckerOption) *DatabaseHealthChecker {
 	hc := &DatabaseHealthChecker{
 		collector: newMetricsCollector(pool),
@@ -246,12 +247,12 @@ func NewDatabaseHealthChecker(pool *pgxpool.Pool, opts ...HealthCheckerOption) *
 }
 
 // NewDatabaseHealthCheckerWithCache creates a new health checker with caching support
-// Deprecated: Use NewDatabaseHealthChecker with WithCache option instead
+// Deprecated: Use NewDatabaseHealthChecker with WithCache option instead.
 func NewDatabaseHealthCheckerWithCache(pool *pgxpool.Pool, config HealthCheckCacheConfig) *DatabaseHealthChecker {
 	return NewDatabaseHealthChecker(pool, WithCache(config))
 }
 
-// IsHealthy checks if the database is healthy
+// IsHealthy checks if the database is healthy.
 func (h *DatabaseHealthChecker) IsHealthy(ctx context.Context) bool {
 	if !h.collector.isPoolValid() {
 		return false
@@ -264,7 +265,7 @@ func (h *DatabaseHealthChecker) IsHealthy(ctx context.Context) bool {
 	return true
 }
 
-// HealthMetrics represents database health metrics
+// HealthMetrics represents database health metrics.
 type HealthMetrics struct {
 	TotalConnections  int32
 	ActiveConnections int32
@@ -272,7 +273,7 @@ type HealthMetrics struct {
 	ResponseTime      time.Duration
 }
 
-// GetMetrics returns database health metrics with optional caching
+// GetMetrics returns database health metrics with optional caching.
 func (h *DatabaseHealthChecker) GetMetrics(ctx context.Context) *HealthMetrics {
 	return h.cache.get(ctx, h.collector.collect)
 }

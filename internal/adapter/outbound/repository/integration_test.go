@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// TestSoftDeleteFunctionality tests soft delete operations across all entities
+// TestSoftDeleteFunctionality tests soft delete operations across all entities.
 func TestSoftDeleteFunctionality(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -151,7 +151,7 @@ func TestSoftDeleteFunctionality(t *testing.T) {
 		}
 
 		// Create multiple jobs for repository
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			job := createTestIndexingJob(t, testRepo.ID())
 			err = jobRepo.Save(ctx, job)
 			if err != nil {
@@ -177,7 +177,7 @@ func TestSoftDeleteFunctionality(t *testing.T) {
 	})
 }
 
-// TestDatabaseConstraintValidation tests comprehensive database constraint validation
+// TestDatabaseConstraintValidation tests comprehensive database constraint validation.
 func TestDatabaseConstraintValidation(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -283,7 +283,7 @@ func TestDatabaseConstraintValidation(t *testing.T) {
 	})
 }
 
-// TestPaginationAndPerformance tests pagination functionality and basic performance characteristics
+// TestPaginationAndPerformance tests pagination functionality and basic performance characteristics.
 func TestPaginationAndPerformance(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -299,10 +299,15 @@ func TestPaginationAndPerformance(t *testing.T) {
 	t.Run("Setup test data", func(t *testing.T) {
 		start := time.Now()
 
-		for i := 0; i < numRepositories; i++ {
+		for i := range numRepositories {
 			uniqueID := uuid.New().String()
 			testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/repo-" + uniqueID)
-			testRepo := entity.NewRepository(testURL, "Repository "+string(rune('A'+i%26))+string(rune('0'+i/26)), nil, nil)
+			testRepo := entity.NewRepository(
+				testURL,
+				"Repository "+string(rune('A'+i%26))+string(rune('0'+i/26)),
+				nil,
+				nil,
+			)
 
 			// Set different statuses for variety
 			switch i % 4 {
@@ -322,7 +327,7 @@ func TestPaginationAndPerformance(t *testing.T) {
 
 			// Create jobs for this repository (except archived ones)
 			if !testRepo.IsDeleted() {
-				for j := 0; j < numJobsPerRepo; j++ {
+				for j := range numJobsPerRepo {
 					job := createTestIndexingJob(t, testRepo.ID())
 
 					// Set different job statuses
@@ -548,7 +553,7 @@ func TestPaginationAndPerformance(t *testing.T) {
 	})
 }
 
-// TestConcurrentAccess tests concurrent access patterns
+// TestConcurrentAccess tests concurrent access patterns.
 func TestConcurrentAccess(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -567,12 +572,12 @@ func TestConcurrentAccess(t *testing.T) {
 
 		start := time.Now()
 
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()
 
-				for j := 0; j < reposPerGoroutine; j++ {
+				for j := range reposPerGoroutine {
 					uniqueID := uuid.New().String()
 					testURL, _ := valueobject.NewRepositoryURL(
 						"https://github.com/concurrent/repo-" + uniqueID)
@@ -639,7 +644,7 @@ func TestConcurrentAccess(t *testing.T) {
 		const numJobs = 10
 		var jobs []*entity.IndexingJob
 
-		for i := 0; i < numJobs; i++ {
+		for i := range numJobs {
 			job := createTestIndexingJob(t, testRepo.ID())
 			err := jobRepo.Save(ctx, job)
 			if err != nil {
@@ -732,7 +737,7 @@ func TestConcurrentAccess(t *testing.T) {
 	t.Run("Concurrent read operations", func(t *testing.T) {
 		// Create some repositories for reading
 		var repoIDs []uuid.UUID
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			uniqueID := uuid.New().String()
 			testURL, _ := valueobject.NewRepositoryURL("https://github.com/read-test/repo-" + uniqueID)
 			repo := entity.NewRepository(testURL, "Read Test Repository "+string(rune('A'+i)), nil, nil)
@@ -751,7 +756,7 @@ func TestConcurrentAccess(t *testing.T) {
 
 		start := time.Now()
 
-		for i := 0; i < numReaders; i++ {
+		for i := range numReaders {
 			wg.Add(1)
 			go func(readerID int) {
 				defer wg.Done()
@@ -793,7 +798,7 @@ func TestConcurrentAccess(t *testing.T) {
 	})
 }
 
-// TestDomainEntityIntegration tests integration with existing domain entities and value objects
+// TestDomainEntityIntegration tests integration with existing domain entities and value objects.
 func TestDomainEntityIntegration(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()

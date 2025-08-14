@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// CreateJSONRequest creates an HTTP request with JSON body
+// CreateJSONRequest creates an HTTP request with JSON body.
 func CreateJSONRequest(method, url string, body interface{}) *http.Request {
 	var reqBody *bytes.Buffer
 	if body != nil {
@@ -29,19 +29,19 @@ func CreateJSONRequest(method, url string, body interface{}) *http.Request {
 	return req
 }
 
-// CreateRequest creates a simple HTTP request
+// CreateRequest creates a simple HTTP request.
 func CreateRequest(method, url string) *http.Request {
 	return httptest.NewRequest(method, url, nil)
 }
 
-// CreateRequestWithBody creates an HTTP request with a body reader
+// CreateRequestWithBody creates an HTTP request with a body reader.
 func CreateRequestWithBody(method, url string, body io.Reader) *http.Request {
 	req := httptest.NewRequest(method, url, body)
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
 
-// CreateRequestWithPathParams creates an HTTP request with Go 1.22+ path parameters
+// CreateRequestWithPathParams creates an HTTP request with Go 1.22+ path parameters.
 func CreateRequestWithPathParams(method, url string, pathParams map[string]string) *http.Request {
 	req := httptest.NewRequest(method, url, nil)
 
@@ -60,7 +60,7 @@ func CreateRequestWithPathParams(method, url string, pathParams map[string]strin
 	return req
 }
 
-// CreateJSONRequestWithPathParams creates an HTTP request with JSON body and path parameters
+// CreateJSONRequestWithPathParams creates an HTTP request with JSON body and path parameters.
 func CreateJSONRequestWithPathParams(method, url string, body interface{}, pathParams map[string]string) *http.Request {
 	req := CreateJSONRequest(method, url, body)
 
@@ -76,17 +76,17 @@ func CreateJSONRequestWithPathParams(method, url string, body interface{}, pathP
 }
 
 // GetPathParam extracts a path parameter from the request using Go 1.22+ PathValue
-// This function is kept for backward compatibility in tests, but now uses PathValue
+// This function is kept for backward compatibility in tests, but now uses PathValue.
 func GetPathParam(r *http.Request, key string) string {
 	return r.PathValue(key)
 }
 
-// ParseJSONResponse parses the JSON response from ResponseRecorder
+// ParseJSONResponse parses the JSON response from ResponseRecorder.
 func ParseJSONResponse(recorder *httptest.ResponseRecorder, target interface{}) error {
 	return json.Unmarshal(recorder.Body.Bytes(), target)
 }
 
-// AssertJSONResponse asserts that the response contains expected JSON
+// AssertJSONResponse asserts that the response contains expected JSON.
 func AssertJSONResponse(recorder *httptest.ResponseRecorder, expectedStatusCode int, expectedBody interface{}) error {
 	if recorder.Code != expectedStatusCode {
 		return nil // Will be caught by test assertions
@@ -106,7 +106,7 @@ func AssertJSONResponse(recorder *httptest.ResponseRecorder, expectedStatusCode 
 
 // Test Data Builders
 
-// CreateRepositoryRequestBuilder builds CreateRepositoryRequest for testing
+// CreateRepositoryRequestBuilder builds CreateRepositoryRequest for testing.
 type CreateRepositoryRequestBuilder struct {
 	request dto.CreateRepositoryRequest
 }
@@ -144,7 +144,7 @@ func (b *CreateRepositoryRequestBuilder) Build() dto.CreateRepositoryRequest {
 	return b.request
 }
 
-// RepositoryResponseBuilder builds RepositoryResponse for testing
+// RepositoryResponseBuilder builds RepositoryResponse for testing.
 type RepositoryResponseBuilder struct {
 	response dto.RepositoryResponse
 }
@@ -202,7 +202,7 @@ func (b *RepositoryResponseBuilder) Build() dto.RepositoryResponse {
 	return b.response
 }
 
-// IndexingJobResponseBuilder builds IndexingJobResponse for testing
+// IndexingJobResponseBuilder builds IndexingJobResponse for testing.
 type IndexingJobResponseBuilder struct {
 	response dto.IndexingJobResponse
 }
@@ -259,7 +259,7 @@ func (b *IndexingJobResponseBuilder) Build() dto.IndexingJobResponse {
 	return b.response
 }
 
-// Common test UUIDs for consistent testing
+// Common test UUIDs for consistent testing.
 var (
 	TestRepositoryID1 = uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 	TestRepositoryID2 = uuid.MustParse("123e4567-e89b-12d3-a456-426614174001")
@@ -267,7 +267,7 @@ var (
 	TestJobID2        = uuid.MustParse("789e0123-e89b-12d3-a456-426614174001")
 )
 
-// HealthResponseBuilder builds HealthResponse for testing
+// HealthResponseBuilder builds HealthResponse for testing.
 type HealthResponseBuilder struct {
 	response dto.HealthResponse
 }
@@ -306,22 +306,22 @@ func (b *HealthResponseBuilder) Build() dto.HealthResponse {
 	return b.response
 }
 
-// CreateRequestWithMuxVars creates an HTTP request with path variables (legacy compatibility)
+// CreateRequestWithMuxVars creates an HTTP request with path variables (legacy compatibility).
 func CreateRequestWithMuxVars(method, url string, vars map[string]string) *http.Request {
 	return CreateRequestWithPathParams(method, url, vars)
 }
 
-// AssertContainsString checks if the response body contains expected string
+// AssertContainsString checks if the response body contains expected string.
 func AssertContainsString(recorder *httptest.ResponseRecorder, expected string) bool {
 	return strings.Contains(recorder.Body.String(), expected)
 }
 
-// AssertContentType checks if the response has expected content type
+// AssertContentType checks if the response has expected content type.
 func AssertContentType(recorder *httptest.ResponseRecorder, expected string) bool {
 	return recorder.Header().Get("Content-Type") == expected
 }
 
-// RepositoryListResponseBuilder builds RepositoryListResponse for testing
+// RepositoryListResponseBuilder builds RepositoryListResponse for testing.
 type RepositoryListResponseBuilder struct {
 	response dto.RepositoryListResponse
 }
@@ -340,7 +340,9 @@ func NewRepositoryListResponseBuilder() *RepositoryListResponseBuilder {
 	}
 }
 
-func (b *RepositoryListResponseBuilder) WithRepositories(repos []dto.RepositoryResponse) *RepositoryListResponseBuilder {
+func (b *RepositoryListResponseBuilder) WithRepositories(
+	repos []dto.RepositoryResponse,
+) *RepositoryListResponseBuilder {
 	b.response.Repositories = repos
 	return b
 }
@@ -349,7 +351,7 @@ func (b *RepositoryListResponseBuilder) Build() dto.RepositoryListResponse {
 	return b.response
 }
 
-// IndexingJobListResponseBuilder builds IndexingJobListResponse for testing
+// IndexingJobListResponseBuilder builds IndexingJobListResponse for testing.
 type IndexingJobListResponseBuilder struct {
 	response dto.IndexingJobListResponse
 }

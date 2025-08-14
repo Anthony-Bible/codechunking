@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Metrics-specific structures
+// Metrics-specific structures.
 type MetricsConfig struct {
 	EnablePrometheusIntegration bool
 	EnableApplicationMetrics    bool
@@ -97,7 +97,7 @@ type CustomMetrics struct {
 	Timestamp  time.Time
 }
 
-// MetricsApplicationLogger extends ApplicationLogger with metrics integration
+// MetricsApplicationLogger extends ApplicationLogger with metrics integration.
 type MetricsApplicationLogger interface {
 	ApplicationLogger
 	LogMetric(ctx context.Context, metric PrometheusMetric)
@@ -107,13 +107,14 @@ type MetricsApplicationLogger interface {
 	FlushAggregatedMetrics(ctx context.Context)
 }
 
-// Metrics logger implementation using composition
+// Metrics logger implementation using composition.
 type metricsApplicationLogger struct {
 	ApplicationLogger
+
 	config MetricsConfig
 }
 
-// NewMetricsApplicationLogger creates a metrics-enabled application logger
+// NewMetricsApplicationLogger creates a metrics-enabled application logger.
 func NewMetricsApplicationLogger(base ApplicationLogger, config MetricsConfig) MetricsApplicationLogger {
 	return &metricsApplicationLogger{
 		ApplicationLogger: base,
@@ -121,7 +122,7 @@ func NewMetricsApplicationLogger(base ApplicationLogger, config MetricsConfig) M
 	}
 }
 
-// LogMetric logs Prometheus-style metrics
+// LogMetric logs Prometheus-style metrics.
 func (m *metricsApplicationLogger) LogMetric(ctx context.Context, metric PrometheusMetric) {
 	fields := Fields{
 		"metric_type":  metric.Type,
@@ -149,7 +150,7 @@ func (m *metricsApplicationLogger) LogMetric(ctx context.Context, metric Prometh
 	m.logMetricsEntry(ctx, level, message, operation, fields)
 }
 
-// LogApplicationMetrics logs application-level metrics
+// LogApplicationMetrics logs application-level metrics.
 func (m *metricsApplicationLogger) LogApplicationMetrics(ctx context.Context, metrics ApplicationMetrics) {
 	fields := Fields{
 		"category":         metrics.Category,
@@ -183,7 +184,7 @@ func (m *metricsApplicationLogger) LogApplicationMetrics(ctx context.Context, me
 	m.logMetricsEntry(ctx, level, message, operation, fields)
 }
 
-// LogHealthMetrics logs system health metrics
+// LogHealthMetrics logs system health metrics.
 func (m *metricsApplicationLogger) LogHealthMetrics(ctx context.Context, health HealthMetrics) {
 	fields := Fields{
 		"overall_status":  health.Overall.Status,
@@ -246,7 +247,7 @@ func (m *metricsApplicationLogger) LogHealthMetrics(ctx context.Context, health 
 	m.logMetricsEntry(ctx, level, message, operation, fields)
 }
 
-// LogCustomMetrics logs custom business metrics
+// LogCustomMetrics logs custom business metrics.
 func (m *metricsApplicationLogger) LogCustomMetrics(ctx context.Context, custom CustomMetrics) {
 	fields := Fields{
 		"namespace":  custom.Namespace,
@@ -263,7 +264,7 @@ func (m *metricsApplicationLogger) LogCustomMetrics(ctx context.Context, custom 
 	m.logMetricsEntry(ctx, level, message, operation, fields)
 }
 
-// FlushAggregatedMetrics flushes aggregated metrics
+// FlushAggregatedMetrics flushes aggregated metrics.
 func (m *metricsApplicationLogger) FlushAggregatedMetrics(ctx context.Context) {
 	// For minimal implementation, just log that aggregation was flushed
 	fields := Fields{
@@ -292,8 +293,12 @@ func (m *metricsApplicationLogger) FlushAggregatedMetrics(ctx context.Context) {
 	m.logMetricsEntry(ctx, level, message, operation, fields)
 }
 
-// Helper function to create metrics log entries
-func (m *metricsApplicationLogger) logMetricsEntry(ctx context.Context, level, message, operation string, fields Fields) {
+// Helper function to create metrics log entries.
+func (m *metricsApplicationLogger) logMetricsEntry(
+	ctx context.Context,
+	level, message, operation string,
+	fields Fields,
+) {
 	if appLogger, ok := m.ApplicationLogger.(*applicationLoggerImpl); ok {
 		correlationID := getOrGenerateCorrelationID(ctx)
 		entry := LogEntry{

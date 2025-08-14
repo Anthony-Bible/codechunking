@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Custom context key types to avoid SA1029 staticcheck warning
+// Custom context key types to avoid SA1029 staticcheck warning.
 type contextKey string
 
 const (
@@ -30,8 +30,13 @@ func TestLoggingMiddleware(t *testing.T) {
 			validateErrorResponse),
 		createLoggingTestCase("logs_post_request_with_body", http.MethodPost, "/repositories", http.StatusAccepted,
 			validatePostRequest),
-		createLoggingTestCase("logs_request_with_query_parameters", http.MethodGet, "/repositories?limit=10&offset=20", http.StatusOK,
-			validateQueryParameterRequest),
+		createLoggingTestCase(
+			"logs_request_with_query_parameters",
+			http.MethodGet,
+			"/repositories?limit=10&offset=20",
+			http.StatusOK,
+			validateQueryParameterRequest,
+		),
 	}
 
 	for _, tt := range tests {
@@ -121,7 +126,11 @@ func TestCORSMiddleware(t *testing.T) {
 			origin: "https://example.com",
 			validateFunc: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				assert.Equal(t, "*", recorder.Header().Get("Access-Control-Allow-Origin"))
-				assert.Equal(t, "GET, POST, PUT, DELETE, OPTIONS", recorder.Header().Get("Access-Control-Allow-Methods"))
+				assert.Equal(
+					t,
+					"GET, POST, PUT, DELETE, OPTIONS",
+					recorder.Header().Get("Access-Control-Allow-Methods"),
+				)
 				assert.Equal(t, "Content-Type, Authorization", recorder.Header().Get("Access-Control-Allow-Headers"))
 			},
 		},
@@ -132,7 +141,11 @@ func TestCORSMiddleware(t *testing.T) {
 			validateFunc: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				assert.Equal(t, http.StatusNoContent, recorder.Code)
 				assert.Equal(t, "*", recorder.Header().Get("Access-Control-Allow-Origin"))
-				assert.Equal(t, "GET, POST, PUT, DELETE, OPTIONS", recorder.Header().Get("Access-Control-Allow-Methods"))
+				assert.Equal(
+					t,
+					"GET, POST, PUT, DELETE, OPTIONS",
+					recorder.Header().Get("Access-Control-Allow-Methods"),
+				)
 				assert.Equal(t, "Content-Type, Authorization", recorder.Header().Get("Access-Control-Allow-Headers"))
 				assert.Equal(t, "86400", recorder.Header().Get("Access-Control-Max-Age"))
 			},
@@ -437,7 +450,7 @@ func TestMiddleware_RequestContext(t *testing.T) {
 	})
 }
 
-// testCase represents a generic test case structure for middleware tests
+// testCase represents a generic test case structure for middleware tests.
 type testCase struct {
 	name         string
 	method       string
@@ -446,8 +459,12 @@ type testCase struct {
 	validateFunc func(t *testing.T, logOutput string)
 }
 
-// createLoggingTestCase creates a test case for logging middleware
-func createLoggingTestCase(name, method, path string, responseCode int, validateFunc func(t *testing.T, logOutput string)) testCase {
+// createLoggingTestCase creates a test case for logging middleware.
+func createLoggingTestCase(
+	name, method, path string,
+	responseCode int,
+	validateFunc func(t *testing.T, logOutput string),
+) testCase {
 	return testCase{
 		name:         name,
 		method:       method,
@@ -459,7 +476,7 @@ func createLoggingTestCase(name, method, path string, responseCode int, validate
 
 // Validation helper functions for logging middleware
 
-// validateSuccessfulRequest validates logging for successful requests
+// validateSuccessfulRequest validates logging for successful requests.
 func validateSuccessfulRequest(t *testing.T, logOutput string) {
 	assert.Contains(t, logOutput, "GET")
 	assert.Contains(t, logOutput, "/health")
@@ -467,21 +484,21 @@ func validateSuccessfulRequest(t *testing.T, logOutput string) {
 	assert.Contains(t, logOutput, "duration")
 }
 
-// validateErrorResponse validates logging for error responses
+// validateErrorResponse validates logging for error responses.
 func validateErrorResponse(t *testing.T, logOutput string) {
 	assert.Contains(t, logOutput, "GET")
 	assert.Contains(t, logOutput, "/nonexistent")
 	assert.Contains(t, logOutput, "404")
 }
 
-// validatePostRequest validates logging for POST requests
+// validatePostRequest validates logging for POST requests.
 func validatePostRequest(t *testing.T, logOutput string) {
 	assert.Contains(t, logOutput, "POST")
 	assert.Contains(t, logOutput, "/repositories")
 	assert.Contains(t, logOutput, "202")
 }
 
-// validateQueryParameterRequest validates logging for requests with query parameters
+// validateQueryParameterRequest validates logging for requests with query parameters.
 func validateQueryParameterRequest(t *testing.T, logOutput string) {
 	assert.Contains(t, logOutput, "GET")
 	assert.Contains(t, logOutput, "/repositories")
@@ -536,7 +553,12 @@ func TestDefaultCORSConfig_Constants(t *testing.T) {
 
 		// Verify default headers (basic ones, without dynamic request headers)
 		expectedHeaders := []string{"Content-Type", "Authorization"}
-		assert.Equal(t, expectedHeaders, config.AllowedHeaders, "Default headers should be Content-Type and Authorization")
+		assert.Equal(
+			t,
+			expectedHeaders,
+			config.AllowedHeaders,
+			"Default headers should be Content-Type and Authorization",
+		)
 
 		// Verify default max age
 		assert.Equal(t, 86400, config.MaxAge, "Default max age should be 86400 seconds")

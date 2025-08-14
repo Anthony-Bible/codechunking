@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test data structures for testing various data types
+// Test data structures for testing various data types.
 type TestStruct struct {
 	ID       uuid.UUID              `json:"id"`
 	Name     string                 `json:"name"`
@@ -41,7 +42,12 @@ func TestWriteJSON_SuccessfulBasicResponse(t *testing.T) {
 
 	require.NoError(t, err, "WriteJSON should not return error for valid data")
 	assert.Equal(t, http.StatusOK, recorder.Code, "Response status should be 200")
-	assert.Equal(t, "application/json", recorder.Header().Get("Content-Type"), "Content-Type should be application/json")
+	assert.Equal(
+		t,
+		"application/json",
+		recorder.Header().Get("Content-Type"),
+		"Content-Type should be application/json",
+	)
 
 	var response map[string]string
 	err = json.Unmarshal(recorder.Body.Bytes(), &response)
@@ -130,7 +136,7 @@ func TestWriteJSON_VariousDataTypes(t *testing.T) {
 			validateFn: func(t *testing.T, recorder *httptest.ResponseRecorder, originalData interface{}) {
 				bodyBytes := recorder.Body.Bytes()
 				expectedJSON := []byte("null\n") // JSON encoding of nil produces "null"
-				assert.Equal(t, expectedJSON, bodyBytes)
+				assert.JSONEq(t, string(expectedJSON), string(bodyBytes))
 			},
 		},
 		{
@@ -142,7 +148,7 @@ func TestWriteJSON_VariousDataTypes(t *testing.T) {
 				var decoded map[string]interface{}
 				err := json.Unmarshal(recorder.Body.Bytes(), &decoded)
 				require.NoError(t, err)
-				assert.Len(t, decoded, 0)
+				assert.Empty(t, decoded)
 			},
 		},
 	}
@@ -213,7 +219,11 @@ func TestWriteJSON_ErrorHandling(t *testing.T) {
 				assert.Contains(t, err.Error(), tt.errorMsg, "Error message should indicate JSON encoding issue")
 				// When encoding fails, no headers or body should be written
 				assert.Equal(t, 0, recorder.Code, "Status code should not be set when encoding fails")
-				assert.Empty(t, recorder.Header().Get("Content-Type"), "Content-Type should not be set when encoding fails")
+				assert.Empty(
+					t,
+					recorder.Header().Get("Content-Type"),
+					"Content-Type should not be set when encoding fails",
+				)
 				assert.Empty(t, recorder.Body.String(), "Body should be empty when encoding fails")
 			} else {
 				assert.NoError(t, err, "WriteJSON should not return error for case: %s", tt.name)
@@ -293,12 +303,12 @@ func TestWriteJSON_ConcurrentAccess(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make([]error, numGoroutines*numCallsPerGoroutine)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(goroutineID int) {
 			defer wg.Done()
 
-			for j := 0; j < numCallsPerGoroutine; j++ {
+			for j := range numCallsPerGoroutine {
 				recorder := httptest.NewRecorder()
 				data := map[string]interface{}{
 					"goroutine_id": goroutineID,
@@ -351,7 +361,7 @@ func TestWriteJSON_PoolingBehavior(t *testing.T) {
 
 		// Make many calls that should benefit from pooling
 		const numCalls = 1000
-		for i := 0; i < numCalls; i++ {
+		for i := range numCalls {
 			recorder := httptest.NewRecorder()
 			data := map[string]interface{}{
 				"iteration": i,
@@ -393,7 +403,7 @@ func TestWriteJSON_PoolingBehavior(t *testing.T) {
 		const rapidCalls = 100
 		start := time.Now()
 
-		for i := 0; i < rapidCalls; i++ {
+		for i := range rapidCalls {
 			recorder := httptest.NewRecorder()
 			data := map[string]int{"call": i}
 
@@ -422,11 +432,14 @@ func TestWriteJSON_LargePayload(t *testing.T) {
 
 	// Create a reasonably large payload
 	largeData := make(map[string]interface{})
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		largeData[fmt.Sprintf("field_%d", i)] = map[string]interface{}{
-			"id":          uuid.New(),
-			"description": fmt.Sprintf("This is test data item number %d with some additional text to make it larger", i),
-			"metadata":    map[string]interface{}{"nested": i, "value": i * 10},
+			"id": uuid.New(),
+			"description": fmt.Sprintf(
+				"This is test data item number %d with some additional text to make it larger",
+				i,
+			),
+			"metadata": map[string]interface{}{"nested": i, "value": i * 10},
 		}
 	}
 
@@ -478,7 +491,7 @@ func TestWriteJSON_EdgeCases(t *testing.T) {
 		var decoded string
 		err = json.Unmarshal(recorder.Body.Bytes(), &decoded)
 		require.NoError(t, err)
-		assert.Equal(t, "", decoded)
+		assert.Empty(t, decoded)
 	})
 
 	t.Run("zero_status_code", func(t *testing.T) {
@@ -493,15 +506,16 @@ func TestWriteJSON_EdgeCases(t *testing.T) {
 	})
 }
 
-// Mock ResponseWriter that fails to test error handling
+// Mock ResponseWriter that fails to test error handling.
 type failingResponseWriter struct {
 	*httptest.ResponseRecorder
+
 	failOnWrite bool
 }
 
 func (f *failingResponseWriter) Write(p []byte) (int, error) {
 	if f.failOnWrite {
-		return 0, fmt.Errorf("simulated write failure")
+		return 0, errors.New("simulated write failure")
 	}
 	return f.ResponseRecorder.Write(p)
 }
@@ -523,7 +537,7 @@ func TestWriteJSON_ResponseWriterFailures(t *testing.T) {
 	})
 }
 
-// Benchmark tests to verify pooling performance benefits
+// Benchmark tests to verify pooling performance benefits.
 func BenchmarkWriteJSON_WithoutPooling(b *testing.B) {
 	data := map[string]interface{}{
 		"id":      uuid.New(),
@@ -538,7 +552,7 @@ func BenchmarkWriteJSON_WithoutPooling(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		recorder := httptest.NewRecorder()
 
 		// Simulate non-pooled approach
@@ -563,7 +577,7 @@ func BenchmarkWriteJSON_WithPooling(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		recorder := httptest.NewRecorder()
 		_ = WriteJSON(recorder, http.StatusOK, data)
 	}

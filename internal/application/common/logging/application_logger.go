@@ -14,10 +14,11 @@ import (
 	"time"
 
 	"codechunking/internal/adapter/inbound/api/middleware"
+
 	"github.com/google/uuid"
 )
 
-// ApplicationLogger defines the interface for structured application logging
+// ApplicationLogger defines the interface for structured application logging.
 type ApplicationLogger interface {
 	Debug(ctx context.Context, message string, fields Fields)
 	Info(ctx context.Context, message string, fields Fields)
@@ -42,10 +43,10 @@ type ApplicationLogger interface {
 	FlushAggregatedMetrics(ctx context.Context)
 }
 
-// Fields represents structured logging fields
+// Fields represents structured logging fields.
 type Fields map[string]interface{}
 
-// Config represents logger configuration
+// Config represents logger configuration.
 type Config struct {
 	Level            string
 	Format           string // json, text
@@ -68,7 +69,7 @@ type Config struct {
 	MaxEntriesPerSecond int
 }
 
-// Performance optimization structures
+// Performance optimization structures.
 type logEntryPool struct {
 	pool sync.Pool
 }
@@ -87,7 +88,7 @@ type performanceMetrics struct {
 	memoryUsage       int64
 }
 
-// Global object pool for log entries
+// Global object pool for log entries.
 var (
 	globalLogEntryPool = &logEntryPool{
 		pool: sync.Pool{
@@ -102,7 +103,7 @@ var (
 	globalPerformanceMetrics performanceMetrics
 )
 
-// applicationLoggerImpl implements ApplicationLogger and extended interfaces
+// applicationLoggerImpl implements ApplicationLogger and extended interfaces.
 type applicationLoggerImpl struct {
 	config    Config
 	component string
@@ -116,7 +117,7 @@ type applicationLoggerImpl struct {
 	wg           sync.WaitGroup
 }
 
-// LogEntry represents the structure of log entries
+// LogEntry represents the structure of log entries.
 type LogEntry struct {
 	Timestamp     string                 `json:"timestamp"`
 	Level         string                 `json:"level"`
@@ -130,7 +131,7 @@ type LogEntry struct {
 	Context       map[string]interface{} `json:"context,omitempty"`
 }
 
-// Context keys for correlation ID management
+// Context keys for correlation ID management.
 type contextKey string
 
 const (
@@ -139,14 +140,14 @@ const (
 	UserContextKey   contextKey = "user_context"
 )
 
-// UserContext holds user-specific context information
+// UserContext holds user-specific context information.
 type UserContext struct {
 	UserID    string
 	ClientIP  string
 	UserAgent string
 }
 
-// logSampler implements intelligent log sampling
+// logSampler implements intelligent log sampling.
 type logSampler struct {
 	mutex         sync.RWMutex
 	rate          float64
@@ -156,7 +157,7 @@ type logSampler struct {
 	maxPerSec     int
 }
 
-// newLogSampler creates a new log sampler
+// newLogSampler creates a new log sampler.
 func newLogSampler(rate float64, maxPerSec int) *logSampler {
 	return &logSampler{
 		rate:      rate,
@@ -165,7 +166,7 @@ func newLogSampler(rate float64, maxPerSec int) *logSampler {
 	}
 }
 
-// shouldSample determines if a log entry should be sampled
+// shouldSample determines if a log entry should be sampled.
 func (s *logSampler) shouldSample() bool {
 	if s.rate >= 1.0 && s.maxPerSec <= 0 {
 		return true
@@ -200,7 +201,7 @@ func (s *logSampler) shouldSample() bool {
 	return true
 }
 
-// NewApplicationLogger creates a new application logger with performance optimizations
+// NewApplicationLogger creates a new application logger with performance optimizations.
 func NewApplicationLogger(config Config) (ApplicationLogger, error) {
 	// Validate configuration
 	if err := validateConfig(config); err != nil {
@@ -256,7 +257,7 @@ func NewApplicationLogger(config Config) (ApplicationLogger, error) {
 	return logger, nil
 }
 
-// validateConfig validates logger configuration
+// validateConfig validates logger configuration.
 func validateConfig(config Config) error {
 	validLevels := []string{"DEBUG", "INFO", "WARN", "ERROR"}
 	levelValid := false
@@ -297,7 +298,7 @@ func validateConfig(config Config) error {
 	return nil
 }
 
-// shouldLog determines if a message should be logged based on level
+// shouldLog determines if a message should be logged based on level.
 func (l *applicationLoggerImpl) shouldLog(level string) bool {
 	levels := map[string]int{
 		"DEBUG": 0,
@@ -312,43 +313,48 @@ func (l *applicationLoggerImpl) shouldLog(level string) bool {
 	return messageLevel >= configLevel
 }
 
-// Debug logs debug messages
+// Debug logs debug messages.
 func (l *applicationLoggerImpl) Debug(ctx context.Context, message string, fields Fields) {
 	if l.shouldLog("DEBUG") {
 		l.logEntry(ctx, "DEBUG", message, "", fields)
 	}
 }
 
-// Info logs info messages
+// Info logs info messages.
 func (l *applicationLoggerImpl) Info(ctx context.Context, message string, fields Fields) {
 	if l.shouldLog("INFO") {
 		l.logEntry(ctx, "INFO", message, "", fields)
 	}
 }
 
-// Warn logs warning messages
+// Warn logs warning messages.
 func (l *applicationLoggerImpl) Warn(ctx context.Context, message string, fields Fields) {
 	if l.shouldLog("WARN") {
 		l.logEntry(ctx, "WARN", message, "", fields)
 	}
 }
 
-// Error logs error messages
+// Error logs error messages.
 func (l *applicationLoggerImpl) Error(ctx context.Context, message string, fields Fields) {
 	if l.shouldLog("ERROR") {
 		l.logEntry(ctx, "ERROR", message, "", fields)
 	}
 }
 
-// ErrorWithError logs error messages with an error object
+// ErrorWithError logs error messages with an error object.
 func (l *applicationLoggerImpl) ErrorWithError(ctx context.Context, err error, message string, fields Fields) {
 	if l.shouldLog("ERROR") {
 		l.logEntry(ctx, "ERROR", message, err.Error(), fields)
 	}
 }
 
-// LogPerformance logs performance metrics
-func (l *applicationLoggerImpl) LogPerformance(ctx context.Context, operation string, duration time.Duration, fields Fields) {
+// LogPerformance logs performance metrics.
+func (l *applicationLoggerImpl) LogPerformance(
+	ctx context.Context,
+	operation string,
+	duration time.Duration,
+	fields Fields,
+) {
 	if l.shouldLog("INFO") {
 		if fields == nil {
 			fields = make(Fields)
@@ -359,7 +365,7 @@ func (l *applicationLoggerImpl) LogPerformance(ctx context.Context, operation st
 	}
 }
 
-// startAsyncProcessor starts the asynchronous log processing goroutine
+// startAsyncProcessor starts the asynchronous log processing goroutine.
 func (l *applicationLoggerImpl) startAsyncProcessor() {
 	l.wg.Add(1)
 	go func() {
@@ -383,7 +389,7 @@ func (l *applicationLoggerImpl) startAsyncProcessor() {
 	}()
 }
 
-// startMemoryMonitor starts monitoring memory usage
+// startMemoryMonitor starts monitoring memory usage.
 func (l *applicationLoggerImpl) startMemoryMonitor() {
 	l.wg.Add(1)
 	go func() {
@@ -419,7 +425,7 @@ func (l *applicationLoggerImpl) startMemoryMonitor() {
 	}()
 }
 
-// Shutdown gracefully shuts down the logger
+// Shutdown gracefully shuts down the logger.
 func (l *applicationLoggerImpl) Shutdown(ctx context.Context) error {
 	close(l.shutdown)
 	done := make(chan struct{})
@@ -436,7 +442,7 @@ func (l *applicationLoggerImpl) Shutdown(ctx context.Context) error {
 	}
 }
 
-// WithComponent creates a new logger instance with a specific component
+// WithComponent creates a new logger instance with a specific component.
 func (l *applicationLoggerImpl) WithComponent(component string) ApplicationLogger {
 	return &applicationLoggerImpl{
 		config:       l.config,
@@ -450,7 +456,7 @@ func (l *applicationLoggerImpl) WithComponent(component string) ApplicationLogge
 	}
 }
 
-// logEntry creates and logs a structured log entry with performance optimizations
+// logEntry creates and logs a structured log entry with performance optimizations.
 func (l *applicationLoggerImpl) logEntry(ctx context.Context, level, message, errorStr string, fields Fields) {
 	start := time.Now()
 
@@ -566,7 +572,7 @@ func (l *applicationLoggerImpl) logEntry(ctx context.Context, level, message, er
 	recordLogPerformance(duration, 0) // Will be updated in writeLogEntry
 }
 
-// writeLogEntry handles the actual writing of log entries
+// writeLogEntry handles the actual writing of log entries.
 func (l *applicationLoggerImpl) writeLogEntry(entry *LogEntry) {
 	var bytesWritten int
 
@@ -610,7 +616,7 @@ func (l *applicationLoggerImpl) writeLogEntry(entry *LogEntry) {
 	atomic.AddInt64(&globalPerformanceMetrics.totalBytesWritten, int64(bytesWritten))
 }
 
-// getOrGenerateCorrelationID gets correlation ID from context or generates a new one
+// getOrGenerateCorrelationID gets correlation ID from context or generates a new one.
 func getOrGenerateCorrelationID(ctx context.Context) string {
 	if correlationID := getCorrelationIDFromContext(ctx); correlationID != "" {
 		return correlationID
@@ -618,7 +624,7 @@ func getOrGenerateCorrelationID(ctx context.Context) string {
 	return uuid.New().String()
 }
 
-// Context management functions
+// Context management functions.
 func WithCorrelationID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, CorrelationIDKey, id)
 }
@@ -667,7 +673,7 @@ func getUserContextFromContext(ctx context.Context) *UserContext {
 	return nil
 }
 
-// Extended interface implementations for NATS logging
+// Extended interface implementations for NATS logging.
 func (l *applicationLoggerImpl) LogNATSConnectionEvent(ctx context.Context, event NATSConnectionEvent) {
 	natsLogger := NewNATSApplicationLogger(l)
 	natsLogger.LogNATSConnectionEvent(ctx, event)
@@ -693,7 +699,7 @@ func (l *applicationLoggerImpl) LogNATSPerformanceMetrics(ctx context.Context, m
 	natsLogger.LogNATSPerformanceMetrics(ctx, metrics)
 }
 
-// Extended interface implementations for metrics logging
+// Extended interface implementations for metrics logging.
 func (l *applicationLoggerImpl) LogMetric(ctx context.Context, metric PrometheusMetric) {
 	metricsLogger := NewMetricsApplicationLogger(l, l.config.MetricsConfig)
 	metricsLogger.LogMetric(ctx, metric)
@@ -720,7 +726,7 @@ func (l *applicationLoggerImpl) FlushAggregatedMetrics(ctx context.Context) {
 }
 
 // Test helper function for buffer output
-// Object pool functions for performance optimization
+// Object pool functions for performance optimization.
 func (p *logEntryPool) getLogEntry() *LogEntry {
 	entry := p.pool.Get().(*LogEntry)
 	// Reset fields
@@ -746,7 +752,7 @@ func (p *logEntryPool) putLogEntry(entry *LogEntry) {
 	p.pool.Put(entry)
 }
 
-// Performance monitoring functions
+// Performance monitoring functions.
 func recordLogPerformance(duration time.Duration, bytesWritten int) {
 	atomic.AddInt64(&globalPerformanceMetrics.totalEntries, 1)
 	atomic.AddInt64(&globalPerformanceMetrics.totalBytesWritten, int64(bytesWritten))
@@ -774,7 +780,7 @@ func getLoggerOutput(logger interface{}) string {
 	return ""
 }
 
-// getLoggerOutputByOperation finds a log entry with specific operation
+// getLoggerOutputByOperation finds a log entry with specific operation.
 func getLoggerOutputByOperation(logger interface{}, operation string) string {
 	if appLogger, ok := logger.(*applicationLoggerImpl); ok && appLogger.buffer != nil {
 		output := strings.TrimSpace(appLogger.buffer.String())
@@ -803,7 +809,7 @@ func getLoggerOutputByOperation(logger interface{}, operation string) string {
 	return ""
 }
 
-// GetLoggerPerformanceMetrics returns current performance metrics
+// GetLoggerPerformanceMetrics returns current performance metrics.
 func GetLoggerPerformanceMetrics() map[string]interface{} {
 	return map[string]interface{}{
 		"total_entries":       atomic.LoadInt64(&globalPerformanceMetrics.totalEntries),

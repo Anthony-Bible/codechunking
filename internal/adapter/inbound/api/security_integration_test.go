@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestRepositoryHandler_SecurityIntegration tests end-to-end security validation
+// TestRepositoryHandler_SecurityIntegration tests end-to-end security validation.
 func TestRepositoryHandler_SecurityIntegration(t *testing.T) {
 	// These tests should FAIL initially - security validation integration is not implemented
 	tests := []struct {
@@ -266,7 +266,7 @@ func TestRepositoryHandler_SecurityIntegration(t *testing.T) {
 	}
 }
 
-// TestRepositoryHandler_ContentTypeValidation tests content type validation integration
+// TestRepositoryHandler_ContentTypeValidation tests content type validation integration.
 func TestRepositoryHandler_ContentTypeValidation(t *testing.T) {
 	// These tests should FAIL initially - content type validation not integrated
 	tests := []struct {
@@ -324,7 +324,7 @@ func TestRepositoryHandler_ContentTypeValidation(t *testing.T) {
 	}
 }
 
-// TestRepositoryHandler_RateLimiting tests rate limiting integration
+// TestRepositoryHandler_RateLimiting tests rate limiting integration.
 func TestRepositoryHandler_RateLimiting(t *testing.T) {
 	// Test rate limiting integration
 	t.Run("enforces_rate_limits", func(t *testing.T) {
@@ -335,7 +335,7 @@ func TestRepositoryHandler_RateLimiting(t *testing.T) {
 		clientIP := "192.168.1.100:12345"
 
 		// Make multiple requests from same IP
-		for i := 0; i < 20; i++ {
+		for range 20 {
 			req := testutil.CreateRequest(http.MethodGet, "/repositories")
 			req.RemoteAddr = clientIP
 			recorder := httptest.NewRecorder()
@@ -351,12 +351,12 @@ func TestRepositoryHandler_RateLimiting(t *testing.T) {
 		}
 
 		// Should have blocked some requests due to rate limiting
-		assert.Greater(t, blockedCount, 0, "Rate limiting should block excessive requests")
+		assert.Positive(t, blockedCount, "Rate limiting should block excessive requests")
 		assert.Less(t, successCount, 20, "Not all requests should succeed")
 	})
 }
 
-// TestRepositoryHandler_SecurityHeaders tests security headers integration
+// TestRepositoryHandler_SecurityHeaders tests security headers integration.
 func TestRepositoryHandler_SecurityHeaders(t *testing.T) {
 	// Test security headers integration
 	t.Run("adds_security_headers", func(t *testing.T) {
@@ -383,7 +383,7 @@ func TestRepositoryHandler_SecurityHeaders(t *testing.T) {
 	})
 }
 
-// TestRepositoryHandler_ComprehensiveSecurity tests multiple security layers together
+// TestRepositoryHandler_ComprehensiveSecurity tests multiple security layers together.
 func TestRepositoryHandler_ComprehensiveSecurity(t *testing.T) {
 	// Test comprehensive security stack
 	t.Run("applies_all_security_measures", func(t *testing.T) {
@@ -444,7 +444,7 @@ func createFullSecurityRepositoryHandler(service inbound.RepositoryService) http
 	return createSecureRepositoryHandler(service) // Same as above for now
 }
 
-// TestSecurityMiddlewareStack tests the complete security middleware stack
+// TestSecurityMiddlewareStack tests the complete security middleware stack.
 func TestSecurityMiddlewareStack(t *testing.T) {
 	// This test should FAIL initially - security middleware stack not implemented
 	tests := []struct {

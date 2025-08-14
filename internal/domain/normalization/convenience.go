@@ -4,7 +4,7 @@ import (
 	"codechunking/internal/application/common/security"
 )
 
-// defaultNormalizer is a shared instance for backward compatibility
+// defaultNormalizer is a shared instance for backward compatibility.
 var defaultNormalizer *URLNormalizer
 
 func init() {
@@ -18,12 +18,12 @@ func NormalizeRepositoryURL(rawURL string) (string, error) {
 	return defaultNormalizer.Normalize(rawURL)
 }
 
-// GetDefaultNormalizer returns the default normalizer instance for advanced usage
+// GetDefaultNormalizer returns the default normalizer instance for advanced usage.
 func GetDefaultNormalizer() *URLNormalizer {
 	return defaultNormalizer
 }
 
-// SetDefaultNormalizer allows customization of the default normalizer
+// SetDefaultNormalizer allows customization of the default normalizer.
 func SetDefaultNormalizer(normalizer *URLNormalizer) {
 	defaultNormalizer = normalizer
 }

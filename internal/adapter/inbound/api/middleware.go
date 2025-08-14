@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"codechunking/internal/adapter/inbound/api/util"
+
 	"github.com/google/uuid"
 )
 
-// Logger defines the interface for logging middleware
+// Logger defines the interface for logging middleware.
 type Logger interface {
 	Infof(template string, args ...interface{})
 	Errorf(template string, args ...interface{})
@@ -39,7 +40,7 @@ type DefaultLogger struct {
 	fieldChain []fieldEntry           // Chained field additions to avoid premature map copying
 }
 
-// NewDefaultLogger creates a new default logger that writes to stdout
+// NewDefaultLogger creates a new default logger that writes to stdout.
 func NewDefaultLogger() Logger {
 	return &DefaultLogger{
 		output: os.Stdout,
@@ -64,7 +65,7 @@ func (l *DefaultLogger) WithField(key string, value interface{}) Logger {
 	}
 }
 
-// WithFields adds multiple fields to the logger context using efficient field chaining
+// WithFields adds multiple fields to the logger context using efficient field chaining.
 func (l *DefaultLogger) WithFields(fields map[string]interface{}) Logger {
 	// Create a new logger that shares the base fields and adds to the chain
 	newChain := make([]fieldEntry, len(l.fieldChain)+len(fields))
@@ -83,17 +84,17 @@ func (l *DefaultLogger) WithFields(fields map[string]interface{}) Logger {
 	}
 }
 
-// Infof logs an info message with structured fields
+// Infof logs an info message with structured fields.
 func (l *DefaultLogger) Infof(template string, args ...interface{}) {
 	l.logWithLevel("INFO", template, args...)
 }
 
-// Errorf logs an error message with structured fields
+// Errorf logs an error message with structured fields.
 func (l *DefaultLogger) Errorf(template string, args ...interface{}) {
 	l.logWithLevel("ERROR", template, args...)
 }
 
-// logWithLevel logs a message with the specified level and fields
+// logWithLevel logs a message with the specified level and fields.
 func (l *DefaultLogger) logWithLevel(level, template string, args ...interface{}) {
 	if l.output == nil {
 		return
@@ -114,7 +115,7 @@ func (l *DefaultLogger) logWithLevel(level, template string, args ...interface{}
 	_, _ = fmt.Fprintln(l.output, logEntry)
 }
 
-// materializeFields combines base fields and field chain into a single map for logging
+// materializeFields combines base fields and field chain into a single map for logging.
 func (l *DefaultLogger) materializeFields() map[string]interface{} {
 	if l.fields == nil && len(l.fieldChain) == 0 {
 		return nil
@@ -148,7 +149,7 @@ func (l *DefaultLogger) materializeFields() map[string]interface{} {
 	return result
 }
 
-// NewTestLogger creates a logger for testing that writes to the given writer
+// NewTestLogger creates a logger for testing that writes to the given writer.
 func NewTestLogger(output io.Writer) Logger {
 	return &DefaultLogger{
 		output: output,
@@ -156,10 +157,10 @@ func NewTestLogger(output io.Writer) Logger {
 	}
 }
 
-// requestIDKey is the context key for request IDs
+// requestIDKey is the context key for request IDs.
 type requestIDKey struct{}
 
-// GetRequestID extracts the request ID from the context
+// GetRequestID extracts the request ID from the context.
 func GetRequestID(ctx context.Context) string {
 	if id, ok := ctx.Value(requestIDKey{}).(string); ok {
 		return id
@@ -167,12 +168,12 @@ func GetRequestID(ctx context.Context) string {
 	return ""
 }
 
-// SetRequestID sets the request ID in the context
+// SetRequestID sets the request ID in the context.
 func SetRequestID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, requestIDKey{}, id)
 }
 
-// LoggingMiddleware wraps handlers with request logging and request ID tracking
+// LoggingMiddleware wraps handlers with request logging and request ID tracking.
 func NewLoggingMiddleware(logger Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -218,7 +219,7 @@ func NewLoggingMiddleware(logger Logger) func(http.Handler) http.Handler {
 	}
 }
 
-// ErrorHandlingMiddleware provides centralized error handling with better logging
+// ErrorHandlingMiddleware provides centralized error handling with better logging.
 func NewErrorHandlingMiddleware() func(http.Handler) http.Handler {
 	logger := NewDefaultLogger()
 
@@ -269,9 +270,10 @@ func NewErrorHandlingMiddleware() func(http.Handler) http.Handler {
 	}
 }
 
-// responseWriter wraps http.ResponseWriter to capture status code
+// responseWriter wraps http.ResponseWriter to capture status code.
 type responseWriter struct {
 	http.ResponseWriter
+
 	statusCode int
 }
 
@@ -280,7 +282,7 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
-// SecurityHeadersConfig defines configuration for unified security headers middleware
+// SecurityHeadersConfig defines configuration for unified security headers middleware.
 type SecurityHeadersConfig struct {
 	ReferrerPolicy string // "strict-origin-when-cross-origin", "no-referrer", etc.
 	CSPPolicy      string // "basic", "comprehensive", or custom CSP string
@@ -293,7 +295,7 @@ type SecurityHeadersConfig struct {
 	XXSSProtection string // "1; mode=block", "0", etc.
 }
 
-// NewUnifiedSecurityMiddleware creates a configurable security headers middleware
+// NewUnifiedSecurityMiddleware creates a configurable security headers middleware.
 func NewUnifiedSecurityMiddleware(config *SecurityHeadersConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -331,7 +333,7 @@ func NewUnifiedSecurityMiddleware(config *SecurityHeadersConfig) func(http.Handl
 	}
 }
 
-// getSecurityConfig returns a config with default values applied
+// getSecurityConfig returns a config with default values applied.
 func getSecurityConfig(config *SecurityHeadersConfig) *SecurityHeadersConfig {
 	cfg := SecurityHeadersConfig{}
 	if config != nil {
@@ -381,12 +383,12 @@ func getSecurityConfig(config *SecurityHeadersConfig) *SecurityHeadersConfig {
 	return &cfg
 }
 
-// boolPtr is a helper function to create bool pointers
+// boolPtr is a helper function to create bool pointers.
 func boolPtr(b bool) *bool {
 	return &b
 }
 
-// getCSPPolicy returns the appropriate CSP policy based on configuration
+// getCSPPolicy returns the appropriate CSP policy based on configuration.
 func getCSPPolicy(policy string) string {
 	switch policy {
 	case "basic":
@@ -401,7 +403,7 @@ func getCSPPolicy(policy string) string {
 	}
 }
 
-// buildHSTSValue constructs the HSTS header value based on configuration
+// buildHSTSValue constructs the HSTS header value based on configuration.
 func buildHSTSValue(cfg *SecurityHeadersConfig) string {
 	parts := []string{"max-age=" + strconv.Itoa(cfg.HStsMaxAge)}
 
@@ -415,22 +417,22 @@ func buildHSTSValue(cfg *SecurityHeadersConfig) string {
 	return strings.Join(parts, "; ")
 }
 
-// SecurityMiddleware adds basic security headers (backward compatibility)
+// SecurityMiddleware adds basic security headers (backward compatibility).
 func NewSecurityMiddleware() func(http.Handler) http.Handler {
 	// Delegate to unified implementation with default config
 	return NewUnifiedSecurityMiddleware(nil)
 }
 
-// Middleware type for middleware chains
+// Middleware type for middleware chains.
 type Middleware func(http.Handler) http.Handler
 
-// CORS middleware constants
+// CORS middleware constants.
 const (
-	// DefaultCORSMaxAge represents 24 hours in seconds for CORS preflight cache
+	// DefaultCORSMaxAge represents 24 hours in seconds for CORS preflight cache.
 	DefaultCORSMaxAge = 86400
 )
 
-// CORSConfig holds CORS middleware configuration
+// CORSConfig holds CORS middleware configuration.
 type CORSConfig struct {
 	AllowedOrigins []string
 	AllowedMethods []string
@@ -490,7 +492,7 @@ func NewCORSMiddlewareWithConfig(config CORSConfig) Middleware {
 	}
 }
 
-// NewMiddlewareChain creates a middleware chain
+// NewMiddlewareChain creates a middleware chain.
 func NewMiddlewareChain(middlewares ...Middleware) Middleware {
 	return func(next http.Handler) http.Handler {
 		handler := next

@@ -13,7 +13,7 @@ import (
 	"codechunking/internal/port/outbound"
 )
 
-// Configuration constants for production-ready health monitoring
+// Configuration constants for production-ready health monitoring.
 const (
 	healthCacheTTL       = 5 * time.Second  // Cache TTL as specified in requirements
 	natsHealthTimeout    = 1 * time.Second  // NATS health check timeout
@@ -21,13 +21,13 @@ const (
 	cacheCleanupInterval = 30 * time.Second // Periodic cache cleanup
 )
 
-// cacheEntry represents a cached health check result
+// cacheEntry represents a cached health check result.
 type cacheEntry struct {
 	status    dto.DependencyStatus
 	timestamp time.Time
 }
 
-// HealthServiceAdapter provides production-ready health check functionality
+// HealthServiceAdapter provides production-ready health check functionality.
 type HealthServiceAdapter struct {
 	// Core dependencies
 	repositoryRepo   outbound.RepositoryRepository
@@ -43,7 +43,7 @@ type HealthServiceAdapter struct {
 	lastCleanup       time.Time              // Track last cache cleanup
 }
 
-// NewHealthServiceAdapter creates a new production-ready HealthServiceAdapter
+// NewHealthServiceAdapter creates a new production-ready HealthServiceAdapter.
 func NewHealthServiceAdapter(
 	repositoryRepo outbound.RepositoryRepository,
 	indexingJobRepo outbound.IndexingJobRepository,
@@ -63,7 +63,7 @@ func NewHealthServiceAdapter(
 	}
 }
 
-// GetHealth performs production-ready health checks with caching and timeout handling
+// GetHealth performs production-ready health checks with caching and timeout handling.
 func (h *HealthServiceAdapter) GetHealth(ctx context.Context) (*dto.HealthResponse, error) {
 	// Periodic cache cleanup to prevent memory leaks
 	h.cleanupExpiredCacheIfNeeded()
@@ -122,7 +122,7 @@ func (h *HealthServiceAdapter) GetHealth(ctx context.Context) (*dto.HealthRespon
 	return response, nil
 }
 
-// checkNATSHealthWithTimeout performs NATS health check with timeout and single-flight protection
+// checkNATSHealthWithTimeout performs NATS health check with timeout and single-flight protection.
 func (h *HealthServiceAdapter) checkNATSHealthWithTimeout(ctx context.Context) dto.DependencyStatus {
 	// Use single-flight pattern to avoid duplicate expensive operations
 	h.singleFlightMutex.Lock()
@@ -181,7 +181,8 @@ func (h *HealthServiceAdapter) checkNATSHealthWithTimeout(ctx context.Context) d
 							break
 						}
 						// Additional data integrity checks
-						if details.CircuitBreaker != "open" && details.CircuitBreaker != "closed" && details.CircuitBreaker != "half-open" {
+						if details.CircuitBreaker != "open" && details.CircuitBreaker != "closed" &&
+							details.CircuitBreaker != "half-open" {
 							status.Message = "Invalid circuit breaker state"
 							break
 						}
@@ -230,7 +231,7 @@ func (h *HealthServiceAdapter) checkNATSHealthWithTimeout(ctx context.Context) d
 }
 
 // checkNATSHealth performs detailed NATS health checking (internal method)
-// It follows a strict priority order as documented in evaluateNATSStatusPriority
+// It follows a strict priority order as documented in evaluateNATSStatusPriority.
 func (h *HealthServiceAdapter) checkNATSHealth() dto.DependencyStatus {
 	// Check if message publisher implements health monitoring
 	healthPublisher, hasHealth := h.messagePublisher.(outbound.MessagePublisherHealth)
@@ -263,7 +264,7 @@ func (h *HealthServiceAdapter) checkNATSHealth() dto.DependencyStatus {
 	}
 }
 
-// getCachedNATSHealth retrieves cached NATS health status if available and not expired
+// getCachedNATSHealth retrieves cached NATS health status if available and not expired.
 func (h *HealthServiceAdapter) getCachedNATSHealth() (dto.DependencyStatus, bool) {
 	h.cacheMutex.RLock()
 	defer h.cacheMutex.RUnlock()
@@ -281,7 +282,7 @@ func (h *HealthServiceAdapter) getCachedNATSHealth() (dto.DependencyStatus, bool
 	return entry.status, true
 }
 
-// cacheNATSHealth stores NATS health status in cache with current timestamp
+// cacheNATSHealth stores NATS health status in cache with current timestamp.
 func (h *HealthServiceAdapter) cacheNATSHealth(status dto.DependencyStatus) {
 	h.cacheMutex.Lock()
 	defer h.cacheMutex.Unlock()
@@ -292,7 +293,7 @@ func (h *HealthServiceAdapter) cacheNATSHealth(status dto.DependencyStatus) {
 	}
 }
 
-// cleanupExpiredCacheIfNeeded removes expired cache entries to prevent memory leaks
+// cleanupExpiredCacheIfNeeded removes expired cache entries to prevent memory leaks.
 func (h *HealthServiceAdapter) cleanupExpiredCacheIfNeeded() {
 	// Only cleanup periodically to avoid overhead on every request
 	if time.Since(h.lastCleanup) < cacheCleanupInterval {
@@ -311,7 +312,7 @@ func (h *HealthServiceAdapter) cleanupExpiredCacheIfNeeded() {
 	h.lastCleanup = now
 }
 
-// ClearCache provides a way to clear the health cache (useful for testing)
+// ClearCache provides a way to clear the health cache (useful for testing).
 func (h *HealthServiceAdapter) ClearCache() {
 	h.cacheMutex.Lock()
 	defer h.cacheMutex.Unlock()
@@ -327,8 +328,11 @@ func (h *HealthServiceAdapter) ClearCache() {
 // 5. Version incompatibility (root cause - often causes JetStream unavailability)
 // 6. JetStream availability (feature availability)
 // 7. Connection stability (high reconnect count)
-// 8. Performance degradation (response time issues)
-func (h *HealthServiceAdapter) evaluateNATSStatusPriority(healthStatus outbound.MessagePublisherHealthStatus, metrics outbound.MessagePublisherMetrics) (dto.DependencyStatusValue, string) {
+// 8. Performance degradation (response time issues).
+func (h *HealthServiceAdapter) evaluateNATSStatusPriority(
+	healthStatus outbound.MessagePublisherHealthStatus,
+	metrics outbound.MessagePublisherMetrics,
+) (dto.DependencyStatusValue, string) {
 	// Priority 1: Invalid metrics validation (highest priority - data integrity issues)
 	if status, message, handled := h.checkMetricsValidation(metrics); handled {
 		return status, message
@@ -378,8 +382,10 @@ func (h *HealthServiceAdapter) evaluateNATSStatusPriority(healthStatus outbound.
 	return dto.DependencyStatusHealthy, ""
 }
 
-// checkAuthenticationErrors checks for authentication/authorization failures (Priority 1)
-func (h *HealthServiceAdapter) checkAuthenticationErrors(healthStatus outbound.MessagePublisherHealthStatus) (dto.DependencyStatusValue, string, bool) {
+// checkAuthenticationErrors checks for authentication/authorization failures (Priority 1).
+func (h *HealthServiceAdapter) checkAuthenticationErrors(
+	healthStatus outbound.MessagePublisherHealthStatus,
+) (dto.DependencyStatusValue, string, bool) {
 	lastErrLower := strings.ToLower(healthStatus.LastError)
 	if strings.Contains(healthStatus.LastError, "Authorization Violation") ||
 		strings.Contains(lastErrLower, "authentication") ||
@@ -390,8 +396,10 @@ func (h *HealthServiceAdapter) checkAuthenticationErrors(healthStatus outbound.M
 	return dto.DependencyStatusHealthy, "", false
 }
 
-// checkCircuitBreakerOpen checks for open circuit breaker state (Priority 2)
-func (h *HealthServiceAdapter) checkCircuitBreakerOpen(healthStatus outbound.MessagePublisherHealthStatus) (dto.DependencyStatusValue, string, bool) {
+// checkCircuitBreakerOpen checks for open circuit breaker state (Priority 2).
+func (h *HealthServiceAdapter) checkCircuitBreakerOpen(
+	healthStatus outbound.MessagePublisherHealthStatus,
+) (dto.DependencyStatusValue, string, bool) {
 	if healthStatus.CircuitBreaker == "open" {
 		// Check if the underlying error is version incompatibility
 		lastErrLower := strings.ToLower(healthStatus.LastError)
@@ -409,8 +417,11 @@ func (h *HealthServiceAdapter) checkCircuitBreakerOpen(healthStatus outbound.Mes
 	return dto.DependencyStatusHealthy, "", false
 }
 
-// checkCircuitBreakerHalfOpen checks for half-open circuit breaker state (Priority 3)
-func (h *HealthServiceAdapter) checkCircuitBreakerHalfOpen(healthStatus outbound.MessagePublisherHealthStatus, metrics outbound.MessagePublisherMetrics) (dto.DependencyStatusValue, string, bool) {
+// checkCircuitBreakerHalfOpen checks for half-open circuit breaker state (Priority 3).
+func (h *HealthServiceAdapter) checkCircuitBreakerHalfOpen(
+	healthStatus outbound.MessagePublisherHealthStatus,
+	metrics outbound.MessagePublisherMetrics,
+) (dto.DependencyStatusValue, string, bool) {
 	if healthStatus.CircuitBreaker == "half-open" {
 		// Half-open circuit breaker also takes precedence over connection status
 		message := h.buildHalfOpenMessage(healthStatus, metrics)
@@ -419,8 +430,11 @@ func (h *HealthServiceAdapter) checkCircuitBreakerHalfOpen(healthStatus outbound
 	return dto.DependencyStatusHealthy, "", false
 }
 
-// buildHalfOpenMessage builds the appropriate message for half-open circuit breaker state
-func (h *HealthServiceAdapter) buildHalfOpenMessage(healthStatus outbound.MessagePublisherHealthStatus, metrics outbound.MessagePublisherMetrics) string {
+// buildHalfOpenMessage builds the appropriate message for half-open circuit breaker state.
+func (h *HealthServiceAdapter) buildHalfOpenMessage(
+	healthStatus outbound.MessagePublisherHealthStatus,
+	metrics outbound.MessagePublisherMetrics,
+) string {
 	if healthStatus.Reconnects > 10 {
 		return "NATS circuit breaker half-open: unstable connection"
 	}
@@ -440,8 +454,10 @@ func (h *HealthServiceAdapter) buildHalfOpenMessage(healthStatus outbound.Messag
 	return "NATS circuit breaker half-open: testing recovery"
 }
 
-// checkConnectionStatus checks basic connection status (Priority 4)
-func (h *HealthServiceAdapter) checkConnectionStatus(healthStatus outbound.MessagePublisherHealthStatus) (dto.DependencyStatusValue, string, bool) {
+// checkConnectionStatus checks basic connection status (Priority 4).
+func (h *HealthServiceAdapter) checkConnectionStatus(
+	healthStatus outbound.MessagePublisherHealthStatus,
+) (dto.DependencyStatusValue, string, bool) {
 	if !healthStatus.Connected {
 		// If not connected, surface the underlying connection error if present
 		message := "NATS disconnected"
@@ -453,24 +469,30 @@ func (h *HealthServiceAdapter) checkConnectionStatus(healthStatus outbound.Messa
 	return dto.DependencyStatusHealthy, "", false
 }
 
-// checkJetStreamAvailability checks JetStream availability (Priority 5)
-func (h *HealthServiceAdapter) checkJetStreamAvailability(healthStatus outbound.MessagePublisherHealthStatus) (dto.DependencyStatusValue, string, bool) {
+// checkJetStreamAvailability checks JetStream availability (Priority 5).
+func (h *HealthServiceAdapter) checkJetStreamAvailability(
+	healthStatus outbound.MessagePublisherHealthStatus,
+) (dto.DependencyStatusValue, string, bool) {
 	if !healthStatus.JetStreamEnabled {
 		return dto.DependencyStatusUnhealthy, "NATS JetStream not available", true
 	}
 	return dto.DependencyStatusHealthy, "", false
 }
 
-// checkConnectionStability checks for high reconnect counts (Priority 6)
-func (h *HealthServiceAdapter) checkConnectionStability(healthStatus outbound.MessagePublisherHealthStatus) (dto.DependencyStatusValue, string, bool) {
+// checkConnectionStability checks for high reconnect counts (Priority 6).
+func (h *HealthServiceAdapter) checkConnectionStability(
+	healthStatus outbound.MessagePublisherHealthStatus,
+) (dto.DependencyStatusValue, string, bool) {
 	if healthStatus.Reconnects > 10 {
 		return dto.DependencyStatusUnhealthy, "NATS unstable connection: too many reconnects", true
 	}
 	return dto.DependencyStatusHealthy, "", false
 }
 
-// checkVersionIncompatibility checks for server version/protocol incompatibility (Priority 7)
-func (h *HealthServiceAdapter) checkVersionIncompatibility(healthStatus outbound.MessagePublisherHealthStatus) (dto.DependencyStatusValue, string, bool) {
+// checkVersionIncompatibility checks for server version/protocol incompatibility (Priority 7).
+func (h *HealthServiceAdapter) checkVersionIncompatibility(
+	healthStatus outbound.MessagePublisherHealthStatus,
+) (dto.DependencyStatusValue, string, bool) {
 	lastErrLower := strings.ToLower(healthStatus.LastError)
 	if strings.Contains(lastErrLower, "protocol version") || strings.Contains(lastErrLower, "version mismatch") {
 		// Ensure message contains the keyword expected by tests ("incompatible")
@@ -479,8 +501,11 @@ func (h *HealthServiceAdapter) checkVersionIncompatibility(healthStatus outbound
 	return dto.DependencyStatusHealthy, "", false
 }
 
-// checkPerformanceDegradation checks for performance issues (Priority 8 - lowest)
-func (h *HealthServiceAdapter) checkPerformanceDegradation(healthStatus outbound.MessagePublisherHealthStatus, metrics outbound.MessagePublisherMetrics) (dto.DependencyStatusValue, string, bool) {
+// checkPerformanceDegradation checks for performance issues (Priority 8 - lowest).
+func (h *HealthServiceAdapter) checkPerformanceDegradation(
+	healthStatus outbound.MessagePublisherHealthStatus,
+	metrics outbound.MessagePublisherMetrics,
+) (dto.DependencyStatusValue, string, bool) {
 	// Check for memory pressure indicated by slow consumer errors and high latency
 	if strings.Contains(healthStatus.LastError, "slow consumer") {
 		avgLatency := metrics.AverageLatency
@@ -504,8 +529,10 @@ func (h *HealthServiceAdapter) checkPerformanceDegradation(healthStatus outbound
 	return dto.DependencyStatusHealthy, "", false
 }
 
-// checkMetricsValidation validates metrics for data integrity issues (Priority 1)
-func (h *HealthServiceAdapter) checkMetricsValidation(metrics outbound.MessagePublisherMetrics) (dto.DependencyStatusValue, string, bool) {
+// checkMetricsValidation validates metrics for data integrity issues (Priority 1).
+func (h *HealthServiceAdapter) checkMetricsValidation(
+	metrics outbound.MessagePublisherMetrics,
+) (dto.DependencyStatusValue, string, bool) {
 	// Check for negative values which indicate data corruption or invalid state
 	if metrics.PublishedCount < 0 || metrics.FailedCount < 0 {
 		return dto.DependencyStatusUnhealthy, "invalid metrics detected", true
@@ -528,8 +555,11 @@ func (h *HealthServiceAdapter) checkMetricsValidation(metrics outbound.MessagePu
 	return dto.DependencyStatusHealthy, "", false
 }
 
-// adjustMetricsForVersionIncompatibility modifies metrics for version incompatibility scenarios
-func (h *HealthServiceAdapter) adjustMetricsForVersionIncompatibility(metrics *outbound.MessagePublisherMetrics, healthStatus outbound.MessagePublisherHealthStatus) {
+// adjustMetricsForVersionIncompatibility modifies metrics for version incompatibility scenarios.
+func (h *HealthServiceAdapter) adjustMetricsForVersionIncompatibility(
+	metrics *outbound.MessagePublisherMetrics,
+	healthStatus outbound.MessagePublisherHealthStatus,
+) {
 	lastErrLower := strings.ToLower(healthStatus.LastError)
 	if strings.Contains(lastErrLower, "protocol version") || strings.Contains(lastErrLower, "version mismatch") {
 		// Incompatibility typically means publish attempts fail; reflect that in metrics
@@ -540,8 +570,11 @@ func (h *HealthServiceAdapter) adjustMetricsForVersionIncompatibility(metrics *o
 	}
 }
 
-// buildNATSHealthDetails creates the detailed health information for NATS
-func (h *HealthServiceAdapter) buildNATSHealthDetails(healthStatus outbound.MessagePublisherHealthStatus, metrics outbound.MessagePublisherMetrics) dto.NATSHealthDetails {
+// buildNATSHealthDetails creates the detailed health information for NATS.
+func (h *HealthServiceAdapter) buildNATSHealthDetails(
+	healthStatus outbound.MessagePublisherHealthStatus,
+	metrics outbound.MessagePublisherMetrics,
+) dto.NATSHealthDetails {
 	// Sanitize metrics - negative values should be set to 0
 	sanitizedPublishedCount := metrics.PublishedCount
 	if sanitizedPublishedCount < 0 {

@@ -10,7 +10,7 @@ import (
 // 2. IsValidRepositoryStatusStringWithEmpty(status string) bool
 // 3. ValidateRepositoryStatusString(status string, allowEmpty bool) error
 
-// Tests for IsValidRepositoryStatusString function (Red Phase - Function doesn't exist yet)
+// Tests for IsValidRepositoryStatusString function (Red Phase - Function doesn't exist yet).
 func TestIsValidRepositoryStatusString_ValidStatuses(t *testing.T) {
 	validStatuses := []string{
 		"pending",
@@ -92,7 +92,7 @@ func TestIsValidRepositoryStatusString_EdgeCases(t *testing.T) {
 	}
 }
 
-// Tests for IsValidRepositoryStatusStringWithEmpty function (Red Phase - Function doesn't exist yet)
+// Tests for IsValidRepositoryStatusStringWithEmpty function (Red Phase - Function doesn't exist yet).
 func TestIsValidRepositoryStatusStringWithEmpty_ValidStatuses(t *testing.T) {
 	validStatuses := []string{
 		"pending",
@@ -172,13 +172,18 @@ func TestIsValidRepositoryStatusStringWithEmpty_EdgeCases(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			result := IsValidRepositoryStatusStringWithEmpty(tc.input)
 			if result != tc.expected {
-				t.Errorf("Expected IsValidRepositoryStatusStringWithEmpty(%q) to be %v, got %v", tc.input, tc.expected, result)
+				t.Errorf(
+					"Expected IsValidRepositoryStatusStringWithEmpty(%q) to be %v, got %v",
+					tc.input,
+					tc.expected,
+					result,
+				)
 			}
 		})
 	}
 }
 
-// Tests for ValidateRepositoryStatusString function (Red Phase - Function doesn't exist yet)
+// Tests for ValidateRepositoryStatusString function (Red Phase - Function doesn't exist yet).
 func TestValidateRepositoryStatusString_ValidStatuses_AllowEmptyFalse(t *testing.T) {
 	validStatuses := []string{
 		"pending",

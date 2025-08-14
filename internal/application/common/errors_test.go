@@ -1,13 +1,14 @@
 package common
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"codechunking/internal/application/dto"
 )
 
-// TestNewValidationError tests the basic constructor function
+// TestNewValidationError tests the basic constructor function.
 func TestNewValidationError(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -91,7 +92,7 @@ func TestNewValidationError(t *testing.T) {
 	}
 }
 
-// TestNewValidationErrorWithValue tests the constructor with value
+// TestNewValidationErrorWithValue tests the constructor with value.
 func TestNewValidationErrorWithValue(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -177,7 +178,7 @@ func TestNewValidationErrorWithValue(t *testing.T) {
 	}
 }
 
-// TestValidationError_Error tests the error interface implementation
+// TestValidationError_Error tests the error interface implementation.
 func TestValidationError_Error(t *testing.T) {
 	tests := []struct {
 		name string
@@ -249,7 +250,7 @@ func TestValidationError_Error(t *testing.T) {
 	}
 }
 
-// TestValidationError_ToDTO tests conversion to DTO type
+// TestValidationError_ToDTO tests conversion to DTO type.
 func TestValidationError_ToDTO(t *testing.T) {
 	tests := []struct {
 		name string
@@ -327,7 +328,7 @@ func TestValidationError_ToDTO(t *testing.T) {
 	}
 }
 
-// TestValidationError_FieldValidation tests field validation constraints
+// TestValidationError_FieldValidation tests field validation constraints.
 func TestValidationError_FieldValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -405,7 +406,7 @@ func TestValidationError_FieldValidation(t *testing.T) {
 	}
 }
 
-// TestValidationError_ErrorInterface tests that ValidationError implements error interface
+// TestValidationError_ErrorInterface tests that ValidationError implements error interface.
 func TestValidationError_ErrorInterface(t *testing.T) {
 	var err error = ValidationError{
 		Field:   "test",
@@ -418,17 +419,20 @@ func TestValidationError_ErrorInterface(t *testing.T) {
 	}
 
 	// Test that it can be used in error handling
-	switch e := err.(type) {
-	case ValidationError:
-		if e.Field != "test" {
-			t.Error("Type assertion to ValidationError failed")
+	{
+		var e ValidationError
+		switch {
+		case errors.As(err, &e):
+			if e.Field != "test" {
+				t.Error("Type assertion to ValidationError failed")
+			}
+		default:
+			t.Error("ValidationError should be assignable to error interface")
 		}
-	default:
-		t.Error("ValidationError should be assignable to error interface")
 	}
 }
 
-// TestValidationError_IsNil tests nil handling
+// TestValidationError_IsNil tests nil handling.
 func TestValidationError_IsNil(t *testing.T) {
 	var err *ValidationError
 
@@ -444,7 +448,7 @@ func TestValidationError_IsNil(t *testing.T) {
 	}
 }
 
-// TestValidationError_Consistency tests consistency across different creation methods
+// TestValidationError_Consistency tests consistency across different creation methods.
 func TestValidationError_Consistency(t *testing.T) {
 	field := "username"
 	message := "is required"
@@ -479,7 +483,7 @@ func TestValidationError_Consistency(t *testing.T) {
 	}
 }
 
-// TestValidationError_EdgeCases tests various edge cases
+// TestValidationError_EdgeCases tests various edge cases.
 func TestValidationError_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name string

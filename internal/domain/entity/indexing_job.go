@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// IndexingJob represents an asynchronous job for processing a repository
+// IndexingJob represents an asynchronous job for processing a repository.
 type IndexingJob struct {
 	id             uuid.UUID
 	repositoryID   uuid.UUID
@@ -23,7 +23,7 @@ type IndexingJob struct {
 	deletedAt      *time.Time
 }
 
-// NewIndexingJob creates a new IndexingJob entity
+// NewIndexingJob creates a new IndexingJob entity.
 func NewIndexingJob(repositoryID uuid.UUID) *IndexingJob {
 	now := time.Now()
 	return &IndexingJob{
@@ -37,7 +37,7 @@ func NewIndexingJob(repositoryID uuid.UUID) *IndexingJob {
 	}
 }
 
-// RestoreIndexingJob creates an IndexingJob entity from stored data
+// RestoreIndexingJob creates an IndexingJob entity from stored data.
 func RestoreIndexingJob(
 	id uuid.UUID,
 	repositoryID uuid.UUID,
@@ -66,72 +66,72 @@ func RestoreIndexingJob(
 	}
 }
 
-// ID returns the job ID
+// ID returns the job ID.
 func (j *IndexingJob) ID() uuid.UUID {
 	return j.id
 }
 
-// RepositoryID returns the repository ID
+// RepositoryID returns the repository ID.
 func (j *IndexingJob) RepositoryID() uuid.UUID {
 	return j.repositoryID
 }
 
-// Status returns the current job status
+// Status returns the current job status.
 func (j *IndexingJob) Status() valueobject.JobStatus {
 	return j.status
 }
 
-// StartedAt returns the job start timestamp
+// StartedAt returns the job start timestamp.
 func (j *IndexingJob) StartedAt() *time.Time {
 	return j.startedAt
 }
 
-// CompletedAt returns the job completion timestamp
+// CompletedAt returns the job completion timestamp.
 func (j *IndexingJob) CompletedAt() *time.Time {
 	return j.completedAt
 }
 
-// ErrorMessage returns the error message if the job failed
+// ErrorMessage returns the error message if the job failed.
 func (j *IndexingJob) ErrorMessage() *string {
 	return j.errorMessage
 }
 
-// FilesProcessed returns the number of files processed
+// FilesProcessed returns the number of files processed.
 func (j *IndexingJob) FilesProcessed() int {
 	return j.filesProcessed
 }
 
-// ChunksCreated returns the number of chunks created
+// ChunksCreated returns the number of chunks created.
 func (j *IndexingJob) ChunksCreated() int {
 	return j.chunksCreated
 }
 
-// CreatedAt returns the creation timestamp
+// CreatedAt returns the creation timestamp.
 func (j *IndexingJob) CreatedAt() time.Time {
 	return j.createdAt
 }
 
-// UpdatedAt returns the last update timestamp
+// UpdatedAt returns the last update timestamp.
 func (j *IndexingJob) UpdatedAt() time.Time {
 	return j.updatedAt
 }
 
-// DeletedAt returns the deletion timestamp
+// DeletedAt returns the deletion timestamp.
 func (j *IndexingJob) DeletedAt() *time.Time {
 	return j.deletedAt
 }
 
-// IsDeleted returns true if the job is soft-deleted
+// IsDeleted returns true if the job is soft-deleted.
 func (j *IndexingJob) IsDeleted() bool {
 	return j.deletedAt != nil
 }
 
-// IsTerminal returns true if the job is in a terminal state
+// IsTerminal returns true if the job is in a terminal state.
 func (j *IndexingJob) IsTerminal() bool {
 	return j.status.IsTerminal()
 }
 
-// Duration returns the job duration if completed
+// Duration returns the job duration if completed.
 func (j *IndexingJob) Duration() *time.Duration {
 	if j.startedAt == nil || j.completedAt == nil {
 		return nil
@@ -140,7 +140,7 @@ func (j *IndexingJob) Duration() *time.Duration {
 	return &duration
 }
 
-// Start marks the job as started
+// Start marks the job as started.
 func (j *IndexingJob) Start() error {
 	if !j.status.CanTransitionTo(valueobject.JobStatusRunning) {
 		return NewDomainError("cannot start job in current status", "INVALID_STATUS_TRANSITION")
@@ -153,7 +153,7 @@ func (j *IndexingJob) Start() error {
 	return nil
 }
 
-// Complete marks the job as completed successfully
+// Complete marks the job as completed successfully.
 func (j *IndexingJob) Complete(filesProcessed, chunksCreated int) error {
 	if !j.status.CanTransitionTo(valueobject.JobStatusCompleted) {
 		return NewDomainError("cannot complete job in current status", "INVALID_STATUS_TRANSITION")
@@ -169,7 +169,7 @@ func (j *IndexingJob) Complete(filesProcessed, chunksCreated int) error {
 	return nil
 }
 
-// Fail marks the job as failed with an error message
+// Fail marks the job as failed with an error message.
 func (j *IndexingJob) Fail(errorMessage string) error {
 	if !j.status.CanTransitionTo(valueobject.JobStatusFailed) {
 		return NewDomainError("cannot fail job in current status", "INVALID_STATUS_TRANSITION")
@@ -183,7 +183,7 @@ func (j *IndexingJob) Fail(errorMessage string) error {
 	return nil
 }
 
-// Cancel marks the job as cancelled
+// Cancel marks the job as cancelled.
 func (j *IndexingJob) Cancel() error {
 	if !j.status.CanTransitionTo(valueobject.JobStatusCancelled) {
 		return NewDomainError("cannot cancel job in current status", "INVALID_STATUS_TRANSITION")
@@ -196,14 +196,14 @@ func (j *IndexingJob) Cancel() error {
 	return nil
 }
 
-// UpdateProgress updates the job progress
+// UpdateProgress updates the job progress.
 func (j *IndexingJob) UpdateProgress(filesProcessed, chunksCreated int) {
 	j.filesProcessed = filesProcessed
 	j.chunksCreated = chunksCreated
 	j.updatedAt = time.Now()
 }
 
-// Archive soft-deletes the job
+// Archive soft-deletes the job.
 func (j *IndexingJob) Archive() error {
 	if j.IsDeleted() {
 		return NewDomainError("job is already archived", "ALREADY_ARCHIVED")
@@ -215,7 +215,7 @@ func (j *IndexingJob) Archive() error {
 	return nil
 }
 
-// Equal compares two IndexingJob entities
+// Equal compares two IndexingJob entities.
 func (j *IndexingJob) Equal(other *IndexingJob) bool {
 	if other == nil {
 		return false

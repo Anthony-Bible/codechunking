@@ -8,7 +8,7 @@ import (
 )
 
 // TestEndToEndAPIIntegration_CompleteDatabaseNATSFlow tests the complete end-to-end flow
-// These tests now PASS with minimal implementations
+// These tests now PASS with minimal implementations.
 func TestEndToEndAPIIntegration_CompleteDatabaseNATSFlow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping end-to-end integration test")
@@ -35,7 +35,7 @@ func TestEndToEndAPIIntegration_CompleteDatabaseNATSFlow(t *testing.T) {
 	})
 }
 
-// TestProductionReadinessVerification tests all production readiness aspects
+// TestProductionReadinessVerification tests all production readiness aspects.
 func TestProductionReadinessVerification(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping production readiness verification test")
@@ -74,7 +74,7 @@ func TestProductionReadinessVerification(t *testing.T) {
 	})
 }
 
-// TestPerformanceTesting tests system performance under various load conditions
+// TestPerformanceTesting tests system performance under various load conditions.
 func TestPerformanceTesting(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping performance testing")
@@ -97,7 +97,7 @@ func TestPerformanceTesting(t *testing.T) {
 	})
 }
 
-// TestSecurityEndToEndTesting tests security validations in complete request flows
+// TestSecurityEndToEndTesting tests security validations in complete request flows.
 func TestSecurityEndToEndTesting(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping security end-to-end testing")
@@ -120,7 +120,7 @@ func TestSecurityEndToEndTesting(t *testing.T) {
 	})
 }
 
-// TestEndToEndIntegrationVerification_MustFailUntilImplemented ensures all tests fail during RED phase
+// TestEndToEndIntegrationVerification_MustFailUntilImplemented ensures all tests fail during RED phase.
 func TestEndToEndIntegrationVerification_MustFailUntilImplemented(t *testing.T) {
 	t.Run("verify end-to-end test server setup works", func(t *testing.T) {
 		startRealE2ETestServerMinimal(t)
@@ -286,7 +286,7 @@ func verifyCorrelationIDSecurityMinimal(t *testing.T) {
 	// Minimal implementation - assume correlation ID security works
 }
 
-// TestSpecifications_PhaseRequirements documents the exact requirements being tested
+// TestSpecifications_PhaseRequirements documents the exact requirements being tested.
 func TestSpecifications_PhaseRequirements(t *testing.T) {
 	t.Run("Phase 2.5 Requirements Documentation", func(t *testing.T) {
 		requirements := []string{

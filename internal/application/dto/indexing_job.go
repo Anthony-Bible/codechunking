@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// IndexingJobResponse represents the response containing indexing job information
+// IndexingJobResponse represents the response containing indexing job information.
 type IndexingJobResponse struct {
 	ID             uuid.UUID  `json:"id"`
 	RepositoryID   uuid.UUID  `json:"repository_id"`
@@ -21,19 +21,19 @@ type IndexingJobResponse struct {
 	Duration       *string    `json:"duration,omitempty"` // Human-readable duration
 }
 
-// IndexingJobListResponse represents the response for listing indexing jobs
+// IndexingJobListResponse represents the response for listing indexing jobs.
 type IndexingJobListResponse struct {
 	Jobs       []IndexingJobResponse `json:"jobs"`
 	Pagination PaginationResponse    `json:"pagination"`
 }
 
-// IndexingJobListQuery represents query parameters for listing indexing jobs
+// IndexingJobListQuery represents query parameters for listing indexing jobs.
 type IndexingJobListQuery struct {
-	Limit  int `form:"limit" validate:"omitempty,min=1,max=50"`
+	Limit  int `form:"limit"  validate:"omitempty,min=1,max=50"`
 	Offset int `form:"offset" validate:"omitempty,min=0"`
 }
 
-// DefaultIndexingJobListQuery returns default values for indexing job list query
+// DefaultIndexingJobListQuery returns default values for indexing job list query.
 func DefaultIndexingJobListQuery() IndexingJobListQuery {
 	return IndexingJobListQuery{
 		Limit:  10,

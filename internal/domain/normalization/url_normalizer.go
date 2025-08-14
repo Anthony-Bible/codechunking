@@ -1,6 +1,7 @@
 package normalization
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -20,7 +21,7 @@ type URLNormalizer struct {
 	cacheEnabled    bool
 }
 
-// Config holds configuration options for URL normalization
+// Config holds configuration options for URL normalization.
 type Config struct {
 	// AllowedProtocols specifies which protocols are allowed (default: https, http)
 	AllowedProtocols []string
@@ -53,7 +54,7 @@ type Config struct {
 	NormalizePathCase bool
 }
 
-// DefaultConfig returns the default normalization configuration
+// DefaultConfig returns the default normalization configuration.
 func DefaultConfig() *Config {
 	return &Config{
 		AllowedProtocols: []string{"https", "http"},
@@ -73,7 +74,7 @@ func DefaultConfig() *Config {
 	}
 }
 
-// NewURLNormalizer creates a new URL normalizer with the given configuration
+// NewURLNormalizer creates a new URL normalizer with the given configuration.
 func NewURLNormalizer(config *Config, securityConfig *security.Config) *URLNormalizer {
 	if config == nil {
 		config = DefaultConfig()
@@ -91,7 +92,7 @@ func NewURLNormalizer(config *Config, securityConfig *security.Config) *URLNorma
 	}
 }
 
-// NewURLNormalizerWithCache creates a new URL normalizer with caching enabled
+// NewURLNormalizerWithCache creates a new URL normalizer with caching enabled.
 func NewURLNormalizerWithCache(config *Config, securityConfig *security.Config, maxCacheSize int) *URLNormalizer {
 	normalizer := NewURLNormalizer(config, securityConfig)
 	normalizer.maxCacheSize = maxCacheSize
@@ -103,7 +104,7 @@ func NewURLNormalizerWithCache(config *Config, securityConfig *security.Config, 
 // It applies security validation, normalization rules, and caching for performance.
 func (n *URLNormalizer) Normalize(rawURL string) (string, error) {
 	if rawURL == "" {
-		return "", fmt.Errorf("repository URL cannot be empty")
+		return "", errors.New("repository URL cannot be empty")
 	}
 
 	// Check cache first if enabled
@@ -142,7 +143,7 @@ func (n *URLNormalizer) Normalize(rawURL string) (string, error) {
 	return normalized, nil
 }
 
-// normalizeURL performs the actual URL normalization logic
+// normalizeURL performs the actual URL normalization logic.
 func (n *URLNormalizer) normalizeURL(rawURL string) (string, error) {
 	// Basic security validation
 	if err := n.performSecurityValidation(rawURL); err != nil {
@@ -169,7 +170,11 @@ func (n *URLNormalizer) normalizeURL(rawURL string) (string, error) {
 		for host := range n.config.SupportedHosts {
 			supportedHosts = append(supportedHosts, host)
 		}
-		return "", fmt.Errorf("unsupported host: %s. Supported hosts: %s", parsedURL.Host, strings.Join(supportedHosts, ", "))
+		return "", fmt.Errorf(
+			"unsupported host: %s. Supported hosts: %s",
+			parsedURL.Host,
+			strings.Join(supportedHosts, ", "),
+		)
 	}
 
 	// Normalize scheme
@@ -195,7 +200,7 @@ func (n *URLNormalizer) normalizeURL(rawURL string) (string, error) {
 	return normalized, nil
 }
 
-// performSecurityValidation performs security checks on the raw URL
+// performSecurityValidation performs security checks on the raw URL.
 func (n *URLNormalizer) performSecurityValidation(rawURL string) error {
 	// Length validation using security validator
 	validator := security.GetDefaultValidator()
@@ -207,7 +212,7 @@ func (n *URLNormalizer) performSecurityValidation(rawURL string) error {
 	return validator.ValidateURLSecurity(rawURL)
 }
 
-// isAllowedProtocol checks if the protocol is in the allowed list
+// isAllowedProtocol checks if the protocol is in the allowed list.
 func (n *URLNormalizer) isAllowedProtocol(scheme string) bool {
 	scheme = strings.ToLower(scheme)
 	for _, allowed := range n.config.AllowedProtocols {
@@ -218,7 +223,7 @@ func (n *URLNormalizer) isAllowedProtocol(scheme string) bool {
 	return false
 }
 
-// normalizeHost normalizes the hostname according to configuration
+// normalizeHost normalizes the hostname according to configuration.
 func (n *URLNormalizer) normalizeHost(host string) string {
 	if !n.config.CaseSensitiveHosts {
 		return strings.ToLower(host)
@@ -226,7 +231,7 @@ func (n *URLNormalizer) normalizeHost(host string) string {
 	return host
 }
 
-// isSupportedHost checks if the host is in the supported list
+// isSupportedHost checks if the host is in the supported list.
 func (n *URLNormalizer) isSupportedHost(host string) bool {
 	normalizedHost := host
 	if !n.config.CaseSensitiveHosts {
@@ -235,7 +240,7 @@ func (n *URLNormalizer) isSupportedHost(host string) bool {
 	return n.config.SupportedHosts[normalizedHost]
 }
 
-// normalizePath normalizes the URL path according to configuration
+// normalizePath normalizes the URL path according to configuration.
 func (n *URLNormalizer) normalizePath(path string) (string, error) {
 	// Decode URL encoding
 	decodedPath := path
@@ -264,13 +269,13 @@ func (n *URLNormalizer) normalizePath(path string) (string, error) {
 
 	// Additional security check for path traversal in decoded path
 	if strings.Contains(decodedPath, "..") {
-		return "", fmt.Errorf("path traversal detected in normalized path")
+		return "", errors.New("path traversal detected in normalized path")
 	}
 
 	return decodedPath, nil
 }
 
-// validateNormalizedURL performs final validation on the normalized URL
+// validateNormalizedURL performs final validation on the normalized URL.
 func (n *URLNormalizer) validateNormalizedURL(normalizedURL string) error {
 	parsedURL, err := url.Parse(normalizedURL)
 	if err != nil {
@@ -280,13 +285,13 @@ func (n *URLNormalizer) validateNormalizedURL(normalizedURL string) error {
 	// Validate path structure
 	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
 	if len(pathParts) < 2 {
-		return fmt.Errorf("repository URL must include owner and repository name")
+		return errors.New("repository URL must include owner and repository name")
 	}
 
 	return nil
 }
 
-// ClearCache clears the normalization cache
+// ClearCache clears the normalization cache.
 func (n *URLNormalizer) ClearCache() {
 	if n.cacheEnabled {
 		n.cacheMutex.Lock()
@@ -295,7 +300,7 @@ func (n *URLNormalizer) ClearCache() {
 	}
 }
 
-// GetCacheStats returns cache statistics for monitoring
+// GetCacheStats returns cache statistics for monitoring.
 func (n *URLNormalizer) GetCacheStats() CacheStats {
 	if !n.cacheEnabled {
 		return CacheStats{Enabled: false}
@@ -313,7 +318,7 @@ func (n *URLNormalizer) GetCacheStats() CacheStats {
 	}
 }
 
-// CacheStats holds cache statistics
+// CacheStats holds cache statistics.
 type CacheStats struct {
 	Enabled bool
 	Size    int
@@ -321,7 +326,7 @@ type CacheStats struct {
 	HitRate float64
 }
 
-// SetCacheEnabled enables or disables caching
+// SetCacheEnabled enables or disables caching.
 func (n *URLNormalizer) SetCacheEnabled(enabled bool) {
 	n.cacheMutex.Lock()
 	n.cacheEnabled = enabled

@@ -8,7 +8,7 @@ import (
 	"codechunking/internal/adapter/inbound/api/testutil"
 )
 
-// Route validation error message constants for consistent error handling
+// Route validation error message constants for consistent error handling.
 const (
 	ErrEmptyPattern           = "route pattern cannot be empty"
 	ErrWhitespacePattern      = "route pattern cannot be only whitespace"
@@ -21,14 +21,14 @@ const (
 	ErrUnmatchedClosingBrace  = "unmatched closing brace"
 )
 
-// Error message templates for consistent formatting
+// Error message templates for consistent formatting.
 const (
 	TmplPathMustStartWithSlash  = "path '%s' in pattern '%s' must start with '/'"
 	TmplPathContainsDoubleSlash = "path '%s' in pattern '%s' contains double slashes"
 	TmplUnmatchedClosingBrace   = "invalid parameter syntax in pattern '%s': unmatched closing brace at position %d"
 )
 
-// Parameter validation error codes for structured error reporting
+// Parameter validation error codes for structured error reporting.
 const (
 	ParamMissingCloseBrace = "PARAM_MISSING_CLOSE_BRACE"
 	ParamEmptyName         = "PARAM_EMPTY_NAME"
@@ -36,22 +36,27 @@ const (
 	ParamDuplicateName     = "PARAM_DUPLICATE_NAME"
 )
 
-// Route conflict error types
+// Route conflict error types.
 const (
 	ConflictExactDuplicate = "ExactDuplicate"
 	ConflictSameStructure  = "SameStructure"
 )
 
 // newParameterSyntaxError creates a structured parameter syntax error with consistent formatting
-// This helper consolidates all parameter validation errors into a consistent format
+// This helper consolidates all parameter validation errors into a consistent format.
 func newParameterSyntaxError(errorCode, pattern string, details ...interface{}) error {
 	return fmt.Errorf("newParameterSyntaxError %s in pattern '%s': %v", errorCode, pattern, details)
 }
 
 // newRouteConflictError creates a structured route conflict error with consistent formatting
-// This helper consolidates all route conflict errors into a consistent format for easier debugging
+// This helper consolidates all route conflict errors into a consistent format for easier debugging.
 func newRouteConflictError(conflictType, newPattern, existingPattern string) error {
-	return fmt.Errorf("newRouteConflictError %s: pattern '%s' conflicts with existing pattern '%s'", conflictType, newPattern, existingPattern)
+	return fmt.Errorf(
+		"newRouteConflictError %s: pattern '%s' conflicts with existing pattern '%s'",
+		conflictType,
+		newPattern,
+		existingPattern,
+	)
 }
 
 // validHTTPMethods contains the valid HTTP methods for route pattern validation.
@@ -74,14 +79,14 @@ func isValidHTTPMethod(method string) bool {
 	return false
 }
 
-// RouteRegistry manages HTTP route registration using Go 1.22+ ServeMux patterns
+// RouteRegistry manages HTTP route registration using Go 1.22+ ServeMux patterns.
 type RouteRegistry struct {
 	routes   map[string]http.Handler
 	patterns []string
 	mux      *http.ServeMux
 }
 
-// NewRouteRegistry creates a new RouteRegistry
+// NewRouteRegistry creates a new RouteRegistry.
 func NewRouteRegistry() *RouteRegistry {
 	return &RouteRegistry{
 		routes:   make(map[string]http.Handler),
@@ -90,7 +95,7 @@ func NewRouteRegistry() *RouteRegistry {
 	}
 }
 
-// RegisterAPIRoutes registers all API routes with their handlers
+// RegisterAPIRoutes registers all API routes with their handlers.
 func (r *RouteRegistry) RegisterAPIRoutes(healthHandler *HealthHandler, repositoryHandler *RepositoryHandler) {
 	// Health endpoint
 	if err := r.RegisterRoute("GET /health", http.HandlerFunc(healthHandler.GetHealth)); err != nil {
@@ -120,7 +125,7 @@ func (r *RouteRegistry) RegisterAPIRoutes(healthHandler *HealthHandler, reposito
 	}
 }
 
-// RegisterRoute registers a single route with the given pattern and handler
+// RegisterRoute registers a single route with the given pattern and handler.
 func (r *RouteRegistry) RegisterRoute(pattern string, handler http.Handler) error {
 	// Validate pattern
 	if err := r.validatePattern(pattern); err != nil {
@@ -142,28 +147,28 @@ func (r *RouteRegistry) RegisterRoute(pattern string, handler http.Handler) erro
 	return nil
 }
 
-// BuildServeMux returns the configured ServeMux
+// BuildServeMux returns the configured ServeMux.
 func (r *RouteRegistry) BuildServeMux() *http.ServeMux {
 	return r.mux
 }
 
-// HasRoute checks if a route pattern is registered
+// HasRoute checks if a route pattern is registered.
 func (r *RouteRegistry) HasRoute(pattern string) bool {
 	_, exists := r.routes[pattern]
 	return exists
 }
 
-// RouteCount returns the number of registered routes
+// RouteCount returns the number of registered routes.
 func (r *RouteRegistry) RouteCount() int {
 	return len(r.routes)
 }
 
-// GetPatterns returns all registered route patterns
+// GetPatterns returns all registered route patterns.
 func (r *RouteRegistry) GetPatterns() []string {
 	return r.patterns
 }
 
-// validatePattern validates a Go 1.22+ ServeMux pattern with detailed error messages
+// validatePattern validates a Go 1.22+ ServeMux pattern with detailed error messages.
 func (r *RouteRegistry) validatePattern(pattern string) error {
 	if pattern == "" {
 		return fmt.Errorf("%s", ErrEmptyPattern)
@@ -214,7 +219,7 @@ func (r *RouteRegistry) validatePattern(pattern string) error {
 	return nil
 }
 
-// validateParameterSyntax validates Go 1.22+ path parameter syntax with detailed error messages
+// validateParameterSyntax validates Go 1.22+ path parameter syntax with detailed error messages.
 func (r *RouteRegistry) validateParameterSyntax(path, pattern string) error {
 	paramNames := make(map[string]bool)
 	braceCount := 0
@@ -228,22 +233,38 @@ func (r *RouteRegistry) validateParameterSyntax(path, pattern string) error {
 			// Find matching closing brace
 			closing := strings.Index(path[i+1:], "}")
 			if closing == -1 {
-				return newParameterSyntaxError(ParamMissingCloseBrace, pattern, fmt.Sprintf("missing closing brace for parameter starting at position %d", i))
+				return newParameterSyntaxError(
+					ParamMissingCloseBrace,
+					pattern,
+					fmt.Sprintf("missing closing brace for parameter starting at position %d", i),
+				)
 			}
 
 			paramName := path[i+1 : i+1+closing]
 			if paramName == "" {
-				return newParameterSyntaxError(ParamEmptyName, pattern, fmt.Sprintf("empty parameter name at position %d", i))
+				return newParameterSyntaxError(
+					ParamEmptyName,
+					pattern,
+					fmt.Sprintf("empty parameter name at position %d", i),
+				)
 			}
 
 			// Validate parameter name (should be alphanumeric and underscores)
 			if !isValidParameterName(paramName) {
-				return newParameterSyntaxError(ParamInvalidName, pattern, fmt.Sprintf("parameter name '%s' must contain only letters, numbers, and underscores", paramName))
+				return newParameterSyntaxError(
+					ParamInvalidName,
+					pattern,
+					fmt.Sprintf("parameter name '%s' must contain only letters, numbers, and underscores", paramName),
+				)
 			}
 
 			// Check for duplicate parameter names
 			if paramNames[paramName] {
-				return newParameterSyntaxError(ParamDuplicateName, pattern, fmt.Sprintf("duplicate parameter name '%s'", paramName))
+				return newParameterSyntaxError(
+					ParamDuplicateName,
+					pattern,
+					fmt.Sprintf("duplicate parameter name '%s'", paramName),
+				)
 			}
 			paramNames[paramName] = true
 
@@ -257,7 +278,7 @@ func (r *RouteRegistry) validateParameterSyntax(path, pattern string) error {
 	return nil
 }
 
-// isValidParameterName checks if a parameter name is valid (letters, numbers, underscores only)
+// isValidParameterName checks if a parameter name is valid (letters, numbers, underscores only).
 func isValidParameterName(name string) bool {
 	if name == "" {
 		return false
@@ -272,7 +293,7 @@ func isValidParameterName(name string) bool {
 	return true
 }
 
-// checkRouteConflict checks for conflicting route patterns with detailed error messages
+// checkRouteConflict checks for conflicting route patterns with detailed error messages.
 func (r *RouteRegistry) checkRouteConflict(newPattern string) error {
 	// Parse the new pattern
 	newParts := strings.SplitN(newPattern, " ", 2)
@@ -302,7 +323,7 @@ func (r *RouteRegistry) checkRouteConflict(newPattern string) error {
 	return nil
 }
 
-// getPathConflictType analyzes the type of conflict between two paths
+// getPathConflictType analyzes the type of conflict between two paths.
 func (r *RouteRegistry) getPathConflictType(path1, path2 string) string {
 	if path1 == path2 {
 		return ConflictExactDuplicate
@@ -319,7 +340,7 @@ func (r *RouteRegistry) getPathConflictType(path1, path2 string) string {
 	return "" // No conflict
 }
 
-// normalizePath replaces all parameters with a standard placeholder
+// normalizePath replaces all parameters with a standard placeholder.
 func (r *RouteRegistry) normalizePath(path string) string {
 	result := path
 	searchPos := 0
@@ -342,7 +363,7 @@ func (r *RouteRegistry) normalizePath(path string) string {
 	return result
 }
 
-// ExtractPathParams extracts path parameters from an HTTP request using Go 1.22+ ServeMux
+// ExtractPathParams extracts path parameters from an HTTP request using Go 1.22+ ServeMux.
 func ExtractPathParams(r *http.Request) map[string]string {
 	params := make(map[string]string)
 

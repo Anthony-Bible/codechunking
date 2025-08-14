@@ -6,13 +6,13 @@ import (
 	"unicode"
 )
 
-// InjectionValidator provides consolidated XSS and SQL injection detection
+// InjectionValidator provides consolidated XSS and SQL injection detection.
 type InjectionValidator struct {
 	config   *Config
 	patterns *Patterns
 }
 
-// NewInjectionValidator creates a new injection validator
+// NewInjectionValidator creates a new injection validator.
 func NewInjectionValidator(config *Config) *InjectionValidator {
 	return &InjectionValidator{
 		config:   config,
@@ -20,7 +20,7 @@ func NewInjectionValidator(config *Config) *InjectionValidator {
 	}
 }
 
-// ValidateXSSAttacks checks for XSS attack patterns
+// ValidateXSSAttacks checks for XSS attack patterns.
 func (iv *InjectionValidator) ValidateXSSAttacks(input string) error {
 	if !iv.config.EnableXSSProtection {
 		return nil
@@ -94,7 +94,7 @@ func (iv *InjectionValidator) ValidateXSSAttacks(input string) error {
 	return nil
 }
 
-// ValidateSQLInjection checks for SQL injection patterns
+// ValidateSQLInjection checks for SQL injection patterns.
 func (iv *InjectionValidator) ValidateSQLInjection(input string) error {
 	if !iv.config.EnableSQLInjection {
 		return nil
@@ -160,7 +160,7 @@ func (iv *InjectionValidator) ValidateSQLInjection(input string) error {
 	return nil
 }
 
-// ValidatePathTraversal checks for path traversal attacks
+// ValidatePathTraversal checks for path traversal attacks.
 func (iv *InjectionValidator) ValidatePathTraversal(input string) error {
 	if !iv.config.EnablePathTraversal {
 		return nil
@@ -207,7 +207,7 @@ func (iv *InjectionValidator) ValidatePathTraversal(input string) error {
 	return nil
 }
 
-// ValidateControlCharacters checks for control character injection
+// ValidateControlCharacters checks for control character injection.
 func (iv *InjectionValidator) ValidateControlCharacters(input string) error {
 	if !iv.config.EnableControlCharCheck {
 		return nil
@@ -245,7 +245,7 @@ func (iv *InjectionValidator) ValidateControlCharacters(input string) error {
 	return nil
 }
 
-// ValidateProtocolAttacks checks for malicious protocol attacks
+// ValidateProtocolAttacks checks for malicious protocol attacks.
 func (iv *InjectionValidator) ValidateProtocolAttacks(input string) error {
 	normalized := strings.ToLower(strings.TrimSpace(input))
 
@@ -283,7 +283,7 @@ func (iv *InjectionValidator) ValidateProtocolAttacks(input string) error {
 	return nil
 }
 
-// ValidateAllInjections performs comprehensive injection validation
+// ValidateAllInjections performs comprehensive injection validation.
 func (iv *InjectionValidator) ValidateAllInjections(input string) error {
 	// Run all injection validations
 	validations := []func(string) error{
@@ -303,7 +303,7 @@ func (iv *InjectionValidator) ValidateAllInjections(input string) error {
 	return nil
 }
 
-// containsHexEncodedXSS checks for hex-encoded XSS patterns
+// containsHexEncodedXSS checks for hex-encoded XSS patterns.
 func (iv *InjectionValidator) containsHexEncodedXSS(input string) bool {
 	hexPatterns := []string{
 		"\\x3c", "\\x3e", "\\x27", "\\x22", // <, >, ', "
@@ -320,7 +320,7 @@ func (iv *InjectionValidator) containsHexEncodedXSS(input string) bool {
 	return false
 }
 
-// SanitizeInput removes or escapes potentially dangerous content
+// SanitizeInput removes or escapes potentially dangerous content.
 func (iv *InjectionValidator) SanitizeInput(input string) string {
 	// First normalize common encodings
 	sanitized := input
@@ -344,7 +344,7 @@ func (iv *InjectionValidator) SanitizeInput(input string) string {
 	return sanitized
 }
 
-// GetInjectionRisk assesses the risk level of input
+// GetInjectionRisk assesses the risk level of input.
 func (iv *InjectionValidator) GetInjectionRisk(input string) InjectionRisk {
 	risk := InjectionRisk{
 		Input:       input,
@@ -385,7 +385,7 @@ func (iv *InjectionValidator) GetInjectionRisk(input string) InjectionRisk {
 	return risk
 }
 
-// InjectionRisk represents the risk assessment of input
+// InjectionRisk represents the risk assessment of input.
 type InjectionRisk struct {
 	Input       string
 	RiskLevel   string // LOW, MEDIUM, HIGH
@@ -395,25 +395,25 @@ type InjectionRisk struct {
 
 // Convenience functions for backward compatibility
 
-// ContainsXSSContent checks for XSS patterns (backward compatibility)
+// ContainsXSSContent checks for XSS patterns (backward compatibility).
 func ContainsXSSContent(input string) bool {
 	validator := NewInjectionValidator(DefaultConfig())
 	return validator.ValidateXSSAttacks(input) != nil
 }
 
-// ContainsSQLInjectionContent checks for SQL injection patterns (backward compatibility)
+// ContainsSQLInjectionContent checks for SQL injection patterns (backward compatibility).
 func ContainsSQLInjectionContent(input string) bool {
 	validator := NewInjectionValidator(DefaultConfig())
 	return validator.ValidateSQLInjection(input) != nil
 }
 
-// ContainsPathTraversal checks for path traversal patterns (backward compatibility)
+// ContainsPathTraversal checks for path traversal patterns (backward compatibility).
 func ContainsPathTraversal(input string) bool {
 	validator := NewInjectionValidator(DefaultConfig())
 	return validator.ValidatePathTraversal(input) != nil
 }
 
-// ContainsControlCharacters checks for control characters (backward compatibility)
+// ContainsControlCharacters checks for control characters (backward compatibility).
 func ContainsControlCharacters(input string) bool {
 	validator := NewInjectionValidator(DefaultConfig())
 	return validator.ValidateControlCharacters(input) != nil

@@ -14,12 +14,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Mock application service for testing
+// Mock application service for testing.
 type MockCreateRepositoryService struct {
 	mock.Mock
 }
 
-func (m *MockCreateRepositoryService) CreateRepository(ctx context.Context, request dto.CreateRepositoryRequest) (*dto.RepositoryResponse, error) {
+func (m *MockCreateRepositoryService) CreateRepository(
+	ctx context.Context,
+	request dto.CreateRepositoryRequest,
+) (*dto.RepositoryResponse, error) {
 	args := m.Called(ctx, request)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -43,7 +46,11 @@ type MockUpdateRepositoryService struct {
 	mock.Mock
 }
 
-func (m *MockUpdateRepositoryService) UpdateRepository(ctx context.Context, id uuid.UUID, request dto.UpdateRepositoryRequest) (*dto.RepositoryResponse, error) {
+func (m *MockUpdateRepositoryService) UpdateRepository(
+	ctx context.Context,
+	id uuid.UUID,
+	request dto.UpdateRepositoryRequest,
+) (*dto.RepositoryResponse, error) {
 	args := m.Called(ctx, id, request)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -64,7 +71,10 @@ type MockListRepositoriesService struct {
 	mock.Mock
 }
 
-func (m *MockListRepositoriesService) ListRepositories(ctx context.Context, query dto.RepositoryListQuery) (*dto.RepositoryListResponse, error) {
+func (m *MockListRepositoriesService) ListRepositories(
+	ctx context.Context,
+	query dto.RepositoryListQuery,
+) (*dto.RepositoryListResponse, error) {
 	args := m.Called(ctx, query)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -501,7 +511,7 @@ func TestListRepositoriesQueryHandler_Handle_DatabaseError(t *testing.T) {
 	mockService.AssertExpectations(t)
 }
 
-// Helper function
+// Helper function.
 func stringPtr(s string) *string {
 	return &s
 }

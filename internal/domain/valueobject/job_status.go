@@ -2,10 +2,10 @@ package valueobject
 
 import "fmt"
 
-// JobStatus represents the current status of an indexing job
+// JobStatus represents the current status of an indexing job.
 type JobStatus string
 
-// Job status constants
+// Job status constants.
 const (
 	JobStatusPending   JobStatus = "pending"
 	JobStatusRunning   JobStatus = "running"
@@ -14,7 +14,7 @@ const (
 	JobStatusCancelled JobStatus = "cancelled"
 )
 
-// validJobStatuses contains all valid job statuses
+// validJobStatuses contains all valid job statuses.
 var validJobStatuses = map[JobStatus]bool{
 	JobStatusPending:   true,
 	JobStatusRunning:   true,
@@ -23,7 +23,7 @@ var validJobStatuses = map[JobStatus]bool{
 	JobStatusCancelled: true,
 }
 
-// NewJobStatus creates a new JobStatus with validation
+// NewJobStatus creates a new JobStatus with validation.
 func NewJobStatus(status string) (JobStatus, error) {
 	s := JobStatus(status)
 	if !validJobStatuses[s] {
@@ -32,17 +32,17 @@ func NewJobStatus(status string) (JobStatus, error) {
 	return s, nil
 }
 
-// String returns the string representation of the status
+// String returns the string representation of the status.
 func (s JobStatus) String() string {
 	return string(s)
 }
 
-// IsTerminal returns true if this status represents a final state
+// IsTerminal returns true if this status represents a final state.
 func (s JobStatus) IsTerminal() bool {
 	return s == JobStatusCompleted || s == JobStatusFailed || s == JobStatusCancelled
 }
 
-// CanTransitionTo returns true if the status can transition to the target status
+// CanTransitionTo returns true if the status can transition to the target status.
 func (s JobStatus) CanTransitionTo(target JobStatus) bool {
 	transitions := map[JobStatus][]JobStatus{
 		JobStatusPending: {
@@ -73,7 +73,7 @@ func (s JobStatus) CanTransitionTo(target JobStatus) bool {
 	return false
 }
 
-// AllJobStatuses returns all valid job statuses
+// AllJobStatuses returns all valid job statuses.
 func AllJobStatuses() []JobStatus {
 	statuses := make([]JobStatus, 0, len(validJobStatuses))
 	for status := range validJobStatuses {

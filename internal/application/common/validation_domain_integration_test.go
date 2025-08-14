@@ -1,6 +1,7 @@
 package common
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -45,16 +46,25 @@ func TestValidateRepositoryStatus_DomainIntegrationRequired(t *testing.T) {
 
 				// They MUST behave identically for non-SQL injection cases
 				if (domainErr == nil) != (appErr == nil) {
-					t.Errorf("REFACTORING REQUIRED: Status %q - Domain validation and application validation must behave identically.\nDomain error: %v\nApplication error: %v\nThis test will pass once ValidateRepositoryStatus uses domain layer validation.",
-						status, domainErr, appErr)
+					t.Errorf(
+						"REFACTORING REQUIRED: Status %q - Domain validation and application validation must behave identically.\nDomain error: %v\nApplication error: %v\nThis test will pass once ValidateRepositoryStatus uses domain layer validation.",
+						status,
+						domainErr,
+						appErr,
+					)
 				}
 
 				// If both return errors, verify error type conversion is correct
 				if domainErr != nil && appErr != nil {
 					// Application must return ValidationError, not domain error
-					validationErr, ok := appErr.(ValidationError)
+					var validationErr ValidationError
+					ok := errors.As(appErr, &validationErr)
 					if !ok {
-						t.Errorf("REFACTORING REQUIRED: Status %q - Application must return ValidationError when domain returns error, got %T", status, appErr)
+						t.Errorf(
+							"REFACTORING REQUIRED: Status %q - Application must return ValidationError when domain returns error, got %T",
+							status,
+							appErr,
+						)
 					} else {
 						// Must have correct field and standard message
 						if validationErr.Field != "status" {
@@ -88,12 +98,15 @@ func TestValidateRepositoryStatus_DomainIntegrationRequired(t *testing.T) {
 		// Application function should behave identically to domain layer
 		appErr := ValidateRepositoryStatus(status)
 		if appErr == nil {
-			t.Error("REFACTORING REQUIRED: ValidateRepositoryStatus must use domain layer validation and reject invalid statuses")
+			t.Error(
+				"REFACTORING REQUIRED: ValidateRepositoryStatus must use domain layer validation and reject invalid statuses",
+			)
 		}
 
 		// Verify error conversion is proper
 		if appErr != nil {
-			validationErr, ok := appErr.(ValidationError)
+			var validationErr ValidationError
+			ok := errors.As(appErr, &validationErr)
 			if !ok {
 				t.Errorf("REFACTORING REQUIRED: Must convert domain errors to ValidationError, got %T", appErr)
 			} else {
@@ -111,13 +124,18 @@ func TestValidateRepositoryStatus_DomainIntegrationRequired(t *testing.T) {
 		// Domain layer with allowEmpty=true should allow empty string
 		domainErr := valueobject.ValidateRepositoryStatusString("", true)
 		if domainErr != nil {
-			t.Fatalf("Test setup error: domain layer with allowEmpty=true should allow empty string, got: %v", domainErr)
+			t.Fatalf(
+				"Test setup error: domain layer with allowEmpty=true should allow empty string, got: %v",
+				domainErr,
+			)
 		}
 
 		// Application function should behave identically
 		appErr := ValidateRepositoryStatus("")
 		if appErr != nil {
-			t.Error("REFACTORING REQUIRED: ValidateRepositoryStatus must use domain layer with allowEmpty=true and allow empty strings for filtering")
+			t.Error(
+				"REFACTORING REQUIRED: ValidateRepositoryStatus must use domain layer with allowEmpty=true and allow empty strings for filtering",
+			)
 		}
 	})
 
@@ -137,14 +155,21 @@ func TestValidateRepositoryStatus_DomainIntegrationRequired(t *testing.T) {
 				err := ValidateRepositoryStatus(maliciousInput)
 
 				if err == nil {
-					t.Errorf("REFACTORING REQUIREMENT: SQL injection validation must be preserved for input %q", maliciousInput)
+					t.Errorf(
+						"REFACTORING REQUIREMENT: SQL injection validation must be preserved for input %q",
+						maliciousInput,
+					)
 				}
 
 				// Verify it returns ValidationError with SQL message
 				if err != nil {
-					validationErr, ok := err.(ValidationError)
+					var validationErr ValidationError
+					ok := errors.As(err, &validationErr)
 					if !ok {
-						t.Errorf("REFACTORING REQUIREMENT: SQL injection detection must return ValidationError, got %T", err)
+						t.Errorf(
+							"REFACTORING REQUIREMENT: SQL injection detection must return ValidationError, got %T",
+							err,
+						)
 					} else {
 						if validationErr.Message != "contains malicious SQL" {
 							t.Errorf("REFACTORING REQUIREMENT: SQL injection must return 'contains malicious SQL', got %q", validationErr.Message)
@@ -156,7 +181,7 @@ func TestValidateRepositoryStatus_DomainIntegrationRequired(t *testing.T) {
 	})
 }
 
-// TestValidateRepositoryStatus_MapRemovalRequired contains tests that will FAIL until the map is removed
+// TestValidateRepositoryStatus_MapRemovalRequired contains tests that will FAIL until the map is removed.
 func TestValidateRepositoryStatus_MapRemovalRequired(t *testing.T) {
 	t.Run("function_signature_and_behavior_unchanged", func(t *testing.T) {
 		// This test verifies that after refactoring, the function signature remains the same
@@ -168,7 +193,11 @@ func TestValidateRepositoryStatus_MapRemovalRequired(t *testing.T) {
 		for _, status := range validStatuses {
 			err := ValidateRepositoryStatus(status)
 			if err != nil {
-				t.Errorf("REFACTORING REQUIREMENT: Status %q must remain valid after refactoring, got error: %v", status, err)
+				t.Errorf(
+					"REFACTORING REQUIREMENT: Status %q must remain valid after refactoring, got error: %v",
+					status,
+					err,
+				)
 			}
 		}
 
@@ -181,7 +210,8 @@ func TestValidateRepositoryStatus_MapRemovalRequired(t *testing.T) {
 				t.Errorf("REFACTORING REQUIREMENT: Status %q must remain invalid after refactoring", status)
 			} else {
 				// Must return ValidationError
-				if _, ok := err.(ValidationError); !ok {
+				var validationError ValidationError
+				if errors.As(err, &validationError) {
 					t.Errorf("REFACTORING REQUIREMENT: Invalid status %q must return ValidationError, got %T", status, err)
 				}
 			}
@@ -206,7 +236,11 @@ func TestValidateRepositoryStatus_MapRemovalRequired(t *testing.T) {
 				// Application function should also accept it (since it should use domain layer)
 				appErr := ValidateRepositoryStatus(status)
 				if appErr != nil {
-					t.Errorf("REFACTORING REQUIRED: ValidateRepositoryStatus(%q) should use domain layer and accept valid status, got: %v", status, appErr)
+					t.Errorf(
+						"REFACTORING REQUIRED: ValidateRepositoryStatus(%q) should use domain layer and accept valid status, got: %v",
+						status,
+						appErr,
+					)
 				}
 			})
 		}
@@ -225,14 +259,17 @@ func TestValidateRepositoryStatus_MapRemovalRequired(t *testing.T) {
 				// Application function should also reject it
 				appErr := ValidateRepositoryStatus(status)
 				if appErr == nil {
-					t.Errorf("REFACTORING REQUIRED: ValidateRepositoryStatus(%q) should use domain layer and reject invalid status", status)
+					t.Errorf(
+						"REFACTORING REQUIRED: ValidateRepositoryStatus(%q) should use domain layer and reject invalid status",
+						status,
+					)
 				}
 			})
 		}
 	})
 }
 
-// TestValidateRepositoryStatus_RefactoringGuidance provides specific guidance for the refactoring
+// TestValidateRepositoryStatus_RefactoringGuidance provides specific guidance for the refactoring.
 func TestValidateRepositoryStatus_RefactoringGuidance(t *testing.T) {
 	t.Run("implementation_steps_verification", func(t *testing.T) {
 		// This test guides the specific implementation steps required
@@ -259,7 +296,8 @@ func TestValidateRepositoryStatus_RefactoringGuidance(t *testing.T) {
 			t.Error("IMPLEMENTATION ISSUE: Domain rejects but application allows - map may still be used")
 		} else if domainErr != nil && appErr != nil {
 			// Both reject - verify error conversion is correct
-			validationErr, ok := appErr.(ValidationError)
+			var validationErr ValidationError
+			ok := errors.As(appErr, &validationErr)
 			if !ok {
 				t.Error("IMPLEMENTATION ISSUE: Domain errors must be converted to ValidationError")
 			} else if validationErr.Message != "invalid status" {
@@ -269,7 +307,7 @@ func TestValidateRepositoryStatus_RefactoringGuidance(t *testing.T) {
 	})
 }
 
-// Helper function to detect SQL injection patterns for test filtering
+// Helper function to detect SQL injection patterns for test filtering.
 func containsSQLInjectionPatterns(input string) bool {
 	sqlPatterns := []string{"'", ";", "--", "DROP", "SELECT", "UNION", "INSERT", "UPDATE", "DELETE", "OR "}
 	inputUpper := strings.ToUpper(input)

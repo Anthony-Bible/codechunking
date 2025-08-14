@@ -354,7 +354,7 @@ func TestErrorHandler_Integration(t *testing.T) {
 	})
 }
 
-// Helper function to parse JSON from response recorder
+// Helper function to parse JSON from response recorder.
 func parseJSONFromRecorder(recorder *httptest.ResponseRecorder, target interface{}) error {
 	return json.Unmarshal(recorder.Body.Bytes(), target)
 }

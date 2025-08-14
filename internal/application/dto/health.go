@@ -2,7 +2,7 @@ package dto
 
 import "time"
 
-// HealthResponse represents the response for health check endpoint
+// HealthResponse represents the response for health check endpoint.
 type HealthResponse struct {
 	Status       string                      `json:"status"`
 	Timestamp    time.Time                   `json:"timestamp"`
@@ -10,7 +10,7 @@ type HealthResponse struct {
 	Dependencies map[string]DependencyStatus `json:"dependencies,omitempty"`
 }
 
-// DependencyStatus represents the status of a dependency
+// DependencyStatus represents the status of a dependency.
 type DependencyStatus struct {
 	Status       string                 `json:"status"`
 	Message      string                 `json:"message,omitempty"`
@@ -18,7 +18,7 @@ type DependencyStatus struct {
 	Details      map[string]interface{} `json:"details,omitempty"`
 }
 
-// NATSHealthDetails represents detailed NATS health information
+// NATSHealthDetails represents detailed NATS health information.
 type NATSHealthDetails struct {
 	Connected        bool                   `json:"connected"`
 	Uptime           string                 `json:"uptime,omitempty"`
@@ -30,14 +30,14 @@ type NATSHealthDetails struct {
 	ServerInfo       map[string]interface{} `json:"server_info,omitempty"`
 }
 
-// NATSMessageMetrics represents NATS message publishing metrics
+// NATSMessageMetrics represents NATS message publishing metrics.
 type NATSMessageMetrics struct {
 	PublishedCount int64  `json:"published_count"`
 	FailedCount    int64  `json:"failed_count"`
 	AverageLatency string `json:"average_latency"`
 }
 
-// HealthStatus represents possible health statuses
+// HealthStatus represents possible health statuses.
 type HealthStatus string
 
 const (
@@ -46,7 +46,7 @@ const (
 	HealthStatusUnhealthy HealthStatus = "unhealthy"
 )
 
-// DependencyStatusValue represents possible dependency statuses
+// DependencyStatusValue represents possible dependency statuses.
 type DependencyStatusValue string
 
 const (

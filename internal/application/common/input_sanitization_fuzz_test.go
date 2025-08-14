@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// FuzzInputSanitization tests input sanitization with random malicious inputs
+// FuzzInputSanitization tests input sanitization with random malicious inputs.
 func FuzzInputSanitization(f *testing.F) {
 	// Seed corpus with known malicious patterns
 	maliciousInputs := []string{
@@ -48,7 +48,7 @@ func FuzzInputSanitization(f *testing.F) {
 	})
 }
 
-// FuzzJSONInputSanitization tests JSON input sanitization
+// FuzzJSONInputSanitization tests JSON input sanitization.
 func FuzzJSONInputSanitization(f *testing.F) {
 	// Seed with malicious JSON payloads
 	maliciousJSONs := []string{
@@ -82,7 +82,11 @@ func FuzzJSONInputSanitization(f *testing.F) {
 					// This malicious content should be detected and rejected
 					validationErr := ValidateJSONField(key, strValue)
 					if validationErr == nil {
-						t.Errorf("SECURITY FAIL: Malicious content in JSON field %s was not detected: %q", key, strValue)
+						t.Errorf(
+							"SECURITY FAIL: Malicious content in JSON field %s was not detected: %q",
+							key,
+							strValue,
+						)
 					}
 				}
 			}
@@ -90,7 +94,7 @@ func FuzzJSONInputSanitization(f *testing.F) {
 	})
 }
 
-// FuzzQueryParameterSanitization tests query parameter sanitization
+// FuzzQueryParameterSanitization tests query parameter sanitization.
 func FuzzQueryParameterSanitization(f *testing.F) {
 	// Seed with malicious query parameters
 	maliciousQueries := []string{
@@ -126,7 +130,7 @@ func FuzzQueryParameterSanitization(f *testing.F) {
 	})
 }
 
-// FuzzUnicodeAttacks tests Unicode-based attacks
+// FuzzUnicodeAttacks tests Unicode-based attacks.
 func FuzzUnicodeAttacks(f *testing.F) {
 	// Seed with Unicode attack vectors
 	unicodeAttacks := []string{
@@ -161,7 +165,7 @@ func FuzzUnicodeAttacks(f *testing.F) {
 	})
 }
 
-// FuzzControlCharacterAttacks tests control character injection
+// FuzzControlCharacterAttacks tests control character injection.
 func FuzzControlCharacterAttacks(f *testing.F) {
 	// Seed with control character attacks
 	controlAttacks := []string{
@@ -201,7 +205,7 @@ func FuzzControlCharacterAttacks(f *testing.F) {
 	})
 }
 
-// FuzzEncodingAttacks tests encoding-based attacks
+// FuzzEncodingAttacks tests encoding-based attacks.
 func FuzzEncodingAttacks(f *testing.F) {
 	// Seed with encoding attack vectors
 	encodingAttacks := []string{
@@ -301,7 +305,7 @@ func validateInputSafety(t *testing.T, input string) {
 
 // ValidateJSONField is now implemented in validation.go
 
-// BenchmarkInputSanitizationFuzzing benchmarks fuzzing performance
+// BenchmarkInputSanitizationFuzzing benchmarks fuzzing performance.
 func BenchmarkInputSanitizationFuzzing(b *testing.B) {
 	maliciousInputs := []string{
 		"<script>alert('xss')</script>",
@@ -312,7 +316,7 @@ func BenchmarkInputSanitizationFuzzing(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		for _, input := range maliciousInputs {
 			// This benchmark should FAIL initially - sanitization not optimized
 			name := input

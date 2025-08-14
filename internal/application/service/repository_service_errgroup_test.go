@@ -16,7 +16,7 @@ import (
 
 // TestBatchCheckDuplicates_ContextCancellation tests that the errgroup-based implementation
 // properly handles context cancellation and terminates early
-// This test will FAIL with the current semaphore+channel implementation
+// This test will FAIL with the current semaphore+channel implementation.
 func TestBatchCheckDuplicates_ContextCancellation(t *testing.T) {
 	// Setup
 	ctx := context.Background()
@@ -64,7 +64,7 @@ func TestBatchCheckDuplicates_ContextCancellation(t *testing.T) {
 
 	// Verify - errgroup should propagate context cancellation error
 	assert.Error(t, err, "Should return error when context is cancelled")
-	assert.True(t, errors.Is(err, context.Canceled), "Error should be context.Canceled")
+	assert.ErrorIs(t, err, context.Canceled, "Error should be context.Canceled")
 
 	// Should terminate faster than processing all URLs sequentially (5 * 50ms = 250ms)
 	assert.Less(t, elapsed, 200*time.Millisecond, "Should terminate early when context is cancelled")
@@ -81,7 +81,7 @@ func TestBatchCheckDuplicates_ContextCancellation(t *testing.T) {
 
 // TestBatchCheckDuplicates_EarlyReturnOnAllInvalidURLs tests that when all URLs are invalid,
 // the errgroup implementation returns early without making database calls
-// This test will FAIL with current implementation that processes all URLs regardless
+// This test will FAIL with current implementation that processes all URLs regardless.
 func TestBatchCheckDuplicates_EarlyReturnOnAllInvalidURLs(t *testing.T) {
 	// Setup
 	ctx := context.Background()
@@ -137,7 +137,7 @@ func TestBatchCheckDuplicates_EarlyReturnOnAllInvalidURLs(t *testing.T) {
 
 // TestBatchCheckDuplicates_ErrorPropagation tests that the errgroup implementation
 // properly propagates the first error and cancels other workers
-// This test will FAIL with current implementation that collects all errors
+// This test will FAIL with current implementation that collects all errors.
 func TestBatchCheckDuplicates_ErrorPropagation(t *testing.T) {
 	// Setup
 	ctx := context.Background()
@@ -193,7 +193,7 @@ func TestBatchCheckDuplicates_ErrorPropagation(t *testing.T) {
 
 // TestBatchCheckDuplicates_BoundedWorkerPool tests that the errgroup implementation
 // respects worker pool limits and doesn't exceed concurrency bounds
-// This test will FAIL with current semaphore implementation details
+// This test will FAIL with current semaphore implementation details.
 func TestBatchCheckDuplicates_BoundedWorkerPool(t *testing.T) {
 	// Setup
 	ctx := context.Background()
@@ -202,7 +202,7 @@ func TestBatchCheckDuplicates_BoundedWorkerPool(t *testing.T) {
 
 	// Create enough URLs to test concurrency limits
 	urls := make([]string, 20)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		urls[i] = "https://github.com/owner/repo" + string(rune('A'+i))
 	}
 
@@ -264,7 +264,7 @@ func TestBatchCheckDuplicates_BoundedWorkerPool(t *testing.T) {
 
 // TestBatchCheckDuplicates_MaintainsSameSuccessfulBehavior tests that the errgroup
 // implementation maintains exact same behavior for successful cases
-// This test should PASS with both implementations
+// This test should PASS with both implementations.
 func TestBatchCheckDuplicates_MaintainsSameSuccessfulBehavior(t *testing.T) {
 	// Setup
 	ctx := context.Background()
@@ -342,7 +342,7 @@ func TestBatchCheckDuplicates_MaintainsSameSuccessfulBehavior(t *testing.T) {
 }
 
 // TestBatchCheckDuplicates_EmptyURLSlice tests edge case behavior
-// This should pass with both implementations
+// This should pass with both implementations.
 func TestBatchCheckDuplicates_EmptyURLSlice(t *testing.T) {
 	// Setup
 	ctx := context.Background()
@@ -362,7 +362,7 @@ func TestBatchCheckDuplicates_EmptyURLSlice(t *testing.T) {
 }
 
 // TestBatchCheckDuplicates_ContextDeadline tests behavior with context deadline
-// This test will FAIL with current implementation that doesn't properly handle context deadlines
+// This test will FAIL with current implementation that doesn't properly handle context deadlines.
 func TestBatchCheckDuplicates_ContextDeadline(t *testing.T) {
 	// Setup
 	ctx := context.Background()
@@ -401,7 +401,7 @@ func TestBatchCheckDuplicates_ContextDeadline(t *testing.T) {
 
 	// Verify - errgroup should respect context deadline
 	assert.Error(t, err, "Should return error when context deadline is exceeded")
-	assert.True(t, errors.Is(err, context.DeadlineExceeded), "Error should be context.DeadlineExceeded")
+	assert.ErrorIs(t, err, context.DeadlineExceeded, "Error should be context.DeadlineExceeded")
 
 	// Should terminate quickly due to deadline
 	assert.Less(t, elapsed, 100*time.Millisecond, "Should terminate when context deadline is exceeded")

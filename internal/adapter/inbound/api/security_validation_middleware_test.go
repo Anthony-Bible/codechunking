@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSecurityValidationMiddleware tests comprehensive input validation middleware
+// TestSecurityValidationMiddleware tests comprehensive input validation middleware.
 func TestSecurityValidationMiddleware(t *testing.T) {
 	// These tests should FAIL initially - security validation middleware is not implemented
 	tests := []struct {
@@ -273,7 +273,7 @@ func TestSecurityValidationMiddleware(t *testing.T) {
 	}
 }
 
-// TestInputSanitizationMiddleware tests input sanitization for all endpoints
+// TestInputSanitizationMiddleware tests input sanitization for all endpoints.
 func TestInputSanitizationMiddleware(t *testing.T) {
 	// These tests should FAIL initially - input sanitization middleware is not implemented
 	tests := []struct {
@@ -336,7 +336,7 @@ func TestInputSanitizationMiddleware(t *testing.T) {
 	}
 }
 
-// TestRateLimitingMiddleware tests rate limiting for DOS prevention
+// TestRateLimitingMiddleware tests rate limiting for DOS prevention.
 func TestRateLimitingMiddleware(t *testing.T) {
 	// These tests should FAIL initially - rate limiting middleware is not implemented
 	tests := []struct {
@@ -385,7 +385,7 @@ func TestRateLimitingMiddleware(t *testing.T) {
 
 			var blockedCount, allowedCount int
 
-			for i := 0; i < tt.requestCount; i++ {
+			for range tt.requestCount {
 				req := testutil.CreateRequest(http.MethodGet, "/repositories")
 				req.RemoteAddr = "192.168.1.100:12345" // Same IP for all requests
 				recorder := httptest.NewRecorder()
@@ -406,7 +406,7 @@ func TestRateLimitingMiddleware(t *testing.T) {
 	}
 }
 
-// TestContentTypeValidationMiddleware tests content type validation
+// TestContentTypeValidationMiddleware tests content type validation.
 func TestContentTypeValidationMiddleware(t *testing.T) {
 	// These tests should FAIL initially - content type validation middleware is not implemented
 	tests := []struct {
@@ -474,7 +474,7 @@ func TestContentTypeValidationMiddleware(t *testing.T) {
 	}
 }
 
-// TestSecurityHeadersMiddleware tests security headers middleware
+// TestSecurityHeadersMiddleware tests security headers middleware.
 func TestSecurityHeadersMiddleware(t *testing.T) {
 	// These tests should FAIL initially - security headers middleware is not implemented
 	t.Run("adds_security_headers", func(t *testing.T) {
@@ -501,7 +501,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 
 // All middleware functions are now implemented in security_middleware.go
 
-// stringPtr is a helper function to create string pointers
+// stringPtr is a helper function to create string pointers.
 func stringPtr(s string) *string {
 	return &s
 }

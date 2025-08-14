@@ -418,7 +418,7 @@ func TestServer_MiddlewareIntegration(t *testing.T) {
 
 		// Test that middleware is properly registered
 		middlewareCount := server.MiddlewareCount()
-		assert.Greater(t, middlewareCount, 0, "Server should have middleware registered")
+		assert.Positive(t, middlewareCount, "Server should have middleware registered")
 
 		// Test specific middleware types are registered
 		assert.True(t, server.HasMiddleware("logging"), "Should have logging middleware")

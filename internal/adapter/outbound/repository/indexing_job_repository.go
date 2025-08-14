@@ -14,19 +14,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PostgreSQLIndexingJobRepository implements the IndexingJobRepository interface
+// PostgreSQLIndexingJobRepository implements the IndexingJobRepository interface.
 type PostgreSQLIndexingJobRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewPostgreSQLIndexingJobRepository creates a new PostgreSQL indexing job repository
+// NewPostgreSQLIndexingJobRepository creates a new PostgreSQL indexing job repository.
 func NewPostgreSQLIndexingJobRepository(pool *pgxpool.Pool) *PostgreSQLIndexingJobRepository {
 	return &PostgreSQLIndexingJobRepository{
 		pool: pool,
 	}
 }
 
-// Save saves an indexing job to the database
+// Save saves an indexing job to the database.
 func (r *PostgreSQLIndexingJobRepository) Save(ctx context.Context, job *entity.IndexingJob) error {
 	if job == nil {
 		return ErrInvalidArgument
@@ -62,7 +62,7 @@ func (r *PostgreSQLIndexingJobRepository) Save(ctx context.Context, job *entity.
 	return nil
 }
 
-// FindByID finds an indexing job by its ID
+// FindByID finds an indexing job by its ID.
 func (r *PostgreSQLIndexingJobRepository) FindByID(ctx context.Context, id uuid.UUID) (*entity.IndexingJob, error) {
 	if id == uuid.Nil {
 		return nil, ErrInvalidArgument
@@ -97,11 +97,27 @@ func (r *PostgreSQLIndexingJobRepository) FindByID(ctx context.Context, id uuid.
 		return nil, WrapError(err, "find indexing job by ID")
 	}
 
-	return r.scanIndexingJob(id, repositoryID, statusStr, startedAt, completedAt, errorMessage, filesProcessed, chunksCreated, createdAt, updatedAt, deletedAt)
+	return r.scanIndexingJob(
+		id,
+		repositoryID,
+		statusStr,
+		startedAt,
+		completedAt,
+		errorMessage,
+		filesProcessed,
+		chunksCreated,
+		createdAt,
+		updatedAt,
+		deletedAt,
+	)
 }
 
-// FindByRepositoryID finds indexing jobs by repository ID with filters
-func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(ctx context.Context, repositoryID uuid.UUID, filters outbound.IndexingJobFilters) ([]*entity.IndexingJob, int, error) {
+// FindByRepositoryID finds indexing jobs by repository ID with filters.
+func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	filters outbound.IndexingJobFilters,
+) ([]*entity.IndexingJob, int, error) {
 	if repositoryID == uuid.Nil {
 		return nil, 0, ErrInvalidArgument
 	}
@@ -175,7 +191,19 @@ func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(ctx context.Context
 			return nil, 0, WrapError(err, "scan indexing job row")
 		}
 
-		job, err := r.scanIndexingJob(id, repoID, statusStr, startedAt, completedAt, errorMessage, filesProcessed, chunksCreated, createdAt, updatedAt, deletedAt)
+		job, err := r.scanIndexingJob(
+			id,
+			repoID,
+			statusStr,
+			startedAt,
+			completedAt,
+			errorMessage,
+			filesProcessed,
+			chunksCreated,
+			createdAt,
+			updatedAt,
+			deletedAt,
+		)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -190,7 +218,7 @@ func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(ctx context.Context
 	return jobs, totalCount, nil
 }
 
-// Update updates an indexing job in the database
+// Update updates an indexing job in the database.
 func (r *PostgreSQLIndexingJobRepository) Update(ctx context.Context, job *entity.IndexingJob) error {
 	if job == nil {
 		return ErrInvalidArgument
@@ -227,7 +255,7 @@ func (r *PostgreSQLIndexingJobRepository) Update(ctx context.Context, job *entit
 	return nil
 }
 
-// Delete soft-deletes an indexing job by setting deleted_at
+// Delete soft-deletes an indexing job by setting deleted_at.
 func (r *PostgreSQLIndexingJobRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	if id == uuid.Nil {
 		return ErrInvalidArgument
@@ -251,7 +279,7 @@ func (r *PostgreSQLIndexingJobRepository) Delete(ctx context.Context, id uuid.UU
 	return nil
 }
 
-// scanIndexingJob is a helper function to convert database row to IndexingJob entity
+// scanIndexingJob is a helper function to convert database row to IndexingJob entity.
 func (r *PostgreSQLIndexingJobRepository) scanIndexingJob(
 	id, repositoryID uuid.UUID, statusStr string, startedAt, completedAt *time.Time,
 	errorMessage *string, filesProcessed, chunksCreated int, createdAt, updatedAt time.Time, deletedAt *time.Time,

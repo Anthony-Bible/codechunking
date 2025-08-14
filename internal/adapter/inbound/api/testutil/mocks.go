@@ -13,13 +13,13 @@ import (
 	"github.com/google/uuid"
 )
 
-// Compile-time interface compliance checks
+// Compile-time interface compliance checks.
 var (
 	_ inbound.RepositoryService = (*MockRepositoryService)(nil)
 	_ inbound.HealthService     = (*MockHealthService)(nil)
 )
 
-// MockRepositoryService implements inbound.RepositoryService for testing
+// MockRepositoryService implements inbound.RepositoryService for testing.
 type MockRepositoryService struct {
 	mu sync.RWMutex
 
@@ -40,7 +40,7 @@ type MockRepositoryService struct {
 	GetIndexingJobCalls    []GetIndexingJobCall
 }
 
-// Call structs for tracking method invocations
+// Call structs for tracking method invocations.
 type CreateRepositoryCall struct {
 	Ctx     context.Context
 	Request dto.CreateRepositoryRequest
@@ -73,12 +73,15 @@ type GetIndexingJobCall struct {
 	JobID        uuid.UUID
 }
 
-// NewMockRepositoryService creates a new mock repository service
+// NewMockRepositoryService creates a new mock repository service.
 func NewMockRepositoryService() *MockRepositoryService {
 	return &MockRepositoryService{}
 }
 
-func (m *MockRepositoryService) CreateRepository(ctx context.Context, request dto.CreateRepositoryRequest) (*dto.RepositoryResponse, error) {
+func (m *MockRepositoryService) CreateRepository(
+	ctx context.Context,
+	request dto.CreateRepositoryRequest,
+) (*dto.RepositoryResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -110,7 +113,10 @@ func (m *MockRepositoryService) GetRepository(ctx context.Context, id uuid.UUID)
 	return nil, errors.New("mock not configured")
 }
 
-func (m *MockRepositoryService) ListRepositories(ctx context.Context, query dto.RepositoryListQuery) (*dto.RepositoryListResponse, error) {
+func (m *MockRepositoryService) ListRepositories(
+	ctx context.Context,
+	query dto.RepositoryListQuery,
+) (*dto.RepositoryListResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -142,7 +148,11 @@ func (m *MockRepositoryService) DeleteRepository(ctx context.Context, id uuid.UU
 	return errors.New("mock not configured")
 }
 
-func (m *MockRepositoryService) GetRepositoryJobs(ctx context.Context, repositoryID uuid.UUID, query dto.IndexingJobListQuery) (*dto.IndexingJobListResponse, error) {
+func (m *MockRepositoryService) GetRepositoryJobs(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	query dto.IndexingJobListQuery,
+) (*dto.IndexingJobListResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -159,7 +169,10 @@ func (m *MockRepositoryService) GetRepositoryJobs(ctx context.Context, repositor
 	return nil, errors.New("mock not configured")
 }
 
-func (m *MockRepositoryService) GetIndexingJob(ctx context.Context, repositoryID, jobID uuid.UUID) (*dto.IndexingJobResponse, error) {
+func (m *MockRepositoryService) GetIndexingJob(
+	ctx context.Context,
+	repositoryID, jobID uuid.UUID,
+) (*dto.IndexingJobResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -176,7 +189,7 @@ func (m *MockRepositoryService) GetIndexingJob(ctx context.Context, repositoryID
 	return nil, errors.New("mock not configured")
 }
 
-// Helper methods for setting up mock expectations
+// Helper methods for setting up mock expectations.
 func (m *MockRepositoryService) ExpectCreateRepository(response *dto.RepositoryResponse, err error) {
 	m.CreateRepositoryFunc = func(ctx context.Context, request dto.CreateRepositoryRequest) (*dto.RepositoryResponse, error) {
 		return response, err
@@ -213,7 +226,7 @@ func (m *MockRepositoryService) ExpectGetIndexingJob(response *dto.IndexingJobRe
 	}
 }
 
-// Reset clears all call tracking
+// Reset clears all call tracking.
 func (m *MockRepositoryService) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -226,7 +239,7 @@ func (m *MockRepositoryService) Reset() {
 	m.GetIndexingJobCalls = nil
 }
 
-// MockHealthService implements inbound.HealthService for testing
+// MockHealthService implements inbound.HealthService for testing.
 type MockHealthService struct {
 	mu sync.RWMutex
 
@@ -267,7 +280,7 @@ func (m *MockHealthService) Reset() {
 	m.GetHealthCalls = nil
 }
 
-// MockErrorHandler implements ErrorHandler for testing
+// MockErrorHandler implements ErrorHandler for testing.
 type MockErrorHandler struct {
 	mu sync.RWMutex
 

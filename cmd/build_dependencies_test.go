@@ -8,13 +8,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	// These imports are used by the buildDependencies method tests
+	// These imports are used by the buildDependencies method tests.
 	"codechunking/internal/adapter/outbound/mock"
 	"codechunking/internal/adapter/outbound/repository"
 )
 
 // TestServiceFactory_BuildDependencies_Success tests that buildDependencies successfully
-// returns all three dependencies when database connection succeeds
+// returns all three dependencies when database connection succeeds.
 func TestServiceFactory_BuildDependencies_Success(t *testing.T) {
 	// Arrange
 	cfg := &config.Config{
@@ -51,7 +51,7 @@ func TestServiceFactory_BuildDependencies_Success(t *testing.T) {
 }
 
 // TestServiceFactory_BuildDependencies_DatabaseError tests that buildDependencies handles
-// database connection errors gracefully by returning nil repositories but valid message publisher
+// database connection errors gracefully by returning nil repositories but valid message publisher.
 func TestServiceFactory_BuildDependencies_DatabaseError(t *testing.T) {
 	// Arrange
 	cfg := &config.Config{
@@ -82,7 +82,7 @@ func TestServiceFactory_BuildDependencies_DatabaseError(t *testing.T) {
 }
 
 // TestServiceFactory_BuildDependencies_ReturnTypes tests that buildDependencies returns
-// the correct interface types that can be used by the service layer
+// the correct interface types that can be used by the service layer.
 func TestServiceFactory_BuildDependencies_ReturnTypes(t *testing.T) {
 	// Arrange
 	cfg := &config.Config{
@@ -118,7 +118,7 @@ func TestServiceFactory_BuildDependencies_ReturnTypes(t *testing.T) {
 }
 
 // TestServiceFactory_BuildDependencies_ErrorPropagation tests that database connection
-// errors are properly propagated with meaningful error messages
+// errors are properly propagated with meaningful error messages.
 func TestServiceFactory_BuildDependencies_ErrorPropagation(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -176,7 +176,7 @@ func TestServiceFactory_BuildDependencies_ErrorPropagation(t *testing.T) {
 }
 
 // TestServiceFactory_CreateHealthService_UsesBuildDependencies tests that the refactored
-// CreateHealthService method uses buildDependencies to eliminate code duplication
+// CreateHealthService method uses buildDependencies to eliminate code duplication.
 func TestServiceFactory_CreateHealthService_UsesBuildDependencies(t *testing.T) {
 	// Arrange
 	cfg := &config.Config{
@@ -205,7 +205,7 @@ func TestServiceFactory_CreateHealthService_UsesBuildDependencies(t *testing.T) 
 }
 
 // TestServiceFactory_CreateRepositoryService_UsesBuildDependencies tests that the refactored
-// CreateRepositoryService method uses buildDependencies and properly handles dependencies
+// CreateRepositoryService method uses buildDependencies and properly handles dependencies.
 func TestServiceFactory_CreateRepositoryService_UsesBuildDependencies(t *testing.T) {
 	// Arrange
 	cfg := &config.Config{
@@ -233,11 +233,15 @@ func TestServiceFactory_CreateRepositoryService_UsesBuildDependencies(t *testing
 
 	// We expect this to work without errors when database connection is valid
 	repositoryService := serviceFactory.CreateRepositoryService()
-	assert.NotNil(t, repositoryService, "CreateRepositoryService should return a repository service when dependencies are available")
+	assert.NotNil(
+		t,
+		repositoryService,
+		"CreateRepositoryService should return a repository service when dependencies are available",
+	)
 }
 
 // TestServiceFactory_CreateRepositoryService_FailsOnDatabaseError tests that CreateRepositoryService
-// properly handles database connection failures after being refactored to use buildDependencies
+// properly handles database connection failures after being refactored to use buildDependencies.
 func TestServiceFactory_CreateRepositoryService_FailsOnDatabaseError(t *testing.T) {
 	// This test documents that CreateRepositoryService should call log.Fatalf
 	// when buildDependencies returns a database error, maintaining the original behavior
@@ -272,7 +276,7 @@ func TestServiceFactory_CreateRepositoryService_FailsOnDatabaseError(t *testing.
 }
 
 // TestServiceFactory_BuildDependencies_Integration tests the integration of buildDependencies
-// with the actual repository and message publisher creation
+// with the actual repository and message publisher creation.
 func TestServiceFactory_BuildDependencies_Integration(t *testing.T) {
 	// This test verifies that when buildDependencies is called:
 	// 1. It correctly uses ServiceFactory.createDatabasePool()
@@ -334,7 +338,7 @@ func TestServiceFactory_BuildDependencies_Integration(t *testing.T) {
 }
 
 // TestServiceFactory_BuildDependencies_MethodExists tests that the buildDependencies method
-// exists on the ServiceFactory struct with the correct signature
+// exists on the ServiceFactory struct with the correct signature.
 func TestServiceFactory_BuildDependencies_MethodExists(t *testing.T) {
 	// Arrange
 	cfg := &config.Config{}
@@ -347,7 +351,7 @@ func TestServiceFactory_BuildDependencies_MethodExists(t *testing.T) {
 		"ServiceFactory should have buildDependencies method")
 }
 
-// Helper function to check if a method exists (for testing purposes)
+// Helper function to check if a method exists (for testing purposes).
 func hasMethod(obj interface{}, methodName string) bool {
 	// This is a simplified check - in reality we'd use reflection
 	// But for TDD purposes, we know this will fail until the method is implemented
@@ -362,7 +366,7 @@ func hasMethod(obj interface{}, methodName string) bool {
 }
 
 // TestServiceFactory_BuildDependencies_ConfigDefaults tests that buildDependencies works
-// with default configuration values similar to createDatabasePool
+// with default configuration values similar to createDatabasePool.
 func TestServiceFactory_BuildDependencies_ConfigDefaults(t *testing.T) {
 	// Arrange
 	cfg := &config.Config{

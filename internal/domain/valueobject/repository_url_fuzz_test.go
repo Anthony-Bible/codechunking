@@ -6,7 +6,7 @@ import (
 	"unicode"
 )
 
-// FuzzRepositoryURL tests URL validation with random inputs to find edge cases
+// FuzzRepositoryURL tests URL validation with random inputs to find edge cases.
 func FuzzRepositoryURL(f *testing.F) {
 	// Seed corpus with known patterns that should be handled securely
 	testInputs := []string{
@@ -49,7 +49,7 @@ func FuzzRepositoryURL(f *testing.F) {
 	})
 }
 
-// containsMaliciousContent checks if input contains patterns that should be rejected
+// containsMaliciousContent checks if input contains patterns that should be rejected.
 func containsMaliciousContent(input string) bool {
 	maliciousPatterns := []string{
 		"javascript:",
@@ -107,7 +107,7 @@ func containsMaliciousContent(input string) bool {
 	return false
 }
 
-// validateAcceptedURL ensures accepted URLs meet security standards
+// validateAcceptedURL ensures accepted URLs meet security standards.
 func validateAcceptedURL(t *testing.T, url RepositoryURL, originalInput string) {
 	urlStr := url.String()
 
@@ -135,7 +135,7 @@ func validateAcceptedURL(t *testing.T, url RepositoryURL, originalInput string) 
 	}
 }
 
-// FuzzRepositoryURLValidation focuses specifically on the validation logic
+// FuzzRepositoryURLValidation focuses specifically on the validation logic.
 func FuzzRepositoryURLValidation(f *testing.F) {
 	// Test edge cases in validation
 	f.Add("https://github.com/user/repo")
@@ -175,7 +175,7 @@ func FuzzRepositoryURLValidation(f *testing.F) {
 	})
 }
 
-// FuzzHostValidation tests host validation specifically
+// FuzzHostValidation tests host validation specifically.
 func FuzzHostValidation(f *testing.F) {
 	f.Add("github.com")
 	f.Add("gitlab.com")
@@ -216,7 +216,7 @@ func FuzzHostValidation(f *testing.F) {
 	})
 }
 
-// BenchmarkRepositoryURLValidation benchmarks URL validation performance
+// BenchmarkRepositoryURLValidation benchmarks URL validation performance.
 func BenchmarkRepositoryURLValidation(b *testing.B) {
 	testURLs := []string{
 		"https://github.com/user/repo",
@@ -228,14 +228,14 @@ func BenchmarkRepositoryURLValidation(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		for _, url := range testURLs {
 			_, _ = NewRepositoryURL(url)
 		}
 	}
 }
 
-// BenchmarkSecurityValidation benchmarks security validation performance
+// BenchmarkSecurityValidation benchmarks security validation performance.
 func BenchmarkSecurityValidation(b *testing.B) {
 	maliciousURLs := []string{
 		"javascript://github.com/user/repo",
@@ -248,7 +248,7 @@ func BenchmarkSecurityValidation(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		for _, url := range maliciousURLs {
 			// This benchmark should FAIL initially - security validation not optimized
 			_, _ = NewRepositoryURL(url)

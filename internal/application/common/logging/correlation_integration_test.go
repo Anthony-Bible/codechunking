@@ -15,7 +15,7 @@ import (
 	"codechunking/internal/adapter/inbound/api/middleware"
 )
 
-// TestCorrelationIntegration_HTTPToServiceLayer tests correlation ID propagation from HTTP to service layer
+// TestCorrelationIntegration_HTTPToServiceLayer tests correlation ID propagation from HTTP to service layer.
 func TestCorrelationIntegration_HTTPToServiceLayer(t *testing.T) {
 	tests := []struct {
 		name                  string
@@ -82,7 +82,11 @@ func TestCorrelationIntegration_HTTPToServiceLayer(t *testing.T) {
 			wrappedHandler := loggingMiddleware(handler)
 
 			// Create request with or without correlation ID
-			req := httptest.NewRequest("POST", "/repositories", strings.NewReader(`{"url": "https://github.com/user/repo"}`))
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/repositories",
+				strings.NewReader(`{"url": "https://github.com/user/repo"}`),
+			)
 			if tt.incomingCorrelationID != "" {
 				req.Header.Set("X-Correlation-ID", tt.incomingCorrelationID)
 			}
@@ -123,7 +127,7 @@ func TestCorrelationIntegration_HTTPToServiceLayer(t *testing.T) {
 	}
 }
 
-// TestCorrelationIntegration_ServiceToNATS tests correlation ID propagation from service layer to NATS operations
+// TestCorrelationIntegration_ServiceToNATS tests correlation ID propagation from service layer to NATS operations.
 func TestCorrelationIntegration_ServiceToNATS(t *testing.T) {
 	// Create application logger
 	loggerConfig := Config{
@@ -166,7 +170,7 @@ func TestCorrelationIntegration_ServiceToNATS(t *testing.T) {
 	assert.Equal(t, "repo-123", natsLogEntry.Metadata["repository_id"])
 }
 
-// TestCorrelationIntegration_EndToEndWorkflow tests full end-to-end correlation across all components
+// TestCorrelationIntegration_EndToEndWorkflow tests full end-to-end correlation across all components.
 func TestCorrelationIntegration_EndToEndWorkflow(t *testing.T) {
 	// Create application logger
 	loggerConfig := Config{
@@ -234,7 +238,11 @@ func TestCorrelationIntegration_EndToEndWorkflow(t *testing.T) {
 	wrappedHandler := loggingMiddleware(handler)
 
 	// Execute end-to-end request
-	req := httptest.NewRequest("POST", "/repositories", strings.NewReader(`{"url": "https://github.com/user/repo"}`))
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/repositories",
+		strings.NewReader(`{"url": "https://github.com/user/repo"}`),
+	)
 	recorder := httptest.NewRecorder()
 	wrappedHandler.ServeHTTP(recorder, req)
 
@@ -288,7 +296,7 @@ func TestCorrelationIntegration_EndToEndWorkflow(t *testing.T) {
 	assert.Equal(t, repoID, consumerLog.Metadata["repository_id"])
 }
 
-// TestCorrelationIntegration_ErrorPropagation tests correlation ID propagation during error scenarios
+// TestCorrelationIntegration_ErrorPropagation tests correlation ID propagation during error scenarios.
 func TestCorrelationIntegration_ErrorPropagation(t *testing.T) {
 	// Create application logger
 	loggerConfig := Config{
@@ -396,7 +404,7 @@ func TestCorrelationIntegration_ErrorPropagation(t *testing.T) {
 	}
 }
 
-// TestCorrelationIntegration_ConcurrentRequests tests correlation ID isolation across concurrent requests
+// TestCorrelationIntegration_ConcurrentRequests tests correlation ID isolation across concurrent requests.
 func TestCorrelationIntegration_ConcurrentRequests(t *testing.T) {
 	// Create application logger
 	loggerConfig := Config{
@@ -445,15 +453,19 @@ func TestCorrelationIntegration_ConcurrentRequests(t *testing.T) {
 	responses := make([]*httptest.ResponseRecorder, numRequests)
 
 	// Generate known correlation IDs
-	for i := 0; i < numRequests; i++ {
+	for i := range numRequests {
 		correlationIDs[i] = "concurrent-test-" + string(rune('A'+i))
 	}
 
 	// Execute requests concurrently
 	done := make(chan bool, numRequests)
-	for i := 0; i < numRequests; i++ {
+	for i := range numRequests {
 		go func(index int) {
-			req := httptest.NewRequest("POST", "/repositories", strings.NewReader(`{"url": "https://github.com/user/repo"}`))
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/repositories",
+				strings.NewReader(`{"url": "https://github.com/user/repo"}`),
+			)
 			req.Header.Set("X-Correlation-ID", correlationIDs[index])
 
 			recorder := httptest.NewRecorder()
@@ -464,12 +476,12 @@ func TestCorrelationIntegration_ConcurrentRequests(t *testing.T) {
 	}
 
 	// Wait for all requests to complete
-	for i := 0; i < numRequests; i++ {
+	for range numRequests {
 		<-done
 	}
 
 	// Verify each request maintained its correlation ID
-	for i := 0; i < numRequests; i++ {
+	for i := range numRequests {
 		assert.Equal(t, http.StatusCreated, responses[i].Code)
 		responseCorrelationID := responses[i].Header().Get("X-Correlation-ID")
 		assert.Equal(t, correlationIDs[i], responseCorrelationID,
@@ -496,7 +508,7 @@ func TestCorrelationIntegration_ConcurrentRequests(t *testing.T) {
 	}
 }
 
-// TestCorrelationIntegration_AsyncProcessing tests correlation ID handling in async processing scenarios
+// TestCorrelationIntegration_AsyncProcessing tests correlation ID handling in async processing scenarios.
 func TestCorrelationIntegration_AsyncProcessing(t *testing.T) {
 	// Create application logger
 	loggerConfig := Config{

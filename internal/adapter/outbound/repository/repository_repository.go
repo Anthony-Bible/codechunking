@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -32,12 +33,12 @@ import (
 // This design ensures that:
 // - Users can retrieve repositories using the exact same URL format they provided
 // - The system can detect semantic duplicates (github.com/owner/repo == GitHub.com/Owner/Repo.git)
-// - Query methods are consistent with their corresponding storage format
+// - Query methods are consistent with their corresponding storage format.
 type PostgreSQLRepositoryRepository struct {
 	pool *pgxpool.Pool
 }
 
-// NewPostgreSQLRepositoryRepository creates a new PostgreSQL repository repository
+// NewPostgreSQLRepositoryRepository creates a new PostgreSQL repository repository.
 func NewPostgreSQLRepositoryRepository(pool *pgxpool.Pool) *PostgreSQLRepositoryRepository {
 	return &PostgreSQLRepositoryRepository{
 		pool: pool,
@@ -88,7 +89,7 @@ func (r *PostgreSQLRepositoryRepository) Save(ctx context.Context, repository *e
 	return nil
 }
 
-// FindByID finds a repository by its ID
+// FindByID finds a repository by its ID.
 func (r *PostgreSQLRepositoryRepository) FindByID(ctx context.Context, id uuid.UUID) (*entity.Repository, error) {
 	if id == uuid.Nil {
 		return nil, ErrInvalidArgument
@@ -122,7 +123,21 @@ func (r *PostgreSQLRepositoryRepository) FindByID(ctx context.Context, id uuid.U
 		return nil, WrapError(err, "find repository by ID")
 	}
 
-	return r.scanRepositoryFromTime(id, repoURL, name, description, defaultBranch, lastIndexedAt, lastCommitHash, totalFiles, totalChunks, statusStr, createdAt, updatedAt, deletedAt)
+	return r.scanRepositoryFromTime(
+		id,
+		repoURL,
+		name,
+		description,
+		defaultBranch,
+		lastIndexedAt,
+		lastCommitHash,
+		totalFiles,
+		totalChunks,
+		statusStr,
+		createdAt,
+		updatedAt,
+		deletedAt,
+	)
 }
 
 // FindByURL finds a repository by its exact raw URL.
@@ -132,7 +147,10 @@ func (r *PostgreSQLRepositoryRepository) FindByID(ctx context.Context, id uuid.U
 // Use FindByNormalizedURL() if you need to find repositories by their canonical form.
 //
 // Returns nil if no repository is found, or an error if the query fails.
-func (r *PostgreSQLRepositoryRepository) FindByURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error) {
+func (r *PostgreSQLRepositoryRepository) FindByURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (*entity.Repository, error) {
 	query := `
 		SELECT id, url, name, description, default_branch, last_indexed_at, 
 			   last_commit_hash, total_files, total_chunks, status, 
@@ -143,8 +161,11 @@ func (r *PostgreSQLRepositoryRepository) FindByURL(ctx context.Context, url valu
 	return r.queryRepositoryByRawURL(ctx, url, query)
 }
 
-// FindAll finds repositories with filters
-func (r *PostgreSQLRepositoryRepository) FindAll(ctx context.Context, filters outbound.RepositoryFilters) ([]*entity.Repository, int, error) {
+// FindAll finds repositories with filters.
+func (r *PostgreSQLRepositoryRepository) FindAll(
+	ctx context.Context,
+	filters outbound.RepositoryFilters,
+) ([]*entity.Repository, int, error) {
 	// Validate pagination parameters
 	if filters.Limit < 0 {
 		return nil, 0, ErrInvalidArgument
@@ -263,7 +284,21 @@ func (r *PostgreSQLRepositoryRepository) FindAll(ctx context.Context, filters ou
 			return nil, 0, WrapError(err, "scan repository row")
 		}
 
-		repo, err := r.scanRepositoryFromTime(id, repoURL, name, description, defaultBranch, lastIndexedAt, lastCommitHash, totalFiles, totalChunks, statusStr, createdAt, updatedAt, deletedAt)
+		repo, err := r.scanRepositoryFromTime(
+			id,
+			repoURL,
+			name,
+			description,
+			defaultBranch,
+			lastIndexedAt,
+			lastCommitHash,
+			totalFiles,
+			totalChunks,
+			statusStr,
+			createdAt,
+			updatedAt,
+			deletedAt,
+		)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -323,7 +358,7 @@ func (r *PostgreSQLRepositoryRepository) Update(ctx context.Context, repository 
 	return nil
 }
 
-// Delete soft-deletes a repository by setting deleted_at
+// Delete soft-deletes a repository by setting deleted_at.
 func (r *PostgreSQLRepositoryRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	if id == uuid.Nil {
 		return ErrInvalidArgument
@@ -366,7 +401,10 @@ func (r *PostgreSQLRepositoryRepository) Exists(ctx context.Context, url valueob
 //
 // Returns true if a repository with the equivalent normalized URL exists, false otherwise,
 // or an error if the query fails.
-func (r *PostgreSQLRepositoryRepository) ExistsByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (bool, error) {
+func (r *PostgreSQLRepositoryRepository) ExistsByNormalizedURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (bool, error) {
 	return r.checkExistenceByNormalizedURL(ctx, url)
 }
 
@@ -377,7 +415,10 @@ func (r *PostgreSQLRepositoryRepository) ExistsByNormalizedURL(ctx context.Conte
 // This is useful for duplicate detection and semantic lookups.
 //
 // Returns the repository if found by normalized URL, nil if not found, or an error if the query fails.
-func (r *PostgreSQLRepositoryRepository) FindByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error) {
+func (r *PostgreSQLRepositoryRepository) FindByNormalizedURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (*entity.Repository, error) {
 	query := `
 		SELECT id, url, name, description, default_branch, last_indexed_at, 
 			   last_commit_hash, total_files, total_chunks, status, 
@@ -388,10 +429,17 @@ func (r *PostgreSQLRepositoryRepository) FindByNormalizedURL(ctx context.Context
 	return r.queryRepositoryByNormalizedURL(ctx, url, query)
 }
 
-// scanRepositoryFromTime is a helper function to convert database row to Repository entity when timestamps are already parsed
+// scanRepositoryFromTime is a helper function to convert database row to Repository entity when timestamps are already parsed.
 func (r *PostgreSQLRepositoryRepository) scanRepositoryFromTime(
-	id uuid.UUID, urlStr, name string, description, defaultBranch *string,
-	lastIndexedAt *time.Time, lastCommitHash *string, totalFiles, totalChunks int, statusStr string, createdAt, updatedAt time.Time, deletedAt *time.Time,
+	id uuid.UUID,
+	urlStr, name string,
+	description, defaultBranch *string,
+	lastIndexedAt *time.Time,
+	lastCommitHash *string,
+	totalFiles, totalChunks int,
+	statusStr string,
+	createdAt, updatedAt time.Time,
+	deletedAt *time.Time,
 ) (*entity.Repository, error) {
 	// Parse URL
 	url, err := valueobject.NewRepositoryURL(urlStr)
@@ -440,7 +488,7 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByRawURL(
 		&createdAt, &updatedAt, &deletedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil // Not found, return nil without error
 		}
 		return nil, WrapError(err, "query repository by raw URL")
@@ -482,7 +530,7 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByNormalizedURL(
 		&createdAt, &updatedAt, &deletedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil // Not found
 		}
 		return nil, WrapError(err, "query repository by normalized URL")
@@ -541,7 +589,7 @@ func (r *PostgreSQLRepositoryRepository) checkExistenceByNormalizedURL(
 	return exists, nil
 }
 
-// validateSortParameter validates the sort parameter format and fields
+// validateSortParameter validates the sort parameter format and fields.
 func (r *PostgreSQLRepositoryRepository) validateSortParameter(sort string) error {
 	parts := strings.Split(sort, ":")
 	if len(parts) != 2 {

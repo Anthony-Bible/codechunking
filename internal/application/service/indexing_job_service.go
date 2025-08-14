@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -26,7 +27,11 @@ type CreateIndexingJobService struct {
 
 // NewCreateIndexingJobService creates a new instance of CreateIndexingJobService.
 // It requires repositories for both indexing jobs and repositories, plus a message publisher.
-func NewCreateIndexingJobService(indexingJobRepo outbound.IndexingJobRepository, repositoryRepo outbound.RepositoryRepository, messagePublisher outbound.MessagePublisher) *CreateIndexingJobService {
+func NewCreateIndexingJobService(
+	indexingJobRepo outbound.IndexingJobRepository,
+	repositoryRepo outbound.RepositoryRepository,
+	messagePublisher outbound.MessagePublisher,
+) *CreateIndexingJobService {
 	if indexingJobRepo == nil {
 		panic("indexingJobRepo cannot be nil")
 	}
@@ -45,7 +50,10 @@ func NewCreateIndexingJobService(indexingJobRepo outbound.IndexingJobRepository,
 
 // CreateIndexingJob creates a new indexing job for a repository.
 // The repository must exist and not be in processing status for job creation to succeed.
-func (s *CreateIndexingJobService) CreateIndexingJob(ctx context.Context, request dto.CreateIndexingJobRequest) (*dto.IndexingJobResponse, error) {
+func (s *CreateIndexingJobService) CreateIndexingJob(
+	ctx context.Context,
+	request dto.CreateIndexingJobRequest,
+) (*dto.IndexingJobResponse, error) {
 	// Validate that the repository exists and retrieve its current state
 	repository, err := s.retrieveAndValidateRepository(ctx, request.RepositoryID)
 	if err != nil {
@@ -82,7 +90,10 @@ type GetIndexingJobService struct {
 
 // NewGetIndexingJobService creates a new instance of GetIndexingJobService.
 // It requires repositories for both indexing jobs and repositories for validation.
-func NewGetIndexingJobService(indexingJobRepo outbound.IndexingJobRepository, repositoryRepo outbound.RepositoryRepository) *GetIndexingJobService {
+func NewGetIndexingJobService(
+	indexingJobRepo outbound.IndexingJobRepository,
+	repositoryRepo outbound.RepositoryRepository,
+) *GetIndexingJobService {
 	if indexingJobRepo == nil {
 		panic("indexingJobRepo cannot be nil")
 	}
@@ -97,7 +108,10 @@ func NewGetIndexingJobService(indexingJobRepo outbound.IndexingJobRepository, re
 
 // GetIndexingJob retrieves an indexing job with repository ownership validation.
 // Ensures the job belongs to the specified repository before returning it.
-func (s *GetIndexingJobService) GetIndexingJob(ctx context.Context, repositoryID, jobID uuid.UUID) (*dto.IndexingJobResponse, error) {
+func (s *GetIndexingJobService) GetIndexingJob(
+	ctx context.Context,
+	repositoryID, jobID uuid.UUID,
+) (*dto.IndexingJobResponse, error) {
 	// Validate that the repository exists (ensures user has access to valid repository)
 	if err := s.validateRepositoryExists(ctx, repositoryID); err != nil {
 		return nil, err
@@ -137,7 +151,11 @@ func NewUpdateIndexingJobService(indexingJobRepo outbound.IndexingJobRepository)
 
 // UpdateIndexingJob updates an indexing job with status transition validation.
 // Validates status transitions and updates job state based on the new status.
-func (s *UpdateIndexingJobService) UpdateIndexingJob(ctx context.Context, jobID uuid.UUID, request dto.UpdateIndexingJobRequest) (*dto.IndexingJobResponse, error) {
+func (s *UpdateIndexingJobService) UpdateIndexingJob(
+	ctx context.Context,
+	jobID uuid.UUID,
+	request dto.UpdateIndexingJobRequest,
+) (*dto.IndexingJobResponse, error) {
 	// Retrieve the indexing job to be updated
 	job, err := s.retrieveIndexingJobForUpdate(ctx, jobID)
 	if err != nil {
@@ -190,7 +208,10 @@ type ListIndexingJobsService struct {
 
 // NewListIndexingJobsService creates a new instance of ListIndexingJobsService.
 // It requires repositories for both indexing jobs and repositories for validation.
-func NewListIndexingJobsService(indexingJobRepo outbound.IndexingJobRepository, repositoryRepo outbound.RepositoryRepository) *ListIndexingJobsService {
+func NewListIndexingJobsService(
+	indexingJobRepo outbound.IndexingJobRepository,
+	repositoryRepo outbound.RepositoryRepository,
+) *ListIndexingJobsService {
 	if indexingJobRepo == nil {
 		panic("indexingJobRepo cannot be nil")
 	}
@@ -205,7 +226,11 @@ func NewListIndexingJobsService(indexingJobRepo outbound.IndexingJobRepository, 
 
 // ListIndexingJobs retrieves a paginated list of indexing jobs for a repository.
 // Validates that the repository exists before retrieving its jobs.
-func (s *ListIndexingJobsService) ListIndexingJobs(ctx context.Context, repositoryID uuid.UUID, query dto.IndexingJobListQuery) (*dto.IndexingJobListResponse, error) {
+func (s *ListIndexingJobsService) ListIndexingJobs(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	query dto.IndexingJobListQuery,
+) (*dto.IndexingJobListResponse, error) {
 	// Verify repository exists
 	_, err := s.repositoryRepo.FindByID(ctx, repositoryID)
 	if err != nil {
@@ -244,18 +269,22 @@ func (s *ListIndexingJobsService) ListIndexingJobs(ctx context.Context, reposito
 
 // Helper functions
 
-// jobStatusTransitionHandler encapsulates the logic for handling job status transitions
+// jobStatusTransitionHandler encapsulates the logic for handling job status transitions.
 type jobStatusTransitionHandler struct {
 	service *UpdateIndexingJobService
 }
 
-// newJobStatusTransitionHandler creates a new job status transition handler
+// newJobStatusTransitionHandler creates a new job status transition handler.
 func newJobStatusTransitionHandler(service *UpdateIndexingJobService) *jobStatusTransitionHandler {
 	return &jobStatusTransitionHandler{service: service}
 }
 
-// handleTransition manages status transitions with comprehensive business logic
-func (h *jobStatusTransitionHandler) handleTransition(job *entity.IndexingJob, targetStatus valueobject.JobStatus, request dto.UpdateIndexingJobRequest) error {
+// handleTransition manages status transitions with comprehensive business logic.
+func (h *jobStatusTransitionHandler) handleTransition(
+	job *entity.IndexingJob,
+	targetStatus valueobject.JobStatus,
+	request dto.UpdateIndexingJobRequest,
+) error {
 	// Define transition handlers for each supported status
 	transitionHandlers := map[valueobject.JobStatus]func() error{
 		valueobject.JobStatusRunning: func() error {
@@ -281,13 +310,17 @@ func (h *jobStatusTransitionHandler) handleTransition(job *entity.IndexingJob, t
 	return handler()
 }
 
-// updateJobStatus handles the status-specific updates for indexing jobs with improved business logic
-func (s *UpdateIndexingJobService) updateJobStatus(job *entity.IndexingJob, targetStatus valueobject.JobStatus, request dto.UpdateIndexingJobRequest) error {
+// updateJobStatus handles the status-specific updates for indexing jobs with improved business logic.
+func (s *UpdateIndexingJobService) updateJobStatus(
+	job *entity.IndexingJob,
+	targetStatus valueobject.JobStatus,
+	request dto.UpdateIndexingJobRequest,
+) error {
 	handler := newJobStatusTransitionHandler(s)
 	return handler.handleTransition(job, targetStatus, request)
 }
 
-// transitionJobToRunning handles the business logic for starting a job
+// transitionJobToRunning handles the business logic for starting a job.
 func (s *UpdateIndexingJobService) transitionJobToRunning(job *entity.IndexingJob) error {
 	if err := job.Start(); err != nil {
 		return common.WrapServiceError(common.OpUpdateIndexingJob,
@@ -296,8 +329,11 @@ func (s *UpdateIndexingJobService) transitionJobToRunning(job *entity.IndexingJo
 	return nil
 }
 
-// transitionJobToCompleted handles the business logic for completing a job
-func (s *UpdateIndexingJobService) transitionJobToCompleted(job *entity.IndexingJob, request dto.UpdateIndexingJobRequest) error {
+// transitionJobToCompleted handles the business logic for completing a job.
+func (s *UpdateIndexingJobService) transitionJobToCompleted(
+	job *entity.IndexingJob,
+	request dto.UpdateIndexingJobRequest,
+) error {
 	// Extract completion metrics with defaults
 	filesProcessed := s.extractFilesProcessed(request)
 	chunksCreated := s.extractChunksCreated(request)
@@ -310,8 +346,11 @@ func (s *UpdateIndexingJobService) transitionJobToCompleted(job *entity.Indexing
 	return nil
 }
 
-// transitionJobToFailed handles the business logic for marking a job as failed
-func (s *UpdateIndexingJobService) transitionJobToFailed(job *entity.IndexingJob, request dto.UpdateIndexingJobRequest) error {
+// transitionJobToFailed handles the business logic for marking a job as failed.
+func (s *UpdateIndexingJobService) transitionJobToFailed(
+	job *entity.IndexingJob,
+	request dto.UpdateIndexingJobRequest,
+) error {
 	errorMessage := s.extractErrorMessage(request)
 
 	if err := job.Fail(errorMessage); err != nil {
@@ -321,7 +360,7 @@ func (s *UpdateIndexingJobService) transitionJobToFailed(job *entity.IndexingJob
 	return nil
 }
 
-// transitionJobToCancelled handles the business logic for cancelling a job
+// transitionJobToCancelled handles the business logic for cancelling a job.
 func (s *UpdateIndexingJobService) transitionJobToCancelled(job *entity.IndexingJob) error {
 	if err := job.Cancel(); err != nil {
 		return common.WrapServiceError(common.OpUpdateIndexingJob,
@@ -330,15 +369,15 @@ func (s *UpdateIndexingJobService) transitionJobToCancelled(job *entity.Indexing
 	return nil
 }
 
-// jobMetricsExtractor safely extracts metrics and error information from update requests
+// jobMetricsExtractor safely extracts metrics and error information from update requests.
 type jobMetricsExtractor struct{}
 
-// newJobMetricsExtractor creates a new job metrics extractor
+// newJobMetricsExtractor creates a new job metrics extractor.
 func newJobMetricsExtractor() *jobMetricsExtractor {
 	return &jobMetricsExtractor{}
 }
 
-// extractFilesProcessed safely extracts files processed count with sensible defaults
+// extractFilesProcessed safely extracts files processed count with sensible defaults.
 func (jme *jobMetricsExtractor) extractFilesProcessed(request dto.UpdateIndexingJobRequest) int {
 	if request.FilesProcessed != nil {
 		return *request.FilesProcessed
@@ -346,7 +385,7 @@ func (jme *jobMetricsExtractor) extractFilesProcessed(request dto.UpdateIndexing
 	return 0
 }
 
-// extractChunksCreated safely extracts chunks created count with sensible defaults
+// extractChunksCreated safely extracts chunks created count with sensible defaults.
 func (jme *jobMetricsExtractor) extractChunksCreated(request dto.UpdateIndexingJobRequest) int {
 	if request.ChunksCreated != nil {
 		return *request.ChunksCreated
@@ -354,7 +393,7 @@ func (jme *jobMetricsExtractor) extractChunksCreated(request dto.UpdateIndexingJ
 	return 0
 }
 
-// extractErrorMessage safely extracts error message with context-aware defaults
+// extractErrorMessage safely extracts error message with context-aware defaults.
 func (jme *jobMetricsExtractor) extractErrorMessage(request dto.UpdateIndexingJobRequest) string {
 	if request.ErrorMessage != nil && strings.TrimSpace(*request.ErrorMessage) != "" {
 		return strings.TrimSpace(*request.ErrorMessage)
@@ -362,7 +401,7 @@ func (jme *jobMetricsExtractor) extractErrorMessage(request dto.UpdateIndexingJo
 	return "Indexing job failed due to an unspecified error during processing"
 }
 
-// Legacy methods for backward compatibility that delegate to the extractor
+// Legacy methods for backward compatibility that delegate to the extractor.
 func (s *UpdateIndexingJobService) extractFilesProcessed(request dto.UpdateIndexingJobRequest) int {
 	extractor := newJobMetricsExtractor()
 	return extractor.extractFilesProcessed(request)
@@ -380,25 +419,34 @@ func (s *UpdateIndexingJobService) extractErrorMessage(request dto.UpdateIndexin
 
 // Helper methods for CreateIndexingJobService
 
-// retrieveAndValidateRepository retrieves a repository with enhanced error context and validation
-func (s *CreateIndexingJobService) retrieveAndValidateRepository(ctx context.Context, repositoryID uuid.UUID) (*entity.Repository, error) {
+// retrieveAndValidateRepository retrieves a repository with enhanced error context and validation.
+func (s *CreateIndexingJobService) retrieveAndValidateRepository(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+) (*entity.Repository, error) {
 	repository, err := s.repositoryRepo.FindByID(ctx, repositoryID)
 	if err != nil {
-		return nil, common.WrapServiceError(common.OpRetrieveRepository,
-			fmt.Errorf("failed to retrieve repository for indexing job creation: repository ID %s was not found in the system or is not accessible. Please verify the repository exists and you have permission to access it: %w", repositoryID, err))
+		return nil, common.WrapServiceError(
+			common.OpRetrieveRepository,
+			fmt.Errorf(
+				"failed to retrieve repository for indexing job creation: repository ID %s was not found in the system or is not accessible. Please verify the repository exists and you have permission to access it: %w",
+				repositoryID,
+				err,
+			),
+		)
 	}
 	return repository, nil
 }
 
-// repositoryEligibilityChecker encapsulates the business rules for repository indexing eligibility
+// repositoryEligibilityChecker encapsulates the business rules for repository indexing eligibility.
 type repositoryEligibilityChecker struct{}
 
-// newRepositoryEligibilityChecker creates a new repository eligibility checker
+// newRepositoryEligibilityChecker creates a new repository eligibility checker.
 func newRepositoryEligibilityChecker() *repositoryEligibilityChecker {
 	return &repositoryEligibilityChecker{}
 }
 
-// checkEligibility validates whether a repository is eligible for indexing job creation
+// checkEligibility validates whether a repository is eligible for indexing job creation.
 func (rec *repositoryEligibilityChecker) checkEligibility(repository *entity.Repository) error {
 	currentStatus := repository.Status()
 
@@ -411,13 +459,13 @@ func (rec *repositoryEligibilityChecker) checkEligibility(repository *entity.Rep
 	return nil
 }
 
-// validateRepositoryEligibilityForIndexing checks if a repository can have an indexing job created
+// validateRepositoryEligibilityForIndexing checks if a repository can have an indexing job created.
 func (s *CreateIndexingJobService) validateRepositoryEligibilityForIndexing(repository *entity.Repository) error {
 	checker := newRepositoryEligibilityChecker()
 	return checker.checkEligibility(repository)
 }
 
-// persistIndexingJob saves an indexing job to the repository
+// persistIndexingJob saves an indexing job to the repository.
 func (s *CreateIndexingJobService) persistIndexingJob(ctx context.Context, job *entity.IndexingJob) error {
 	if err := s.indexingJobRepo.Save(ctx, job); err != nil {
 		return common.WrapServiceError(common.OpSaveIndexingJob,
@@ -426,8 +474,12 @@ func (s *CreateIndexingJobService) persistIndexingJob(ctx context.Context, job *
 	return nil
 }
 
-// queueJobForProcessing publishes an indexing job to the message queue for async processing
-func (s *CreateIndexingJobService) queueJobForProcessing(ctx context.Context, repositoryID uuid.UUID, repositoryURL string) error {
+// queueJobForProcessing publishes an indexing job to the message queue for async processing.
+func (s *CreateIndexingJobService) queueJobForProcessing(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	repositoryURL string,
+) error {
 	if err := s.messagePublisher.PublishIndexingJob(ctx, repositoryID, repositoryURL); err != nil {
 		return common.WrapServiceError(common.OpPublishJob,
 			fmt.Errorf("failed to queue indexing job for processing: %w", err))
@@ -437,7 +489,7 @@ func (s *CreateIndexingJobService) queueJobForProcessing(ctx context.Context, re
 
 // Helper methods for GetIndexingJobService
 
-// validateRepositoryExists ensures a repository exists before proceeding with job operations
+// validateRepositoryExists ensures a repository exists before proceeding with job operations.
 func (s *GetIndexingJobService) validateRepositoryExists(ctx context.Context, repositoryID uuid.UUID) error {
 	_, err := s.repositoryRepo.FindByID(ctx, repositoryID)
 	if err != nil {
@@ -447,7 +499,7 @@ func (s *GetIndexingJobService) validateRepositoryExists(ctx context.Context, re
 	return nil
 }
 
-// retrieveIndexingJob fetches an indexing job by ID
+// retrieveIndexingJob fetches an indexing job by ID.
 func (s *GetIndexingJobService) retrieveIndexingJob(ctx context.Context, jobID uuid.UUID) (*entity.IndexingJob, error) {
 	job, err := s.indexingJobRepo.FindByID(ctx, jobID)
 	if err != nil {
@@ -457,7 +509,7 @@ func (s *GetIndexingJobService) retrieveIndexingJob(ctx context.Context, jobID u
 	return job, nil
 }
 
-// validateJobOwnership ensures an indexing job belongs to the specified repository with detailed error context
+// validateJobOwnership ensures an indexing job belongs to the specified repository with detailed error context.
 func (s *GetIndexingJobService) validateJobOwnership(job *entity.IndexingJob, repositoryID uuid.UUID) error {
 	if job.RepositoryID() != repositoryID {
 		return domain_errors.ErrJobNotFound
@@ -467,8 +519,11 @@ func (s *GetIndexingJobService) validateJobOwnership(job *entity.IndexingJob, re
 
 // Helper methods for UpdateIndexingJobService
 
-// retrieveIndexingJobForUpdate retrieves an indexing job with error context for updates
-func (s *UpdateIndexingJobService) retrieveIndexingJobForUpdate(ctx context.Context, jobID uuid.UUID) (*entity.IndexingJob, error) {
+// retrieveIndexingJobForUpdate retrieves an indexing job with error context for updates.
+func (s *UpdateIndexingJobService) retrieveIndexingJobForUpdate(
+	ctx context.Context,
+	jobID uuid.UUID,
+) (*entity.IndexingJob, error) {
 	job, err := s.indexingJobRepo.FindByID(ctx, jobID)
 	if err != nil {
 		return nil, common.WrapServiceError(common.OpRetrieveIndexingJob,
@@ -477,10 +532,10 @@ func (s *UpdateIndexingJobService) retrieveIndexingJobForUpdate(ctx context.Cont
 	return job, nil
 }
 
-// parseAndValidateTargetStatus parses a status string and validates it's a valid job status
+// parseAndValidateTargetStatus parses a status string and validates it's a valid job status.
 func (s *UpdateIndexingJobService) parseAndValidateTargetStatus(statusStr string) (valueobject.JobStatus, error) {
 	if statusStr == "" {
-		return "", fmt.Errorf("job status is required and cannot be empty")
+		return "", errors.New("job status is required and cannot be empty")
 	}
 
 	targetStatus, err := valueobject.NewJobStatus(statusStr)
@@ -491,8 +546,11 @@ func (s *UpdateIndexingJobService) parseAndValidateTargetStatus(statusStr string
 	return targetStatus, nil
 }
 
-// validateStatusTransition ensures a status transition is valid according to business rules
-func (s *UpdateIndexingJobService) validateStatusTransition(job *entity.IndexingJob, targetStatus valueobject.JobStatus) error {
+// validateStatusTransition ensures a status transition is valid according to business rules.
+func (s *UpdateIndexingJobService) validateStatusTransition(
+	job *entity.IndexingJob,
+	targetStatus valueobject.JobStatus,
+) error {
 	currentStatus := job.Status()
 
 	// Allow same status for progress updates

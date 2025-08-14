@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestNATSLogger_ConnectionEvents tests NATS connection event logging
+// TestNATSLogger_ConnectionEvents tests NATS connection event logging.
 func TestNATSLogger_ConnectionEvents(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -123,7 +123,7 @@ func TestNATSLogger_ConnectionEvents(t *testing.T) {
 	}
 }
 
-// TestNATSLogger_MessagePublishing tests NATS message publishing logging
+// TestNATSLogger_MessagePublishing tests NATS message publishing logging.
 func TestNATSLogger_MessagePublishing(t *testing.T) {
 	config := Config{
 		Level:  "DEBUG",
@@ -225,7 +225,7 @@ func TestNATSLogger_MessagePublishing(t *testing.T) {
 	}
 }
 
-// TestNATSLogger_MessageConsumption tests NATS message consumption logging
+// TestNATSLogger_MessageConsumption tests NATS message consumption logging.
 func TestNATSLogger_MessageConsumption(t *testing.T) {
 	config := Config{
 		Level:  "DEBUG",
@@ -342,7 +342,7 @@ func TestNATSLogger_MessageConsumption(t *testing.T) {
 	}
 }
 
-// TestNATSLogger_JetStreamOperations tests JetStream-specific logging
+// TestNATSLogger_JetStreamOperations tests JetStream-specific logging.
 func TestNATSLogger_JetStreamOperations(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -473,7 +473,7 @@ func TestNATSLogger_JetStreamOperations(t *testing.T) {
 	}
 }
 
-// TestNATSLogger_PerformanceMetrics tests NATS performance metrics logging
+// TestNATSLogger_PerformanceMetrics tests NATS performance metrics logging.
 func TestNATSLogger_PerformanceMetrics(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -533,7 +533,7 @@ func TestNATSLogger_PerformanceMetrics(t *testing.T) {
 	assert.Contains(t, logEntry.Metadata, "time_window")
 }
 
-// TestNATSLogger_ErrorCorrelation tests error correlation across NATS operations
+// TestNATSLogger_ErrorCorrelation tests error correlation across NATS operations.
 func TestNATSLogger_ErrorCorrelation(t *testing.T) {
 	config := Config{
 		Level:  "ERROR",

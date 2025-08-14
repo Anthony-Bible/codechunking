@@ -1,11 +1,12 @@
 package util
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
-// TestClientIP_XForwardedForHeader tests extraction from X-Forwarded-For header
+// TestClientIP_XForwardedForHeader tests extraction from X-Forwarded-For header.
 func TestClientIP_XForwardedForHeader(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -99,7 +100,7 @@ func TestClientIP_XForwardedForHeader(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			if tt.xForwardedFor != "" {
 				req.Header.Set("X-Forwarded-For", tt.xForwardedFor)
 			}
@@ -117,7 +118,7 @@ func TestClientIP_XForwardedForHeader(t *testing.T) {
 	}
 }
 
-// TestClientIP_XRealIPHeader tests extraction from X-Real-IP header
+// TestClientIP_XRealIPHeader tests extraction from X-Real-IP header.
 func TestClientIP_XRealIPHeader(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -172,7 +173,7 @@ func TestClientIP_XRealIPHeader(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			if tt.xRealIP != "" {
 				req.Header.Set("X-Real-IP", tt.xRealIP)
 			}
@@ -187,7 +188,7 @@ func TestClientIP_XRealIPHeader(t *testing.T) {
 	}
 }
 
-// TestClientIP_RemoteAddrFallback tests fallback to RemoteAddr
+// TestClientIP_RemoteAddrFallback tests fallback to RemoteAddr.
 func TestClientIP_RemoteAddrFallback(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -271,7 +272,7 @@ func TestClientIP_RemoteAddrFallback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			req.RemoteAddr = tt.remoteAddr
 
 			result := ClientIP(req)
@@ -283,7 +284,7 @@ func TestClientIP_RemoteAddrFallback(t *testing.T) {
 	}
 }
 
-// TestClientIP_HeaderPrecedence tests the precedence order of headers
+// TestClientIP_HeaderPrecedence tests the precedence order of headers.
 func TestClientIP_HeaderPrecedence(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -329,7 +330,7 @@ func TestClientIP_HeaderPrecedence(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			if tt.xForwardedFor != "" {
 				req.Header.Set("X-Forwarded-For", tt.xForwardedFor)
 			}
@@ -347,7 +348,7 @@ func TestClientIP_HeaderPrecedence(t *testing.T) {
 	}
 }
 
-// TestClientIP_EdgeCases tests edge cases and error conditions
+// TestClientIP_EdgeCases tests edge cases and error conditions.
 func TestClientIP_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -433,7 +434,7 @@ func TestClientIP_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			if tt.xForwardedFor != "" {
 				req.Header.Set("X-Forwarded-For", tt.xForwardedFor)
 			}
@@ -451,7 +452,7 @@ func TestClientIP_EdgeCases(t *testing.T) {
 	}
 }
 
-// TestClientIP_NilRequest tests behavior with nil request
+// TestClientIP_NilRequest tests behavior with nil request.
 func TestClientIP_NilRequest(t *testing.T) {
 	t.Run("nil_request", func(t *testing.T) {
 		// This test should panic or handle nil gracefully
@@ -466,7 +467,7 @@ func TestClientIP_NilRequest(t *testing.T) {
 	})
 }
 
-// TestClientIP_RealWorldScenarios tests realistic scenarios
+// TestClientIP_RealWorldScenarios tests realistic scenarios.
 func TestClientIP_RealWorldScenarios(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -544,7 +545,7 @@ func TestClientIP_RealWorldScenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 			if tt.xForwardedFor != "" {
 				req.Header.Set("X-Forwarded-For", tt.xForwardedFor)
 			}
@@ -556,7 +557,13 @@ func TestClientIP_RealWorldScenarios(t *testing.T) {
 			result := ClientIP(req)
 
 			if result != tt.expectedIP {
-				t.Errorf("ClientIP() = %q, want %q\nDescription: %s\nScenario: %s", result, tt.expectedIP, tt.description, tt.scenario)
+				t.Errorf(
+					"ClientIP() = %q, want %q\nDescription: %s\nScenario: %s",
+					result,
+					tt.expectedIP,
+					tt.description,
+					tt.scenario,
+				)
 			}
 		})
 	}

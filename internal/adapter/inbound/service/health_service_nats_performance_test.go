@@ -41,7 +41,7 @@ func TestHealthServiceAdapter_NATSPerformance(t *testing.T) {
 		const numCalls = 100
 		totalDuration := time.Duration(0)
 
-		for i := 0; i < numCalls; i++ {
+		for i := range numCalls {
 			start := time.Now()
 			response, err := service.GetHealth(context.Background())
 			duration := time.Since(start)
@@ -51,13 +51,13 @@ func TestHealthServiceAdapter_NATSPerformance(t *testing.T) {
 			require.NotNil(t, response)
 
 			// Individual call should be fast (< 50ms)
-			assert.True(t, duration < 50*time.Millisecond,
+			assert.Less(t, duration, 50*time.Millisecond,
 				"Health check %d took %v, expected < 50ms", i+1, duration)
 		}
 
 		// Average performance should be excellent (< 10ms)
 		avgDuration := totalDuration / numCalls
-		assert.True(t, avgDuration < 10*time.Millisecond,
+		assert.Less(t, avgDuration, 10*time.Millisecond,
 			"Average health check duration %v, expected < 10ms", avgDuration)
 
 		// This test will fail because performance optimizations are not yet implemented
@@ -82,7 +82,7 @@ func TestHealthServiceAdapter_NATSPerformance(t *testing.T) {
 
 		// This test will fail because timeout and caching optimizations are not implemented
 		// Total health check should still complete reasonably fast despite slow NATS
-		assert.True(t, duration < 150*time.Millisecond,
+		assert.Less(t, duration, 150*time.Millisecond,
 			"Health check with slow NATS took %v, expected < 150ms", duration)
 
 		// NATS should be marked as slow but overall health should be available
@@ -113,7 +113,7 @@ func TestHealthServiceAdapter_NATSPerformance(t *testing.T) {
 		require.NoError(t, err)
 
 		// This test will fail because caching is not yet implemented
-		assert.True(t, duration2 < duration1/2,
+		assert.Less(t, duration2, duration1/2,
 			"Cached health check (%v) should be much faster than initial (%v)", duration2, duration1)
 
 		// Responses should be identical due to caching
@@ -142,14 +142,14 @@ func TestHealthServiceAdapter_ConcurrentAccess(t *testing.T) {
 		results := make([][]dto.HealthResponse, numGoroutines)
 
 		// Launch concurrent health checks
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			wg.Add(1)
 			go func(goroutineID int) {
 				defer wg.Done()
 
 				results[goroutineID] = make([]dto.HealthResponse, callsPerGoroutine)
 
-				for j := 0; j < callsPerGoroutine; j++ {
+				for j := range callsPerGoroutine {
 					response, err := service.GetHealth(context.Background())
 					if err != nil {
 						atomic.AddInt64(&errorCount, 1)
@@ -170,8 +170,8 @@ func TestHealthServiceAdapter_ConcurrentAccess(t *testing.T) {
 		assert.Equal(t, int64(0), errorCount, "No errors should occur during concurrent access")
 
 		// Validate consistency across all responses
-		for i := 0; i < numGoroutines; i++ {
-			for j := 0; j < callsPerGoroutine; j++ {
+		for i := range numGoroutines {
+			for j := range callsPerGoroutine {
 				response := results[i][j]
 
 				// All responses should be healthy and consistent
@@ -200,12 +200,12 @@ func TestHealthServiceAdapter_ConcurrentAccess(t *testing.T) {
 		var responsesMutex sync.Mutex
 
 		// Start concurrent readers
-		for i := 0; i < numReaders; i++ {
+		for range numReaders {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 
-				for j := 0; j < numReads; j++ {
+				for range numReads {
 					response, err := service.GetHealth(context.Background())
 					if err != nil {
 						continue
@@ -268,7 +268,7 @@ func TestHealthServiceAdapter_ConcurrentAccess(t *testing.T) {
 
 		start := time.Now()
 
-		for i := 0; i < numConcurrentRequests; i++ {
+		for range numConcurrentRequests {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -289,7 +289,7 @@ func TestHealthServiceAdapter_ConcurrentAccess(t *testing.T) {
 
 		// This test will fail because rate limiting is not implemented
 		// Requests should complete but NATS health checks should be rate-limited
-		assert.True(t, totalDuration < 2*time.Second,
+		assert.Less(t, totalDuration, 2*time.Second,
 			"High load health checks should complete within reasonable time")
 
 		// Should not overwhelm NATS with health checks
@@ -330,7 +330,7 @@ func TestHealthServiceAdapter_MemoryEfficiency(t *testing.T) {
 		const numResponses = 1000
 		var responses []*dto.HealthResponse
 
-		for i := 0; i < numResponses; i++ {
+		for range numResponses {
 			response, err := service.GetHealth(context.Background())
 			require.NoError(t, err)
 			responses = append(responses, response)
@@ -443,7 +443,7 @@ func TestHealthServiceAdapter_MemoryEfficiency(t *testing.T) {
 		serializationTime := time.Since(start)
 
 		// This test will fail if serialization is inefficient
-		assert.True(t, serializationTime < 10*time.Millisecond,
+		assert.Less(t, serializationTime, 10*time.Millisecond,
 			"Large NATS health response serialization took %v, expected < 10ms", serializationTime)
 
 		// Verify complex data integrity
@@ -486,7 +486,7 @@ func TestHealthServiceAdapter_StressTest(t *testing.T) {
 		requestChan := make(chan struct{}, 1000)
 
 		// Start workers
-		for i := 0; i < maxConcurrency; i++ {
+		for i := range maxConcurrency {
 			wg.Add(1)
 			go func(workerID int) {
 				defer wg.Done()

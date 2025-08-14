@@ -15,12 +15,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Mock indexing job application services for testing
+// Mock indexing job application services for testing.
 type MockCreateIndexingJobService struct {
 	mock.Mock
 }
 
-func (m *MockCreateIndexingJobService) CreateIndexingJob(ctx context.Context, request dto.CreateIndexingJobRequest) (*dto.IndexingJobResponse, error) {
+func (m *MockCreateIndexingJobService) CreateIndexingJob(
+	ctx context.Context,
+	request dto.CreateIndexingJobRequest,
+) (*dto.IndexingJobResponse, error) {
 	args := m.Called(ctx, request)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -32,7 +35,10 @@ type MockGetIndexingJobService struct {
 	mock.Mock
 }
 
-func (m *MockGetIndexingJobService) GetIndexingJob(ctx context.Context, repositoryID, jobID uuid.UUID) (*dto.IndexingJobResponse, error) {
+func (m *MockGetIndexingJobService) GetIndexingJob(
+	ctx context.Context,
+	repositoryID, jobID uuid.UUID,
+) (*dto.IndexingJobResponse, error) {
 	args := m.Called(ctx, repositoryID, jobID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -44,7 +50,11 @@ type MockUpdateIndexingJobService struct {
 	mock.Mock
 }
 
-func (m *MockUpdateIndexingJobService) UpdateIndexingJob(ctx context.Context, jobID uuid.UUID, request dto.UpdateIndexingJobRequest) (*dto.IndexingJobResponse, error) {
+func (m *MockUpdateIndexingJobService) UpdateIndexingJob(
+	ctx context.Context,
+	jobID uuid.UUID,
+	request dto.UpdateIndexingJobRequest,
+) (*dto.IndexingJobResponse, error) {
 	args := m.Called(ctx, jobID, request)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -56,7 +66,11 @@ type MockListIndexingJobsService struct {
 	mock.Mock
 }
 
-func (m *MockListIndexingJobsService) ListIndexingJobs(ctx context.Context, repositoryID uuid.UUID, query dto.IndexingJobListQuery) (*dto.IndexingJobListResponse, error) {
+func (m *MockListIndexingJobsService) ListIndexingJobs(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	query dto.IndexingJobListQuery,
+) (*dto.IndexingJobListResponse, error) {
 	args := m.Called(ctx, repositoryID, query)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -146,7 +160,8 @@ func TestCreateIndexingJobCommandHandler_Handle_RepositoryProcessing(t *testing.
 		RepositoryID: repositoryID,
 	}
 
-	mockService.On("CreateIndexingJob", mock.Anything, expectedRequest).Return(nil, domain_errors.ErrRepositoryProcessing)
+	mockService.On("CreateIndexingJob", mock.Anything, expectedRequest).
+		Return(nil, domain_errors.ErrRepositoryProcessing)
 
 	ctx := context.Background()
 
@@ -268,7 +283,8 @@ func TestGetIndexingJobQueryHandler_Handle_RepositoryNotFound(t *testing.T) {
 		JobID:        jobID,
 	}
 
-	mockService.On("GetIndexingJob", mock.Anything, repositoryID, jobID).Return(nil, domain_errors.ErrRepositoryNotFound)
+	mockService.On("GetIndexingJob", mock.Anything, repositoryID, jobID).
+		Return(nil, domain_errors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -545,7 +561,8 @@ func TestListIndexingJobsQueryHandler_Handle_RepositoryNotFound(t *testing.T) {
 		Offset: 0,
 	}
 
-	mockService.On("ListIndexingJobs", mock.Anything, repositoryID, expectedRequest).Return(nil, domain_errors.ErrRepositoryNotFound)
+	mockService.On("ListIndexingJobs", mock.Anything, repositoryID, expectedRequest).
+		Return(nil, domain_errors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -705,7 +722,7 @@ func TestListIndexingJobsQueryHandler_Handle_DatabaseError(t *testing.T) {
 	mockService.AssertExpectations(t)
 }
 
-// Helper functions
+// Helper functions.
 func intPtr(i int) *int {
 	return &i
 }

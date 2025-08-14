@@ -95,7 +95,12 @@ func TestValidHTTPMethodsPackageVariable_Exists(t *testing.T) {
 			}
 		}
 
-		assert.True(t, found, "Expected package-level HTTP methods variable to exist with one of these names: %v", possibleNames)
+		assert.True(
+			t,
+			found,
+			"Expected package-level HTTP methods variable to exist with one of these names: %v",
+			possibleNames,
+		)
 
 		if found {
 			// Verify it's a map[string]bool or similar structure
@@ -123,7 +128,7 @@ func TestValidHTTPMethodsPackageVariable_ContainsExpectedMethods(t *testing.T) {
 				assert.True(t, v[method], "Method %s should be marked as valid in package-level variable", method)
 			}
 			// Ensure no extra methods
-			assert.Equal(t, len(expectedMethods), len(v), "Package-level variable should contain exactly %d methods", len(expectedMethods))
+			assert.Len(t, v, len(expectedMethods), "Package-level variable should contain exactly %d methods", len(expectedMethods))
 
 		case []string:
 			for _, expected := range expectedMethods {
@@ -136,7 +141,7 @@ func TestValidHTTPMethodsPackageVariable_ContainsExpectedMethods(t *testing.T) {
 				}
 				assert.True(t, found, "Method %s should be present in package-level slice", expected)
 			}
-			assert.Equal(t, len(expectedMethods), len(v), "Package-level slice should contain exactly %d methods", len(expectedMethods))
+			assert.Len(t, v, len(expectedMethods), "Package-level slice should contain exactly %d methods", len(expectedMethods))
 
 		default:
 			t.Fatalf("Package-level variable should be map[string]bool or []string, got %T", v)
@@ -264,7 +269,7 @@ func TestValidatePattern_AllocationBehavior(t *testing.T) {
 		runtime.ReadMemStats(&m1)
 
 		// Call validatePattern multiple times
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			err := registry.validatePattern(pattern)
 			require.NoError(t, err)
 		}
@@ -280,12 +285,17 @@ func TestValidatePattern_AllocationBehavior(t *testing.T) {
 
 		// This assertion will likely fail initially (showing the problem)
 		// but should pass after refactoring when we eliminate the map allocation
-		assert.Less(t, allocsDiff, uint64(500),
-			"Expected fewer than 500 allocations for 1000 calls, got %d (indicates validMethods map is being allocated repeatedly)", allocsDiff)
+		assert.Less(
+			t,
+			allocsDiff,
+			uint64(500),
+			"Expected fewer than 500 allocations for 1000 calls, got %d (indicates validMethods map is being allocated repeatedly)",
+			allocsDiff,
+		)
 	})
 }
 
-// TestValidatePattern_PerformanceComparison establishes performance baseline
+// TestValidatePattern_PerformanceComparison establishes performance baseline.
 func TestValidatePattern_PerformanceComparison(t *testing.T) {
 	t.Run("validate_pattern_performance_baseline", func(t *testing.T) {
 		if testing.Short() {
@@ -302,7 +312,7 @@ func TestValidatePattern_PerformanceComparison(t *testing.T) {
 		iterations := 10000
 
 		start := time.Now()
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			for _, pattern := range patterns {
 				err := registry.validatePattern(pattern)
 				require.NoError(t, err)
@@ -321,7 +331,7 @@ func TestValidatePattern_PerformanceComparison(t *testing.T) {
 }
 
 // TestValidatePattern_ThreadSafety tests that the refactored validation is thread-safe
-// This test should pass both before and after refactoring, but validates an important property
+// This test should pass both before and after refactoring, but validates an important property.
 func TestValidatePattern_ThreadSafety(t *testing.T) {
 	t.Run("validate_pattern_is_thread_safe", func(t *testing.T) {
 		registry := NewRouteRegistry()
@@ -334,11 +344,11 @@ func TestValidatePattern_ThreadSafety(t *testing.T) {
 		done := make(chan bool, numGoroutines)
 		errors := make(chan error, numGoroutines*iterationsPerGoroutine)
 
-		for i := 0; i < numGoroutines; i++ {
+		for range numGoroutines {
 			go func() {
 				defer func() { done <- true }()
 
-				for j := 0; j < iterationsPerGoroutine; j++ {
+				for range iterationsPerGoroutine {
 					for _, pattern := range patterns {
 						if err := registry.validatePattern(pattern); err != nil {
 							errors <- fmt.Errorf("validation failed for pattern %s: %w", pattern, err)
@@ -350,7 +360,7 @@ func TestValidatePattern_ThreadSafety(t *testing.T) {
 		}
 
 		// Wait for all goroutines to complete
-		for i := 0; i < numGoroutines; i++ {
+		for range numGoroutines {
 			<-done
 		}
 
@@ -380,13 +390,13 @@ func TestValidHTTPMethods_PackageLevelConstant(t *testing.T) {
 
 			// Run multiple validations
 			registry := NewRouteRegistry()
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				err := registry.validatePattern("GET /test")
 				require.NoError(t, err)
 			}
 
 			// Verify the package variable wasn't modified
-			assert.Equal(t, originalSize, len(validMethods), "Package-level map should not be modified")
+			assert.Len(t, validMethods, originalSize, "Package-level map should not be modified")
 
 			// Verify expected methods are still present
 			expectedMethods := []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
@@ -484,7 +494,7 @@ func TestRouteRegistration_WithRefactoredValidation(t *testing.T) {
 // Helper functions for the failing tests
 
 // checkPackageVariableExists checks if a package-level variable exists
-// This is a test helper that will be used by failing tests
+// This is a test helper that will be used by failing tests.
 func checkPackageVariableExists(varName string) bool {
 	// Check for the specific variable names we expect
 	switch varName {
@@ -496,7 +506,7 @@ func checkPackageVariableExists(varName string) bool {
 }
 
 // getPackageVariable retrieves a package-level variable by name
-// This will fail initially because the variable doesn't exist
+// This will fail initially because the variable doesn't exist.
 func getPackageVariable(varName string) interface{} {
 	// Return the actual package variable for the expected name
 	switch varName {
@@ -524,7 +534,7 @@ func getPackageValidMethodsVariable() interface{} {
 }
 
 // TestCurrentImplementation_AllocationBaseline documents the current state
-// This test should PASS initially and shows the problem we're trying to solve
+// This test should PASS initially and shows the problem we're trying to solve.
 func TestCurrentImplementation_AllocationBaseline(t *testing.T) {
 	t.Run("current_implementation_creates_map_on_each_call", func(t *testing.T) {
 		registry := NewRouteRegistry()
@@ -535,7 +545,7 @@ func TestCurrentImplementation_AllocationBaseline(t *testing.T) {
 		runtime.ReadMemStats(&m1)
 
 		// Call validatePattern many times
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			err := registry.validatePattern("GET /test")
 			require.NoError(t, err)
 		}
@@ -554,7 +564,7 @@ func TestCurrentImplementation_AllocationBaseline(t *testing.T) {
 }
 
 // TestRefactoringRequirements_Summary provides a comprehensive overview
-// This test will FAIL initially and succeeds when refactoring is complete
+// This test will FAIL initially and succeeds when refactoring is complete.
 func TestRefactoringRequirements_Summary(t *testing.T) {
 	t.Run("refactoring_checklist", func(t *testing.T) {
 		// 1. Package-level variable exists
@@ -570,7 +580,7 @@ func TestRefactoringRequirements_Summary(t *testing.T) {
 				for _, method := range expectedMethods {
 					assert.True(t, v[method], "❌ Method %s must be in package variable", method)
 				}
-				assert.Equal(t, len(expectedMethods), len(v), "❌ Package variable must contain exactly expected methods")
+				assert.Len(t, v, len(expectedMethods), "❌ Package variable must contain exactly expected methods")
 				t.Log("✅ Package variable type: map[string]bool")
 
 			case []string:
@@ -586,7 +596,15 @@ func TestRefactoringRequirements_Summary(t *testing.T) {
 		registry := NewRouteRegistry()
 
 		// All valid methods should work
-		validPatterns := []string{"GET /test", "post /test", "Put /test", "DELETE /test", "PATCH /test", "head /test", "OPTIONS /test"}
+		validPatterns := []string{
+			"GET /test",
+			"post /test",
+			"Put /test",
+			"DELETE /test",
+			"PATCH /test",
+			"head /test",
+			"OPTIONS /test",
+		}
 		for _, pattern := range validPatterns {
 			err := registry.validatePattern(pattern)
 			assert.NoError(t, err, "✅ Valid pattern %s should be accepted", pattern)
@@ -604,7 +622,7 @@ func TestRefactoringRequirements_Summary(t *testing.T) {
 		runtime.GC()
 		runtime.ReadMemStats(&m1)
 
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			err := registry.validatePattern("GET /test")
 			require.NoError(t, err)
 		}

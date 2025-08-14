@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -290,7 +291,8 @@ func TestRepository_UpdateStatus_InvalidTransitions(t *testing.T) {
 		t.Error("Expected error for invalid status transition")
 	}
 
-	domainErr, ok := err.(*DomainError)
+	domainErr := &DomainError{}
+	ok := errors.As(err, &domainErr)
 	if !ok {
 		t.Errorf("Expected DomainError, got %T", err)
 	} else {
@@ -451,7 +453,8 @@ func TestRepository_Archive_AlreadyArchived(t *testing.T) {
 		t.Error("Expected error when archiving already archived repository")
 	}
 
-	domainErr, ok := err.(*DomainError)
+	domainErr := &DomainError{}
+	ok := errors.As(err, &domainErr)
 	if !ok {
 		t.Errorf("Expected DomainError, got %T", err)
 	} else {
@@ -504,7 +507,8 @@ func TestRepository_Restore_NotArchived(t *testing.T) {
 		t.Error("Expected error when restoring non-archived repository")
 	}
 
-	domainErr, ok := err.(*DomainError)
+	domainErr := &DomainError{}
+	ok := errors.As(err, &domainErr)
 	if !ok {
 		t.Errorf("Expected DomainError, got %T", err)
 	} else {

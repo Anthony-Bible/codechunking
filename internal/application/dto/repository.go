@@ -6,15 +6,15 @@ import (
 	"github.com/google/uuid"
 )
 
-// CreateRepositoryRequest represents the request to create a new repository
+// CreateRepositoryRequest represents the request to create a new repository.
 type CreateRepositoryRequest struct {
-	URL           string  `json:"url" validate:"required,url"`
-	Name          string  `json:"name,omitempty" validate:"omitempty,max=255"`
-	Description   *string `json:"description,omitempty" validate:"omitempty,max=1000"`
+	URL           string  `json:"url"                      validate:"required,url"`
+	Name          string  `json:"name,omitempty"           validate:"omitempty,max=255"`
+	Description   *string `json:"description,omitempty"    validate:"omitempty,max=1000"`
 	DefaultBranch *string `json:"default_branch,omitempty" validate:"omitempty,max=100"`
 }
 
-// RepositoryResponse represents the response containing repository information
+// RepositoryResponse represents the response containing repository information.
 type RepositoryResponse struct {
 	ID             uuid.UUID  `json:"id"`
 	URL            string     `json:"url"`
@@ -30,21 +30,21 @@ type RepositoryResponse struct {
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
-// RepositoryListResponse represents the response for listing repositories
+// RepositoryListResponse represents the response for listing repositories.
 type RepositoryListResponse struct {
 	Repositories []RepositoryResponse `json:"repositories"`
 	Pagination   PaginationResponse   `json:"pagination"`
 }
 
-// RepositoryListQuery represents query parameters for listing repositories
+// RepositoryListQuery represents query parameters for listing repositories.
 type RepositoryListQuery struct {
 	Status string `form:"status" validate:"omitempty,oneof=pending cloning processing completed failed archived"`
-	Limit  int    `form:"limit" validate:"omitempty,min=1,max=100"`
+	Limit  int    `form:"limit"  validate:"omitempty,min=1,max=100"`
 	Offset int    `form:"offset" validate:"omitempty,min=0"`
-	Sort   string `form:"sort" validate:"omitempty,oneof='created_at:asc' 'created_at:desc' 'updated_at:asc' 'updated_at:desc' 'name:asc' 'name:desc'"`
+	Sort   string `form:"sort"   validate:"omitempty,oneof='created_at:asc' 'created_at:desc' 'updated_at:asc' 'updated_at:desc' 'name:asc' 'name:desc'"`
 }
 
-// DefaultRepositoryListQuery returns default values for repository list query
+// DefaultRepositoryListQuery returns default values for repository list query.
 func DefaultRepositoryListQuery() RepositoryListQuery {
 	return RepositoryListQuery{
 		Limit:  20,
@@ -53,7 +53,7 @@ func DefaultRepositoryListQuery() RepositoryListQuery {
 	}
 }
 
-// PaginationResponse represents pagination metadata
+// PaginationResponse represents pagination metadata.
 type PaginationResponse struct {
 	Limit   int  `json:"limit"`
 	Offset  int  `json:"offset"`

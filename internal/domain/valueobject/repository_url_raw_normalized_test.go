@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestRepositoryURL_Raw tests that Raw() method returns the original input URL
+// TestRepositoryURL_Raw tests that Raw() method returns the original input URL.
 func TestRepositoryURL_Raw(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -70,7 +70,7 @@ func TestRepositoryURL_Raw(t *testing.T) {
 	}
 }
 
-// TestRepositoryURL_Normalized tests that Normalized() method returns normalized form
+// TestRepositoryURL_Normalized tests that Normalized() method returns normalized form.
 func TestRepositoryURL_Normalized(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -133,7 +133,7 @@ func TestRepositoryURL_Normalized(t *testing.T) {
 	}
 }
 
-// TestRepositoryURL_String_BackwardCompatibility tests that String() still returns normalized URL
+// TestRepositoryURL_String_BackwardCompatibility tests that String() still returns normalized URL.
 func TestRepositoryURL_String_BackwardCompatibility(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -171,7 +171,7 @@ func TestRepositoryURL_String_BackwardCompatibility(t *testing.T) {
 	}
 }
 
-// TestRepositoryURL_NormalizedEqualsString tests that Normalized() and String() return same value
+// TestRepositoryURL_NormalizedEqualsString tests that Normalized() and String() return same value.
 func TestRepositoryURL_NormalizedEqualsString(t *testing.T) {
 	testInputs := []string{
 		"https://github.com/golang/go/",
@@ -197,7 +197,7 @@ func TestRepositoryURL_NormalizedEqualsString(t *testing.T) {
 	}
 }
 
-// TestRepositoryURL_RawDiffersFromNormalized tests that raw and normalized can be different
+// TestRepositoryURL_RawDiffersFromNormalized tests that raw and normalized can be different.
 func TestRepositoryURL_RawDiffersFromNormalized(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -237,7 +237,7 @@ func TestRepositoryURL_RawDiffersFromNormalized(t *testing.T) {
 	}
 }
 
-// TestRepositoryURL_RawEqualsNormalizedWhenAlreadyNormalized tests equal values for already normalized input
+// TestRepositoryURL_RawEqualsNormalizedWhenAlreadyNormalized tests equal values for already normalized input.
 func TestRepositoryURL_RawEqualsNormalizedWhenAlreadyNormalized(t *testing.T) {
 	testCases := []string{
 		"https://github.com/golang/go",

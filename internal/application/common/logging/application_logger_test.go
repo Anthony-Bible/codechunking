@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestApplicationLogger_CreateStructuredLogger tests creation of structured logger
+// TestApplicationLogger_CreateStructuredLogger tests creation of structured logger.
 func TestApplicationLogger_CreateStructuredLogger(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -71,7 +71,7 @@ func TestApplicationLogger_CreateStructuredLogger(t *testing.T) {
 	}
 }
 
-// TestApplicationLogger_LogLevels tests different log levels
+// TestApplicationLogger_LogLevels tests different log levels.
 func TestApplicationLogger_LogLevels(t *testing.T) {
 	config := Config{
 		Level:  "DEBUG",
@@ -158,7 +158,7 @@ func TestApplicationLogger_LogLevels(t *testing.T) {
 	}
 }
 
-// TestApplicationLogger_CorrelationIDGeneration tests correlation ID handling
+// TestApplicationLogger_CorrelationIDGeneration tests correlation ID handling.
 func TestApplicationLogger_CorrelationIDGeneration(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -212,7 +212,7 @@ func TestApplicationLogger_CorrelationIDGeneration(t *testing.T) {
 	}
 }
 
-// TestApplicationLogger_StructuredFields tests structured field logging
+// TestApplicationLogger_StructuredFields tests structured field logging.
 func TestApplicationLogger_StructuredFields(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -250,7 +250,7 @@ func TestApplicationLogger_StructuredFields(t *testing.T) {
 	assert.Equal(t, float64(0), logEntry.Metadata["error_count"]) // JSON unmarshals numbers as float64
 }
 
-// TestApplicationLogger_ContextualLogging tests context-aware logging
+// TestApplicationLogger_ContextualLogging tests context-aware logging.
 func TestApplicationLogger_ContextualLogging(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -295,7 +295,7 @@ func TestApplicationLogger_ContextualLogging(t *testing.T) {
 	assert.Equal(t, float64(5), logEntry.Metadata["count"])
 }
 
-// TestApplicationLogger_ComponentLogging tests component-specific logging
+// TestApplicationLogger_ComponentLogging tests component-specific logging.
 func TestApplicationLogger_ComponentLogging(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -355,7 +355,7 @@ func TestApplicationLogger_ComponentLogging(t *testing.T) {
 	}
 }
 
-// TestApplicationLogger_ErrorLogging tests error logging capabilities
+// TestApplicationLogger_ErrorLogging tests error logging capabilities.
 func TestApplicationLogger_ErrorLogging(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -391,7 +391,7 @@ func TestApplicationLogger_ErrorLogging(t *testing.T) {
 	assert.Contains(t, logEntry.Metadata, "last_attempt")
 }
 
-// TestApplicationLogger_PerformanceLogging tests performance metrics logging
+// TestApplicationLogger_PerformanceLogging tests performance metrics logging.
 func TestApplicationLogger_PerformanceLogging(t *testing.T) {
 	config := Config{
 		Level:  "INFO",
@@ -431,7 +431,7 @@ func TestApplicationLogger_PerformanceLogging(t *testing.T) {
 	assert.Equal(t, "45MB", logEntry.Metadata["memory_usage"])
 }
 
-// TestApplicationLogger_ConfigurationValidation tests configuration validation
+// TestApplicationLogger_ConfigurationValidation tests configuration validation.
 func TestApplicationLogger_ConfigurationValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -501,7 +501,7 @@ func TestApplicationLogger_ConfigurationValidation(t *testing.T) {
 	}
 }
 
-// TestApplicationLogger_LogFiltering tests log level filtering
+// TestApplicationLogger_LogFiltering tests log level filtering.
 func TestApplicationLogger_LogFiltering(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -555,7 +555,13 @@ func TestApplicationLogger_LogFiltering(t *testing.T) {
 			output := getLoggerOutput(logger)
 
 			if tt.shouldLog {
-				assert.NotEmpty(t, output, "Expected log output for level %s with config %s", tt.logLevel, tt.configLevel)
+				assert.NotEmpty(
+					t,
+					output,
+					"Expected log output for level %s with config %s",
+					tt.logLevel,
+					tt.configLevel,
+				)
 
 				var logEntry LogEntry
 				err := json.Unmarshal([]byte(output), &logEntry)

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestValidateRepositoryName_XSSPrevention tests that repository names are properly sanitized
+// TestValidateRepositoryName_XSSPrevention tests that repository names are properly sanitized.
 func TestValidateRepositoryName_XSSPrevention(t *testing.T) {
 	// These tests should FAIL initially - XSS prevention is not implemented
 	xssPayloads := []struct {
@@ -111,7 +111,7 @@ func TestValidateRepositoryName_XSSPrevention(t *testing.T) {
 	}
 }
 
-// TestValidateTextFields_SQLInjectionPrevention tests SQL injection prevention in text fields
+// TestValidateTextFields_SQLInjectionPrevention tests SQL injection prevention in text fields.
 func TestValidateTextFields_SQLInjectionPrevention(t *testing.T) {
 	// These tests should FAIL initially - SQL injection prevention is not implemented
 	sqlInjectionPayloads := []struct {
@@ -198,7 +198,7 @@ func TestValidateTextFields_SQLInjectionPrevention(t *testing.T) {
 	}
 }
 
-// TestValidateControlCharacters tests control character validation
+// TestValidateControlCharacters tests control character validation.
 func TestValidateControlCharacters(t *testing.T) {
 	// These tests should FAIL initially - control character validation is not implemented
 	controlCharTests := []struct {
@@ -271,7 +271,7 @@ func TestValidateControlCharacters(t *testing.T) {
 	}
 }
 
-// TestValidateUnicodeAttacks tests unicode-based attacks
+// TestValidateUnicodeAttacks tests unicode-based attacks.
 func TestValidateUnicodeAttacks(t *testing.T) {
 	// These tests should FAIL initially - unicode attack prevention is not implemented
 	unicodeAttacks := []struct {
@@ -344,7 +344,7 @@ func TestValidateUnicodeAttacks(t *testing.T) {
 	}
 }
 
-// TestValidateFieldLength tests field length validation with edge cases
+// TestValidateFieldLength tests field length validation with edge cases.
 func TestValidateFieldLength(t *testing.T) {
 	// These tests should FAIL initially - comprehensive length validation is not implemented
 	lengthTests := []struct {
@@ -399,7 +399,7 @@ func TestValidateFieldLength(t *testing.T) {
 	}
 }
 
-// BenchmarkInputSanitization benchmarks input sanitization performance
+// BenchmarkInputSanitization benchmarks input sanitization performance.
 func BenchmarkInputSanitization(b *testing.B) {
 	testInputs := []string{
 		"normal-repo-name",
@@ -411,7 +411,7 @@ func BenchmarkInputSanitization(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		for _, input := range testInputs {
 			// This benchmark should FAIL initially - sanitization not optimized
 			name := input

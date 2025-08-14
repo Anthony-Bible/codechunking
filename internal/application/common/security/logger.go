@@ -3,7 +3,7 @@ package security
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -97,20 +97,44 @@ func (dsl *DefaultSecurityLogger) LogViolation(ctx context.Context, event Securi
 	}
 
 	// Log based on severity and configuration
-	logMessage := fmt.Sprintf("[SECURITY] %s: %s (Client: %s, Path: %s, Field: %s)",
-		event.Type, event.Message, event.ClientIP, event.Path, event.ViolationDetails.Field)
-
 	switch event.Severity {
 	case "CRITICAL", "HIGH":
-		log.Printf("CRITICAL: %s", logMessage)
+		slog.Error("Security violation",
+			"severity", "CRITICAL",
+			"type", event.Type,
+			"message", event.Message,
+			"client_ip", event.ClientIP,
+			"path", event.Path,
+			"field", event.ViolationDetails.Field,
+			"request_id", event.RequestID)
 	case "MEDIUM":
-		log.Printf("WARNING: %s", logMessage)
+		slog.Warn("Security violation",
+			"severity", "MEDIUM",
+			"type", event.Type,
+			"message", event.Message,
+			"client_ip", event.ClientIP,
+			"path", event.Path,
+			"field", event.ViolationDetails.Field,
+			"request_id", event.RequestID)
 	case "LOW":
 		if dsl.config.LogLevel == "DEBUG" {
-			log.Printf("INFO: %s", logMessage)
+			slog.Info("Security violation",
+				"severity", "LOW",
+				"type", event.Type,
+				"message", event.Message,
+				"client_ip", event.ClientIP,
+				"path", event.Path,
+				"field", event.ViolationDetails.Field,
+				"request_id", event.RequestID)
 		}
 	default:
-		log.Printf("SECURITY: %s", logMessage)
+		slog.Info("Security event",
+			"type", event.Type,
+			"message", event.Message,
+			"client_ip", event.ClientIP,
+			"path", event.Path,
+			"field", event.ViolationDetails.Field,
+			"request_id", event.RequestID)
 	}
 
 	// Update metrics
@@ -128,7 +152,10 @@ func (dsl *DefaultSecurityLogger) LogMetric(ctx context.Context, metric Security
 
 	// Log if debug mode
 	if dsl.config.LogLevel == "DEBUG" {
-		log.Printf("[METRIC] %s: %f", metric.Name, metric.Value)
+		slog.Debug("Security metric",
+			"name", metric.Name,
+			"value", metric.Value,
+			"labels", metric.Labels)
 	}
 }
 
@@ -139,17 +166,32 @@ func (dsl *DefaultSecurityLogger) LogAccess(ctx context.Context, access AccessEv
 	}
 
 	// Log based on access type
-	logMessage := fmt.Sprintf("[ACCESS] %s: %s %s -> %d (%v) (Client: %s)",
-		access.Type, access.Method, access.Path, access.StatusCode, access.Duration, access.ClientIP)
-
 	switch access.Type {
 	case "BLOCKED":
-		log.Printf("BLOCKED: %s", logMessage)
+		slog.Warn("Access blocked",
+			"type", access.Type,
+			"method", access.Method,
+			"path", access.Path,
+			"status_code", access.StatusCode,
+			"duration", access.Duration,
+			"client_ip", access.ClientIP)
 	case "FAILURE":
-		log.Printf("FAILED: %s", logMessage)
+		slog.Error("Access failed",
+			"type", access.Type,
+			"method", access.Method,
+			"path", access.Path,
+			"status_code", access.StatusCode,
+			"duration", access.Duration,
+			"client_ip", access.ClientIP)
 	case "SUCCESS":
 		if dsl.config.LogLevel == "DEBUG" {
-			log.Printf("SUCCESS: %s", logMessage)
+			slog.Debug("Access successful",
+				"type", access.Type,
+				"method", access.Method,
+				"path", access.Path,
+				"status_code", access.StatusCode,
+				"duration", access.Duration,
+				"client_ip", access.ClientIP)
 		}
 	}
 

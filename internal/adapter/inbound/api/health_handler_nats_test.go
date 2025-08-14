@@ -363,8 +363,8 @@ func TestHealthHandler_GetHealth_NATSResponseHeaders(t *testing.T) {
 
 		// These headers should be added for monitoring systems
 		assert.NotEmpty(t, recorder.Header().Get("X-Health-Check-Duration"))
-		assert.NotEmpty(t, recorder.Header().Get("X-NATS-Connection-Status"))
-		assert.NotEmpty(t, recorder.Header().Get("X-JetStream-Enabled"))
+		assert.NotEmpty(t, recorder.Header().Get("X-Nats-Connection-Status"))
+		assert.NotEmpty(t, recorder.Header().Get("X-Jetstream-Enabled"))
 	})
 }
 

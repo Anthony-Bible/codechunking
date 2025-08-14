@@ -67,14 +67,14 @@ func (h *HealthHandler) addHealthHeaders(w http.ResponseWriter, response *dto.He
 				if natsHealth.Connected {
 					connectionStatus = "connected"
 				}
-				w.Header().Set("X-NATS-Connection-Status", connectionStatus)
+				w.Header().Set("X-Nats-Connection-Status", connectionStatus)
 
 				// Add JetStream enabled header
 				jetStreamStatus := "disabled"
 				if natsHealth.JetStreamEnabled {
 					jetStreamStatus = "enabled"
 				}
-				w.Header().Set("X-JetStream-Enabled", jetStreamStatus)
+				w.Header().Set("X-Jetstream-Enabled", jetStreamStatus)
 			}
 		}
 	}

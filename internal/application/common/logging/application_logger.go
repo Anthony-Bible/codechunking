@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"runtime"
 	"strings"
@@ -107,7 +107,7 @@ type applicationLoggerImpl struct {
 	config    Config
 	component string
 	buffer    *bytes.Buffer // For testing
-	logger    *log.Logger
+	logger    *slog.Logger
 	// Performance optimization fields
 	asyncChannel chan asyncLogEvent
 	metrics      *performanceMetrics
@@ -233,13 +233,13 @@ func NewApplicationLogger(config Config) (ApplicationLogger, error) {
 	switch config.Output {
 	case "buffer":
 		logger.buffer = &bytes.Buffer{}
-		logger.logger = log.New(logger.buffer, "", 0)
+		logger.logger = slog.New(slog.NewTextHandler(logger.buffer, &slog.HandlerOptions{}))
 	case "stderr":
-		logger.logger = log.New(os.Stderr, "", 0)
+		logger.logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{}))
 	case "stdout":
 		fallthrough
 	default:
-		logger.logger = log.New(os.Stdout, "", 0)
+		logger.logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
 	}
 
 	// Initialize async logging if enabled, but not for buffer output (testing)
@@ -570,20 +570,40 @@ func (l *applicationLoggerImpl) logEntry(ctx context.Context, level, message, er
 func (l *applicationLoggerImpl) writeLogEntry(entry *LogEntry) {
 	var bytesWritten int
 
-	if l.config.Format == "json" {
-		// Use faster JSON encoding for performance
-		jsonData, err := json.Marshal(entry)
-		if err != nil {
-			atomic.AddInt64(&globalPerformanceMetrics.errorsCount, 1)
-			return
+	// Special handling for buffer output (testing) - write directly to buffer
+	if l.config.Output == "buffer" && l.buffer != nil {
+		if l.config.Format == "json" {
+			jsonData, err := json.Marshal(entry)
+			if err != nil {
+				atomic.AddInt64(&globalPerformanceMetrics.errorsCount, 1)
+				return
+			}
+			bytesWritten = len(jsonData)
+			l.buffer.Write(jsonData)
+			l.buffer.WriteString("\n")
+		} else {
+			logLine := fmt.Sprintf("[%s] %s %s: %s", entry.Timestamp, entry.Level, entry.Component, entry.Message)
+			bytesWritten = len(logLine)
+			l.buffer.WriteString(logLine)
+			l.buffer.WriteString("\n")
 		}
-		bytesWritten = len(jsonData)
-		l.logger.Println(string(jsonData))
 	} else {
-		// Simple text format for non-JSON
-		logLine := fmt.Sprintf("[%s] %s %s: %s", entry.Timestamp, entry.Level, entry.Component, entry.Message)
-		bytesWritten = len(logLine)
-		l.logger.Print(logLine)
+		// Use slog for non-buffer output
+		if l.config.Format == "json" {
+			// Use faster JSON encoding for performance
+			jsonData, err := json.Marshal(entry)
+			if err != nil {
+				atomic.AddInt64(&globalPerformanceMetrics.errorsCount, 1)
+				return
+			}
+			bytesWritten = len(jsonData)
+			l.logger.Info(string(jsonData))
+		} else {
+			// Simple text format for non-JSON
+			logLine := fmt.Sprintf("[%s] %s %s: %s", entry.Timestamp, entry.Level, entry.Component, entry.Message)
+			bytesWritten = len(logLine)
+			l.logger.Info(logLine)
+		}
 	}
 
 	// Update metrics

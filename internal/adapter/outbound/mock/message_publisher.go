@@ -2,7 +2,7 @@ package mock
 
 import (
 	"context"
-	"log"
+	"log/slog"
 
 	"codechunking/internal/port/outbound"
 
@@ -31,7 +31,7 @@ func NewMockMessagePublisher() outbound.MessagePublisher {
 // PublishIndexingJob publishes an indexing job message (mock implementation)
 func (m *MockMessagePublisher) PublishIndexingJob(ctx context.Context, repositoryID uuid.UUID, repositoryURL string) error {
 	// Log the job publication for development
-	log.Printf("Mock: Publishing indexing job for repository %s (ID: %s)", repositoryURL, repositoryID)
+	slog.Info("Mock: Publishing indexing job", "repository_url", repositoryURL, "repository_id", repositoryID)
 
 	// Store for potential testing/verification
 	m.publishedJobs = append(m.publishedJobs, PublishedJob{

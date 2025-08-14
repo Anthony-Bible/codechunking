@@ -165,7 +165,13 @@ func (n *natsApplicationLogger) LogNATSConnectionEvent(ctx context.Context, even
 		// Output log entry
 		if appLogger.config.Format == "json" {
 			jsonData, _ := json.Marshal(entry)
-			appLogger.logger.Println(string(jsonData))
+			// Special handling for buffer output (testing) - write directly to buffer
+			if appLogger.config.Output == "buffer" && appLogger.buffer != nil {
+				appLogger.buffer.Write(jsonData)
+				appLogger.buffer.WriteString("\n")
+			} else {
+				appLogger.logger.Info(string(jsonData))
+			}
 		}
 	}
 }
@@ -343,7 +349,13 @@ func (n *natsApplicationLogger) logNATSEntry(ctx context.Context, level, message
 		// Output log entry
 		if appLogger.config.Format == "json" {
 			jsonData, _ := json.Marshal(entry)
-			appLogger.logger.Println(string(jsonData))
+			// Special handling for buffer output (testing) - write directly to buffer
+			if appLogger.config.Output == "buffer" && appLogger.buffer != nil {
+				appLogger.buffer.Write(jsonData)
+				appLogger.buffer.WriteString("\n")
+			} else {
+				appLogger.logger.Info(string(jsonData))
+			}
 		}
 	}
 }

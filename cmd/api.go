@@ -5,7 +5,7 @@ package cmd
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"sync"
@@ -202,7 +202,7 @@ func (sf *ServiceFactory) buildDependencies() (outbound.RepositoryRepository, ou
 func (sf *ServiceFactory) CreateHealthService() inbound.HealthService {
 	repositoryRepo, indexingJobRepo, messagePublisher, err := sf.buildDependencies()
 	if err != nil {
-		log.Printf("Failed to create database connection, using mock health service: %v", err)
+		slog.Error("Failed to create database connection, using mock health service", "error", err)
 		// Graceful degradation: create health service with nil repositories
 		// This allows the application to start and report degraded health status
 		return service.NewHealthServiceAdapter(nil, nil, messagePublisher, serviceVersion)
@@ -226,7 +226,8 @@ func (sf *ServiceFactory) CreateRepositoryService() inbound.RepositoryService {
 	repositoryRepo, indexingJobRepo, messagePublisher, err := sf.buildDependencies()
 	if err != nil {
 		// Fail-fast approach: repository service cannot function without database
-		log.Fatalf("Failed to create database connection: %v", err)
+		slog.Error("Failed to create database connection", "error", err)
+		os.Exit(1)
 	}
 
 	// Create service registry with all required dependencies
@@ -403,7 +404,8 @@ func runAPIServer(cmd *cobra.Command, args []string) {
 	// Create server using the factory
 	server, err := serviceFactory.CreateServer()
 	if err != nil {
-		log.Fatalf("Failed to create server: %v", err)
+		slog.Error("Failed to create server", "error", err)
+		os.Exit(1)
 	}
 
 	// Start server with timeout
@@ -411,12 +413,13 @@ func runAPIServer(cmd *cobra.Command, args []string) {
 	defer startCancel()
 
 	if err := server.Start(startCtx); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+		slog.Error("Failed to start server", "error", err)
+		os.Exit(1)
 	}
 
-	log.Printf("API server started successfully on %s", server.Address())
-	log.Printf("Server configuration: host=%s port=%s", server.Host(), server.Port())
-	log.Printf("Middleware enabled: %d middleware components", server.MiddlewareCount())
+	slog.Info("API server started successfully", "address", server.Address())
+	slog.Info("Server configuration", "host", server.Host(), "port", server.Port())
+	slog.Info("Middleware enabled", "count", server.MiddlewareCount())
 
 	// Create a graceful shutdown handler
 	gracefulShutdown(server)
@@ -432,7 +435,7 @@ func gracefulShutdown(server *api.Server) {
 
 	// Wait for a signal
 	sig := <-sigChan
-	log.Printf("Received signal: %v. Initiating graceful shutdown...", sig)
+	slog.Info("Received signal. Initiating graceful shutdown", "signal", sig)
 
 	// Create a context with timeout for shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -440,11 +443,11 @@ func gracefulShutdown(server *api.Server) {
 
 	// Attempt graceful shutdown
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Error during server shutdown: %v", err)
+		slog.Error("Error during server shutdown", "error", err)
 		os.Exit(1)
 	}
 
-	log.Println("API server shut down gracefully")
+	slog.Info("API server shut down gracefully")
 }
 
 func init() {

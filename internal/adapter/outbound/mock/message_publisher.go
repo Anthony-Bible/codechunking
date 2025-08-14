@@ -2,8 +2,8 @@ package mock
 
 import (
 	"context"
-	"log/slog"
 
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/port/outbound"
 
 	"github.com/google/uuid"
@@ -35,7 +35,11 @@ func (m *MockMessagePublisher) PublishIndexingJob(
 	repositoryURL string,
 ) error {
 	// Log the job publication for development
-	slog.Info("Mock: Publishing indexing job", "repository_url", repositoryURL, "repository_id", repositoryID)
+	slogger.Info(
+		ctx,
+		"Mock: Publishing indexing job",
+		slogger.Fields2("repository_url", repositoryURL, "repository_id", repositoryID),
+	)
 
 	// Store for potential testing/verification
 	m.publishedJobs = append(m.publishedJobs, PublishedJob{

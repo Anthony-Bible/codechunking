@@ -330,7 +330,7 @@ func (m *metricsApplicationLogger) logMetricsEntry(
 				appLogger.buffer.Write(jsonData)
 				appLogger.buffer.WriteString("\n")
 			} else {
-				appLogger.logger.Info(string(jsonData))
+				appLogger.logger.InfoContext(ctx, string(jsonData))
 			}
 		}
 	}

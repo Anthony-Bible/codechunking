@@ -3,9 +3,10 @@ package security
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
+
+	"codechunking/internal/application/common/slogger"
 )
 
 // SecurityLogger provides structured logging for security events.
@@ -99,42 +100,50 @@ func (dsl *DefaultSecurityLogger) LogViolation(ctx context.Context, event Securi
 	// Log based on severity and configuration
 	switch event.Severity {
 	case "CRITICAL", "HIGH":
-		slog.Error("Security violation",
-			"severity", "CRITICAL",
-			"type", event.Type,
-			"message", event.Message,
-			"client_ip", event.ClientIP,
-			"path", event.Path,
-			"field", event.ViolationDetails.Field,
-			"request_id", event.RequestID)
+		slogger.Error(ctx, "Security violation",
+			slogger.Fields{
+				"severity":   "CRITICAL",
+				"type":       event.Type,
+				"message":    event.Message,
+				"client_ip":  event.ClientIP,
+				"path":       event.Path,
+				"field":      event.ViolationDetails.Field,
+				"request_id": event.RequestID,
+			})
 	case "MEDIUM":
-		slog.Warn("Security violation",
-			"severity", "MEDIUM",
-			"type", event.Type,
-			"message", event.Message,
-			"client_ip", event.ClientIP,
-			"path", event.Path,
-			"field", event.ViolationDetails.Field,
-			"request_id", event.RequestID)
+		slogger.Warn(ctx, "Security violation",
+			slogger.Fields{
+				"severity":   "MEDIUM",
+				"type":       event.Type,
+				"message":    event.Message,
+				"client_ip":  event.ClientIP,
+				"path":       event.Path,
+				"field":      event.ViolationDetails.Field,
+				"request_id": event.RequestID,
+			})
 	case "LOW":
 		if dsl.config.LogLevel == "DEBUG" {
-			slog.Info("Security violation",
-				"severity", "LOW",
-				"type", event.Type,
-				"message", event.Message,
-				"client_ip", event.ClientIP,
-				"path", event.Path,
-				"field", event.ViolationDetails.Field,
-				"request_id", event.RequestID)
+			slogger.Info(ctx, "Security violation",
+				slogger.Fields{
+					"severity":   "LOW",
+					"type":       event.Type,
+					"message":    event.Message,
+					"client_ip":  event.ClientIP,
+					"path":       event.Path,
+					"field":      event.ViolationDetails.Field,
+					"request_id": event.RequestID,
+				})
 		}
 	default:
-		slog.Info("Security event",
-			"type", event.Type,
-			"message", event.Message,
-			"client_ip", event.ClientIP,
-			"path", event.Path,
-			"field", event.ViolationDetails.Field,
-			"request_id", event.RequestID)
+		slogger.Info(ctx, "Security event",
+			slogger.Fields{
+				"type":       event.Type,
+				"message":    event.Message,
+				"client_ip":  event.ClientIP,
+				"path":       event.Path,
+				"field":      event.ViolationDetails.Field,
+				"request_id": event.RequestID,
+			})
 	}
 
 	// Update metrics
@@ -152,10 +161,12 @@ func (dsl *DefaultSecurityLogger) LogMetric(ctx context.Context, metric Security
 
 	// Log if debug mode
 	if dsl.config.LogLevel == "DEBUG" {
-		slog.Debug("Security metric",
-			"name", metric.Name,
-			"value", metric.Value,
-			"labels", metric.Labels)
+		slogger.Debug(ctx, "Security metric",
+			slogger.Fields3(
+				"name", metric.Name,
+				"value", metric.Value,
+				"labels", metric.Labels,
+			))
 	}
 }
 
@@ -168,30 +179,36 @@ func (dsl *DefaultSecurityLogger) LogAccess(ctx context.Context, access AccessEv
 	// Log based on access type
 	switch access.Type {
 	case "BLOCKED":
-		slog.Warn("Access blocked",
-			"type", access.Type,
-			"method", access.Method,
-			"path", access.Path,
-			"status_code", access.StatusCode,
-			"duration", access.Duration,
-			"client_ip", access.ClientIP)
+		slogger.Warn(ctx, "Access blocked",
+			slogger.Fields{
+				"type":        access.Type,
+				"method":      access.Method,
+				"path":        access.Path,
+				"status_code": access.StatusCode,
+				"duration":    access.Duration,
+				"client_ip":   access.ClientIP,
+			})
 	case "FAILURE":
-		slog.Error("Access failed",
-			"type", access.Type,
-			"method", access.Method,
-			"path", access.Path,
-			"status_code", access.StatusCode,
-			"duration", access.Duration,
-			"client_ip", access.ClientIP)
+		slogger.Error(ctx, "Access failed",
+			slogger.Fields{
+				"type":        access.Type,
+				"method":      access.Method,
+				"path":        access.Path,
+				"status_code": access.StatusCode,
+				"duration":    access.Duration,
+				"client_ip":   access.ClientIP,
+			})
 	case "SUCCESS":
 		if dsl.config.LogLevel == "DEBUG" {
-			slog.Debug("Access successful",
-				"type", access.Type,
-				"method", access.Method,
-				"path", access.Path,
-				"status_code", access.StatusCode,
-				"duration", access.Duration,
-				"client_ip", access.ClientIP)
+			slogger.Debug(ctx, "Access successful",
+				slogger.Fields{
+					"type":        access.Type,
+					"method":      access.Method,
+					"path":        access.Path,
+					"status_code": access.StatusCode,
+					"duration":    access.Duration,
+					"client_ip":   access.ClientIP,
+				})
 		}
 	}
 

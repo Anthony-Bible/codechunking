@@ -64,6 +64,78 @@ This is a production-grade code chunking and semantic search system using hexago
 - Configurable concurrency (default: 5 workers)
 - Jobs include: git cloning, code parsing, chunking, embedding generation
 
+## Logging Guidelines
+
+### Structured Logging with slogger Package
+The application uses a centralized `slogger` package that wraps the `ApplicationLogger` infrastructure and ensures compliance with Go's structured logging best practices.
+
+**Location**: `internal/application/common/slogger/slogger.go`
+
+### Usage Examples
+
+#### Context-Aware Logging (Preferred)
+```go
+import "codechunking/internal/application/common/slogger"
+
+// Simple logging with context
+slogger.Info(ctx, "Repository created successfully", slogger.Fields{
+    "repository_id": repoID,
+    "url": repositoryURL,
+})
+
+// Error logging with structured fields
+slogger.Error(ctx, "Failed to process repository", slogger.Fields{
+    "repository_id": repoID,
+    "error": err.Error(),
+    "operation": "clone_repository",
+})
+
+// Using helper functions for cleaner syntax
+slogger.Info(ctx, "Processing completed", 
+    slogger.Fields2("duration", duration, "records_processed", count))
+
+slogger.Debug(ctx, "Detailed processing info",
+    slogger.Fields3("step", "validation", "items", len(items), "batch_size", batchSize))
+```
+
+#### No-Context Fallback Functions
+For situations where context is not available (initialization, cleanup, etc.):
+```go
+// Use sparingly - only when context is truly unavailable
+slogger.InfoNoCtx("Application starting", slogger.Fields{
+    "version": version,
+    "environment": env,
+})
+```
+
+### Migration from Global slog
+When migrating existing code from global `slog` usage:
+
+**Before (violates sloglint):**
+```go
+slog.Info("Processing repository", "url", repositoryURL)
+slog.Error("Database error", "error", err)
+```
+
+**After (compliant):**
+```go
+slogger.Info(ctx, "Processing repository", slogger.Fields{"url": repositoryURL})
+slogger.Error(ctx, "Database error", slogger.Fields{"error": err})
+```
+
+### Key Benefits
+- **sloglint Compliant**: No more linting violations for global slog usage
+- **Context Propagation**: Automatic correlation ID and request ID handling  
+- **Structured Fields**: Consistent field formatting across the application
+- **Thread-Safe**: Global singleton with proper initialization
+- **Backward Compatible**: Maintains existing ApplicationLogger infrastructure
+
+### Important Notes
+- Always prefer context-aware functions (`Info`, `Error`, etc.) over no-context versions
+- Use structured fields (`slogger.Fields{}`) instead of key-value pairs
+- The slogger package automatically handles ApplicationLogger initialization
+- All logging output maintains JSON format for production observability
+
 ## TDD Requirements
 - **IMPORTANT** you MUST Use tdd, the @agent-red-phase-tester for writing failing tests, @agent-green-phase-implementer for getting tests passing, and finally @agent-tdd-refactor-specialist for the refactor phase of tdd, this will ensure a well written and clean program and code
 - try keeping files to 500 lines and not above 1000 lines to help with reaadability and parsability

@@ -467,7 +467,7 @@ func TestPostgreSQLRepositoryRepository_ConcurrentDuplicateDetection(t *testing.
 	var errors []error
 	var successes int
 
-	for range len(urlVariations) {
+	for range urlVariations {
 		err := <-results
 		if err != nil {
 			errors = append(errors, err)

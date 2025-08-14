@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"log/slog"
 	"os"
 	"os/signal"
 	"sync"
@@ -16,6 +15,7 @@ import (
 	"codechunking/internal/adapter/inbound/service"
 	"codechunking/internal/adapter/outbound/mock"
 	"codechunking/internal/adapter/outbound/repository"
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/registry"
 	"codechunking/internal/config"
 	"codechunking/internal/port/inbound"
@@ -202,7 +202,10 @@ func (sf *ServiceFactory) buildDependencies() (outbound.RepositoryRepository, ou
 func (sf *ServiceFactory) CreateHealthService() inbound.HealthService {
 	repositoryRepo, indexingJobRepo, messagePublisher, err := sf.buildDependencies()
 	if err != nil {
-		slog.Error("Failed to create database connection, using mock health service", "error", err)
+		slogger.ErrorNoCtx(
+			"Failed to create database connection, using mock health service",
+			slogger.Field("error", err),
+		)
 		// Graceful degradation: create health service with nil repositories
 		// This allows the application to start and report degraded health status
 		return service.NewHealthServiceAdapter(nil, nil, messagePublisher, serviceVersion)
@@ -226,7 +229,7 @@ func (sf *ServiceFactory) CreateRepositoryService() inbound.RepositoryService {
 	repositoryRepo, indexingJobRepo, messagePublisher, err := sf.buildDependencies()
 	if err != nil {
 		// Fail-fast approach: repository service cannot function without database
-		slog.Error("Failed to create database connection", "error", err)
+		slogger.ErrorNoCtx("Failed to create database connection", slogger.Field("error", err))
 		os.Exit(1)
 	}
 
@@ -404,7 +407,7 @@ func runAPIServer(cmd *cobra.Command, args []string) {
 	// Create server using the factory
 	server, err := serviceFactory.CreateServer()
 	if err != nil {
-		slog.Error("Failed to create server", "error", err)
+		slogger.ErrorNoCtx("Failed to create server", slogger.Field("error", err))
 		os.Exit(1)
 	}
 
@@ -413,13 +416,13 @@ func runAPIServer(cmd *cobra.Command, args []string) {
 	defer startCancel()
 
 	if err := server.Start(startCtx); err != nil {
-		slog.Error("Failed to start server", "error", err)
+		slogger.ErrorNoCtx("Failed to start server", slogger.Field("error", err))
 		os.Exit(1)
 	}
 
-	slog.Info("API server started successfully", "address", server.Address())
-	slog.Info("Server configuration", "host", server.Host(), "port", server.Port())
-	slog.Info("Middleware enabled", "count", server.MiddlewareCount())
+	slogger.InfoNoCtx("API server started successfully", slogger.Field("address", server.Address()))
+	slogger.InfoNoCtx("Server configuration", slogger.Fields2("host", server.Host(), "port", server.Port()))
+	slogger.InfoNoCtx("Middleware enabled", slogger.Field("count", server.MiddlewareCount()))
 
 	// Create a graceful shutdown handler
 	gracefulShutdown(server)
@@ -435,7 +438,7 @@ func gracefulShutdown(server *api.Server) {
 
 	// Wait for a signal
 	sig := <-sigChan
-	slog.Info("Received signal. Initiating graceful shutdown", "signal", sig)
+	slogger.InfoNoCtx("Received signal. Initiating graceful shutdown", slogger.Field("signal", sig))
 
 	// Create a context with timeout for shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -443,11 +446,11 @@ func gracefulShutdown(server *api.Server) {
 
 	// Attempt graceful shutdown
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		slog.Error("Error during server shutdown", "error", err)
+		slogger.ErrorNoCtx("Error during server shutdown", slogger.Field("error", err))
 		os.Exit(1)
 	}
 
-	slog.Info("API server shut down gracefully")
+	slogger.InfoNoCtx("API server shut down gracefully", nil)
 }
 
 func init() {

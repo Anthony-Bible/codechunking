@@ -186,7 +186,7 @@ func TestNATSMessagePublisher_Integration_MessageFlow(t *testing.T) {
 		// 3. Message ordering is preserved
 		// 4. No messages are lost
 
-		assert.Equal(t, 3, len(testMessages)) // Placeholder verification
+		assert.Len(t, testMessages, 3) // Placeholder verification
 	})
 
 	t.Run("message persistence across reconnections", func(t *testing.T) {

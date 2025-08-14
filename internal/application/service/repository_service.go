@@ -408,13 +408,13 @@ func (s *PerformantDuplicateDetectionService) BatchCheckDuplicates(
 	urls []string,
 ) ([]DuplicateCheckResult, error) {
 	if len(urls) == 0 {
-		s.logger.Info("Batch duplicate check called with empty URL list")
+		s.logger.InfoContext(ctx, "Batch duplicate check called with empty URL list")
 		return []DuplicateCheckResult{}, nil
 	}
 
 	startTime := time.Now()
 	operationID := generateOperationID()
-	s.logger.Info("Starting batch duplicate detection",
+	s.logger.InfoContext(ctx, "Starting batch duplicate detection",
 		"url_count", len(urls),
 		"operation_id", operationID)
 
@@ -465,7 +465,7 @@ func (s *PerformantDuplicateDetectionService) BatchCheckDuplicates(
 
 	// Log final batch operation results
 	operationTime := time.Since(startTime)
-	s.logger.Info("Batch duplicate detection completed",
+	s.logger.InfoContext(ctx, "Batch duplicate detection completed",
 		"url_count", len(urls),
 		"duplicates_found", duplicatesFound,
 		"errors", errorsFound,
@@ -508,7 +508,7 @@ func (s *PerformantDuplicateDetectionService) processSingleURLForDuplicateCheck(
 	if err != nil {
 		result.Error = fmt.Errorf("invalid URL: %w", err)
 		result.ProcessingTime = time.Since(urlStartTime)
-		s.logger.Warn("URL validation failed",
+		s.logger.WarnContext(ctx, "URL validation failed",
 			"url", rawURL,
 			"error", err.Error(),
 			"processing_time", result.ProcessingTime)
@@ -524,7 +524,7 @@ func (s *PerformantDuplicateDetectionService) processSingleURLForDuplicateCheck(
 	if err != nil {
 		result.Error = fmt.Errorf("failed to check duplicate: %w", err)
 		result.ProcessingTime = time.Since(urlStartTime)
-		s.logger.Error("Duplicate check failed",
+		s.logger.ErrorContext(ctx, "Duplicate check failed",
 			"url", rawURL,
 			"normalized_url", result.NormalizedURL,
 			"error", err.Error(),
@@ -545,7 +545,7 @@ func (s *PerformantDuplicateDetectionService) processSingleURLForDuplicateCheck(
 		if err != nil {
 			result.Error = fmt.Errorf("failed to fetch existing repository: %w", err)
 			result.ProcessingTime = time.Since(urlStartTime)
-			s.logger.Error("Failed to fetch existing repository details",
+			s.logger.ErrorContext(ctx, "Failed to fetch existing repository details",
 				"url", rawURL,
 				"normalized_url", result.NormalizedURL,
 				"error", err.Error(),
@@ -559,13 +559,13 @@ func (s *PerformantDuplicateDetectionService) processSingleURLForDuplicateCheck(
 		}
 
 		result.ExistingRepository = existingRepo
-		s.logger.Info("Duplicate repository detected",
+		s.logger.InfoContext(ctx, "Duplicate repository detected",
 			"url", rawURL,
 			"normalized_url", result.NormalizedURL,
 			"existing_id", existingRepo.ID().String(),
 			"processing_time", time.Since(urlStartTime))
 	} else {
-		s.logger.Debug("No duplicate found",
+		s.logger.DebugContext(ctx, "No duplicate found",
 			"url", rawURL,
 			"normalized_url", result.NormalizedURL,
 			"processing_time", time.Since(urlStartTime))

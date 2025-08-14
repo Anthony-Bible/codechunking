@@ -170,7 +170,7 @@ func (n *natsApplicationLogger) LogNATSConnectionEvent(ctx context.Context, even
 				appLogger.buffer.Write(jsonData)
 				appLogger.buffer.WriteString("\n")
 			} else {
-				appLogger.logger.Info(string(jsonData))
+				appLogger.logger.InfoContext(ctx, string(jsonData))
 			}
 		}
 	}
@@ -359,7 +359,7 @@ func (n *natsApplicationLogger) logNATSEntry(
 				appLogger.buffer.Write(jsonData)
 				appLogger.buffer.WriteString("\n")
 			} else {
-				appLogger.logger.Info(string(jsonData))
+				appLogger.logger.InfoContext(ctx, string(jsonData))
 			}
 		}
 	}

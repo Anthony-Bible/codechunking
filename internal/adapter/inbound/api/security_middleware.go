@@ -261,36 +261,55 @@ func NewContentTypeValidationMiddleware() func(http.Handler) http.Handler {
 	}
 }
 
-// NewSecurityHeadersMiddleware creates security headers middleware
+// NewSecurityHeadersMiddleware creates security headers middleware using the unified implementation.
+//
+// Delegation Pattern:
+// This function delegates to NewUnifiedSecurityMiddleware(nil) to ensure consistency
+// across all security middleware implementations in the codebase. This approach:
+//   - Eliminates code duplication and hardcoded security header values
+//   - Ensures all security middleware uses the same configurable implementation
+//   - Maintains backward compatibility while centralizing security header logic
+//   - Allows the unified middleware to be the single source of truth for defaults
+//
+// The nil config parameter instructs the unified middleware to use its built-in
+// default security configuration, which provides production-ready security headers
+// without requiring explicit configuration from consumers.
 func NewSecurityHeadersMiddleware() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Add security headers
-			w.Header().Set("X-Content-Type-Options", "nosniff")
-			w.Header().Set("X-Frame-Options", "DENY")
-			w.Header().Set("X-XSS-Protection", "1; mode=block")
-			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; object-src 'none'")
-			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-
-			next.ServeHTTP(w, r)
-		})
-	}
+	return NewUnifiedSecurityMiddleware(nil)
 }
 
-// CreateSecurityMiddlewareStack creates a comprehensive security middleware stack
+// CreateSecurityMiddlewareStack creates a comprehensive security middleware stack.
+//
+// Middleware Stack Architecture:
+// This function composes multiple security middleware layers into a complete stack,
+// applying them in the correct order for optimal security coverage:
+//  1. Security headers (outermost) - Applied to all responses
+//  2. Rate limiting - Prevents abuse before processing
+//  3. Content type validation - Validates request format
+//  4. Security validation (innermost) - Validates request content
+//
+// Unified Middleware Integration:
+// The stack uses NewUnifiedSecurityMiddleware(nil) directly for security headers
+// rather than the legacy wrapper functions. This approach ensures:
+//   - Consistent security header behavior across all middleware paths
+//   - No duplicate header application from multiple middleware layers
+//   - Direct access to the unified implementation's default configuration
+//   - Optimal performance by avoiding unnecessary function call overhead
 func CreateSecurityMiddlewareStack() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-		// Apply middleware in order
+		// Apply middleware in order from innermost to outermost
 		handler := next
 
 		// Security validation (innermost - closest to handler)
+		// Validates request content for SQL injection, XSS, and other security threats
 		handler = NewSecurityValidationMiddleware()(handler)
 
 		// Content type validation
+		// Ensures only supported content types are processed
 		handler = NewContentTypeValidationMiddleware()(handler)
 
 		// Rate limiting
+		// Prevents abuse by limiting requests per client IP address
 		config := RateLimitConfig{
 			RequestsPerMinute: 10,
 			BurstSize:         5,
@@ -298,8 +317,10 @@ func CreateSecurityMiddlewareStack() func(http.Handler) http.Handler {
 		}
 		handler = NewRateLimitingMiddleware(config)(handler)
 
-		// Security headers (outermost)
-		handler = NewSecurityHeadersMiddleware()(handler)
+		// Security headers (outermost - applied to all responses)
+		// Uses unified middleware directly to ensure consistent, production-ready security headers
+		unifiedSecurityMiddleware := NewUnifiedSecurityMiddleware(nil)
+		handler = unifiedSecurityMiddleware(handler)
 
 		return handler
 	}

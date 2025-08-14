@@ -15,7 +15,24 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PostgreSQLRepositoryRepository implements the RepositoryRepository interface
+// PostgreSQLRepositoryRepository implements the RepositoryRepository interface.
+//
+// URL Storage and Query Consistency:
+// This repository implementation maintains strict consistency between how URLs are stored
+// and how they are queried. The architecture uses a dual-URL approach:
+//
+//  1. Raw URL Storage (url column): Stores the exact URL as provided by users,
+//     preserving original casing, .git suffixes, and other user-input characteristics.
+//     Used for exact-match queries in FindByURL() and Exists() methods.
+//
+//  2. Normalized URL Storage (normalized_url column): Stores a canonical form of the URL
+//     (lowercase, no .git suffix, etc.) for duplicate detection and semantic queries.
+//     Used by FindByNormalizedURL() and ExistsByNormalizedURL() methods.
+//
+// This design ensures that:
+// - Users can retrieve repositories using the exact same URL format they provided
+// - The system can detect semantic duplicates (github.com/owner/repo == GitHub.com/Owner/Repo.git)
+// - Query methods are consistent with their corresponding storage format
 type PostgreSQLRepositoryRepository struct {
 	pool *pgxpool.Pool
 }
@@ -27,7 +44,12 @@ func NewPostgreSQLRepositoryRepository(pool *pgxpool.Pool) *PostgreSQLRepository
 	}
 }
 
-// Save saves a repository to the database
+// Save saves a repository to the database.
+//
+// URL Storage Strategy:
+// - Stores repository.URL().Raw() in the 'url' column for exact-match queries
+// - Stores repository.URL().Normalized() in the 'normalized_url' column for duplicate detection
+// This dual storage approach enables both exact lookups and semantic duplicate detection.
 func (r *PostgreSQLRepositoryRepository) Save(ctx context.Context, repository *entity.Repository) error {
 	if repository == nil {
 		return ErrInvalidArgument
@@ -103,7 +125,13 @@ func (r *PostgreSQLRepositoryRepository) FindByID(ctx context.Context, id uuid.U
 	return r.scanRepositoryFromTime(id, repoURL, name, description, defaultBranch, lastIndexedAt, lastCommitHash, totalFiles, totalChunks, statusStr, createdAt, updatedAt, deletedAt)
 }
 
-// FindByURL finds a repository by its URL
+// FindByURL finds a repository by its exact raw URL.
+//
+// This method queries the 'url' column using the raw URL format (url.Raw())
+// to maintain consistency with how URLs are stored during Save() operations.
+// Use FindByNormalizedURL() if you need to find repositories by their canonical form.
+//
+// Returns nil if no repository is found, or an error if the query fails.
 func (r *PostgreSQLRepositoryRepository) FindByURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error) {
 	query := `
 		SELECT id, url, name, description, default_branch, last_indexed_at, 
@@ -112,29 +140,7 @@ func (r *PostgreSQLRepositoryRepository) FindByURL(ctx context.Context, url valu
 		FROM codechunking.repositories 
 		WHERE url = $1 AND deleted_at IS NULL`
 
-	qi := GetQueryInterface(ctx, r.pool)
-	row := qi.QueryRow(ctx, query, url.String())
-
-	var id uuid.UUID
-	var repoURL, name, statusStr string
-	var description, defaultBranch, lastCommitHash *string
-	var lastIndexedAt, deletedAt *time.Time
-	var totalFiles, totalChunks int
-	var createdAt, updatedAt time.Time
-
-	err := row.Scan(
-		&id, &repoURL, &name, &description, &defaultBranch, &lastIndexedAt,
-		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
-		&createdAt, &updatedAt, &deletedAt,
-	)
-	if err != nil {
-		if IsNotFoundError(err) {
-			return nil, nil
-		}
-		return nil, WrapError(err, "find repository by URL")
-	}
-
-	return r.scanRepositoryFromTime(id, repoURL, name, description, defaultBranch, lastIndexedAt, lastCommitHash, totalFiles, totalChunks, statusStr, createdAt, updatedAt, deletedAt)
+	return r.queryRepositoryByRawURL(ctx, url, query)
 }
 
 // FindAll finds repositories with filters
@@ -176,22 +182,7 @@ func (r *PostgreSQLRepositoryRepository) FindAll(ctx context.Context, filters ou
 		whereClause = " AND " + strings.Join(whereConditions, " AND ")
 	}
 
-	// Count query
-	countQuery := "SELECT COUNT(*) " + baseQuery + whereClause
-	qi := GetQueryInterface(ctx, r.pool)
-
-	var totalCount int
-	err := qi.QueryRow(ctx, countQuery, args...).Scan(&totalCount)
-	if err != nil {
-		return nil, 0, WrapError(err, "count repositories")
-	}
-
-	// If offset is beyond total count, return empty results
-	if filters.Offset >= totalCount {
-		return []*entity.Repository{}, totalCount, nil
-	}
-
-	// Data query
+	// Build ORDER BY clause
 	orderBy := "ORDER BY created_at DESC"
 	if filters.Sort != "" {
 		// Parse field:direction format
@@ -235,15 +226,22 @@ func (r *PostgreSQLRepositoryRepository) FindAll(ctx context.Context, filters ou
 		offset = filters.Offset
 	}
 
-	dataQuery := `SELECT id, url, name, description, default_branch, last_indexed_at, 
+	// Execute count and data queries using shared helper
+	qi := GetQueryInterface(ctx, r.pool)
+	selectColumns := `SELECT id, url, name, description, default_branch, last_indexed_at, 
 				  last_commit_hash, total_files, total_chunks, status, 
-				  created_at, updated_at, deleted_at ` +
-		baseQuery + whereClause + " " + orderBy +
-		fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+				  created_at, updated_at, deleted_at`
 
-	rows, err := qi.Query(ctx, dataQuery, args...)
+	totalCount, rows, err := executeCountAndDataQuery(
+		ctx, qi, baseQuery, selectColumns, whereClause, orderBy, args, limit, offset,
+	)
 	if err != nil {
-		return nil, 0, WrapError(err, "query repositories")
+		return nil, 0, err
+	}
+
+	// If offset is beyond total count or no rows, return empty results
+	if rows == nil {
+		return []*entity.Repository{}, totalCount, nil
 	}
 	defer rows.Close()
 
@@ -280,7 +278,12 @@ func (r *PostgreSQLRepositoryRepository) FindAll(ctx context.Context, filters ou
 	return repositories, totalCount, nil
 }
 
-// Update updates a repository in the database
+// Update updates a repository in the database.
+//
+// URL Storage Strategy:
+// - Updates both 'url' column with repository.URL().Raw() for exact-match queries
+// - Updates 'normalized_url' column with repository.URL().Normalized() for duplicate detection
+// This maintains consistency with the Save() method's dual storage approach.
 func (r *PostgreSQLRepositoryRepository) Update(ctx context.Context, repository *entity.Repository) error {
 	if repository == nil {
 		return ErrInvalidArgument
@@ -344,35 +347,36 @@ func (r *PostgreSQLRepositoryRepository) Delete(ctx context.Context, id uuid.UUI
 	return nil
 }
 
-// Exists checks if a repository with the given URL exists
+// Exists checks if a repository with the given exact raw URL exists.
+//
+// This method queries the 'url' column using the raw URL format (url.Raw())
+// to maintain consistency with how URLs are stored during Save() operations.
+// Use ExistsByNormalizedURL() if you need to check existence by canonical form.
+//
+// Returns true if the repository exists, false otherwise, or an error if the query fails.
 func (r *PostgreSQLRepositoryRepository) Exists(ctx context.Context, url valueobject.RepositoryURL) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM codechunking.repositories WHERE url = $1 AND deleted_at IS NULL)`
-
-	qi := GetQueryInterface(ctx, r.pool)
-	var exists bool
-	err := qi.QueryRow(ctx, query, url.String()).Scan(&exists)
-	if err != nil {
-		return false, WrapError(err, "check repository exists")
-	}
-
-	return exists, nil
+	return r.checkExistenceByRawURL(ctx, url)
 }
 
-// ExistsByNormalizedURL checks if a repository with the given normalized URL exists
+// ExistsByNormalizedURL checks if a repository with the given normalized URL exists.
+//
+// This method queries the 'normalized_url' column using the normalized URL format (url.Normalized())
+// to check for semantic duplicates regardless of the original raw URL format.
+// This is useful for duplicate detection when the raw URL format may vary.
+//
+// Returns true if a repository with the equivalent normalized URL exists, false otherwise,
+// or an error if the query fails.
 func (r *PostgreSQLRepositoryRepository) ExistsByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM codechunking.repositories WHERE normalized_url = $1 AND deleted_at IS NULL)`
-
-	qi := GetQueryInterface(ctx, r.pool)
-	var exists bool
-	err := qi.QueryRow(ctx, query, url.Normalized()).Scan(&exists)
-	if err != nil {
-		return false, WrapError(err, "check repository exists by normalized URL")
-	}
-
-	return exists, nil
+	return r.checkExistenceByNormalizedURL(ctx, url)
 }
 
-// FindByNormalizedURL finds a repository by its normalized URL
+// FindByNormalizedURL finds a repository by its normalized URL.
+//
+// This method queries the 'normalized_url' column using the normalized URL format (url.Normalized())
+// to find repositories based on their canonical form, regardless of how the raw URL was originally formatted.
+// This is useful for duplicate detection and semantic lookups.
+//
+// Returns the repository if found by normalized URL, nil if not found, or an error if the query fails.
 func (r *PostgreSQLRepositoryRepository) FindByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error) {
 	query := `
 		SELECT id, url, name, description, default_branch, last_indexed_at, 
@@ -381,34 +385,7 @@ func (r *PostgreSQLRepositoryRepository) FindByNormalizedURL(ctx context.Context
 		FROM codechunking.repositories 
 		WHERE normalized_url = $1 AND deleted_at IS NULL`
 
-	qi := GetQueryInterface(ctx, r.pool)
-	row := qi.QueryRow(ctx, query, url.Normalized())
-
-	var id uuid.UUID
-	var urlStr, name, statusStr string
-	var description, defaultBranch, lastCommitHash *string
-	var totalFiles, totalChunks int
-	var lastIndexedAt *time.Time
-	var createdAt, updatedAt time.Time
-	var deletedAt *time.Time
-
-	err := row.Scan(
-		&id, &urlStr, &name, &description, &defaultBranch, &lastIndexedAt,
-		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
-		&createdAt, &updatedAt, &deletedAt,
-	)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil // Not found, return nil without error
-		}
-		return nil, WrapError(err, "find repository by normalized URL")
-	}
-
-	return r.scanRepositoryFromTime(
-		id, urlStr, name, description, defaultBranch,
-		lastIndexedAt, lastCommitHash, totalFiles, totalChunks,
-		statusStr, createdAt, updatedAt, deletedAt,
-	)
+	return r.queryRepositoryByNormalizedURL(ctx, url, query)
 }
 
 // scanRepositoryFromTime is a helper function to convert database row to Repository entity when timestamps are already parsed
@@ -433,6 +410,135 @@ func (r *PostgreSQLRepositoryRepository) scanRepositoryFromTime(
 		lastIndexedAt, lastCommitHash, totalFiles, totalChunks,
 		status, createdAt, updatedAt, deletedAt,
 	), nil
+}
+
+// queryRepositoryByRawURL is a helper method that executes a query against the 'url' column
+// using the raw URL format. This ensures consistency across all raw URL-based queries.
+func (r *PostgreSQLRepositoryRepository) queryRepositoryByRawURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+	query string,
+) (*entity.Repository, error) {
+	// Validate inputs for early error detection
+	if url.Raw() == "" {
+		return nil, ErrInvalidArgument
+	}
+
+	qi := GetQueryInterface(ctx, r.pool)
+	row := qi.QueryRow(ctx, query, url.Raw())
+
+	var id uuid.UUID
+	var repoURL, name, statusStr string
+	var description, defaultBranch, lastCommitHash *string
+	var lastIndexedAt, deletedAt *time.Time
+	var totalFiles, totalChunks int
+	var createdAt, updatedAt time.Time
+
+	err := row.Scan(
+		&id, &repoURL, &name, &description, &defaultBranch, &lastIndexedAt,
+		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
+		&createdAt, &updatedAt, &deletedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil // Not found, return nil without error
+		}
+		return nil, WrapError(err, "query repository by raw URL")
+	}
+
+	return r.scanRepositoryFromTime(
+		id, repoURL, name, description, defaultBranch,
+		lastIndexedAt, lastCommitHash, totalFiles, totalChunks,
+		statusStr, createdAt, updatedAt, deletedAt,
+	)
+}
+
+// queryRepositoryByNormalizedURL is a helper method that executes a query against the 'normalized_url' column
+// using the normalized URL format. This ensures consistency across all normalized URL-based queries.
+func (r *PostgreSQLRepositoryRepository) queryRepositoryByNormalizedURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+	query string,
+) (*entity.Repository, error) {
+	// Validate inputs for early error detection
+	if url.Normalized() == "" {
+		return nil, ErrInvalidArgument
+	}
+
+	qi := GetQueryInterface(ctx, r.pool)
+	row := qi.QueryRow(ctx, query, url.Normalized())
+
+	var id uuid.UUID
+	var urlStr, name, statusStr string
+	var description, defaultBranch, lastCommitHash *string
+	var totalFiles, totalChunks int
+	var lastIndexedAt *time.Time
+	var createdAt, updatedAt time.Time
+	var deletedAt *time.Time
+
+	err := row.Scan(
+		&id, &urlStr, &name, &description, &defaultBranch, &lastIndexedAt,
+		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
+		&createdAt, &updatedAt, &deletedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil // Not found
+		}
+		return nil, WrapError(err, "query repository by normalized URL")
+	}
+
+	return r.scanRepositoryFromTime(
+		id, urlStr, name, description, defaultBranch,
+		lastIndexedAt, lastCommitHash, totalFiles, totalChunks,
+		statusStr, createdAt, updatedAt, deletedAt,
+	)
+}
+
+// checkExistenceByRawURL is a helper method that checks repository existence using the raw URL format.
+// This ensures consistency with storage operations that use raw URLs.
+func (r *PostgreSQLRepositoryRepository) checkExistenceByRawURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (bool, error) {
+	// Validate inputs for early error detection
+	if url.Raw() == "" {
+		return false, ErrInvalidArgument
+	}
+
+	query := `SELECT EXISTS(SELECT 1 FROM codechunking.repositories WHERE url = $1 AND deleted_at IS NULL)`
+
+	qi := GetQueryInterface(ctx, r.pool)
+	var exists bool
+	err := qi.QueryRow(ctx, query, url.Raw()).Scan(&exists)
+	if err != nil {
+		return false, WrapError(err, "check repository exists by raw URL")
+	}
+
+	return exists, nil
+}
+
+// checkExistenceByNormalizedURL is a helper method that checks repository existence using the normalized URL format.
+// This is useful for duplicate detection regardless of the original URL format.
+func (r *PostgreSQLRepositoryRepository) checkExistenceByNormalizedURL(
+	ctx context.Context,
+	url valueobject.RepositoryURL,
+) (bool, error) {
+	// Validate inputs for early error detection
+	if url.Normalized() == "" {
+		return false, ErrInvalidArgument
+	}
+
+	query := `SELECT EXISTS(SELECT 1 FROM codechunking.repositories WHERE normalized_url = $1 AND deleted_at IS NULL)`
+
+	qi := GetQueryInterface(ctx, r.pool)
+	var exists bool
+	err := qi.QueryRow(ctx, query, url.Normalized()).Scan(&exists)
+	if err != nil {
+		return false, WrapError(err, "check repository exists by normalized URL")
+	}
+
+	return exists, nil
 }
 
 // validateSortParameter validates the sort parameter format and fields

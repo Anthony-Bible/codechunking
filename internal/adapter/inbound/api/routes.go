@@ -8,6 +8,72 @@ import (
 	"codechunking/internal/adapter/inbound/api/testutil"
 )
 
+// Route validation error message constants for consistent error handling
+const (
+	ErrEmptyPattern           = "route pattern cannot be empty"
+	ErrWhitespacePattern      = "route pattern cannot be only whitespace"
+	ErrInvalidPatternFormat   = "invalid route pattern format: must have format 'METHOD /path'"
+	ErrEmptyMethod            = "HTTP method cannot be empty"
+	ErrInvalidMethod          = "invalid HTTP method: must be one of GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS"
+	ErrEmptyPath              = "empty path"
+	ErrPathMustStartWithSlash = "path must start with '/'"
+	ErrDoubleSlashes          = "path contains double slashes"
+	ErrUnmatchedClosingBrace  = "unmatched closing brace"
+)
+
+// Error message templates for consistent formatting
+const (
+	TmplPathMustStartWithSlash  = "path '%s' in pattern '%s' must start with '/'"
+	TmplPathContainsDoubleSlash = "path '%s' in pattern '%s' contains double slashes"
+	TmplUnmatchedClosingBrace   = "invalid parameter syntax in pattern '%s': unmatched closing brace at position %d"
+)
+
+// Parameter validation error codes for structured error reporting
+const (
+	ParamMissingCloseBrace = "PARAM_MISSING_CLOSE_BRACE"
+	ParamEmptyName         = "PARAM_EMPTY_NAME"
+	ParamInvalidName       = "PARAM_INVALID_NAME"
+	ParamDuplicateName     = "PARAM_DUPLICATE_NAME"
+)
+
+// Route conflict error types
+const (
+	ConflictExactDuplicate = "ExactDuplicate"
+	ConflictSameStructure  = "SameStructure"
+)
+
+// newParameterSyntaxError creates a structured parameter syntax error with consistent formatting
+// This helper consolidates all parameter validation errors into a consistent format
+func newParameterSyntaxError(errorCode, pattern string, details ...interface{}) error {
+	return fmt.Errorf("newParameterSyntaxError %s in pattern '%s': %v", errorCode, pattern, details)
+}
+
+// newRouteConflictError creates a structured route conflict error with consistent formatting
+// This helper consolidates all route conflict errors into a consistent format for easier debugging
+func newRouteConflictError(conflictType, newPattern, existingPattern string) error {
+	return fmt.Errorf("newRouteConflictError %s: pattern '%s' conflicts with existing pattern '%s'", conflictType, newPattern, existingPattern)
+}
+
+// validHTTPMethods contains the valid HTTP methods for route pattern validation.
+// This package-level variable eliminates map allocation on every validatePattern call,
+// improving performance while maintaining the same validation behavior.
+// The map is safe for concurrent read access during request validation.
+var validHTTPMethods = map[string]bool{
+	"GET": true, "POST": true, "PUT": true, "DELETE": true,
+	"PATCH": true, "HEAD": true, "OPTIONS": true,
+}
+
+// isValidHTTPMethod performs case-insensitive validation of HTTP methods without
+// string allocation by using strings.EqualFold for comparison.
+func isValidHTTPMethod(method string) bool {
+	for validMethod := range validHTTPMethods {
+		if strings.EqualFold(method, validMethod) {
+			return true
+		}
+	}
+	return false
+}
+
 // RouteRegistry manages HTTP route registration using Go 1.22+ ServeMux patterns
 type RouteRegistry struct {
 	routes   map[string]http.Handler
@@ -100,42 +166,37 @@ func (r *RouteRegistry) GetPatterns() []string {
 // validatePattern validates a Go 1.22+ ServeMux pattern with detailed error messages
 func (r *RouteRegistry) validatePattern(pattern string) error {
 	if pattern == "" {
-		return fmt.Errorf("route pattern cannot be empty")
+		return fmt.Errorf("%s", ErrEmptyPattern)
 	}
 
 	if strings.TrimSpace(pattern) == "" {
-		return fmt.Errorf("route pattern cannot be only whitespace")
+		return fmt.Errorf("%s", ErrWhitespacePattern)
 	}
 
 	// Split method and path
 	parts := strings.SplitN(pattern, " ", 2)
 	if len(parts) != 2 {
-		return fmt.Errorf("invalid route pattern '%s': must have format 'METHOD /path' (e.g., 'GET /users')", pattern)
+		return fmt.Errorf("%s", ErrInvalidPatternFormat)
 	}
 
 	method, path := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 
 	// Validate HTTP method
-	validMethods := map[string]bool{
-		"GET": true, "POST": true, "PUT": true, "DELETE": true,
-		"PATCH": true, "HEAD": true, "OPTIONS": true,
-	}
-
 	if method == "" {
-		return fmt.Errorf("HTTP method cannot be empty in pattern '%s'", pattern)
+		return fmt.Errorf("%s", ErrEmptyMethod)
 	}
 
-	if !validMethods[strings.ToUpper(method)] {
-		return fmt.Errorf("invalid HTTP method '%s' in pattern '%s': must be one of GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS", method, pattern)
+	if !isValidHTTPMethod(method) {
+		return fmt.Errorf("%s", ErrInvalidMethod)
 	}
 
 	// Validate path
 	if path == "" {
-		return fmt.Errorf("empty path")
+		return fmt.Errorf("%s", ErrEmptyPath)
 	}
 
 	if !strings.HasPrefix(path, "/") {
-		return fmt.Errorf("path '%s' in pattern '%s' must start with '/'", path, pattern)
+		return fmt.Errorf(TmplPathMustStartWithSlash, path, pattern)
 	}
 
 	// Check for invalid parameter syntax
@@ -147,7 +208,7 @@ func (r *RouteRegistry) validatePattern(pattern string) error {
 
 	// Check for double slashes or other path issues
 	if strings.Contains(path, "//") {
-		return fmt.Errorf("path '%s' in pattern '%s' contains double slashes", path, pattern)
+		return fmt.Errorf(TmplPathContainsDoubleSlash, path, pattern)
 	}
 
 	return nil
@@ -167,29 +228,29 @@ func (r *RouteRegistry) validateParameterSyntax(path, pattern string) error {
 			// Find matching closing brace
 			closing := strings.Index(path[i+1:], "}")
 			if closing == -1 {
-				return fmt.Errorf("invalid parameter syntax in pattern '%s': missing closing brace for parameter starting at position %d", pattern, i)
+				return newParameterSyntaxError(ParamMissingCloseBrace, pattern, fmt.Sprintf("missing closing brace for parameter starting at position %d", i))
 			}
 
 			paramName := path[i+1 : i+1+closing]
 			if paramName == "" {
-				return fmt.Errorf("invalid parameter syntax in pattern '%s': empty parameter name at position %d", pattern, i)
+				return newParameterSyntaxError(ParamEmptyName, pattern, fmt.Sprintf("empty parameter name at position %d", i))
 			}
 
 			// Validate parameter name (should be alphanumeric and underscores)
 			if !isValidParameterName(paramName) {
-				return fmt.Errorf("invalid parameter name '%s' in pattern '%s': parameter names must contain only letters, numbers, and underscores", paramName, pattern)
+				return newParameterSyntaxError(ParamInvalidName, pattern, fmt.Sprintf("parameter name '%s' must contain only letters, numbers, and underscores", paramName))
 			}
 
 			// Check for duplicate parameter names
 			if paramNames[paramName] {
-				return fmt.Errorf("duplicate parameter name '%s' in pattern '%s'", paramName, pattern)
+				return newParameterSyntaxError(ParamDuplicateName, pattern, fmt.Sprintf("duplicate parameter name '%s'", paramName))
 			}
 			paramNames[paramName] = true
 
 			i += closing + 1
 		case '}':
 			// Unmatched closing brace
-			return fmt.Errorf("invalid parameter syntax in pattern '%s': unmatched closing brace at position %d", pattern, i)
+			return fmt.Errorf(TmplUnmatchedClosingBrace, pattern, i)
 		}
 	}
 
@@ -233,8 +294,7 @@ func (r *RouteRegistry) checkRouteConflict(newPattern string) error {
 		// Same method, check for path conflicts
 		if strings.EqualFold(newMethod, existingMethod) {
 			if conflictType := r.getPathConflictType(newPath, existingPath); conflictType != "" {
-				return fmt.Errorf("route conflict detected: pattern '%s' conflicts with existing pattern '%s' (%s)",
-					newPattern, existingPattern, conflictType)
+				return newRouteConflictError(conflictType, newPattern, existingPattern)
 			}
 		}
 	}
@@ -245,7 +305,7 @@ func (r *RouteRegistry) checkRouteConflict(newPattern string) error {
 // getPathConflictType analyzes the type of conflict between two paths
 func (r *RouteRegistry) getPathConflictType(path1, path2 string) string {
 	if path1 == path2 {
-		return "exact duplicate"
+		return ConflictExactDuplicate
 	}
 
 	// Normalize paths by replacing parameters with placeholders
@@ -253,7 +313,7 @@ func (r *RouteRegistry) getPathConflictType(path1, path2 string) string {
 	normalized2 := r.normalizePath(path2)
 
 	if normalized1 == normalized2 {
-		return "same structure with different parameter names"
+		return ConflictSameStructure
 	}
 
 	return "" // No conflict

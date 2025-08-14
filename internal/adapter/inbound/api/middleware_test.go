@@ -834,3 +834,166 @@ func TestBackwardCompatibility_ExactBehaviorPreservation(t *testing.T) {
 		}
 	})
 }
+
+// === FAILING TESTS FOR DEFAULTLOGGER ALLOCATION OPTIMIZATION (RED PHASE) ===
+// These tests define expected behavior after refactoring and will initially fail
+
+func TestDefaultLogger_AllocationPerformance(t *testing.T) {
+	t.Run("with_field_reduces_allocations_in_hot_path", func(t *testing.T) {
+		// This test will fail until WithField is optimized for allocation performance
+		logger := NewDefaultLogger()
+
+		// Measure allocations for multiple WithField calls (simulating hot path)
+		allocs := testing.AllocsPerRun(100, func() {
+			logger.WithField("key1", "value1").
+				WithField("key2", "value2").
+				WithField("key3", "value3").
+				WithField("key4", "value4").
+				WithField("key5", "value5")
+		})
+
+		// Current implementation allocates a new map for each WithField call
+		// After optimization, should allocate significantly fewer maps
+		assert.Less(t, allocs, 10.0, "WithField should minimize allocations in chained calls")
+	})
+
+	t.Run("with_fields_reduces_allocations_for_bulk_operations", func(t *testing.T) {
+		// This test will fail until WithFields is optimized
+		logger := NewDefaultLogger()
+
+		fields := map[string]interface{}{
+			"request_id": "abc123",
+			"method":     "GET",
+			"path":       "/test",
+			"status":     200,
+			"duration":   "10ms",
+		}
+
+		// Measure allocations for WithFields calls
+		allocs := testing.AllocsPerRun(1000, func() {
+			logger.WithFields(fields)
+		})
+
+		// Should minimize map copying - ideally close to 1 allocation per call
+		assert.Less(t, allocs, 2.0, "WithFields should minimize map copying allocations")
+	})
+
+	t.Run("chained_operations_do_not_copy_maps_repeatedly", func(t *testing.T) {
+		// This test will fail until copy-on-write or similar optimization is implemented
+		logger := NewDefaultLogger()
+
+		// Create a logger with some base fields
+		baseLogger := logger.WithField("service", "api").WithField("version", "1.0")
+
+		// Measure allocations when creating multiple loggers from the same base
+		allocs := testing.AllocsPerRun(100, func() {
+			// These operations should not trigger full map copies of the base fields
+			_ = baseLogger.WithField("request_id", "123")
+			_ = baseLogger.WithField("user_id", "456")
+			_ = baseLogger.WithFields(map[string]interface{}{
+				"operation": "test",
+				"timestamp": "2024-01-01",
+			})
+		})
+
+		// With copy-on-write optimization, allocations should be minimal
+		assert.Less(t, allocs, 15.0, "Chained operations should not repeatedly copy base fields")
+	})
+
+	t.Run("memory_efficient_field_context_management", func(t *testing.T) {
+		// This test will fail until memory-efficient context management is implemented
+		logger := NewDefaultLogger()
+
+		// Create nested logger contexts without triggering excessive allocations
+		l1 := logger.WithField("level1", "value1")
+		l2 := l1.WithField("level2", "value2")
+		l3 := l2.WithField("level3", "value3")
+		l4 := l3.WithFields(map[string]interface{}{
+			"level4a": "value4a",
+			"level4b": "value4b",
+		})
+
+		// All loggers should maintain their context correctly
+		var output strings.Builder
+		testLogger := l4.(*DefaultLogger)
+		testLogger.output = &output
+		testLogger.Infof("test message")
+
+		logOutput := output.String()
+		assert.Contains(t, logOutput, "level1=value1")
+		assert.Contains(t, logOutput, "level2=value2")
+		assert.Contains(t, logOutput, "level3=value3")
+		assert.Contains(t, logOutput, "level4a=value4a")
+		assert.Contains(t, logOutput, "level4b=value4b")
+	})
+}
+
+func TestDefaultLogger_FunctionalBehaviorPreservation(t *testing.T) {
+	t.Run("refactored_logger_preserves_exact_output_format", func(t *testing.T) {
+		// This test ensures that optimization doesn't change the logging output
+		var output1, output2 strings.Builder
+
+		// Current behavior
+		logger1 := NewTestLogger(&output1)
+		logger1.WithField("key1", "value1").
+			WithFields(map[string]interface{}{
+				"key2": "value2",
+				"key3": 123,
+			}).
+			Infof("test message")
+
+		// After refactoring, should produce identical output
+		logger2 := NewTestLogger(&output2)
+		logger2.WithField("key1", "value1").
+			WithFields(map[string]interface{}{
+				"key2": "value2",
+				"key3": 123,
+			}).
+			Infof("test message")
+
+		// Outputs should be functionally equivalent (may differ in field order)
+		out1 := output1.String()
+		out2 := output2.String()
+
+		// Both should contain the same basic components
+		assert.Contains(t, out1, "INFO")
+		assert.Contains(t, out1, "test message")
+		assert.Contains(t, out1, "key1=value1")
+		assert.Contains(t, out1, "key2=value2")
+		assert.Contains(t, out1, "key3=123")
+
+		assert.Contains(t, out2, "INFO")
+		assert.Contains(t, out2, "test message")
+		assert.Contains(t, out2, "key1=value1")
+		assert.Contains(t, out2, "key2=value2")
+		assert.Contains(t, out2, "key3=123")
+	})
+
+	t.Run("field_isolation_between_logger_instances", func(t *testing.T) {
+		// This test ensures that optimization doesn't break field isolation
+		var output1, output2 strings.Builder
+
+		baseLogger := NewTestLogger(&strings.Builder{})
+		logger1 := baseLogger.WithField("instance", "logger1")
+		logger2 := baseLogger.WithField("instance", "logger2")
+
+		// Cast to access output field for testing
+		logger1Test := logger1.(*DefaultLogger)
+		logger1Test.output = &output1
+		logger2Test := logger2.(*DefaultLogger)
+		logger2Test.output = &output2
+
+		logger1Test.Infof("message from logger1")
+		logger2Test.Infof("message from logger2")
+
+		out1 := output1.String()
+		out2 := output2.String()
+
+		// Each logger should only see its own instance field
+		assert.Contains(t, out1, "instance=logger1")
+		assert.NotContains(t, out1, "instance=logger2")
+
+		assert.Contains(t, out2, "instance=logger2")
+		assert.NotContains(t, out2, "instance=logger1")
+	})
+}

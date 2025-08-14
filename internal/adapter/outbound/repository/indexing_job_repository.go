@@ -125,17 +125,7 @@ func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(ctx context.Context
 		whereClause = " AND " + strings.Join(whereConditions, " AND ")
 	}
 
-	// Count query
-	countQuery := "SELECT COUNT(*) " + baseQuery + whereClause
-	qi := GetQueryInterface(ctx, r.pool)
-
-	var totalCount int
-	err := qi.QueryRow(ctx, countQuery, args...).Scan(&totalCount)
-	if err != nil {
-		return nil, 0, WrapError(err, "count indexing jobs")
-	}
-
-	// Data query
+	// Set up pagination parameters
 	orderBy := "ORDER BY created_at DESC"
 
 	limit := 50 // default
@@ -148,15 +138,22 @@ func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(ctx context.Context
 		offset = filters.Offset
 	}
 
-	dataQuery := `SELECT id, repository_id, status, started_at, completed_at, 
+	// Execute count and data queries using shared helper
+	qi := GetQueryInterface(ctx, r.pool)
+	selectColumns := `SELECT id, repository_id, status, started_at, completed_at, 
 				  error_message, files_processed, chunks_created, 
-				  created_at, updated_at, deleted_at ` +
-		baseQuery + whereClause + " " + orderBy +
-		fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+				  created_at, updated_at, deleted_at`
 
-	rows, err := qi.Query(ctx, dataQuery, args...)
+	totalCount, rows, err := executeCountAndDataQuery(
+		ctx, qi, baseQuery, selectColumns, whereClause, orderBy, args, limit, offset,
+	)
 	if err != nil {
-		return nil, 0, WrapError(err, "query indexing jobs")
+		return nil, 0, err
+	}
+
+	// If offset is beyond total count or no rows, return empty results
+	if rows == nil {
+		return []*entity.IndexingJob{}, totalCount, nil
 	}
 	defer rows.Close()
 

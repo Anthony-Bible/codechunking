@@ -19,10 +19,15 @@ type Config struct {
 
 // APIConfig holds API server configuration
 type APIConfig struct {
-	Host         string        `mapstructure:"host"`
-	Port         string        `mapstructure:"port"`
-	ReadTimeout  time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout time.Duration `mapstructure:"write_timeout"`
+	Host                    string        `mapstructure:"host"`
+	Port                    string        `mapstructure:"port"`
+	ReadTimeout             time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout            time.Duration `mapstructure:"write_timeout"`
+	EnableDefaultMiddleware *bool         `mapstructure:"enable_default_middleware"`
+	EnableCORS              *bool         `mapstructure:"enable_cors"`
+	EnableSecurityHeaders   *bool         `mapstructure:"enable_security_headers"`
+	EnableLogging           *bool         `mapstructure:"enable_logging"`
+	EnableErrorHandling     *bool         `mapstructure:"enable_error_handling"`
 }
 
 // WorkerConfig holds worker configuration

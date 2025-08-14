@@ -77,6 +77,10 @@ func initConfig() {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
+	// Explicitly bind environment variables for middleware configuration
+	// This ensures environment variables can override config file values for nested boolean pointers
+	bindMiddlewareEnvVars(v)
+
 	// Read configuration
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
@@ -87,6 +91,46 @@ func initConfig() {
 
 	// Load configuration
 	cfg = config.New(v)
+}
+
+// bindMiddlewareEnvVars explicitly binds middleware environment variables to Viper configuration keys.
+//
+// Problem Solved:
+//
+//	Viper's AutomaticEnv() doesn't always work correctly with nested boolean pointer fields,
+//	especially when config file values are already set. This function ensures environment
+//	variables can properly override config file settings for middleware configuration.
+//
+// Environment Variable Mappings:
+//   - CODECHUNK_API_ENABLE_DEFAULT_MIDDLEWARE → api.enable_default_middleware
+//   - CODECHUNK_API_ENABLE_CORS               → api.enable_cors
+//   - CODECHUNK_API_ENABLE_SECURITY_HEADERS   → api.enable_security_headers
+//   - CODECHUNK_API_ENABLE_LOGGING            → api.enable_logging
+//   - CODECHUNK_API_ENABLE_ERROR_HANDLING     → api.enable_error_handling
+//
+// Usage:
+//
+//	Call this function after setting up basic Viper configuration (SetEnvPrefix, etc.)
+//	but before loading configuration with config.New().
+//
+// Error Handling:
+//
+//	Binding failures are logged as warnings but don't stop application startup,
+//	allowing the application to continue with default middleware configuration.
+func bindMiddlewareEnvVars(v *viper.Viper) {
+	middlewareEnvBindings := map[string]string{
+		"api.enable_default_middleware": "CODECHUNK_API_ENABLE_DEFAULT_MIDDLEWARE",
+		"api.enable_cors":               "CODECHUNK_API_ENABLE_CORS",
+		"api.enable_security_headers":   "CODECHUNK_API_ENABLE_SECURITY_HEADERS",
+		"api.enable_logging":            "CODECHUNK_API_ENABLE_LOGGING",
+		"api.enable_error_handling":     "CODECHUNK_API_ENABLE_ERROR_HANDLING",
+	}
+
+	for key, envVar := range middlewareEnvBindings {
+		if err := v.BindEnv(key, envVar); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to bind environment variable %s to %s: %v\n", envVar, key, err)
+		}
+	}
 }
 
 func setDefaults(v *viper.Viper) {

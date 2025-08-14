@@ -342,7 +342,8 @@ func TestDuplicateDetectionPerformance(t *testing.T) {
 	service := NewPerformantDuplicateDetectionService(mockRepo)
 
 	// Setup mock for performance test
-	mockRepo.On("ExistsByNormalizedURL", ctx, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
+	// Use mock.Anything for context to support errgroup context passing
+	mockRepo.On("ExistsByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
 
 	urls := []string{
 		"https://github.com/owner/repo1",

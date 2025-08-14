@@ -14,6 +14,7 @@ import (
 	"codechunking/internal/port/outbound"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 )
 
 // generateOperationID creates a unique identifier for batch operations
@@ -371,8 +372,17 @@ func NewPerformantDuplicateDetectionService(repositoryRepo outbound.RepositoryRe
 	}
 }
 
-// BatchCheckDuplicates performs efficient batch duplicate detection for multiple URLs
-// Uses concurrent processing and optimized database queries for enhanced performance
+// BatchCheckDuplicates performs efficient batch duplicate detection for multiple URLs.
+// It uses the errgroup pattern for concurrent processing with proper context cancellation,
+// bounded worker pool via semaphore, and early error propagation for critical failures.
+//
+// The implementation uses errgroup.WithContext to:
+// - Enable proper context cancellation across all goroutines
+// - Ensure early termination when any worker encounters a critical error
+// - Coordinate cleanup and resource management across concurrent operations
+//
+// Concurrency is bounded using a semaphore pattern to prevent resource exhaustion
+// while maintaining high throughput for batch operations.
 func (s *PerformantDuplicateDetectionService) BatchCheckDuplicates(ctx context.Context, urls []string) ([]DuplicateCheckResult, error) {
 	if len(urls) == 0 {
 		s.logger.Info("Batch duplicate check called with empty URL list")
@@ -380,95 +390,32 @@ func (s *PerformantDuplicateDetectionService) BatchCheckDuplicates(ctx context.C
 	}
 
 	startTime := time.Now()
+	operationID := generateOperationID()
 	s.logger.Info("Starting batch duplicate detection",
 		"url_count", len(urls),
-		"operation_id", generateOperationID())
+		"operation_id", operationID)
 
 	results := make([]DuplicateCheckResult, len(urls))
 
-	// Process each URL concurrently for optimal performance
-	type urlResult struct {
-		index  int
-		result DuplicateCheckResult
+	// Use errgroup with context for proper cancellation and error handling
+	g, groupCtx := errgroup.WithContext(ctx)
+
+	// Create bounded worker pool using semaphore pattern
+	const maxConcurrentWorkers = 10
+	workerSemaphore := make(chan struct{}, maxConcurrentWorkers)
+
+	// Launch workers for each URL
+	for i, url := range urls {
+		// Capture loop variables for closure
+		urlIndex, rawURL := i, url
+		g.Go(func() error {
+			return s.processSingleURLForDuplicateCheck(groupCtx, rawURL, urlIndex, workerSemaphore, results)
+		})
 	}
 
-	resultsChan := make(chan urlResult, len(urls))
-
-	// Process URLs concurrently with controlled goroutine pool
-	const maxConcurrency = 10
-	semaphore := make(chan struct{}, maxConcurrency)
-
-	for i, url := range urls {
-		go func(index int, rawURL string) {
-			urlStartTime := time.Now()
-			semaphore <- struct{}{}        // Acquire semaphore
-			defer func() { <-semaphore }() // Release semaphore
-
-			result := DuplicateCheckResult{
-				URL: rawURL,
-			}
-
-			// Validate and normalize URL
-			repositoryURL, err := valueobject.NewRepositoryURL(rawURL)
-			if err != nil {
-				result.Error = fmt.Errorf("invalid URL: %w", err)
-				result.ProcessingTime = time.Since(urlStartTime)
-				s.logger.Warn("URL validation failed",
-					"url", rawURL,
-					"error", err.Error(),
-					"processing_time", result.ProcessingTime)
-				resultsChan <- urlResult{index, result}
-				return
-			}
-
-			result.NormalizedURL = repositoryURL.String()
-
-			// Check for existing repository (using efficient existence check)
-			exists, err := s.repositoryRepo.ExistsByNormalizedURL(ctx, repositoryURL)
-			if err != nil {
-				result.Error = fmt.Errorf("failed to check duplicate: %w", err)
-				result.ProcessingTime = time.Since(urlStartTime)
-				s.logger.Error("Duplicate check failed",
-					"url", rawURL,
-					"normalized_url", result.NormalizedURL,
-					"error", err.Error(),
-					"processing_time", result.ProcessingTime)
-				resultsChan <- urlResult{index, result}
-				return
-			}
-
-			result.IsDuplicate = exists
-
-			// If duplicate exists and we need the full repository details, fetch it
-			if exists {
-				existingRepo, err := s.repositoryRepo.FindByNormalizedURL(ctx, repositoryURL)
-				if err != nil {
-					result.Error = fmt.Errorf("failed to fetch existing repository: %w", err)
-					result.ProcessingTime = time.Since(urlStartTime)
-					s.logger.Error("Failed to fetch existing repository details",
-						"url", rawURL,
-						"normalized_url", result.NormalizedURL,
-						"error", err.Error(),
-						"processing_time", result.ProcessingTime)
-					resultsChan <- urlResult{index, result}
-					return
-				}
-				result.ExistingRepository = existingRepo
-				s.logger.Info("Duplicate repository detected",
-					"url", rawURL,
-					"normalized_url", result.NormalizedURL,
-					"existing_id", existingRepo.ID().String(),
-					"processing_time", time.Since(urlStartTime))
-			} else {
-				s.logger.Debug("No duplicate found",
-					"url", rawURL,
-					"normalized_url", result.NormalizedURL,
-					"processing_time", time.Since(urlStartTime))
-			}
-
-			result.ProcessingTime = time.Since(urlStartTime)
-			resultsChan <- urlResult{index, result}
-		}(i, url)
+	// Wait for all goroutines to complete or first error
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	// Collect results and compute metrics
@@ -476,16 +423,13 @@ func (s *PerformantDuplicateDetectionService) BatchCheckDuplicates(ctx context.C
 	duplicatesFound := int64(0)
 	errorsFound := int64(0)
 
-	for i := 0; i < len(urls); i++ {
-		urlResult := <-resultsChan
-		results[urlResult.index] = urlResult.result
-
+	for _, result := range results {
 		// Update metrics
-		totalProcessingTime += urlResult.result.ProcessingTime
-		if urlResult.result.IsDuplicate {
+		totalProcessingTime += result.ProcessingTime
+		if result.IsDuplicate {
 			duplicatesFound++
 		}
-		if urlResult.result.Error != nil {
+		if result.Error != nil {
 			errorsFound++
 		}
 	}
@@ -507,6 +451,106 @@ func (s *PerformantDuplicateDetectionService) BatchCheckDuplicates(ctx context.C
 		"throughput_per_second", float64(len(urls))/operationTime.Seconds())
 
 	return results, nil
+}
+
+// processSingleURLForDuplicateCheck handles the duplicate detection logic for a single URL
+// within the errgroup worker pool. It manages semaphore acquisition/release and proper
+// context cancellation while performing URL validation, normalization, and database lookups.
+//
+// The function uses the errgroup context for all operations to ensure proper cancellation
+// propagation and early termination when the context is canceled or other workers encounter errors.
+func (s *PerformantDuplicateDetectionService) processSingleURLForDuplicateCheck(
+	ctx context.Context,
+	rawURL string,
+	resultIndex int,
+	semaphore chan struct{},
+	results []DuplicateCheckResult,
+) error {
+	urlStartTime := time.Now()
+
+	// Acquire semaphore with context cancellation support
+	select {
+	case semaphore <- struct{}{}:
+		defer func() { <-semaphore }() // Release semaphore on function exit
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	result := DuplicateCheckResult{
+		URL: rawURL,
+	}
+
+	// Validate and normalize the repository URL
+	repositoryURL, err := valueobject.NewRepositoryURL(rawURL)
+	if err != nil {
+		result.Error = fmt.Errorf("invalid URL: %w", err)
+		result.ProcessingTime = time.Since(urlStartTime)
+		s.logger.Warn("URL validation failed",
+			"url", rawURL,
+			"error", err.Error(),
+			"processing_time", result.ProcessingTime)
+		results[resultIndex] = result
+		return nil // URL validation errors don't halt batch processing
+	}
+
+	result.NormalizedURL = repositoryURL.String()
+
+	// Check for existing repository using efficient existence query
+	// Use errgroup context for proper cancellation behavior
+	exists, err := s.repositoryRepo.ExistsByNormalizedURL(ctx, repositoryURL)
+	if err != nil {
+		result.Error = fmt.Errorf("failed to check duplicate: %w", err)
+		result.ProcessingTime = time.Since(urlStartTime)
+		s.logger.Error("Duplicate check failed",
+			"url", rawURL,
+			"normalized_url", result.NormalizedURL,
+			"error", err.Error(),
+			"processing_time", result.ProcessingTime)
+		// Check if error is due to context cancellation
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		// Database errors are critical and should halt batch processing
+		return fmt.Errorf("failed to check duplicate: %w", err)
+	}
+
+	result.IsDuplicate = exists
+
+	// Fetch full repository details if duplicate exists
+	if exists {
+		existingRepo, err := s.repositoryRepo.FindByNormalizedURL(ctx, repositoryURL)
+		if err != nil {
+			result.Error = fmt.Errorf("failed to fetch existing repository: %w", err)
+			result.ProcessingTime = time.Since(urlStartTime)
+			s.logger.Error("Failed to fetch existing repository details",
+				"url", rawURL,
+				"normalized_url", result.NormalizedURL,
+				"error", err.Error(),
+				"processing_time", result.ProcessingTime)
+			// Check if error is due to context cancellation
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// Database errors are critical and should halt batch processing
+			return fmt.Errorf("failed to fetch existing repository: %w", err)
+		}
+
+		result.ExistingRepository = existingRepo
+		s.logger.Info("Duplicate repository detected",
+			"url", rawURL,
+			"normalized_url", result.NormalizedURL,
+			"existing_id", existingRepo.ID().String(),
+			"processing_time", time.Since(urlStartTime))
+	} else {
+		s.logger.Debug("No duplicate found",
+			"url", rawURL,
+			"normalized_url", result.NormalizedURL,
+			"processing_time", time.Since(urlStartTime))
+	}
+
+	result.ProcessingTime = time.Since(urlStartTime)
+	results[resultIndex] = result
+	return nil
 }
 
 // GetMetrics returns the current duplicate detection metrics for monitoring

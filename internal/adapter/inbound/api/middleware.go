@@ -22,47 +22,64 @@ type Logger interface {
 	WithFields(fields map[string]interface{}) Logger
 }
 
-// DefaultLogger provides a structured logger implementation
+// fieldEntry represents a single key-value field for efficient chaining.
+// This approach reduces memory allocations by avoiding map copying until log time.
+type fieldEntry struct {
+	key   string
+	value interface{}
+}
+
+// DefaultLogger provides a structured logger implementation with optimized field handling.
+// It uses a field chain approach to minimize allocations when creating logger contexts
+// with WithField/WithFields operations, only materializing the final field map when
+// actually logging a message.
 type DefaultLogger struct {
-	output io.Writer
-	fields map[string]interface{}
+	output     io.Writer              // Where to write log output
+	fields     map[string]interface{} // Base fields from initialization (may be nil)
+	fieldChain []fieldEntry           // Chained field additions to avoid premature map copying
 }
 
 // NewDefaultLogger creates a new default logger that writes to stdout
 func NewDefaultLogger() Logger {
 	return &DefaultLogger{
 		output: os.Stdout,
-		fields: make(map[string]interface{}),
+		fields: nil, // Start with no fields to avoid initial allocation
 	}
 }
 
-// WithField adds a field to the logger context
+// WithField adds a field to the logger context using efficient field chaining.
+// This method avoids copying the entire fields map, instead adding to a field chain
+// that is only materialized when actually logging. This significantly reduces
+// allocations in hot paths where many logger contexts are created but not all are used.
 func (l *DefaultLogger) WithField(key string, value interface{}) Logger {
-	newFields := make(map[string]interface{})
-	for k, v := range l.fields {
-		newFields[k] = v
-	}
-	newFields[key] = value
+	// Create a new logger that shares the base fields and adds to the chain
+	newChain := make([]fieldEntry, len(l.fieldChain)+1)
+	copy(newChain, l.fieldChain)
+	newChain[len(l.fieldChain)] = fieldEntry{key: key, value: value}
 
 	return &DefaultLogger{
-		output: l.output,
-		fields: newFields,
+		output:     l.output,
+		fields:     l.fields, // Share the base fields map to avoid copying
+		fieldChain: newChain,
 	}
 }
 
-// WithFields adds multiple fields to the logger context
+// WithFields adds multiple fields to the logger context using efficient field chaining
 func (l *DefaultLogger) WithFields(fields map[string]interface{}) Logger {
-	newFields := make(map[string]interface{})
-	for k, v := range l.fields {
-		newFields[k] = v
-	}
+	// Create a new logger that shares the base fields and adds to the chain
+	newChain := make([]fieldEntry, len(l.fieldChain)+len(fields))
+	copy(newChain, l.fieldChain)
+
+	i := len(l.fieldChain)
 	for k, v := range fields {
-		newFields[k] = v
+		newChain[i] = fieldEntry{key: k, value: v}
+		i++
 	}
 
 	return &DefaultLogger{
-		output: l.output,
-		fields: newFields,
+		output:     l.output,
+		fields:     l.fields, // Share the base fields map
+		fieldChain: newChain,
 	}
 }
 
@@ -88,21 +105,54 @@ func (l *DefaultLogger) logWithLevel(level, template string, args ...interface{}
 	// Build structured log entry
 	logEntry := fmt.Sprintf("[%s] %s: %s", timestamp, level, message)
 
-	// Add fields if any
-	if len(l.fields) > 0 {
-		for key, value := range l.fields {
-			logEntry += fmt.Sprintf(" %s=%v", key, value)
-		}
+	// Add fields if any - materialize the field chain at log time
+	allFields := l.materializeFields()
+	for key, value := range allFields {
+		logEntry += fmt.Sprintf(" %s=%v", key, value)
 	}
 
 	_, _ = fmt.Fprintln(l.output, logEntry)
+}
+
+// materializeFields combines base fields and field chain into a single map for logging
+func (l *DefaultLogger) materializeFields() map[string]interface{} {
+	if l.fields == nil && len(l.fieldChain) == 0 {
+		return nil
+	}
+
+	// Calculate total capacity needed
+	totalFields := len(l.fieldChain)
+	if l.fields != nil {
+		totalFields += len(l.fields)
+	}
+
+	if totalFields == 0 {
+		return nil
+	}
+
+	// Allocate map only when actually logging
+	result := make(map[string]interface{}, totalFields)
+
+	// Add base fields first
+	if l.fields != nil {
+		for k, v := range l.fields {
+			result[k] = v
+		}
+	}
+
+	// Add chained fields (may override base fields)
+	for _, entry := range l.fieldChain {
+		result[entry.key] = entry.value
+	}
+
+	return result
 }
 
 // NewTestLogger creates a logger for testing that writes to the given writer
 func NewTestLogger(output io.Writer) Logger {
 	return &DefaultLogger{
 		output: output,
-		fields: make(map[string]interface{}),
+		fields: nil, // Start with no fields to avoid initial allocation
 	}
 }
 
@@ -164,33 +214,6 @@ func NewLoggingMiddleware(logger Logger) func(http.Handler) http.Handler {
 			}
 
 			requestLogger.Infof("HTTP request completed")
-		})
-	}
-}
-
-// CORSMiddleware adds CORS headers
-func NewCORSMiddleware() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Set CORS headers
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-
-			// Build allowed headers - start with defaults and add requested headers
-			allowedHeaders := "Content-Type, Authorization"
-			if requestedHeaders := r.Header.Get("Access-Control-Request-Headers"); requestedHeaders != "" {
-				allowedHeaders += ", " + requestedHeaders
-			}
-			w.Header().Set("Access-Control-Allow-Headers", allowedHeaders)
-
-			// Handle preflight requests
-			if r.Method == "OPTIONS" {
-				w.Header().Set("Access-Control-Max-Age", "86400")
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-
-			next.ServeHTTP(w, r)
 		})
 	}
 }
@@ -401,6 +424,12 @@ func NewSecurityMiddleware() func(http.Handler) http.Handler {
 // Middleware type for middleware chains
 type Middleware func(http.Handler) http.Handler
 
+// CORS middleware constants
+const (
+	// DefaultCORSMaxAge represents 24 hours in seconds for CORS preflight cache
+	DefaultCORSMaxAge = 86400
+)
+
 // CORSConfig holds CORS middleware configuration
 type CORSConfig struct {
 	AllowedOrigins []string
@@ -409,38 +438,50 @@ type CORSConfig struct {
 	MaxAge         int
 }
 
-// NewCORSMiddlewareWithConfig creates CORS middleware with custom config
+// DefaultCORSConfig provides sensible default CORS configuration.
+// Allows all origins (*), common HTTP methods, and standard headers.
+var DefaultCORSConfig = CORSConfig{
+	AllowedOrigins: []string{"*"},
+	AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+	AllowedHeaders: []string{"Content-Type", "Authorization"},
+	MaxAge:         DefaultCORSMaxAge,
+}
+
+// NewCORSMiddleware creates CORS middleware with default configuration.
+// This is a convenience function that delegates to NewCORSMiddlewareWithConfig.
+func NewCORSMiddleware() func(http.Handler) http.Handler {
+	return NewCORSMiddlewareWithConfig(DefaultCORSConfig)
+}
+
+// NewCORSMiddlewareWithConfig creates CORS middleware with custom config.
+// The middleware handles CORS preflight and actual requests according to the provided configuration.
 func NewCORSMiddlewareWithConfig(config CORSConfig) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Set CORS headers based on config
+			// Set CORS headers based on config with safety checks
 			if len(config.AllowedOrigins) > 0 {
 				w.Header().Set("Access-Control-Allow-Origin", config.AllowedOrigins[0])
 			}
 			if len(config.AllowedMethods) > 0 {
-				methods := ""
-				for i, method := range config.AllowedMethods {
-					if i > 0 {
-						methods += ", "
-					}
-					methods += method
-				}
-				w.Header().Set("Access-Control-Allow-Methods", methods)
+				w.Header().Set("Access-Control-Allow-Methods", strings.Join(config.AllowedMethods, ", "))
 			}
 			if len(config.AllowedHeaders) > 0 {
-				headers := ""
-				for i, header := range config.AllowedHeaders {
-					if i > 0 {
-						headers += ", "
-					}
-					headers += header
+				allowedHeaders := strings.Join(config.AllowedHeaders, ", ")
+				// Append any requested headers to maintain backward compatibility with existing clients
+				// that may send custom headers not explicitly configured in AllowedHeaders
+				if requestedHeaders := r.Header.Get("Access-Control-Request-Headers"); requestedHeaders != "" {
+					allowedHeaders += ", " + requestedHeaders
 				}
-				w.Header().Set("Access-Control-Allow-Headers", headers)
+				w.Header().Set("Access-Control-Allow-Headers", allowedHeaders)
 			}
 
 			// Handle preflight requests
 			if r.Method == http.MethodOptions {
-				w.WriteHeader(http.StatusOK)
+				// Only set MaxAge if it's a positive value to avoid invalid cache durations
+				if config.MaxAge > 0 {
+					w.Header().Set("Access-Control-Max-Age", strconv.Itoa(config.MaxAge))
+				}
+				w.WriteHeader(http.StatusNoContent)
 				return
 			}
 

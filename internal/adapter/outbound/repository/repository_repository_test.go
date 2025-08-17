@@ -193,12 +193,11 @@ func TestRepositoryRepository_FindByID_NilUUID(t *testing.T) {
 	}
 }
 
-// TestRepositoryRepository_FindByURL tests finding repositories by URL.
-func TestRepositoryRepository_FindByURL(t *testing.T) {
+// TestRepositoryRepository_FindByURL_ExistingRepository tests finding an existing repository by URL.
+func TestRepositoryRepository_FindByURL_ExistingRepository(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
 
-	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
 	repo := NewPostgreSQLRepositoryRepository(pool)
 	ctx := context.Background()
 
@@ -209,62 +208,26 @@ func TestRepositoryRepository_FindByURL(t *testing.T) {
 		t.Fatalf("Failed to save test repository: %v", err)
 	}
 
+	foundRepo, err := repo.FindByURL(ctx, testRepo.URL())
+
+	assertNoError(t, err, "find existing repository by URL")
+	verifyRepositoryFound(t, foundRepo, testRepo)
+}
+
+// TestRepositoryRepository_FindByURL_NonExistingRepository tests finding a non-existing repository by URL.
+func TestRepositoryRepository_FindByURL_NonExistingRepository(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
 	nonExistentURL, _ := valueobject.NewRepositoryURL("https://github.com/nonexistent/repo")
+	foundRepo, err := repo.FindByURL(ctx, nonExistentURL)
 
-	tests := []struct {
-		name        string
-		url         valueobject.RepositoryURL
-		expectFound bool
-		expectError bool
-	}{
-		{
-			name:        "Existing repository URL should return repository",
-			url:         testRepo.URL(),
-			expectFound: true,
-			expectError: false,
-		},
-		{
-			name:        "Non-existing repository URL should return not found",
-			url:         nonExistentURL,
-			expectFound: false,
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			foundRepo, err := repo.FindByURL(ctx, tt.url)
-
-			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error but got none")
-				}
-				if foundRepo != nil {
-					t.Error("Expected nil repository on error")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error but got: %v", err)
-				}
-
-				if tt.expectFound {
-					if foundRepo == nil {
-						t.Error("Expected repository but got nil")
-					} else {
-						if !foundRepo.URL().Equal(tt.url) {
-							t.Errorf("Expected repository URL %s, got %s", tt.url, foundRepo.URL())
-						}
-						if foundRepo.ID() != testRepo.ID() {
-							t.Errorf("Expected repository ID %s, got %s", testRepo.ID(), foundRepo.ID())
-						}
-					}
-				} else {
-					if foundRepo != nil {
-						t.Error("Expected nil repository but got one")
-					}
-				}
-			}
-		})
+	assertNoError(t, err, "find non-existing repository by URL")
+	if foundRepo != nil {
+		t.Error("Expected nil repository but got one")
 	}
 }
 

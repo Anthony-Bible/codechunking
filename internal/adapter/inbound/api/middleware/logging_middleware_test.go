@@ -453,8 +453,8 @@ func TestStructuredLoggingMiddleware_PerformanceLogging(t *testing.T) {
 				duration := logEntry.Request["duration"].(float64)
 				assert.InDelta(t, actualDuration.Seconds()*1000, duration, 100, "Duration should be close to actual")
 
-				assert.Equal(t, float64(tt.requestSize), logEntry.Request["request_size"])
-				assert.Equal(t, float64(tt.responseSize), logEntry.Request["response_size"])
+				assert.InDelta(t, float64(tt.requestSize), logEntry.Request["request_size"], 0)
+				assert.InDelta(t, float64(tt.responseSize), logEntry.Request["response_size"], 0)
 			}
 
 			// Verify slow request handling
@@ -473,114 +473,129 @@ func TestStructuredLoggingMiddleware_PerformanceLogging(t *testing.T) {
 	}
 }
 
-// TestStructuredLoggingMiddleware_SecurityLogging tests security-related logging.
-func TestStructuredLoggingMiddleware_SecurityLogging(t *testing.T) {
-	tests := []struct {
-		name              string
-		headers           map[string]string
-		requestBody       string
-		expectSecurityLog bool
-		securityIssues    []string
-	}{
-		{
-			name: "suspicious user agent",
-			headers: map[string]string{
-				"User-Agent": "curl/7.68.0",
-			},
-			expectSecurityLog: true,
-			securityIssues:    []string{"suspicious_user_agent"},
-		},
-		{
-			name: "missing authorization",
-			headers: map[string]string{
-				"Content-Type": "application/json",
-			},
-			requestBody:       `{"sensitive": "data"}`,
-			expectSecurityLog: true,
-			securityIssues:    []string{"missing_authorization"},
-		},
-		{
-			name: "potential SQL injection in body",
-			headers: map[string]string{
-				"Content-Type":  "application/json",
-				"Authorization": "Bearer valid-token",
-			},
-			requestBody:       `{"query": "SELECT * FROM users WHERE id = '1' OR '1'='1'"}`,
-			expectSecurityLog: true,
-			securityIssues:    []string{"potential_sql_injection"},
-		},
-		{
-			name: "legitimate request",
-			headers: map[string]string{
-				"Content-Type":  "application/json",
-				"Authorization": "Bearer valid-token",
-				"User-Agent":    "MyApp/1.0",
-			},
-			requestBody:       `{"url": "https://github.com/user/repo"}`,
-			expectSecurityLog: false,
-			securityIssues:    []string{},
-		},
+// Security logging test helper functions
+
+// setupSecurityTestHandler creates a basic HTTP handler for security tests.
+func setupSecurityTestHandler(t *testing.T) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte(`{"status": "ok"}`)); err != nil {
+			t.Logf("Failed to write response: %v", err)
+		}
+	})
+}
+
+// createSecurityTestMiddleware creates middleware with security logging configuration.
+func createSecurityTestMiddleware() func(http.Handler) http.Handler {
+	config := LoggingConfig{
+		LogLevel:              "INFO",
+		EnableSecurityLogging: true,
+		SuspiciousPatterns:    []string{"curl", "wget", "python-requests"},
+	}
+	return NewStructuredLoggingMiddleware(config)
+}
+
+// executeSecurityTest executes a security test with given headers and body.
+func executeSecurityTest(t *testing.T, headers map[string]string, requestBody string) *httptest.ResponseRecorder {
+	handler := setupSecurityTestHandler(t)
+	middleware := createSecurityTestMiddleware()
+	wrappedHandler := middleware(handler)
+
+	var body io.Reader
+	if requestBody != "" {
+		body = strings.NewReader(requestBody)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/repositories", body)
+
+	for key, value := range headers {
+		req.Header.Set(key, value)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				if _, err := w.Write([]byte(`{"status": "ok"}`)); err != nil {
-					t.Logf("Failed to write response: %v", err)
-				}
-			})
+	recorder := httptest.NewRecorder()
+	wrappedHandler.ServeHTTP(recorder, req)
+	return recorder
+}
 
-			config := LoggingConfig{
-				LogLevel:              "INFO",
-				EnableSecurityLogging: true,
-				SuspiciousPatterns:    []string{"curl", "wget", "python-requests"},
+// verifySecurityIssues verifies that expected security issues are logged.
+func verifySecurityIssues(t *testing.T, expectedIssues []string) {
+	logOutput := getMiddlewareLogOutput()
+	var logEntry HTTPLogEntry
+	err := json.Unmarshal([]byte(logOutput), &logEntry)
+	require.NoError(t, err)
+
+	assert.Contains(t, logEntry.Request, "security_issues")
+	securityIssues := logEntry.Request["security_issues"].([]interface{})
+
+	for _, expectedIssue := range expectedIssues {
+		found := false
+		for _, issue := range securityIssues {
+			if issue.(string) == expectedIssue {
+				found = true
+				break
 			}
-
-			middleware := NewStructuredLoggingMiddleware(config)
-			wrappedHandler := middleware(handler)
-
-			var body io.Reader
-			if tt.requestBody != "" {
-				body = strings.NewReader(tt.requestBody)
-			}
-			req := httptest.NewRequest(http.MethodPost, "/api/repositories", body)
-
-			for key, value := range tt.headers {
-				req.Header.Set(key, value)
-			}
-
-			recorder := httptest.NewRecorder()
-			wrappedHandler.ServeHTTP(recorder, req)
-
-			// Verify response
-			assert.Equal(t, http.StatusOK, recorder.Code)
-
-			// Verify security logging
-			logOutput := getMiddlewareLogOutput()
-			var logEntry HTTPLogEntry
-			err := json.Unmarshal([]byte(logOutput), &logEntry)
-			require.NoError(t, err)
-
-			if tt.expectSecurityLog {
-				assert.Contains(t, logEntry.Request, "security_issues")
-				securityIssues := logEntry.Request["security_issues"].([]interface{})
-
-				for _, expectedIssue := range tt.securityIssues {
-					found := false
-					for _, issue := range securityIssues {
-						if issue.(string) == expectedIssue {
-							found = true
-							break
-						}
-					}
-					assert.True(t, found, "Expected security issue %s not found", expectedIssue)
-				}
-			} else {
-				assert.NotContains(t, logEntry.Request, "security_issues")
-			}
-		})
+		}
+		assert.True(t, found, "Expected security issue %s not found", expectedIssue)
 	}
+}
+
+// verifyNoSecurityIssues verifies that no security issues are logged.
+func verifyNoSecurityIssues(t *testing.T) {
+	logOutput := getMiddlewareLogOutput()
+	var logEntry HTTPLogEntry
+	err := json.Unmarshal([]byte(logOutput), &logEntry)
+	require.NoError(t, err)
+
+	assert.NotContains(t, logEntry.Request, "security_issues")
+}
+
+// TestStructuredLoggingMiddleware_SecurityLogging_SuspiciousUserAgent tests detection of suspicious user agents.
+func TestStructuredLoggingMiddleware_SecurityLogging_SuspiciousUserAgent(t *testing.T) {
+	headers := map[string]string{
+		"User-Agent": "curl/7.68.0",
+	}
+
+	recorder := executeSecurityTest(t, headers, "")
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	verifySecurityIssues(t, []string{"suspicious_user_agent"})
+}
+
+// TestStructuredLoggingMiddleware_SecurityLogging_MissingAuthorization tests detection of missing authorization.
+func TestStructuredLoggingMiddleware_SecurityLogging_MissingAuthorization(t *testing.T) {
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+	requestBody := `{"sensitive": "data"}`
+
+	recorder := executeSecurityTest(t, headers, requestBody)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	verifySecurityIssues(t, []string{"missing_authorization"})
+}
+
+// TestStructuredLoggingMiddleware_SecurityLogging_SQLInjectionDetection tests detection of potential SQL injection.
+func TestStructuredLoggingMiddleware_SecurityLogging_SQLInjectionDetection(t *testing.T) {
+	headers := map[string]string{
+		"Content-Type":  "application/json",
+		"Authorization": "Bearer valid-token",
+	}
+	requestBody := `{"query": "SELECT * FROM users WHERE id = '1' OR '1'='1'"}`
+
+	recorder := executeSecurityTest(t, headers, requestBody)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	verifySecurityIssues(t, []string{"potential_sql_injection"})
+}
+
+// TestStructuredLoggingMiddleware_SecurityLogging_LegitimateRequest tests that legitimate requests don't trigger security logs.
+func TestStructuredLoggingMiddleware_SecurityLogging_LegitimateRequest(t *testing.T) {
+	headers := map[string]string{
+		"Content-Type":  "application/json",
+		"Authorization": "Bearer valid-token",
+		"User-Agent":    "MyApp/1.0",
+	}
+	requestBody := `{"url": "https://github.com/user/repo"}`
+
+	recorder := executeSecurityTest(t, headers, requestBody)
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	verifyNoSecurityIssues(t)
 }
 
 // TestStructuredLoggingMiddleware_FilteringAndSampling tests log filtering and sampling.

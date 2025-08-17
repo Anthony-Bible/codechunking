@@ -14,19 +14,21 @@ const (
 	JobStatusCancelled JobStatus = "cancelled"
 )
 
-// validJobStatuses contains all valid job statuses.
-var validJobStatuses = map[JobStatus]bool{
-	JobStatusPending:   true,
-	JobStatusRunning:   true,
-	JobStatusCompleted: true,
-	JobStatusFailed:    true,
-	JobStatusCancelled: true,
+// validJobStatuses returns all valid job statuses.
+func validJobStatuses() map[JobStatus]bool {
+	return map[JobStatus]bool{
+		JobStatusPending:   true,
+		JobStatusRunning:   true,
+		JobStatusCompleted: true,
+		JobStatusFailed:    true,
+		JobStatusCancelled: true,
+	}
 }
 
 // NewJobStatus creates a new JobStatus with validation.
 func NewJobStatus(status string) (JobStatus, error) {
 	s := JobStatus(status)
-	if !validJobStatuses[s] {
+	if !validJobStatuses()[s] {
 		return "", fmt.Errorf("invalid job status: %s", status)
 	}
 	return s, nil
@@ -75,8 +77,9 @@ func (s JobStatus) CanTransitionTo(target JobStatus) bool {
 
 // AllJobStatuses returns all valid job statuses.
 func AllJobStatuses() []JobStatus {
-	statuses := make([]JobStatus, 0, len(validJobStatuses))
-	for status := range validJobStatuses {
+	validStatuses := validJobStatuses()
+	statuses := make([]JobStatus, 0, len(validStatuses))
+	for status := range validStatuses {
 		statuses = append(statuses, status)
 	}
 	return statuses

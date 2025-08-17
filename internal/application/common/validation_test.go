@@ -155,10 +155,8 @@ func TestValidateRepositoryStatus(t *testing.T) {
 						tt.wantMsg,
 					)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("ValidateRepositoryStatus(%q) expected no error but got: %v", tt.status, err)
-				}
+			} else if err != nil {
+				t.Errorf("ValidateRepositoryStatus(%q) expected no error but got: %v", tt.status, err)
 			}
 		})
 	}
@@ -240,7 +238,7 @@ func TestValidateRepositoryStatus_EmptyStringHandling(t *testing.T) {
 
 				// Should return ValidationError type
 				var validationError ValidationError
-				if errors.As(err, &validationError) {
+				if !errors.As(err, &validationError) {
 					t.Errorf("ValidateRepositoryStatus(%q) should return ValidationError but got %T", tt.status, err)
 				}
 			}
@@ -362,7 +360,7 @@ func TestValidateRepositoryStatus_ErrorHandling(t *testing.T) {
 			// If error is returned, it should be ValidationError type
 			if err != nil {
 				var validationError ValidationError
-				if errors.As(err, &validationError) {
+				if !errors.As(err, &validationError) {
 					t.Errorf("ValidateRepositoryStatus(%q) should return ValidationError but got %T", tt.status, err)
 				}
 			}
@@ -407,7 +405,7 @@ func TestValidateRepositoryStatus_ConsistencyWithCurrentBehavior(t *testing.T) {
 
 				// Verify it's ValidationError type
 				var validationError ValidationError
-				if errors.As(err, &validationError) {
+				if !errors.As(err, &validationError) {
 					t.Errorf("ValidateRepositoryStatus(%q) should return ValidationError but got %T", tt.status, err)
 				}
 			}
@@ -415,134 +413,91 @@ func TestValidateRepositoryStatus_ConsistencyWithCurrentBehavior(t *testing.T) {
 	}
 }
 
-// TestValidateRepositoryStatus_FailingRedPhaseTests - RED PHASE TDD TESTS THAT MUST FAIL
-// These tests will FAIL with current implementation and PASS after refactoring to use domain layer.
-func TestValidateRepositoryStatus_FailingRedPhaseTests(t *testing.T) {
-	t.Run("SUCCESS_map_has_been_removed", func(t *testing.T) {
-		// This test now PASSES because ValidRepositoryStatuses map has been removed
-		// Domain layer is now used instead of duplicate validation logic
+// TestValidateRepositoryStatus_FailingRedPhase_MapRemoval tests that the ValidRepositoryStatuses map has been removed.
+func TestValidateRepositoryStatus_FailingRedPhase_MapRemoval(t *testing.T) {
+	// This test now PASSES because ValidRepositoryStatuses map has been removed
+	// Domain layer is now used instead of duplicate validation logic
 
-		t.Log("SUCCESS: ValidRepositoryStatuses map has been removed")
-		t.Log("COMPLETED:")
-		t.Log("1. ✓ Removed ValidRepositoryStatuses map from validation.go")
-		t.Log("2. ✓ Updated ValidateRepositoryStatus to use valueobject.ValidateRepositoryStatusString(status, true)")
-		t.Log("3. ✓ Domain errors converted to ValidationError type")
-		t.Log("4. ✓ Domain layer is now single source of truth for repository status validation")
-	})
+	t.Log("SUCCESS: ValidRepositoryStatuses map has been removed")
+	t.Log("COMPLETED:")
+	t.Log("1. ✓ Removed ValidRepositoryStatuses map from validation.go")
+	t.Log("2. ✓ Updated ValidateRepositoryStatus to use valueobject.ValidateRepositoryStatusString(status, true)")
+	t.Log("3. ✓ Domain errors converted to ValidationError type")
+	t.Log("4. ✓ Domain layer is now single source of truth for repository status validation")
+}
 
-	t.Run("SUCCESS_function_now_uses_domain_layer", func(t *testing.T) {
-		// This test now PASSES because the function uses domain layer validation
-		// Function no longer depends on ValidRepositoryStatuses map
+// TestValidateRepositoryStatus_FailingRedPhase_DomainLayerUsage tests that the function uses domain layer validation.
+func TestValidateRepositoryStatus_FailingRedPhase_DomainLayerUsage(t *testing.T) {
+	// This test now PASSES because the function uses domain layer validation
+	// Function no longer depends on ValidRepositoryStatuses map
 
-		t.Log("SUCCESS: ValidateRepositoryStatus now uses domain layer validation")
+	t.Log("SUCCESS: ValidateRepositoryStatus now uses domain layer validation")
 
-		// Test that function properly integrates with domain layer
-		testStatus := "test_temporary_status"
+	// Test that function properly integrates with domain layer
+	testStatus := "test_temporary_status"
 
-		// Both domain and app should reject this fake status
-		domainErr := valueobject.ValidateRepositoryStatusString(testStatus, true)
-		appErr := ValidateRepositoryStatus(testStatus)
+	// Get validation results from both layers
+	domainErr := valueobject.ValidateRepositoryStatusString(testStatus, true)
+	appErr := ValidateRepositoryStatus(testStatus)
 
-		// Both should reject (domain doesn't know about fake status)
-		if domainErr == nil {
-			t.Errorf("Test setup issue: domain should reject fake status %q", testStatus)
-		}
-		if appErr == nil {
-			t.Errorf("App should reject fake status %q like domain does", testStatus)
-		}
+	// Verify domain rejects fake status (test precondition)
+	if domainErr == nil {
+		t.Errorf("Test setup issue: domain should reject fake status %q", testStatus)
+	}
 
-		// Both should have same behavior now
-		if (domainErr == nil) != (appErr == nil) {
-			t.Errorf("Domain and app validation behavior should match: domain_err=%v, app_err=%v", domainErr, appErr)
-		} else {
-			t.Log("SUCCESS: Domain and application validation behavior matches")
-		}
-	})
+	// Verify app also rejects fake status
+	if appErr == nil {
+		t.Errorf("App should reject fake status %q like domain does", testStatus)
+	}
 
-	t.Run("MUST_FAIL_domain_integration_validation", func(t *testing.T) {
-		// This test will FAIL until proper domain integration is implemented
-		// It cross-validates that every domain-valid status is handled identically
+	// Verify both have same behavior
+	assertDomainAppValidationMatch(t, testStatus, domainErr, appErr)
+}
 
-		testStatuses := []string{"", "pending", "invalid_test", "PENDING"} // mix of valid and invalid
+// TestValidateRepositoryStatus_FailingRedPhase_DomainIntegration tests cross-validation with domain layer.
+func TestValidateRepositoryStatus_FailingRedPhase_DomainIntegration(t *testing.T) {
+	// This test will FAIL until proper domain integration is implemented
+	// It cross-validates that every domain-valid status is handled identically
 
-		for _, status := range testStatuses {
-			// Skip SQL injection cases for this domain integration test
-			if containsSQLInjectionPattern(status) {
-				continue
-			}
+	testStatuses := []string{"", "pending", "invalid_test", "PENDING"} // mix of valid and invalid
 
-			domainErr := valueobject.ValidateRepositoryStatusString(status, true)
-			appErr := ValidateRepositoryStatus(status)
-
-			// Both should have same accept/reject decision
-			domainAccepts := (domainErr == nil)
-			appAccepts := (appErr == nil)
-
-			if domainAccepts != appAccepts {
-				t.Errorf(
-					"RED PHASE FAILURE - EXPECTED: Status %q - domain integration not working. Domain accepts=%t, App accepts=%t. Function must use domain layer validation.",
-					status,
-					domainAccepts,
-					appAccepts,
-				)
-				t.Logf("Domain error: %v", domainErr)
-				t.Logf("App error: %v", appErr)
-
-				if !domainAccepts && appAccepts {
-					t.Log(
-						"ISSUE: App is more lenient than domain - likely still using map instead of domain validation",
-					)
-				} else if domainAccepts && !appAccepts {
-					t.Log("ISSUE: App is stricter than domain - check domain integration")
-				}
-			}
-		}
-	})
-
-	t.Run("MUST_FAIL_error_conversion_not_implemented", func(t *testing.T) {
-		// This test verifies domain errors are properly converted to ValidationError
-		// Will FAIL if domain integration not properly implemented
-
-		invalidStatus := "definitely_invalid_test_status"
-
-		// Verify domain rejects this
-		domainErr := valueobject.ValidateRepositoryStatusString(invalidStatus, true)
-		if domainErr == nil {
-			t.Fatal("Test setup error: domain should reject invalid status")
+	for _, status := range testStatuses {
+		// Skip SQL injection cases for this domain integration test
+		if containsSQLInjectionPattern(status) {
+			continue
 		}
 
-		// App should also reject and return ValidationError
-		appErr := ValidateRepositoryStatus(invalidStatus)
-		if appErr == nil {
-			t.Error("RED PHASE FAILURE - EXPECTED: App should reject invalid status like domain does")
-			return
-		}
+		// Get validation results from both layers
+		domainErr := valueobject.ValidateRepositoryStatusString(status, true)
+		appErr := ValidateRepositoryStatus(status)
 
-		// Must be ValidationError type with proper field and message
-		var validationErr ValidationError
-		ok := errors.As(appErr, &validationErr)
-		if !ok {
-			t.Errorf(
-				"RED PHASE FAILURE - EXPECTED: App should return ValidationError when domain returns error, got %T",
-				appErr,
-			)
-			return
-		}
+		// Verify integration consistency
+		validateDomainIntegrationConsistency(t, status, domainErr, appErr)
+	}
+}
 
-		if validationErr.Field != "status" {
-			t.Errorf(
-				"RED PHASE FAILURE - EXPECTED: ValidationError field should be 'status', got %q",
-				validationErr.Field,
-			)
-		}
+// TestValidateRepositoryStatus_FailingRedPhase_ErrorConversion tests error type conversion from domain to app layer.
+func TestValidateRepositoryStatus_FailingRedPhase_ErrorConversion(t *testing.T) {
+	// This test verifies domain errors are properly converted to ValidationError
+	// Will FAIL if domain integration not properly implemented
 
-		if validationErr.Message != "invalid status" {
-			t.Errorf(
-				"RED PHASE FAILURE - EXPECTED: ValidationError message should be 'invalid status' (standard app message), got %q",
-				validationErr.Message,
-			)
-		}
-	})
+	invalidStatus := "definitely_invalid_test_status"
+
+	// Verify domain rejects this (test precondition)
+	domainErr := valueobject.ValidateRepositoryStatusString(invalidStatus, true)
+	if domainErr == nil {
+		t.Fatal("Test setup error: domain should reject invalid status")
+	}
+
+	// App should also reject and return ValidationError
+	appErr := ValidateRepositoryStatus(invalidStatus)
+	if appErr == nil {
+		t.Error("RED PHASE FAILURE - EXPECTED: App should reject invalid status like domain does")
+		return
+	}
+
+	// Verify proper error conversion
+	assertValidationErrorConversion(t, invalidStatus, appErr)
 }
 
 // Helper function for detecting SQL injection patterns in tests.
@@ -554,6 +509,75 @@ func containsSQLInjectionPattern(input string) bool {
 		}
 	}
 	return false
+}
+
+// assertDomainAppValidationMatch verifies that domain and application validation have consistent behavior.
+func assertDomainAppValidationMatch(t *testing.T, status string, domainErr, appErr error) {
+	t.Helper()
+
+	domainAccepts := (domainErr == nil)
+	appAccepts := (appErr == nil)
+
+	if domainAccepts != appAccepts {
+		t.Errorf("Domain and app validation behavior should match: domain_err=%v, app_err=%v", domainErr, appErr)
+	} else {
+		t.Log("SUCCESS: Domain and application validation behavior matches")
+	}
+}
+
+// validateDomainIntegrationConsistency checks that domain and app layers have consistent validation behavior.
+func validateDomainIntegrationConsistency(t *testing.T, status string, domainErr, appErr error) {
+	t.Helper()
+
+	domainAccepts := (domainErr == nil)
+	appAccepts := (appErr == nil)
+
+	if domainAccepts != appAccepts {
+		t.Errorf(
+			"RED PHASE FAILURE - EXPECTED: Status %q - domain integration not working. Domain accepts=%t, App accepts=%t. Function must use domain layer validation.",
+			status,
+			domainAccepts,
+			appAccepts,
+		)
+		t.Logf("Domain error: %v", domainErr)
+		t.Logf("App error: %v", appErr)
+
+		if !domainAccepts && appAccepts {
+			t.Log("ISSUE: App is more lenient than domain - likely still using map instead of domain validation")
+		} else if domainAccepts && !appAccepts {
+			t.Log("ISSUE: App is stricter than domain - check domain integration")
+		}
+	}
+}
+
+// assertValidationErrorConversion verifies that app errors are properly converted to ValidationError type.
+func assertValidationErrorConversion(t *testing.T, status string, appErr error) {
+	t.Helper()
+
+	// Must be ValidationError type with proper field and message
+	var validationErr ValidationError
+	ok := errors.As(appErr, &validationErr)
+	if !ok {
+		t.Errorf(
+			"RED PHASE FAILURE - EXPECTED: App should return ValidationError when domain returns error, got %T",
+			appErr,
+		)
+		return
+	}
+
+	if validationErr.Field != "status" {
+		t.Errorf(
+			"RED PHASE FAILURE - EXPECTED: ValidationError field should be 'status', got %q",
+			validationErr.Field,
+		)
+	}
+
+	if validationErr.Message != "invalid status" {
+		t.Errorf(
+			"RED PHASE FAILURE - EXPECTED: ValidationError message should be 'invalid status' (standard app message), got %q",
+			validationErr.Message,
+		)
+	}
 }
 
 // =====================================================================
@@ -868,7 +892,7 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_FunctionSignatureUnchanged
 			continue
 		}
 		var validationError ValidationError
-		if errors.As(err, &validationError) {
+		if !errors.As(err, &validationError) {
 			t.Errorf("RED PHASE FAILURE: Invalid input %q should return ValidationError, got %T", invalidInput, err)
 		}
 	}

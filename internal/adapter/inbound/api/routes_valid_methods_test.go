@@ -181,12 +181,12 @@ func TestValidatePattern_UsesPackageLevelValidMethods(t *testing.T) {
 		for _, method := range methodsToTest {
 			pattern := fmt.Sprintf("%s /test", method)
 			err := registry.validatePattern(pattern)
-			assert.NoError(t, err, "Method %s from package variable should be valid in pattern", method)
+			require.NoError(t, err, "Method %s from package variable should be valid in pattern", method)
 
 			// Test case insensitivity
 			lowerPattern := fmt.Sprintf("%s /test", strings.ToLower(method))
 			err = registry.validatePattern(lowerPattern)
-			assert.NoError(t, err, "Lowercase method %s should be valid", strings.ToLower(method))
+			require.NoError(t, err, "Lowercase method %s should be valid", strings.ToLower(method))
 		}
 
 		// Test that invalid methods are still rejected
@@ -194,7 +194,7 @@ func TestValidatePattern_UsesPackageLevelValidMethods(t *testing.T) {
 		for _, method := range invalidMethods {
 			pattern := fmt.Sprintf("%s /test", method)
 			err := registry.validatePattern(pattern)
-			assert.Error(t, err, "Invalid method %s should be rejected", method)
+			require.Error(t, err, "Invalid method %s should be rejected", method)
 		}
 	})
 }
@@ -242,13 +242,13 @@ func TestValidatePattern_MethodValidation_IdenticalBehavior(t *testing.T) {
 			err := registry.validatePattern(tt.pattern)
 
 			if tt.expectError {
-				assert.Error(t, err, "Pattern %s should be rejected", tt.pattern)
+				require.Error(t, err, "Pattern %s should be rejected", tt.pattern)
 				if tt.errorContains != "" {
 					assert.Contains(t, err.Error(), tt.errorContains,
 						"Error for pattern %s should contain %s", tt.pattern, tt.errorContains)
 				}
 			} else {
-				assert.NoError(t, err, "Pattern %s should be accepted", tt.pattern)
+				require.NoError(t, err, "Pattern %s should be accepted", tt.pattern)
 			}
 		})
 	}
@@ -431,9 +431,9 @@ func TestValidatePattern_EdgeCasesWithPackageVariable(t *testing.T) {
 		for _, tc := range testCases {
 			err := registry.validatePattern(tc.input)
 			if tc.expected {
-				assert.NoError(t, err, "Pattern %s should be valid", tc.input)
+				require.NoError(t, err, "Pattern %s should be valid", tc.input)
 			} else {
-				assert.Error(t, err, "Pattern %s should be invalid", tc.input)
+				require.Error(t, err, "Pattern %s should be invalid", tc.input)
 			}
 		}
 	})
@@ -480,7 +480,7 @@ func TestRouteRegistration_WithRefactoredValidation(t *testing.T) {
 
 			// This should work both before and after refactoring
 			err := registry.RegisterRoute(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-			assert.NoError(t, err, "Should be able to register route with method %s", method)
+			require.NoError(t, err, "Should be able to register route with method %s", method)
 
 			// Verify route was registered
 			assert.True(t, registry.HasRoute(pattern), "Route %s should be registered", pattern)
@@ -607,14 +607,14 @@ func TestRefactoringRequirements_Summary(t *testing.T) {
 		}
 		for _, pattern := range validPatterns {
 			err := registry.validatePattern(pattern)
-			assert.NoError(t, err, "✅ Valid pattern %s should be accepted", pattern)
+			require.NoError(t, err, "✅ Valid pattern %s should be accepted", pattern)
 		}
 
 		// Invalid methods should be rejected
 		invalidPatterns := []string{"INVALID /test", "TRACE /test", "CONNECT /test"}
 		for _, pattern := range invalidPatterns {
 			err := registry.validatePattern(pattern)
-			assert.Error(t, err, "✅ Invalid pattern %s should be rejected", pattern)
+			require.Error(t, err, "✅ Invalid pattern %s should be rejected", pattern)
 		}
 
 		// 4. Performance improvement (reduced allocations)

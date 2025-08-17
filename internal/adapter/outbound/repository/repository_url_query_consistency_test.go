@@ -151,22 +151,15 @@ func TestExists_UsesRawURLForQuery_ConsistentWithStorage(t *testing.T) {
 	})
 }
 
-// TestRepositoryURLConsistency_StorageAndQueryUseSameFormat tests various URL formats
-// to ensure that what is stored can be consistently retrieved using the same format.
-func TestRepositoryURLConsistency_StorageAndQueryUseSameFormat(t *testing.T) {
-	t.Skip("Integration test - requires database setup")
+// urlTestCase represents a test case for URL consistency testing.
+type urlTestCase struct {
+	name   string
+	rawURL string
+}
 
-	pool := setupTestDB(t)
-	defer pool.Close()
-
-	repo := NewPostgreSQLRepositoryRepository(pool)
-	ctx := context.Background()
-
-	// Test cases with different raw URL formats that normalize differently
-	testCases := []struct {
-		name   string
-		rawURL string
-	}{
+// getURLTestCases returns test cases with different raw URL formats that normalize differently.
+func getURLTestCases() []urlTestCase {
+	return []urlTestCase{
 		{
 			name:   "Mixed case with .git suffix",
 			rawURL: "https://GitHub.com/Owner/Repo.git",
@@ -184,52 +177,103 @@ func TestRepositoryURLConsistency_StorageAndQueryUseSameFormat(t *testing.T) {
 			rawURL: "https://Github.Com/User/Project.git",
 		},
 	}
+}
+
+// createUniqueTestURL creates a unique repository URL for testing to avoid conflicts.
+func createUniqueTestURL(baseURL string) (valueobject.RepositoryURL, error) {
+	uniqueRawURL := baseURL + "-" + uuid.New().String()[:8]
+	return valueobject.NewRepositoryURL(uniqueRawURL)
+}
+
+// skipIfURLsIdentical skips the test if raw and normalized URLs are identical.
+func skipIfURLsIdentical(t *testing.T, url valueobject.RepositoryURL, uniqueURL string) {
+	if url.Raw() == url.String() {
+		t.Skipf("Raw and normalized URLs are identical: %s", uniqueURL)
+	}
+}
+
+// saveTestRepository creates and saves a test repository with the given URL and name.
+func saveTestRepository(ctx context.Context, repo *PostgreSQLRepositoryRepository, url valueobject.RepositoryURL, name string) error {
+	testRepo := entity.NewRepository(url, name, nil, nil)
+	return repo.Save(ctx, testRepo)
+}
+
+// TestRepositoryURLConsistency_FindByURL_ExactRawURL tests that FindByURL works with exact raw URLs.
+func TestRepositoryURLConsistency_FindByURL_ExactRawURL(t *testing.T) {
+	t.Skip("Integration test - requires database setup")
+
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testCases := getURLTestCases()
 
 	for i, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create unique URL to avoid conflicts
-			uniqueRawURL := tc.rawURL + "-" + uuid.New().String()[:8]
-			rawURL, err := valueobject.NewRepositoryURL(uniqueRawURL)
+			rawURL, err := createUniqueTestURL(tc.rawURL)
 			if err != nil {
 				t.Fatalf("Failed to create raw URL: %v", err)
 			}
 
-			// Skip if raw and normalized are the same (no point testing)
-			if rawURL.Raw() == rawURL.String() {
-				t.Skipf("Raw and normalized URLs are identical: %s", uniqueRawURL)
-			}
+			skipIfURLsIdentical(t, rawURL, tc.rawURL)
 
-			// Create and save repository
 			repoName := "Test Repo " + string(rune('A'+i))
-			testRepo := entity.NewRepository(rawURL, repoName, nil, nil)
-			err = repo.Save(ctx, testRepo)
+			err = saveTestRepository(ctx, repo, rawURL, repoName)
 			if err != nil {
 				t.Fatalf("Failed to save test repository: %v", err)
 			}
 
-			t.Run("FindByURL should work with exact raw URL after fix", func(t *testing.T) {
-				foundRepo, err := repo.FindByURL(ctx, rawURL)
-				if err != nil {
-					t.Errorf("Expected no error finding by raw URL, got: %v", err)
-				}
-				if foundRepo == nil {
-					t.Error("Expected to find repository by exact raw URL after fix")
-					t.Logf("Raw URL: %s", rawURL.Raw())
-					t.Logf("Normalized URL (currently used): %s", rawURL.String())
-				}
-			})
+			foundRepo, err := repo.FindByURL(ctx, rawURL)
+			if err != nil {
+				t.Errorf("Expected no error finding by raw URL, got: %v", err)
+			}
+			if foundRepo == nil {
+				t.Error("Expected to find repository by exact raw URL after fix")
+				t.Logf("Raw URL: %s", rawURL.Raw())
+				t.Logf("Normalized URL (currently used): %s", rawURL.String())
+			}
+		})
+	}
+}
 
-			t.Run("Exists should return true with exact raw URL after fix", func(t *testing.T) {
-				exists, err := repo.Exists(ctx, rawURL)
-				if err != nil {
-					t.Errorf("Expected no error checking existence by raw URL, got: %v", err)
-				}
-				if !exists {
-					t.Error("Expected repository to exist when checked by exact raw URL after fix")
-					t.Logf("Raw URL: %s", rawURL.Raw())
-					t.Logf("Normalized URL (currently used): %s", rawURL.String())
-				}
-			})
+// TestRepositoryURLConsistency_Exists_ExactRawURL tests that Exists returns true with exact raw URLs.
+func TestRepositoryURLConsistency_Exists_ExactRawURL(t *testing.T) {
+	t.Skip("Integration test - requires database setup")
+
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testCases := getURLTestCases()
+
+	for i, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rawURL, err := createUniqueTestURL(tc.rawURL)
+			if err != nil {
+				t.Fatalf("Failed to create raw URL: %v", err)
+			}
+
+			skipIfURLsIdentical(t, rawURL, tc.rawURL)
+
+			repoName := "Test Repo " + string(rune('A'+i))
+			err = saveTestRepository(ctx, repo, rawURL, repoName)
+			if err != nil {
+				t.Fatalf("Failed to save test repository: %v", err)
+			}
+
+			exists, err := repo.Exists(ctx, rawURL)
+			if err != nil {
+				t.Errorf("Expected no error checking existence by raw URL, got: %v", err)
+			}
+			if !exists {
+				t.Error("Expected repository to exist when checked by exact raw URL after fix")
+				t.Logf("Raw URL: %s", rawURL.Raw())
+				t.Logf("Normalized URL (currently used): %s", rawURL.String())
+			}
 		})
 	}
 }

@@ -163,10 +163,10 @@ func TestRepositoryHandler_GetRepository(t *testing.T) {
 	}{
 		{
 			name:         "successful_get_returns_200_with_repository_data",
-			repositoryID: testutil.TestRepositoryID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				response := testutil.NewRepositoryResponseBuilder().
-					WithID(testutil.TestRepositoryID1).
+					WithID(testutil.TestRepositoryID1()).
 					WithStatus("completed").
 					WithTotalFiles(1250).
 					WithTotalChunks(5000).
@@ -181,7 +181,7 @@ func TestRepositoryHandler_GetRepository(t *testing.T) {
 				err := testutil.ParseJSONResponse(recorder, &response)
 				require.NoError(t, err)
 
-				assert.Equal(t, testutil.TestRepositoryID1, response.ID)
+				assert.Equal(t, testutil.TestRepositoryID1(), response.ID)
 				assert.Equal(t, "completed", response.Status)
 				assert.Equal(t, 1250, response.TotalFiles)
 				assert.Equal(t, 5000, response.TotalChunks)
@@ -203,7 +203,7 @@ func TestRepositoryHandler_GetRepository(t *testing.T) {
 		},
 		{
 			name:         "repository_not_found_returns_404_not_found",
-			repositoryID: testutil.TestRepositoryID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				mock.ExpectGetRepository(nil, domain.ErrRepositoryNotFound)
 			},
@@ -212,7 +212,7 @@ func TestRepositoryHandler_GetRepository(t *testing.T) {
 		},
 		{
 			name:         "service_error_returns_500_internal_server_error",
-			repositoryID: testutil.TestRepositoryID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				mock.ExpectGetRepository(nil, errors.New("database connection failed"))
 			},
@@ -269,11 +269,11 @@ func TestRepositoryHandler_ListRepositories(t *testing.T) {
 			queryParams: "",
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				repo1 := testutil.NewRepositoryResponseBuilder().
-					WithID(testutil.TestRepositoryID1).
+					WithID(testutil.TestRepositoryID1()).
 					WithStatus("completed").
 					Build()
 				repo2 := testutil.NewRepositoryResponseBuilder().
-					WithID(testutil.TestRepositoryID2).
+					WithID(testutil.TestRepositoryID2()).
 					WithStatus("pending").
 					Build()
 
@@ -420,7 +420,7 @@ func TestRepositoryHandler_DeleteRepository(t *testing.T) {
 	}{
 		{
 			name:         "successful_delete_returns_204_no_content",
-			repositoryID: testutil.TestRepositoryID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				mock.ExpectDeleteRepository(nil)
 			},
@@ -442,7 +442,7 @@ func TestRepositoryHandler_DeleteRepository(t *testing.T) {
 		},
 		{
 			name:         "repository_not_found_returns_404_not_found",
-			repositoryID: testutil.TestRepositoryID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				mock.ExpectDeleteRepository(domain.ErrRepositoryNotFound)
 			},
@@ -451,7 +451,7 @@ func TestRepositoryHandler_DeleteRepository(t *testing.T) {
 		},
 		{
 			name:         "repository_processing_returns_409_conflict",
-			repositoryID: testutil.TestRepositoryID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				mock.ExpectDeleteRepository(domain.ErrRepositoryProcessing)
 			},
@@ -460,7 +460,7 @@ func TestRepositoryHandler_DeleteRepository(t *testing.T) {
 		},
 		{
 			name:         "service_error_returns_500_internal_server_error",
-			repositoryID: testutil.TestRepositoryID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				mock.ExpectDeleteRepository(errors.New("database connection failed"))
 			},
@@ -516,12 +516,12 @@ func TestRepositoryHandler_GetRepositoryJobs(t *testing.T) {
 	}{
 		{
 			name:         "successful_get_jobs_returns_200_with_jobs_list",
-			repositoryID: testutil.TestRepositoryID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
 			queryParams:  "",
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				job1 := testutil.NewIndexingJobResponseBuilder().
-					WithID(testutil.TestJobID1).
-					WithRepositoryID(testutil.TestRepositoryID1).
+					WithID(testutil.TestJobID1()).
+					WithRepositoryID(testutil.TestRepositoryID1()).
 					WithStatus("completed").
 					WithFilesProcessed(1250).
 					WithChunksCreated(5000).
@@ -547,8 +547,8 @@ func TestRepositoryHandler_GetRepositoryJobs(t *testing.T) {
 				require.NoError(t, err)
 
 				assert.Len(t, response.Jobs, 1)
-				assert.Equal(t, testutil.TestJobID1, response.Jobs[0].ID)
-				assert.Equal(t, testutil.TestRepositoryID1, response.Jobs[0].RepositoryID)
+				assert.Equal(t, testutil.TestJobID1(), response.Jobs[0].ID)
+				assert.Equal(t, testutil.TestRepositoryID1(), response.Jobs[0].RepositoryID)
 				assert.Equal(t, "completed", response.Jobs[0].Status)
 			},
 		},
@@ -568,7 +568,7 @@ func TestRepositoryHandler_GetRepositoryJobs(t *testing.T) {
 		},
 		{
 			name:         "repository_not_found_returns_404_not_found",
-			repositoryID: testutil.TestRepositoryID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				mock.ExpectGetRepositoryJobs(nil, domain.ErrRepositoryNotFound)
 			},
@@ -577,7 +577,7 @@ func TestRepositoryHandler_GetRepositoryJobs(t *testing.T) {
 		},
 		{
 			name:           "invalid_limit_exceeds_maximum_returns_400_bad_request",
-			repositoryID:   testutil.TestRepositoryID1.String(),
+			repositoryID:   testutil.TestRepositoryID1().String(),
 			queryParams:    "?limit=51",
 			mockSetup:      func(mock *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
@@ -585,7 +585,7 @@ func TestRepositoryHandler_GetRepositoryJobs(t *testing.T) {
 		},
 		{
 			name:         "jobs_with_pagination_parameters",
-			repositoryID: testutil.TestRepositoryID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
 			queryParams:  "?limit=5&offset=10",
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				response := &dto.IndexingJobListResponse{
@@ -662,15 +662,15 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 	}{
 		{
 			name:         "successful_get_job_returns_200_with_job_details",
-			repositoryID: testutil.TestRepositoryID1.String(),
-			jobID:        testutil.TestJobID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
+			jobID:        testutil.TestJobID1().String(),
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				startTime := time.Now().Add(-1 * time.Hour)
 				endTime := time.Now()
 
 				response := testutil.NewIndexingJobResponseBuilder().
-					WithID(testutil.TestJobID1).
-					WithRepositoryID(testutil.TestRepositoryID1).
+					WithID(testutil.TestJobID1()).
+					WithRepositoryID(testutil.TestRepositoryID1()).
 					WithStatus("completed").
 					WithFilesProcessed(1250).
 					WithChunksCreated(5000).
@@ -687,7 +687,7 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 				err := testutil.ParseJSONResponse(recorder, &response)
 				require.NoError(t, err)
 
-				assert.Equal(t, testutil.TestJobID1, response.ID)
+				assert.Equal(t, testutil.TestJobID1(), response.ID)
 				assert.Equal(t, testutil.TestRepositoryID1, response.RepositoryID)
 				assert.Equal(t, "completed", response.Status)
 				assert.Equal(t, 1250, response.FilesProcessed)
@@ -699,14 +699,14 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 		{
 			name:           "missing_repository_id_returns_400_bad_request",
 			repositoryID:   "",
-			jobID:          testutil.TestJobID1.String(),
+			jobID:          testutil.TestJobID1().String(),
 			mockSetup:      func(mock *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
 		{
 			name:           "missing_job_id_returns_400_bad_request",
-			repositoryID:   testutil.TestRepositoryID1.String(),
+			repositoryID:   testutil.TestRepositoryID1().String(),
 			jobID:          "",
 			mockSetup:      func(mock *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
@@ -715,14 +715,14 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 		{
 			name:           "invalid_repository_uuid_returns_400_bad_request",
 			repositoryID:   "invalid-uuid",
-			jobID:          testutil.TestJobID1.String(),
+			jobID:          testutil.TestJobID1().String(),
 			mockSetup:      func(mock *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
 		{
 			name:           "invalid_job_uuid_returns_400_bad_request",
-			repositoryID:   testutil.TestRepositoryID1.String(),
+			repositoryID:   testutil.TestRepositoryID1().String(),
 			jobID:          "invalid-uuid",
 			mockSetup:      func(mock *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
@@ -730,8 +730,8 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 		},
 		{
 			name:         "repository_not_found_returns_404_not_found",
-			repositoryID: testutil.TestRepositoryID1.String(),
-			jobID:        testutil.TestJobID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
+			jobID:        testutil.TestJobID1().String(),
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				mock.ExpectGetIndexingJob(nil, domain.ErrRepositoryNotFound)
 			},
@@ -740,8 +740,8 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 		},
 		{
 			name:         "job_not_found_returns_404_not_found",
-			repositoryID: testutil.TestRepositoryID1.String(),
-			jobID:        testutil.TestJobID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
+			jobID:        testutil.TestJobID1().String(),
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				mock.ExpectGetIndexingJob(nil, domain.ErrJobNotFound)
 			},
@@ -750,8 +750,8 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 		},
 		{
 			name:         "service_error_returns_500_internal_server_error",
-			repositoryID: testutil.TestRepositoryID1.String(),
-			jobID:        testutil.TestJobID1.String(),
+			repositoryID: testutil.TestRepositoryID1().String(),
+			jobID:        testutil.TestJobID1().String(),
 			mockSetup: func(mock *testutil.MockRepositoryService) {
 				mock.ExpectGetIndexingJob(nil, errors.New("database connection failed"))
 			},
@@ -851,10 +851,10 @@ func TestRepositoryHandler_QueryParameterParsing(t *testing.T) {
 		handler := NewRepositoryHandler(mockService, mockErrorHandler)
 
 		// Create request with pagination parameters
-		vars := map[string]string{"id": testutil.TestRepositoryID1.String()}
+		vars := map[string]string{"id": testutil.TestRepositoryID1().String()}
 		req := testutil.CreateRequestWithMuxVars(
 			http.MethodGet,
-			"/repositories/"+testutil.TestRepositoryID1.String()+"/jobs?limit=25&offset=50",
+			"/repositories/"+testutil.TestRepositoryID1().String()+"/jobs?limit=25&offset=50",
 			vars,
 		)
 		recorder := httptest.NewRecorder()

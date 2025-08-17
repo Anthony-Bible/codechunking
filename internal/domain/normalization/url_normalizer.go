@@ -1,13 +1,12 @@
 package normalization
 
 import (
+	"codechunking/internal/application/common/security"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 	"sync"
-
-	"codechunking/internal/application/common/security"
 )
 
 // URLNormalizer provides comprehensive URL normalization capabilities for repository URLs.
@@ -193,8 +192,8 @@ func (n *URLNormalizer) normalizeURL(rawURL string) (string, error) {
 	normalized := fmt.Sprintf("%s://%s%s", normalizedScheme, normalizedHost, normalizedPath)
 
 	// Additional validation on normalized URL
-	if err := n.validateNormalizedURL(normalized); err != nil {
-		return "", err
+	if validateErr := n.validateNormalizedURL(normalized); validateErr != nil {
+		return "", validateErr
 	}
 
 	return normalized, nil

@@ -260,12 +260,27 @@ func (b *IndexingJobResponseBuilder) Build() dto.IndexingJobResponse {
 }
 
 // Common test UUIDs for consistent testing.
-var (
-	TestRepositoryID1 = uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
-	TestRepositoryID2 = uuid.MustParse("123e4567-e89b-12d3-a456-426614174001")
-	TestJobID1        = uuid.MustParse("789e0123-e89b-12d3-a456-426614174000")
-	TestJobID2        = uuid.MustParse("789e0123-e89b-12d3-a456-426614174001")
-)
+// Using functions instead of global variables to avoid linter violations.
+
+// TestRepositoryID1 returns a fixed UUID for testing.
+func TestRepositoryID1() uuid.UUID {
+	return uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+}
+
+// TestRepositoryID2 returns a fixed UUID for testing.
+func TestRepositoryID2() uuid.UUID {
+	return uuid.MustParse("123e4567-e89b-12d3-a456-426614174001")
+}
+
+// TestJobID1 returns a fixed UUID for testing.
+func TestJobID1() uuid.UUID {
+	return uuid.MustParse("789e0123-e89b-12d3-a456-426614174000")
+}
+
+// TestJobID2 returns a fixed UUID for testing.
+func TestJobID2() uuid.UUID {
+	return uuid.MustParse("789e0123-e89b-12d3-a456-426614174001")
+}
 
 // HealthResponseBuilder builds HealthResponse for testing.
 type HealthResponseBuilder struct {

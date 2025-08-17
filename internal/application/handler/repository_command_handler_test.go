@@ -1,11 +1,11 @@
 package handler
 
 import (
+	"codechunking/internal/application/dto"
 	"context"
 	"errors"
 	"testing"
 
-	"codechunking/internal/application/dto"
 	domain_errors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
@@ -142,7 +142,7 @@ func TestCreateRepositoryCommandHandler_Handle_ValidationError(t *testing.T) {
 	result, err := handler.Handle(ctx, command)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "validation failed")
 
@@ -173,9 +173,9 @@ func TestCreateRepositoryCommandHandler_Handle_ServiceError(t *testing.T) {
 	result, err := handler.Handle(ctx, command)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.ErrorIs(t, err, serviceError)
+	require.ErrorIs(t, err, serviceError)
 
 	mockService.AssertExpectations(t)
 }
@@ -233,9 +233,9 @@ func TestGetRepositoryQueryHandler_Handle_NotFound(t *testing.T) {
 	result, err := handler.Handle(ctx, query)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -303,7 +303,7 @@ func TestUpdateRepositoryCommandHandler_Handle_ValidationError(t *testing.T) {
 	result, err := handler.Handle(ctx, command)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "validation failed")
 
@@ -328,7 +328,7 @@ func TestDeleteRepositoryCommandHandler_Handle_Success(t *testing.T) {
 	err := handler.Handle(ctx, command)
 
 	// Assert
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	mockService.AssertExpectations(t)
 }
@@ -351,8 +351,8 @@ func TestDeleteRepositoryCommandHandler_Handle_NotFound(t *testing.T) {
 	err := handler.Handle(ctx, command)
 
 	// Assert
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.Error(t, err)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -429,7 +429,7 @@ func TestListRepositoriesQueryHandler_Handle_ValidationError(t *testing.T) {
 	result, err := handler.Handle(ctx, query)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "validation failed")
 
@@ -504,9 +504,9 @@ func TestListRepositoriesQueryHandler_Handle_DatabaseError(t *testing.T) {
 	result, err := handler.Handle(ctx, query)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.ErrorIs(t, err, dbError)
+	require.ErrorIs(t, err, dbError)
 
 	mockService.AssertExpectations(t)
 }

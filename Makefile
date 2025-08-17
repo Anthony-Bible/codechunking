@@ -84,7 +84,7 @@ build-docker:
 
 ## migrate-up: Apply all database migrations
 migrate-up:
-	$(GO_CMD) run main.go migrate up
+	$(GO_CMD) run main.go migrate up --config configs/config.dev.yaml
 
 ## migrate-down: Rollback all database migrations
 migrate-down:

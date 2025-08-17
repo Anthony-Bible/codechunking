@@ -32,17 +32,17 @@ func TestNATSMessagePublisher_Integration_RealNATSServer(t *testing.T) {
 	require.NoError(t, err, "Failed to create NATS publisher - ensure NATS server is running with 'make dev'")
 
 	// This test will fail because Connect is not implemented
-	err = publisher.(*NATSMessagePublisher).Connect()
-	require.NoError(t, err, "Failed to connect to NATS server - ensure server is running on localhost:4222")
+	connectErr := publisher.(*NATSMessagePublisher).Connect()
+	require.NoError(t, connectErr, "Failed to connect to NATS server - ensure server is running on localhost:4222")
 	defer func() {
-		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
-			t.Errorf("Failed to disconnect from NATS: %v", err)
+		if disconnectErr := publisher.(*NATSMessagePublisher).Disconnect(); disconnectErr != nil {
+			t.Errorf("Failed to disconnect from NATS: %v", disconnectErr)
 		}
 	}()
 
 	// This test will fail because EnsureStream is not implemented
-	err = publisher.(*NATSMessagePublisher).EnsureStream()
-	require.NoError(t, err, "Failed to create JetStream stream - ensure JetStream is enabled")
+	streamErr := publisher.(*NATSMessagePublisher).EnsureStream()
+	require.NoError(t, streamErr, "Failed to create JetStream stream - ensure JetStream is enabled")
 
 	t.Run("publishes message to real NATS server", func(t *testing.T) {
 		ctx := context.Background()
@@ -50,8 +50,8 @@ func TestNATSMessagePublisher_Integration_RealNATSServer(t *testing.T) {
 		repositoryURL := "https://github.com/integration/test.git"
 
 		// This test will fail because PublishIndexingJob is not implemented
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
-		assert.NoError(t, err, "Failed to publish message to NATS JetStream")
+		publishErr := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		assert.NoError(t, publishErr, "Failed to publish message to NATS JetStream")
 	})
 
 	t.Run("verifies message in stream", func(t *testing.T) {
@@ -60,15 +60,15 @@ func TestNATSMessagePublisher_Integration_RealNATSServer(t *testing.T) {
 		repositoryURL := "https://github.com/verification/test.git"
 
 		// Publish message
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
-		require.NoError(t, err)
+		publishErr := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		require.NoError(t, publishErr)
 
 		// This test will fail because stream inspection is not implemented
 		// Should verify that:
 		// 1. Message exists in the INDEXING stream
 		// 2. Message has correct payload and headers
 		// 3. Stream statistics are updated (message count, etc.)
-		assert.True(t, true) // Placeholder - actual test would inspect stream
+		t.Skip("Stream inspection not implemented - placeholder test")
 	})
 }
 
@@ -85,11 +85,11 @@ func TestNATSMessagePublisher_Integration_StreamManagement(t *testing.T) {
 	publisher, err := NewNATSMessagePublisher(config)
 	require.NoError(t, err)
 
-	err = publisher.(*NATSMessagePublisher).Connect()
-	require.NoError(t, err)
+	connectErr := publisher.(*NATSMessagePublisher).Connect()
+	require.NoError(t, connectErr)
 	defer func() {
-		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
-			t.Errorf("Failed to disconnect from NATS: %v", err)
+		if disconnectErr := publisher.(*NATSMessagePublisher).Disconnect(); disconnectErr != nil {
+			t.Errorf("Failed to disconnect from NATS: %v", disconnectErr)
 		}
 	}()
 
@@ -107,22 +107,22 @@ func TestNATSMessagePublisher_Integration_StreamManagement(t *testing.T) {
 		// - Replicas: 1
 
 		// This test will fail because stream verification is not implemented
-		assert.True(t, true) // Placeholder - actual test would verify stream config
+		t.Skip("Stream verification not implemented - placeholder test")
 	})
 
 	t.Run("handles existing stream gracefully", func(t *testing.T) {
 		// Create stream first time
-		err1 := publisher.(*NATSMessagePublisher).EnsureStream()
-		require.NoError(t, err1)
+		firstStreamErr := publisher.(*NATSMessagePublisher).EnsureStream()
+		require.NoError(t, firstStreamErr)
 
 		// Create stream second time (should be idempotent)
-		err2 := publisher.(*NATSMessagePublisher).EnsureStream()
-		assert.NoError(t, err2, "EnsureStream should be idempotent")
+		secondStreamErr := publisher.(*NATSMessagePublisher).EnsureStream()
+		assert.NoError(t, secondStreamErr, "EnsureStream should be idempotent")
 	})
 
 	t.Run("creates consumer for workers", func(t *testing.T) {
-		err := publisher.(*NATSMessagePublisher).EnsureStream()
-		require.NoError(t, err)
+		consumerStreamErr := publisher.(*NATSMessagePublisher).EnsureStream()
+		require.NoError(t, consumerStreamErr)
 
 		// This test will fail because consumer creation is not implemented
 		// Should create durable consumer named "workers" with configuration:
@@ -132,7 +132,7 @@ func TestNATSMessagePublisher_Integration_StreamManagement(t *testing.T) {
 		// - Max deliver: 3 (retry failed jobs up to 3 times)
 		// - Ack wait: 30s (time to process and ack message)
 
-		assert.True(t, true) // Placeholder - actual test would create and verify consumer
+		t.Skip("Consumer creation and verification not implemented - placeholder test")
 	})
 }
 
@@ -149,16 +149,16 @@ func TestNATSMessagePublisher_Integration_MessageFlow(t *testing.T) {
 	publisher, err := NewNATSMessagePublisher(config)
 	require.NoError(t, err)
 
-	err = publisher.(*NATSMessagePublisher).Connect()
-	require.NoError(t, err)
+	connectErr := publisher.(*NATSMessagePublisher).Connect()
+	require.NoError(t, connectErr)
 	defer func() {
-		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
-			t.Errorf("Failed to disconnect from NATS: %v", err)
+		if disconnectErr := publisher.(*NATSMessagePublisher).Disconnect(); disconnectErr != nil {
+			t.Errorf("Failed to disconnect from NATS: %v", disconnectErr)
 		}
 	}()
 
-	err = publisher.(*NATSMessagePublisher).EnsureStream()
-	require.NoError(t, err)
+	streamErr := publisher.(*NATSMessagePublisher).EnsureStream()
+	require.NoError(t, streamErr)
 
 	t.Run("end-to-end message flow", func(t *testing.T) {
 		ctx := context.Background()
@@ -175,8 +175,8 @@ func TestNATSMessagePublisher_Integration_MessageFlow(t *testing.T) {
 
 		// Publish all messages
 		for _, msg := range testMessages {
-			err := publisher.PublishIndexingJob(ctx, msg.repositoryID, msg.repositoryURL)
-			require.NoError(t, err, "Failed to publish message for %s", msg.repositoryURL)
+			publishErr := publisher.PublishIndexingJob(ctx, msg.repositoryID, msg.repositoryURL)
+			require.NoError(t, publishErr, "Failed to publish message for %s", msg.repositoryURL)
 		}
 
 		// This test will fail because message consumption/verification is not implemented
@@ -195,15 +195,15 @@ func TestNATSMessagePublisher_Integration_MessageFlow(t *testing.T) {
 		repositoryURL := "https://github.com/persistence/test.git"
 
 		// Publish message
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
-		require.NoError(t, err)
+		publishErr := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		require.NoError(t, publishErr)
 
 		// Disconnect and reconnect
-		err = publisher.(*NATSMessagePublisher).Disconnect()
-		require.NoError(t, err)
+		disconnectErr := publisher.(*NATSMessagePublisher).Disconnect()
+		require.NoError(t, disconnectErr)
 
-		err = publisher.(*NATSMessagePublisher).Connect()
-		require.NoError(t, err)
+		reconnectErr := publisher.(*NATSMessagePublisher).Connect()
+		require.NoError(t, reconnectErr)
 
 		// This test will fail because message persistence verification is not implemented
 		// Should verify that:
@@ -211,7 +211,7 @@ func TestNATSMessagePublisher_Integration_MessageFlow(t *testing.T) {
 		// 2. Stream state is preserved across connections
 		// 3. Consumer state is preserved
 
-		assert.True(t, true) // Placeholder - actual test would verify persistence
+		t.Skip("Persistence verification not implemented - placeholder test")
 	})
 }
 
@@ -228,16 +228,16 @@ func TestNATSMessagePublisher_Integration_Performance(t *testing.T) {
 	publisher, err := NewNATSMessagePublisher(config)
 	require.NoError(t, err)
 
-	err = publisher.(*NATSMessagePublisher).Connect()
-	require.NoError(t, err)
+	connectErr := publisher.(*NATSMessagePublisher).Connect()
+	require.NoError(t, connectErr)
 	defer func() {
-		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
-			t.Errorf("Failed to disconnect from NATS: %v", err)
+		if disconnectErr := publisher.(*NATSMessagePublisher).Disconnect(); disconnectErr != nil {
+			t.Errorf("Failed to disconnect from NATS: %v", disconnectErr)
 		}
 	}()
 
-	err = publisher.(*NATSMessagePublisher).EnsureStream()
-	require.NoError(t, err)
+	streamErr := publisher.(*NATSMessagePublisher).EnsureStream()
+	require.NoError(t, streamErr)
 
 	t.Run("high throughput message publishing", func(t *testing.T) {
 		ctx := context.Background()
@@ -252,19 +252,19 @@ func TestNATSMessagePublisher_Integration_Performance(t *testing.T) {
 				repositoryID := uuid.New()
 				repositoryURL := fmt.Sprintf("https://github.com/perf/repo%d.git", index)
 
-				err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
-				errChan <- err
+				publishErr := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+				errChan <- publishErr
 			}(i)
 		}
 
 		// Collect results
 		successCount := 0
 		for i := range numMessages {
-			err := <-errChan
-			if err == nil {
+			resultErr := <-errChan
+			if resultErr == nil {
 				successCount++
 			} else {
-				t.Logf("Message %d failed: %v", i, err)
+				t.Logf("Message %d failed: %v", i, resultErr)
 			}
 		}
 
@@ -287,7 +287,7 @@ func TestNATSMessagePublisher_Integration_Performance(t *testing.T) {
 		// 3. Garbage collection works properly
 		// 4. Connection pooling is efficient
 
-		assert.True(t, true) // Placeholder - actual test would monitor memory usage
+		t.Skip("Memory usage monitoring not implemented - placeholder test")
 	})
 }
 
@@ -320,7 +320,7 @@ func TestNATSMessagePublisher_Integration_Failover(t *testing.T) {
 		// 5. Verify message publishing resumes
 		// 6. Verify no messages are lost
 
-		assert.True(t, true) // Placeholder - requires complex test setup
+		t.Skip("Complex test setup not implemented - placeholder test")
 	})
 
 	t.Run("handles network partitions", func(t *testing.T) {
@@ -332,7 +332,7 @@ func TestNATSMessagePublisher_Integration_Failover(t *testing.T) {
 		// 4. Verify automatic recovery when partition heals
 		// 5. Verify queued messages are published after recovery
 
-		assert.True(t, true) // Placeholder - requires network simulation tools
+		t.Skip("Network simulation tools not implemented - placeholder test")
 	})
 }
 
@@ -349,16 +349,16 @@ func TestNATSMessagePublisher_Integration_Monitoring(t *testing.T) {
 	publisher, err := NewNATSMessagePublisher(config)
 	require.NoError(t, err)
 
-	err = publisher.(*NATSMessagePublisher).Connect()
-	require.NoError(t, err)
+	connectErr := publisher.(*NATSMessagePublisher).Connect()
+	require.NoError(t, connectErr)
 	defer func() {
-		if err := publisher.(*NATSMessagePublisher).Disconnect(); err != nil {
-			t.Errorf("Failed to disconnect from NATS: %v", err)
+		if disconnectErr := publisher.(*NATSMessagePublisher).Disconnect(); disconnectErr != nil {
+			t.Errorf("Failed to disconnect from NATS: %v", disconnectErr)
 		}
 	}()
 
-	err = publisher.(*NATSMessagePublisher).EnsureStream()
-	require.NoError(t, err)
+	streamErr := publisher.(*NATSMessagePublisher).EnsureStream()
+	require.NoError(t, streamErr)
 
 	t.Run("exposes metrics for monitoring", func(t *testing.T) {
 		// This test will fail because metrics are not implemented
@@ -373,11 +373,11 @@ func TestNATSMessagePublisher_Integration_Monitoring(t *testing.T) {
 		repositoryID := uuid.New()
 		repositoryURL := "https://github.com/monitoring/test.git"
 
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
-		require.NoError(t, err)
+		publishErr := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		require.NoError(t, publishErr)
 
 		// Should verify metrics are updated
-		assert.True(t, true) // Placeholder - actual test would check metrics
+		t.Skip("Metrics checking not implemented - placeholder test")
 	})
 
 	t.Run("health check integration", func(t *testing.T) {
@@ -388,6 +388,6 @@ func TestNATSMessagePublisher_Integration_Monitoring(t *testing.T) {
 		// 3. Health check includes JetStream availability
 		// 4. Health degradation is properly reported
 
-		assert.True(t, true) // Placeholder - actual test would verify health checks
+		t.Skip("Health check verification not implemented - placeholder test")
 	})
 }

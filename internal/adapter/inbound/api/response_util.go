@@ -18,29 +18,51 @@ func (pe *pooledEncoder) reset() {
 	pe.buf.Reset()
 }
 
-var encoderPool = sync.Pool{
-	New: func() interface{} {
-		buf := bytes.NewBuffer(make([]byte, 0, 512))
-		return &pooledEncoder{
-			buf:     buf,
-			encoder: json.NewEncoder(buf),
-		}
-	},
+// JSONEncoder provides thread-safe JSON encoding with object pooling for performance.
+type JSONEncoder struct {
+	pool sync.Pool
+}
+
+// NewJSONEncoder creates a new JSONEncoder with an optimized pool.
+func NewJSONEncoder() *JSONEncoder {
+	return &JSONEncoder{
+		pool: sync.Pool{
+			New: func() interface{} {
+				buf := bytes.NewBuffer(make([]byte, 0, 512))
+				return &pooledEncoder{
+					buf:     buf,
+					encoder: json.NewEncoder(buf),
+				}
+			},
+		},
+	}
+}
+
+// getPooledEncoder retrieves a pooled encoder instance.
+func (j *JSONEncoder) getPooledEncoder() *pooledEncoder {
+	return j.pool.Get().(*pooledEncoder)
+}
+
+// putPooledEncoder returns a pooled encoder instance after resetting it.
+func (j *JSONEncoder) putPooledEncoder(pe *pooledEncoder) {
+	pe.reset()
+	j.pool.Put(pe)
 }
 
 func WriteJSON(w http.ResponseWriter, statusCode int, data interface{}) error {
+	return WriteJSONWithEncoder(NewJSONEncoder(), w, statusCode, data)
+}
+
+// WriteJSONWithEncoder writes JSON using a specific encoder instance.
+func WriteJSONWithEncoder(encoder *JSONEncoder, w http.ResponseWriter, statusCode int, data interface{}) error {
 	// Handle status code 0 (default to 200)
 	if statusCode == 0 {
 		statusCode = http.StatusOK
 	}
 
 	// Get pooled encoder and buffer together
-	pe := encoderPool.Get().(*pooledEncoder)
-	defer func() {
-		// Reset buffer and return encoder to pool for reuse
-		pe.reset()
-		encoderPool.Put(pe)
-	}()
+	pe := encoder.getPooledEncoder()
+	defer encoder.putPooledEncoder(pe)
 
 	// Try to encode the data first - don't write headers if this fails
 	if err := pe.encoder.Encode(data); err != nil {

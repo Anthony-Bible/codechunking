@@ -11,6 +11,8 @@ import (
 // TestValidateRepositoryStatus_DomainIntegrationRequired tests that FAIL with current map-based implementation
 // and will PASS once refactored to use domain layer validation.
 // These tests verify that the function integrates with the domain layer as required.
+//
+//nolint:gocognit // Complex domain integration test with multiple validation scenarios
 func TestValidateRepositoryStatus_DomainIntegrationRequired(t *testing.T) {
 	t.Run("must_behave_identically_to_domain_layer_with_allowEmpty_true", func(t *testing.T) {
 		// This test will FAIL if the function uses the map instead of domain layer
@@ -109,10 +111,8 @@ func TestValidateRepositoryStatus_DomainIntegrationRequired(t *testing.T) {
 			ok := errors.As(appErr, &validationErr)
 			if !ok {
 				t.Errorf("REFACTORING REQUIRED: Must convert domain errors to ValidationError, got %T", appErr)
-			} else {
-				if validationErr.Message != "invalid status" {
-					t.Errorf("REFACTORING REQUIRED: Must convert domain error to standard 'invalid status' message, got %q", validationErr.Message)
-				}
+			} else if validationErr.Message != "invalid status" {
+				t.Errorf("REFACTORING REQUIRED: Must convert domain error to standard 'invalid status' message, got %q", validationErr.Message)
 			}
 		}
 	})
@@ -170,10 +170,8 @@ func TestValidateRepositoryStatus_DomainIntegrationRequired(t *testing.T) {
 							"REFACTORING REQUIREMENT: SQL injection detection must return ValidationError, got %T",
 							err,
 						)
-					} else {
-						if validationErr.Message != "contains malicious SQL" {
-							t.Errorf("REFACTORING REQUIREMENT: SQL injection must return 'contains malicious SQL', got %q", validationErr.Message)
-						}
+					} else if validationErr.Message != "contains malicious SQL" {
+						t.Errorf("REFACTORING REQUIREMENT: SQL injection must return 'contains malicious SQL', got %q", validationErr.Message)
 					}
 				}
 			})
@@ -181,92 +179,112 @@ func TestValidateRepositoryStatus_DomainIntegrationRequired(t *testing.T) {
 	})
 }
 
-// TestValidateRepositoryStatus_MapRemovalRequired contains tests that will FAIL until the map is removed.
-func TestValidateRepositoryStatus_MapRemovalRequired(t *testing.T) {
-	t.Run("function_signature_and_behavior_unchanged", func(t *testing.T) {
-		// This test verifies that after refactoring, the function signature remains the same
-		// and behavior is preserved for all current use cases
+// Helper functions for validation testing to reduce cognitive complexity
 
-		// Test all currently valid statuses still work
-		validStatuses := []string{"", "pending", "cloning", "processing", "completed", "failed", "archived"}
+// assertValidationError checks that err is a ValidationError with the expected message
+func assertValidationError(t *testing.T, err error, expectedMessage string) {
+	t.Helper()
+	var validationError ValidationError
+	if !errors.As(err, &validationError) {
+		t.Errorf("Expected ValidationError, got %T", err)
+		return
+	}
+	if validationError.Message != expectedMessage {
+		t.Errorf("Expected ValidationError message %q, got %q", expectedMessage, validationError.Message)
+	}
+}
 
-		for _, status := range validStatuses {
-			err := ValidateRepositoryStatus(status)
-			if err != nil {
+// assertStatusValid checks that a status is accepted by ValidateRepositoryStatus
+func assertStatusValid(t *testing.T, status string) {
+	t.Helper()
+	err := ValidateRepositoryStatus(status)
+	if err != nil {
+		t.Errorf("REFACTORING REQUIREMENT: Status %q must remain valid after refactoring, got error: %v", status, err)
+	}
+}
+
+// assertStatusInvalid checks that a status is rejected by ValidateRepositoryStatus
+func assertStatusInvalid(t *testing.T, status string, expectedMessage string) {
+	t.Helper()
+	err := ValidateRepositoryStatus(status)
+	if err == nil {
+		t.Errorf("REFACTORING REQUIREMENT: Status %q must remain invalid after refactoring", status)
+		return
+	}
+	assertValidationError(t, err, expectedMessage)
+}
+
+// TestValidateRepositoryStatus_SignaturePreservation verifies the function signature remains unchanged
+func TestValidateRepositoryStatus_SignaturePreservation(t *testing.T) {
+	// This test verifies that after refactoring, the function signature remains the same
+	// and behavior is preserved for all current use cases
+
+	validStatuses := []string{"", "pending", "cloning", "processing", "completed", "failed", "archived"}
+	for _, status := range validStatuses {
+		assertStatusValid(t, status)
+	}
+}
+
+// TestValidateRepositoryStatus_InvalidStatusesRemainInvalid verifies invalid statuses are still rejected
+func TestValidateRepositoryStatus_InvalidStatusesRemainInvalid(t *testing.T) {
+	invalidStatuses := []string{"invalid", "PENDING", "unknown", "   ", " pending "}
+
+	for _, status := range invalidStatuses {
+		t.Run("invalid_status_"+status, func(t *testing.T) {
+			assertStatusInvalid(t, status, "invalid status")
+		})
+	}
+}
+
+// TestValidateRepositoryStatus_DomainValidStatusesConsistency tests domain layer valid statuses
+func TestValidateRepositoryStatus_DomainValidStatusesConsistency(t *testing.T) {
+	// Test every status that domain layer knows about
+	allDomainStatuses := []string{"pending", "cloning", "processing", "completed", "failed", "archived"}
+
+	for _, status := range allDomainStatuses {
+		t.Run("domain_status_"+status, func(t *testing.T) {
+			// Domain layer should accept this status
+			domainErr := valueobject.ValidateRepositoryStatusString(status, true)
+			if domainErr != nil {
+				t.Fatalf("Test setup error: domain should accept %q, got: %v", status, domainErr)
+			}
+
+			// Application function should also accept it (since it should use domain layer)
+			appErr := ValidateRepositoryStatus(status)
+			if appErr != nil {
 				t.Errorf(
-					"REFACTORING REQUIREMENT: Status %q must remain valid after refactoring, got error: %v",
+					"REFACTORING REQUIRED: ValidateRepositoryStatus(%q) should use domain layer and accept valid status, got: %v",
 					status,
-					err,
+					appErr,
 				)
 			}
-		}
+		})
+	}
+}
 
-		// Test invalid statuses still fail appropriately
-		invalidStatuses := []string{"invalid", "PENDING", "unknown", "   ", " pending "}
+// TestValidateRepositoryStatus_DomainInvalidStatusesConsistency tests domain layer invalid statuses
+func TestValidateRepositoryStatus_DomainInvalidStatusesConsistency(t *testing.T) {
+	// Test invalid statuses - both should reject
+	invalidStatuses := []string{"invalid", "nonexistent", "PENDING"}
 
-		for _, status := range invalidStatuses {
-			err := ValidateRepositoryStatus(status)
-			if err == nil {
-				t.Errorf("REFACTORING REQUIREMENT: Status %q must remain invalid after refactoring", status)
-			} else {
-				// Must return ValidationError
-				var validationError ValidationError
-				if errors.As(err, &validationError) {
-					t.Errorf("REFACTORING REQUIREMENT: Invalid status %q must return ValidationError, got %T", status, err)
-				}
+	for _, status := range invalidStatuses {
+		t.Run("invalid_status_"+status, func(t *testing.T) {
+			// Domain layer should reject this
+			domainErr := valueobject.ValidateRepositoryStatusString(status, true)
+			if domainErr == nil {
+				t.Fatalf("Test setup error: domain should reject %q", status)
 			}
-		}
-	})
 
-	t.Run("domain_layer_consistency_verification", func(t *testing.T) {
-		// This test will FAIL until the function actually uses domain layer
-		// It verifies that the function's behavior is consistent with direct domain layer calls
-
-		// Test every status that domain layer knows about
-		allDomainStatuses := []string{"pending", "cloning", "processing", "completed", "failed", "archived"}
-
-		for _, status := range allDomainStatuses {
-			t.Run("domain_status_"+status, func(t *testing.T) {
-				// Domain layer should accept this status
-				domainErr := valueobject.ValidateRepositoryStatusString(status, true)
-				if domainErr != nil {
-					t.Fatalf("Test setup error: domain should accept %q, got: %v", status, domainErr)
-				}
-
-				// Application function should also accept it (since it should use domain layer)
-				appErr := ValidateRepositoryStatus(status)
-				if appErr != nil {
-					t.Errorf(
-						"REFACTORING REQUIRED: ValidateRepositoryStatus(%q) should use domain layer and accept valid status, got: %v",
-						status,
-						appErr,
-					)
-				}
-			})
-		}
-
-		// Test invalid statuses - both should reject
-		invalidStatuses := []string{"invalid", "nonexistent", "PENDING"}
-
-		for _, status := range invalidStatuses {
-			t.Run("invalid_status_"+status, func(t *testing.T) {
-				// Domain layer should reject this
-				domainErr := valueobject.ValidateRepositoryStatusString(status, true)
-				if domainErr == nil {
-					t.Fatalf("Test setup error: domain should reject %q", status)
-				}
-
-				// Application function should also reject it
-				appErr := ValidateRepositoryStatus(status)
-				if appErr == nil {
-					t.Errorf(
-						"REFACTORING REQUIRED: ValidateRepositoryStatus(%q) should use domain layer and reject invalid status",
-						status,
-					)
-				}
-			})
-		}
-	})
+			// Application function should also reject it
+			appErr := ValidateRepositoryStatus(status)
+			if appErr == nil {
+				t.Errorf(
+					"REFACTORING REQUIRED: ValidateRepositoryStatus(%q) should use domain layer and reject invalid status",
+					status,
+				)
+			}
+		})
+	}
 }
 
 // TestValidateRepositoryStatus_RefactoringGuidance provides specific guidance for the refactoring.
@@ -290,11 +308,12 @@ func TestValidateRepositoryStatus_RefactoringGuidance(t *testing.T) {
 		domainErr := valueobject.ValidateRepositoryStatusString(status, true)
 		appErr := ValidateRepositoryStatus(status)
 
-		if domainErr == nil && appErr != nil {
+		switch {
+		case domainErr == nil && appErr != nil:
 			t.Error("IMPLEMENTATION ISSUE: Domain allows but application rejects - check domain integration")
-		} else if domainErr != nil && appErr == nil {
+		case domainErr != nil && appErr == nil:
 			t.Error("IMPLEMENTATION ISSUE: Domain rejects but application allows - map may still be used")
-		} else if domainErr != nil && appErr != nil {
+		case domainErr != nil && appErr != nil:
 			// Both reject - verify error conversion is correct
 			var validationErr ValidationError
 			ok := errors.As(appErr, &validationErr)

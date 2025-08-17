@@ -231,7 +231,6 @@ func TestDefaultErrorHandler_ResponseFormat(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.NotZero(t, response.Timestamp)
-		assert.WithinDuration(t, response.Timestamp, response.Timestamp, 0) // Just check it's not zero
 	})
 
 	t.Run("error_response_should_have_correct_content_type", func(t *testing.T) {

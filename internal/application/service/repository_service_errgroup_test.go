@@ -63,8 +63,8 @@ func TestBatchCheckDuplicates_ContextCancellation(t *testing.T) {
 	elapsed := time.Since(start)
 
 	// Verify - errgroup should propagate context cancellation error
-	assert.Error(t, err, "Should return error when context is cancelled")
-	assert.ErrorIs(t, err, context.Canceled, "Error should be context.Canceled")
+	require.Error(t, err, "Should return error when context is cancelled")
+	require.ErrorIs(t, err, context.Canceled, "Error should be context.Canceled")
 
 	// Should terminate faster than processing all URLs sequentially (5 * 50ms = 250ms)
 	assert.Less(t, elapsed, 200*time.Millisecond, "Should terminate early when context is cancelled")
@@ -119,7 +119,7 @@ func TestBatchCheckDuplicates_EarlyReturnOnAllInvalidURLs(t *testing.T) {
 	// Verify all results have errors (URL validation failures)
 	for i, result := range results {
 		assert.Equal(t, invalidURLs[i], result.URL, "Should preserve original URL")
-		assert.Error(t, result.Error, "Should have validation error for invalid URL")
+		require.Error(t, result.Error, "Should have validation error for invalid URL")
 		assert.False(t, result.IsDuplicate, "Invalid URLs should not be marked as duplicates")
 		assert.Empty(t, result.NormalizedURL, "Invalid URLs should not have normalized URL")
 		assert.Nil(t, result.ExistingRepository, "Invalid URLs should not have existing repository")
@@ -168,7 +168,7 @@ func TestBatchCheckDuplicates_ErrorPropagation(t *testing.T) {
 	elapsed := time.Since(start)
 
 	// Verify - errgroup should propagate first error and cancel other workers
-	assert.Error(t, err, "Should return the first database error")
+	require.Error(t, err, "Should return the first database error")
 	if err != nil {
 		assert.Contains(t, err.Error(), "database connection failed", "Should contain original database error")
 	}
@@ -254,7 +254,7 @@ func TestBatchCheckDuplicates_BoundedWorkerPool(t *testing.T) {
 	// Verify all results are correct
 	for i, result := range results {
 		assert.Equal(t, urls[i], result.URL, "Should preserve original URL")
-		assert.NoError(t, result.Error, "Should not have error for valid URLs")
+		require.NoError(t, result.Error, "Should not have error for valid URLs")
 		assert.False(t, result.IsDuplicate, "Mock returns false for duplicates")
 		assert.NotEmpty(t, result.NormalizedURL, "Should have normalized URL")
 		assert.Nil(t, result.ExistingRepository, "No existing repository in this test")
@@ -307,7 +307,7 @@ func TestBatchCheckDuplicates_MaintainsSameSuccessfulBehavior(t *testing.T) {
 
 	// First URL - not duplicate
 	assert.Equal(t, urls[0], results[0].URL)
-	assert.NoError(t, results[0].Error)
+	require.NoError(t, results[0].Error)
 	assert.False(t, results[0].IsDuplicate)
 	assert.Equal(t, "https://github.com/owner/repo1", results[0].NormalizedURL)
 	assert.Nil(t, results[0].ExistingRepository)
@@ -315,7 +315,7 @@ func TestBatchCheckDuplicates_MaintainsSameSuccessfulBehavior(t *testing.T) {
 
 	// Second URL - duplicate
 	assert.Equal(t, urls[1], results[1].URL)
-	assert.NoError(t, results[1].Error)
+	require.NoError(t, results[1].Error)
 	assert.True(t, results[1].IsDuplicate)
 	assert.Equal(t, "https://github.com/owner/repo2", results[1].NormalizedURL)
 	assert.Equal(t, existingRepo, results[1].ExistingRepository)
@@ -323,7 +323,7 @@ func TestBatchCheckDuplicates_MaintainsSameSuccessfulBehavior(t *testing.T) {
 
 	// Third URL - not duplicate
 	assert.Equal(t, urls[2], results[2].URL)
-	assert.NoError(t, results[2].Error)
+	require.NoError(t, results[2].Error)
 	assert.False(t, results[2].IsDuplicate)
 	assert.Equal(t, "https://github.com/owner/repo3", results[2].NormalizedURL)
 	assert.Nil(t, results[2].ExistingRepository)
@@ -331,7 +331,7 @@ func TestBatchCheckDuplicates_MaintainsSameSuccessfulBehavior(t *testing.T) {
 
 	// Fourth URL - invalid
 	assert.Equal(t, urls[3], results[3].URL)
-	assert.Error(t, results[3].Error)
+	require.Error(t, results[3].Error)
 	assert.False(t, results[3].IsDuplicate)
 	assert.Empty(t, results[3].NormalizedURL)
 	assert.Nil(t, results[3].ExistingRepository)
@@ -400,8 +400,8 @@ func TestBatchCheckDuplicates_ContextDeadline(t *testing.T) {
 	elapsed := time.Since(start)
 
 	// Verify - errgroup should respect context deadline
-	assert.Error(t, err, "Should return error when context deadline is exceeded")
-	assert.ErrorIs(t, err, context.DeadlineExceeded, "Error should be context.DeadlineExceeded")
+	require.Error(t, err, "Should return error when context deadline is exceeded")
+	require.ErrorIs(t, err, context.DeadlineExceeded, "Error should be context.DeadlineExceeded")
 
 	// Should terminate quickly due to deadline
 	assert.Less(t, elapsed, 100*time.Millisecond, "Should terminate when context deadline is exceeded")

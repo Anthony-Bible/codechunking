@@ -3,14 +3,14 @@ package cmd
 import (
 	"testing"
 
+	"codechunking/internal/adapter/outbound/mock"
+	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/config"
 	"codechunking/internal/port/outbound"
 
 	"github.com/stretchr/testify/assert"
-
+	"github.com/stretchr/testify/require"
 	// These imports are used by the buildDependencies method tests.
-	"codechunking/internal/adapter/outbound/mock"
-	"codechunking/internal/adapter/outbound/repository"
 )
 
 // TestServiceFactory_BuildDependencies_Success tests that buildDependencies successfully
@@ -34,7 +34,7 @@ func TestServiceFactory_BuildDependencies_Success(t *testing.T) {
 	repositoryRepo, indexingJobRepo, messagePublisher, err := serviceFactory.buildDependencies()
 
 	// Assert
-	assert.NoError(t, err, "buildDependencies should not return error when database connection succeeds")
+	require.NoError(t, err, "buildDependencies should not return error when database connection succeeds")
 	assert.NotNil(t, repositoryRepo, "repositoryRepo should not be nil when database connection succeeds")
 	assert.NotNil(t, indexingJobRepo, "indexingJobRepo should not be nil when database connection succeeds")
 	assert.NotNil(t, messagePublisher, "messagePublisher should never be nil")
@@ -71,7 +71,7 @@ func TestServiceFactory_BuildDependencies_DatabaseError(t *testing.T) {
 	repositoryRepo, indexingJobRepo, messagePublisher, err := serviceFactory.buildDependencies()
 
 	// Assert
-	assert.Error(t, err, "buildDependencies should return error when database connection fails")
+	require.Error(t, err, "buildDependencies should return error when database connection fails")
 	assert.Nil(t, repositoryRepo, "repositoryRepo should be nil when database connection fails")
 	assert.Nil(t, indexingJobRepo, "indexingJobRepo should be nil when database connection fails")
 	assert.NotNil(t, messagePublisher, "messagePublisher should always be returned, even on database error")
@@ -163,7 +163,7 @@ func TestServiceFactory_BuildDependencies_ErrorPropagation(t *testing.T) {
 			repositoryRepo, indexingJobRepo, messagePublisher, err := serviceFactory.buildDependencies()
 
 			// Assert
-			assert.Error(t, err, "buildDependencies should return error for invalid database config")
+			require.Error(t, err, "buildDependencies should return error for invalid database config")
 			assert.Nil(t, repositoryRepo, "repositoryRepo should be nil on database error")
 			assert.Nil(t, indexingJobRepo, "indexingJobRepo should be nil on database error")
 			assert.NotNil(t, messagePublisher, "messagePublisher should still be returned")
@@ -330,7 +330,7 @@ func TestServiceFactory_BuildDependencies_Integration(t *testing.T) {
 		repositoryRepo, indexingJobRepo, messagePublisher, err := serviceFactory.buildDependencies()
 
 		// Assert graceful failure
-		assert.Error(t, err, "Should return error when database connection fails")
+		require.Error(t, err, "Should return error when database connection fails")
 		assert.Nil(t, repositoryRepo, "Repository should be nil when pool creation fails")
 		assert.Nil(t, indexingJobRepo, "IndexingJob repository should be nil when pool creation fails")
 		assert.NotNil(t, messagePublisher, "MessagePublisher should still be created even on database failure")
@@ -369,12 +369,12 @@ func hasMethod(obj interface{}, methodName string) bool {
 // with default configuration values similar to createDatabasePool.
 func TestServiceFactory_BuildDependencies_ConfigDefaults(t *testing.T) {
 	// Arrange
-	cfg := &config.Config{
+	SetTestConfig(&config.Config{
 		Database: config.DatabaseConfig{
 			// Test with minimal config to ensure defaults are set
 		},
-	}
-	serviceFactory := NewServiceFactory(cfg)
+	})
+	serviceFactory := NewServiceFactory(GetConfig())
 
 	// Act
 	_, _, messagePublisher, err := serviceFactory.buildDependencies()

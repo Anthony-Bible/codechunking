@@ -12,16 +12,23 @@ import (
 	"github.com/spf13/viper"
 )
 
-var (
+// CmdConfig holds the command configuration.
+type CmdConfig struct {
 	cfgFile string
 	cfg     *config.Config
-)
+}
+
+var cmdConfig CmdConfig //nolint:gochecknoglobals // Standard CLI pattern for Cobra command configuration
 
 // rootCmd represents the base command when called without any subcommands.
-var rootCmd = &cobra.Command{
-	Use:   "codechunking",
-	Short: "A code chunking and retrieval system",
-	Long: `CodeChunking is a production-grade system for indexing code repositories,
+var rootCmd = newRootCmd() //nolint:gochecknoglobals // Standard Cobra CLI pattern for root command
+
+// newRootCmd creates and returns the root command.
+func newRootCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "codechunking",
+		Short: "A code chunking and retrieval system",
+		Long: `CodeChunking is a production-grade system for indexing code repositories,
 generating embeddings, and providing semantic code search capabilities.
 
 The system supports:
@@ -30,6 +37,7 @@ The system supports:
 - Embedding generation with Google Gemini
 - Vector storage and similarity search with PostgreSQL/pgvector
 - Asynchronous job processing with NATS JetStream`,
+	}
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -45,7 +53,8 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	// Global flags
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ./configs/config.yaml)")
+	rootCmd.PersistentFlags().
+		StringVar(&cmdConfig.cfgFile, "config", "", "config file (default: ./configs/config.yaml)")
 	rootCmd.PersistentFlags().String("log-level", "info", "Log level (debug, info, warn, error)")
 	rootCmd.PersistentFlags().String("log-format", "json", "Log format (json, text)")
 
@@ -65,8 +74,8 @@ func initConfig() {
 	setDefaults(v)
 
 	// Set config file
-	if cfgFile != "" {
-		v.SetConfigFile(cfgFile)
+	if cmdConfig.cfgFile != "" {
+		v.SetConfigFile(cmdConfig.cfgFile)
 	} else {
 		v.SetConfigName("config")
 		v.SetConfigType("yaml")
@@ -93,7 +102,7 @@ func initConfig() {
 	}
 
 	// Load configuration
-	cfg = config.New(v)
+	cmdConfig.cfg = config.New(v)
 }
 
 // bindMiddlewareEnvVars explicitly binds middleware environment variables to Viper configuration keys.
@@ -168,5 +177,10 @@ func setDefaults(v *viper.Viper) {
 
 // GetConfig returns the loaded configuration.
 func GetConfig() *config.Config {
-	return cfg
+	return cmdConfig.cfg
+}
+
+// SetTestConfig sets the configuration for testing purposes.
+func SetTestConfig(c *config.Config) {
+	cmdConfig.cfg = c
 }

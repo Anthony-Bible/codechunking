@@ -44,7 +44,7 @@ func TestServiceFactory_shouldEnableDefaultMiddleware_ConfigurableBehavior(t *te
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create config with middleware settings
-			cfg := &config.Config{
+			testCfg := &config.Config{
 				API: config.APIConfig{
 					Host: "localhost",
 					Port: "8080",
@@ -54,7 +54,7 @@ func TestServiceFactory_shouldEnableDefaultMiddleware_ConfigurableBehavior(t *te
 			}
 
 			// Create service factory with configured middleware settings
-			factory := NewServiceFactory(cfg)
+			factory := NewServiceFactory(testCfg)
 
 			// Test shouldEnableDefaultMiddleware behavior
 			result := factory.shouldEnableDefaultMiddleware()
@@ -120,7 +120,7 @@ func TestServiceFactory_shouldEnableDefaultMiddleware_IndividualMiddlewareToggle
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create config with individual middleware toggles
-			cfg := &config.Config{
+			testCfg2 := &config.Config{
 				API: config.APIConfig{
 					Host: "localhost",
 					Port: "8080",
@@ -132,7 +132,7 @@ func TestServiceFactory_shouldEnableDefaultMiddleware_IndividualMiddlewareToggle
 				},
 			}
 
-			factory := NewServiceFactory(cfg)
+			factory := NewServiceFactory(testCfg2)
 
 			// Test individual middleware toggle methods that need to be implemented
 			if tt.corsEnabled != nil {
@@ -212,10 +212,10 @@ func TestServiceFactory_CreateServer_MiddlewareIntegration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create test config with database settings to avoid connection errors
-			cfg := createTestConfig(t)
-			cfg.API.EnableDefaultMiddleware = tt.enableDefaultMiddleware
+			SetTestConfig(createTestConfig(t))
+			GetConfig().API.EnableDefaultMiddleware = tt.enableDefaultMiddleware
 
-			factory := NewServiceFactory(cfg)
+			factory := NewServiceFactory(GetConfig())
 
 			// CreateServer should not fail due to middleware configuration
 			server, err := factory.CreateServer()
@@ -290,14 +290,14 @@ func TestServiceFactory_CreateServer_SelectiveMiddleware(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := createTestConfig(t)
-			cfg.API.EnableDefaultMiddleware = tt.enableDefaultMiddleware
-			cfg.API.EnableCORS = tt.enableCORS
-			cfg.API.EnableSecurityHeaders = tt.enableSecurity
-			cfg.API.EnableLogging = tt.enableLogging
-			cfg.API.EnableErrorHandling = tt.enableErrorHandling
+			testCfg4 := createTestConfig(t)
+			testCfg4.API.EnableDefaultMiddleware = tt.enableDefaultMiddleware
+			testCfg4.API.EnableCORS = tt.enableCORS
+			testCfg4.API.EnableSecurityHeaders = tt.enableSecurity
+			testCfg4.API.EnableLogging = tt.enableLogging
+			testCfg4.API.EnableErrorHandling = tt.enableErrorHandling
 
-			factory := NewServiceFactory(cfg)
+			factory := NewServiceFactory(GetConfig())
 
 			// This test will fail until the selective middleware logic is implemented
 			server, err := factory.CreateServer()
@@ -429,28 +429,33 @@ func TestAPIConfig_MiddlewareFields_ConfigurationLoading(t *testing.T) {
 			bindMiddlewareEnvVars(v)
 
 			// Load configuration with middleware fields
-			cfg := config.New(v)
+			SetTestConfig(config.New(v))
 
 			// Verify the configuration was loaded correctly
-			assert.Equal(t, tt.expectedConfig.Host, cfg.API.Host)
-			assert.Equal(t, tt.expectedConfig.Port, cfg.API.Port)
+			assert.Equal(t, tt.expectedConfig.Host, GetConfig().API.Host)
+			assert.Equal(t, tt.expectedConfig.Port, GetConfig().API.Port)
 
 			// Verify middleware configuration fields
 			assertBoolPtr(
 				t,
 				"EnableDefaultMiddleware",
 				tt.expectedConfig.EnableDefaultMiddleware,
-				cfg.API.EnableDefaultMiddleware,
+				GetConfig().API.EnableDefaultMiddleware,
 			)
-			assertBoolPtr(t, "EnableCORS", tt.expectedConfig.EnableCORS, cfg.API.EnableCORS)
+			assertBoolPtr(t, "EnableCORS", tt.expectedConfig.EnableCORS, GetConfig().API.EnableCORS)
 			assertBoolPtr(
 				t,
 				"EnableSecurityHeaders",
 				tt.expectedConfig.EnableSecurityHeaders,
-				cfg.API.EnableSecurityHeaders,
+				GetConfig().API.EnableSecurityHeaders,
 			)
-			assertBoolPtr(t, "EnableLogging", tt.expectedConfig.EnableLogging, cfg.API.EnableLogging)
-			assertBoolPtr(t, "EnableErrorHandling", tt.expectedConfig.EnableErrorHandling, cfg.API.EnableErrorHandling)
+			assertBoolPtr(t, "EnableLogging", tt.expectedConfig.EnableLogging, GetConfig().API.EnableLogging)
+			assertBoolPtr(
+				t,
+				"EnableErrorHandling",
+				tt.expectedConfig.EnableErrorHandling,
+				GetConfig().API.EnableErrorHandling,
+			)
 		})
 	}
 }
@@ -470,9 +475,9 @@ func TestServiceFactory_MiddlewareConfigValidation(t *testing.T) {
 		{
 			name: "valid middleware configuration",
 			configModifier: func(cfg *config.Config) {
-				cfg.API.EnableDefaultMiddleware = boolPtr(true)
-				cfg.API.EnableCORS = boolPtr(true)
-				cfg.API.EnableSecurityHeaders = boolPtr(true)
+				GetConfig().API.EnableDefaultMiddleware = boolPtr(true)
+				GetConfig().API.EnableCORS = boolPtr(true)
+				GetConfig().API.EnableSecurityHeaders = boolPtr(true)
 			},
 			expectError: false,
 			description: "should accept valid middleware configuration",
@@ -480,8 +485,8 @@ func TestServiceFactory_MiddlewareConfigValidation(t *testing.T) {
 		{
 			name: "conflicting middleware configuration",
 			configModifier: func(cfg *config.Config) {
-				cfg.API.EnableDefaultMiddleware = boolPtr(false)
-				cfg.API.EnableCORS = boolPtr(true) // individual enable when default is disabled
+				GetConfig().API.EnableDefaultMiddleware = boolPtr(false)
+				GetConfig().API.EnableCORS = boolPtr(true) // individual enable when default is disabled
 			},
 			expectError: false, // This should be allowed - individual overrides
 			description: "should allow individual middleware when default is disabled",
@@ -498,10 +503,10 @@ func TestServiceFactory_MiddlewareConfigValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := createTestConfig(t)
-			tt.configModifier(cfg)
+			SetTestConfig(createTestConfig(t))
+			tt.configModifier(GetConfig())
 
-			factory := NewServiceFactory(cfg)
+			factory := NewServiceFactory(GetConfig())
 
 			// Creating the factory should not fail regardless of middleware config
 			assert.NotNil(t, factory)
@@ -509,10 +514,10 @@ func TestServiceFactory_MiddlewareConfigValidation(t *testing.T) {
 			// Test that server creation respects the configuration
 			server, err := factory.CreateServer()
 			if tt.expectError {
-				assert.Error(t, err, tt.errorMessage)
+				require.Error(t, err, tt.errorMessage)
 				assert.Nil(t, server)
 			} else {
-				assert.NoError(t, err, tt.description)
+				require.NoError(t, err, tt.description)
 				assert.NotNil(t, server)
 			}
 		})

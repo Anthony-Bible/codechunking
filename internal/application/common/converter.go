@@ -1,10 +1,9 @@
 package common
 
 import (
-	"strings"
-
 	"codechunking/internal/application/dto"
 	"codechunking/internal/domain/entity"
+	"strings"
 )
 
 // EntityToRepositoryResponse converts a repository entity to response DTO.

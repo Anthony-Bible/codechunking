@@ -305,95 +305,52 @@ func TestErrorHandlingMiddleware(t *testing.T) {
 }
 
 func TestMiddlewareChain(t *testing.T) {
-	tests := []struct {
-		name         string
-		middlewares  []Middleware
-		validateFunc func(t *testing.T, recorder *httptest.ResponseRecorder, logOutput string)
-	}{
-		{
-			name: "executes_middleware_in_correct_order",
-			middlewares: []Middleware{
-				NewLoggingMiddleware(NewTestLogger(&strings.Builder{})),
-				NewCORSMiddleware(),
-				NewErrorHandlingMiddleware(),
-			},
-			validateFunc: func(t *testing.T, recorder *httptest.ResponseRecorder, logOutput string) {
-				// Should have CORS headers
-				assert.Equal(t, "*", recorder.Header().Get("Access-Control-Allow-Origin"))
-				// Should have logged the request
-				assert.Contains(t, logOutput, "GET")
-				assert.Contains(t, logOutput, "/test")
-				// Should return successful response
-				assert.Equal(t, http.StatusOK, recorder.Code)
-			},
-		},
-		{
-			name: "error_middleware_catches_panic_after_other_middleware",
-			middlewares: []Middleware{
-				NewCORSMiddleware(),
-				NewLoggingMiddleware(NewTestLogger(&strings.Builder{})),
-				NewErrorHandlingMiddleware(),
-			},
-			validateFunc: func(t *testing.T, recorder *httptest.ResponseRecorder, logOutput string) {
-				// Should still have CORS headers even after panic
-				assert.Equal(t, "*", recorder.Header().Get("Access-Control-Allow-Origin"))
-				// Should return 500 due to panic
-				assert.Equal(t, http.StatusInternalServerError, recorder.Code)
-			},
-		},
-	}
+	t.Run("executes_middleware_in_correct_order", func(t *testing.T) {
+		TestMiddlewareChain_ExecutionOrder(t)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup
-			var logOutput strings.Builder
+	t.Run("error_middleware_catches_panic_after_other_middleware", func(t *testing.T) {
+		TestMiddlewareChain_ErrorRecovery(t)
+	})
+}
 
-			// Recreate middlewares with the shared log buffer
-			var actualMiddlewares []Middleware
-			for _, middleware := range tt.middlewares {
-				// Check if this is a logging middleware and replace with one using our buffer
-				if strings.Contains(tt.name, "executes_middleware_in_correct_order") {
-					if len(actualMiddlewares) == 0 { // First middleware is logging
-						actualMiddlewares = append(actualMiddlewares, NewLoggingMiddleware(NewTestLogger(&logOutput)))
-					} else {
-						actualMiddlewares = append(actualMiddlewares, middleware)
-					}
-				} else {
-					actualMiddlewares = append(actualMiddlewares, middleware)
-				}
-			}
+func TestMiddlewareChain_ExecutionOrder(t *testing.T) {
+	// Setup
+	var logOutput strings.Builder
+	middlewares := createMiddlewareWithSharedLogger(&logOutput)
+	finalHandler := createNormalTestHandler()
 
-			// Handler that panics for error middleware test
-			var finalHandler http.HandlerFunc
-			if strings.Contains(tt.name, "panic") {
-				finalHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					panic("test panic")
-				})
-			} else {
-				finalHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusOK)
-					if _, err := w.Write([]byte("success")); err != nil {
-						t.Logf("Failed to write response: %v", err)
-					}
-				})
-			}
+	// Build middleware chain
+	chain := NewMiddlewareChain(middlewares...)
+	handler := chain(finalHandler)
 
-			// Build middleware chain
-			chain := NewMiddlewareChain(actualMiddlewares...)
-			handler := chain(finalHandler)
+	req := testutil.CreateRequest(http.MethodGet, "/test")
+	recorder := httptest.NewRecorder()
 
-			req := testutil.CreateRequest(http.MethodGet, "/test")
-			recorder := httptest.NewRecorder()
+	// Execute
+	handler.ServeHTTP(recorder, req)
 
-			// Execute
-			handler.ServeHTTP(recorder, req)
+	// Validate
+	validateCorrectOrder(t, recorder, logOutput.String())
+}
 
-			// Validate
-			if tt.validateFunc != nil {
-				tt.validateFunc(t, recorder, logOutput.String())
-			}
-		})
-	}
+func TestMiddlewareChain_ErrorRecovery(t *testing.T) {
+	// Setup
+	middlewares := createMiddlewareForErrorRecovery()
+	finalHandler := createPanicTestHandler()
+
+	// Build middleware chain
+	chain := NewMiddlewareChain(middlewares...)
+	handler := chain(finalHandler)
+
+	req := testutil.CreateRequest(http.MethodGet, "/test")
+	recorder := httptest.NewRecorder()
+
+	// Execute
+	handler.ServeHTTP(recorder, req)
+
+	// Validate
+	validateErrorRecovery(t, recorder)
 }
 
 func TestMiddlewareChain_EmptyChain(t *testing.T) {
@@ -507,6 +464,63 @@ func validateQueryParameterRequest(t *testing.T, logOutput string) {
 	assert.Contains(t, logOutput, "offset=20")
 }
 
+// Helper functions for middleware chain testing
+
+// createMiddlewareWithSharedLogger creates middleware chain with shared logging buffer
+func createMiddlewareWithSharedLogger(logBuffer *strings.Builder) []Middleware {
+	return []Middleware{
+		NewLoggingMiddleware(NewTestLogger(logBuffer)),
+		NewCORSMiddleware(),
+		NewErrorHandlingMiddleware(),
+	}
+}
+
+// createMiddlewareForErrorRecovery creates middleware chain for error recovery testing
+func createMiddlewareForErrorRecovery() []Middleware {
+	return []Middleware{
+		NewCORSMiddleware(),
+		NewLoggingMiddleware(NewTestLogger(&strings.Builder{})),
+		NewErrorHandlingMiddleware(),
+	}
+}
+
+// createNormalTestHandler creates a handler that returns successful response
+func createNormalTestHandler() http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte("success")); err != nil {
+			// In tests, write errors to ResponseRecorder are unlikely, but handle to avoid errcheck
+			_ = err
+		}
+	})
+}
+
+// createPanicTestHandler creates a handler that panics
+func createPanicTestHandler() http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("test panic")
+	})
+}
+
+// validateCorrectOrder validates middleware execution in correct order
+func validateCorrectOrder(t *testing.T, recorder *httptest.ResponseRecorder, logOutput string) {
+	// Should have CORS headers
+	assert.Equal(t, "*", recorder.Header().Get("Access-Control-Allow-Origin"))
+	// Should have logged the request
+	assert.Contains(t, logOutput, "GET")
+	assert.Contains(t, logOutput, "/test")
+	// Should return successful response
+	assert.Equal(t, http.StatusOK, recorder.Code)
+}
+
+// validateErrorRecovery validates error middleware catches panic after other middleware
+func validateErrorRecovery(t *testing.T, recorder *httptest.ResponseRecorder) {
+	// Should still have CORS headers even after panic
+	assert.Equal(t, "*", recorder.Header().Get("Access-Control-Allow-Origin"))
+	// Should return 500 due to panic
+	assert.Equal(t, http.StatusInternalServerError, recorder.Code)
+}
+
 func TestMiddleware_Configuration(t *testing.T) {
 	t.Run("middleware_respects_configuration", func(t *testing.T) {
 		// Test CORS middleware with custom configuration
@@ -542,7 +556,7 @@ func TestMiddleware_Configuration(t *testing.T) {
 func TestDefaultCORSConfig_Constants(t *testing.T) {
 	t.Run("default_cors_config_has_correct_hardcoded_values", func(t *testing.T) {
 		// This test will fail until DefaultCORSConfig constant is created
-		config := DefaultCORSConfig
+		config := DefaultCORSConfig()
 
 		// Verify default origins
 		assert.Equal(t, []string{"*"}, config.AllowedOrigins, "Default origin should be '*'")
@@ -578,7 +592,7 @@ func TestNewCORSMiddleware_UsesDefaultConfig(t *testing.T) {
 
 		// Create middleware using configurable version with DefaultCORSConfig (expected after refactor)
 		// This should produce identical results - test will fail until refactored
-		configurableHandler := NewCORSMiddlewareWithConfig(DefaultCORSConfig)(nextHandler)
+		configurableHandler := NewCORSMiddlewareWithConfig(DefaultCORSConfig())(nextHandler)
 
 		testCases := []struct {
 			name           string

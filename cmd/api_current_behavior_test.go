@@ -1,9 +1,8 @@
 package cmd
 
 import (
-	"testing"
-
 	"codechunking/internal/config"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -12,14 +11,14 @@ import (
 // implementation that always returns true, demonstrating the need for refactoring.
 func TestServiceFactory_shouldEnableDefaultMiddleware_CurrentBehavior(t *testing.T) {
 	// Create minimal config
-	cfg := &config.Config{
+	testCfg := &config.Config{
 		API: config.APIConfig{
 			Host: "localhost",
 			Port: "8080",
 		},
 	}
 
-	factory := NewServiceFactory(cfg)
+	factory := NewServiceFactory(testCfg)
 
 	// Current implementation always returns true (regardless of any configuration)
 	result := factory.shouldEnableDefaultMiddleware()

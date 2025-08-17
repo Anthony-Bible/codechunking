@@ -1,17 +1,17 @@
 package service
 
 import (
+	"codechunking/internal/application/common"
+	"codechunking/internal/application/dto"
+	"codechunking/internal/domain/entity"
+	"codechunking/internal/domain/valueobject"
+	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
 
-	"codechunking/internal/application/common"
-	"codechunking/internal/application/dto"
-	"codechunking/internal/domain/entity"
 	domain_errors "codechunking/internal/domain/errors/domain"
-	"codechunking/internal/domain/valueobject"
-	"codechunking/internal/port/outbound"
 
 	"github.com/google/uuid"
 )
@@ -61,21 +61,21 @@ func (s *CreateIndexingJobService) CreateIndexingJob(
 	}
 
 	// Ensure repository is in a state that allows indexing job creation
-	if err := s.validateRepositoryEligibilityForIndexing(repository); err != nil {
-		return nil, err
+	if eligibilityErr := s.validateRepositoryEligibilityForIndexing(repository); eligibilityErr != nil {
+		return nil, eligibilityErr
 	}
 
 	// Create new indexing job entity
 	job := entity.NewIndexingJob(request.RepositoryID)
 
 	// Persist the job to ensure it's saved before queuing for processing
-	if err := s.persistIndexingJob(ctx, job); err != nil {
-		return nil, err
+	if persistErr := s.persistIndexingJob(ctx, job); persistErr != nil {
+		return nil, persistErr
 	}
 
 	// Queue the job for asynchronous processing
-	if err := s.queueJobForProcessing(ctx, request.RepositoryID, repository.URL().String()); err != nil {
-		return nil, err
+	if queueErr := s.queueJobForProcessing(ctx, request.RepositoryID, repository.URL().String()); queueErr != nil {
+		return nil, queueErr
 	}
 
 	return common.EntityToIndexingJobResponse(job), nil
@@ -124,7 +124,8 @@ func (s *GetIndexingJobService) GetIndexingJob(
 	}
 
 	// Ensure the job belongs to the specified repository (prevents cross-repository access)
-	if err := s.validateJobOwnership(job, repositoryID); err != nil {
+	err = s.validateJobOwnership(job, repositoryID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -169,13 +170,15 @@ func (s *UpdateIndexingJobService) UpdateIndexingJob(
 	}
 
 	// Validate that the status transition is allowed
-	if err := s.validateStatusTransition(job, targetStatus); err != nil {
+	err = s.validateStatusTransition(job, targetStatus)
+	if err != nil {
 		return nil, err
 	}
 
 	// Update job based on new status (only if status actually changes)
 	if job.Status() != targetStatus {
-		if err := s.updateJobStatus(job, targetStatus, request); err != nil {
+		err = s.updateJobStatus(job, targetStatus, request)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -191,7 +194,8 @@ func (s *UpdateIndexingJobService) UpdateIndexingJob(
 	}
 
 	// Save updated job
-	if err := s.indexingJobRepo.Update(ctx, job); err != nil {
+	err = s.indexingJobRepo.Update(ctx, job)
+	if err != nil {
 		return nil, common.WrapServiceError(common.OpSaveIndexingJob, err)
 	}
 

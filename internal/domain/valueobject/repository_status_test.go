@@ -287,79 +287,70 @@ func TestRepositoryStatus_Constants(t *testing.T) {
 	}
 }
 
-func TestRepositoryStatus_TransitionChains(t *testing.T) {
-	// Test complete transition chains
-	t.Run("Happy path flow", func(t *testing.T) {
-		// pending -> cloning -> processing -> completed -> archived
-		status := RepositoryStatusPending
+// Helper function to assert valid repository status transition
+func assertRepoStatusTransition(t *testing.T, from, to RepositoryStatus, operation string) {
+	t.Helper()
+	if !from.CanTransitionTo(to) {
+		t.Errorf("Should be able to %s: transition from %s to %s", operation, from, to)
+	}
+}
 
-		if !status.CanTransitionTo(RepositoryStatusCloning) {
-			t.Error("Should be able to transition from pending to cloning")
-		}
-		status = RepositoryStatusCloning
+// Helper function to test transitions for multiple repository statuses
+func testMultipleRepoTransitions(t *testing.T, statuses []RepositoryStatus, target RepositoryStatus, operation string) {
+	t.Helper()
+	for _, status := range statuses {
+		t.Run(status.String()+"_to_"+target.String(), func(t *testing.T) {
+			assertRepoStatusTransition(t, status, target, operation)
+		})
+	}
+}
 
-		if !status.CanTransitionTo(RepositoryStatusProcessing) {
-			t.Error("Should be able to transition from cloning to processing")
-		}
-		status = RepositoryStatusProcessing
+func TestRepositoryStatus_HappyPathFlow(t *testing.T) {
+	// Test the complete successful workflow: pending -> cloning -> processing -> completed -> archived
+	status := RepositoryStatusPending
 
-		if !status.CanTransitionTo(RepositoryStatusCompleted) {
-			t.Error("Should be able to transition from processing to completed")
-		}
-		status = RepositoryStatusCompleted
+	assertRepoStatusTransition(t, status, RepositoryStatusCloning, "start cloning")
+	status = RepositoryStatusCloning
 
-		if !status.CanTransitionTo(RepositoryStatusArchived) {
-			t.Error("Should be able to transition from completed to archived")
-		}
-	})
+	assertRepoStatusTransition(t, status, RepositoryStatusProcessing, "start processing")
+	status = RepositoryStatusProcessing
 
-	t.Run("Failure paths", func(t *testing.T) {
-		// Test failure at each stage
-		failureStages := []RepositoryStatus{
-			RepositoryStatusPending,
-			RepositoryStatusCloning,
-			RepositoryStatusProcessing,
-		}
+	assertRepoStatusTransition(t, status, RepositoryStatusCompleted, "complete processing")
+	status = RepositoryStatusCompleted
 
-		for _, stage := range failureStages {
-			t.Run("Failure_from_"+stage.String(), func(t *testing.T) {
-				if !stage.CanTransitionTo(RepositoryStatusFailed) {
-					t.Errorf("Should be able to transition from %s to failed", stage)
-				}
-			})
-		}
-	})
+	assertRepoStatusTransition(t, status, RepositoryStatusArchived, "archive completed repository")
+}
 
-	t.Run("Retry after failure", func(t *testing.T) {
-		// failed -> pending (retry)
-		if !RepositoryStatusFailed.CanTransitionTo(RepositoryStatusPending) {
-			t.Error("Should be able to retry from failed to pending")
-		}
-	})
+func TestRepositoryStatus_FailureTransitions(t *testing.T) {
+	// Test failure transitions from non-terminal states
+	failableStages := []RepositoryStatus{
+		RepositoryStatusPending,
+		RepositoryStatusCloning,
+		RepositoryStatusProcessing,
+	}
 
-	t.Run("Re-indexing", func(t *testing.T) {
-		// completed -> processing (re-indexing)
-		if !RepositoryStatusCompleted.CanTransitionTo(RepositoryStatusProcessing) {
-			t.Error("Should be able to re-index from completed to processing")
-		}
-	})
+	testMultipleRepoTransitions(t, failableStages, RepositoryStatusFailed, "fail")
+}
 
-	t.Run("Archive and restore", func(t *testing.T) {
-		// Any terminal state can go to archived
-		terminalStates := []RepositoryStatus{
-			RepositoryStatusCompleted,
-			RepositoryStatusFailed,
-		}
+func TestRepositoryStatus_RetryAfterFailure(t *testing.T) {
+	// Test retry capability: failed -> pending
+	assertRepoStatusTransition(t, RepositoryStatusFailed, RepositoryStatusPending, "retry after failure")
+}
 
-		for _, terminal := range terminalStates {
-			if !terminal.CanTransitionTo(RepositoryStatusArchived) {
-				t.Errorf("Should be able to archive from %s", terminal)
-			}
-		}
+func TestRepositoryStatus_ReIndexing(t *testing.T) {
+	// Test re-indexing capability: completed -> processing
+	assertRepoStatusTransition(t, RepositoryStatusCompleted, RepositoryStatusProcessing, "re-index")
+}
 
-		// archived -> pending (restore)
-		if !RepositoryStatusArchived.CanTransitionTo(RepositoryStatusPending) {
-			t.Error("Should be able to restore from archived to pending")
-		}
-	})
+func TestRepositoryStatus_ArchiveAndRestore(t *testing.T) {
+	// Test archiving from terminal states
+	terminalStates := []RepositoryStatus{
+		RepositoryStatusCompleted,
+		RepositoryStatusFailed,
+	}
+
+	testMultipleRepoTransitions(t, terminalStates, RepositoryStatusArchived, "archive")
+
+	// Test restoration: archived -> pending
+	assertRepoStatusTransition(t, RepositoryStatusArchived, RepositoryStatusPending, "restore from archive")
 }

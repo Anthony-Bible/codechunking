@@ -33,46 +33,31 @@ func TestValidateRepositoryStatus_RefactoredBehavior(t *testing.T) {
 }
 
 // TestValidateRepositoryStatus_DomainLayerIntegration tests integration with domain layer.
+// This function has been refactored to reduce cognitive complexity by breaking it into smaller, focused tests.
 func TestValidateRepositoryStatus_DomainLayerIntegration(t *testing.T) {
-	t.Run("should_behave_identically_to_domain_with_allowEmpty_true", func(t *testing.T) {
-		testCases := []string{
-			"",           // empty string
-			"pending",    // valid status
-			"cloning",    // valid status
-			"processing", // valid status
-			"completed",  // valid status
-			"failed",     // valid status
-			"archived",   // valid status
-			"invalid",    // invalid status
-			"PENDING",    // case sensitive - should be invalid
-			"unknown",    // invalid status
+	t.Run("valid_statuses_match_domain_behavior", func(t *testing.T) {
+		validStatuses := []string{"", "pending", "cloning", "processing", "completed", "failed", "archived"}
+		for _, status := range validStatuses {
+			assertDomainApplicationValidationMatch(t, status)
 		}
+	})
 
-		for _, status := range testCases {
-			t.Run("status_"+status, func(t *testing.T) {
-				// Get expected behavior from domain layer
-				domainErr := valueobject.ValidateRepositoryStatusString(status, true)
+	t.Run("invalid_statuses_match_domain_behavior", func(t *testing.T) {
+		invalidStatuses := []string{"invalid", "PENDING", "unknown"}
+		for _, status := range invalidStatuses {
+			assertDomainApplicationValidationMatch(t, status)
+			assertApplicationReturnsValidationError(t, status)
+		}
+	})
 
-				// Get actual behavior from application function
-				appErr := ValidateRepositoryStatus(status)
-
-				// They should behave the same for status validation
-				// (ignoring SQL injection validation which is application-layer concern)
-				if !isSQLInjection(status) {
-					if (domainErr == nil) != (appErr == nil) {
-						t.Errorf("Domain and application validation should match for status %q: domain=%v, app=%v",
-							status, domainErr, appErr)
-					}
-
-					// If both return errors, application should return ValidationError
-					if domainErr != nil && appErr != nil {
-						var validationError ValidationError
-						if errors.As(appErr, &validationError) {
-							t.Errorf("Application should return ValidationError, got %T", appErr)
-						}
-					}
-				}
-			})
+	t.Run("sql_injection_patterns_are_handled_separately", func(t *testing.T) {
+		sqlInjectionPatterns := []string{"'; DROP TABLE users; --", "UNION SELECT", "--comment"}
+		for _, pattern := range sqlInjectionPatterns {
+			// SQL injection should be caught by application layer, not domain layer
+			appErr := ValidateRepositoryStatus(pattern)
+			if appErr == nil {
+				t.Errorf("Expected SQL injection pattern %q to be rejected", pattern)
+			}
 		}
 	})
 }
@@ -169,10 +154,8 @@ func TestValidateRepositoryStatus_RefactoringRequirements(t *testing.T) {
 					t.Errorf("Expected error message %q but got %q for input %q",
 						tt.errorMsg, validationErr.Message, tt.input)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error but got %v for input %q (%s)", err, tt.input, tt.description)
-				}
+			} else if err != nil {
+				t.Errorf("Expected no error but got %v for input %q (%s)", err, tt.input, tt.description)
 			}
 		})
 	}
@@ -189,48 +172,135 @@ func isSQLInjection(input string) bool {
 	return false
 }
 
-// TestValidateRepositoryStatus_FailingTestsForRefactoring contains tests that SHOULD FAIL initially
-// These tests expect the refactored behavior and will guide the implementation.
-func TestValidateRepositoryStatus_FailingTestsForRefactoring(t *testing.T) {
-	t.Run("domain_integration_test", func(t *testing.T) {
-		// This test expects that the function integrates with domain layer
-		// It will FAIL until the refactoring is complete
+// assertDomainApplicationValidationMatch verifies that domain and application validation behave identically
+func assertDomainApplicationValidationMatch(t *testing.T, status string) {
+	t.Helper()
 
-		// Test that function behavior matches domain layer behavior for status validation
-		statuses := []string{"", "pending", "invalid", "PENDING"}
+	// Skip SQL injection patterns as they are handled by application layer, not domain
+	if isSQLInjection(status) {
+		return
+	}
 
-		for _, status := range statuses {
-			if !isSQLInjection(status) {
-				domainErr := valueobject.ValidateRepositoryStatusString(status, true)
-				appErr := ValidateRepositoryStatus(status)
+	// Get expected behavior from domain layer
+	domainErr := valueobject.ValidateRepositoryStatusString(status, true)
 
-				// Convert domain error expectations to application ValidationError expectations
-				if domainErr == nil {
-					if appErr != nil {
-						t.Errorf("Status %q: domain allows but application rejects with: %v", status, appErr)
-					}
-				} else {
-					if appErr == nil {
-						t.Errorf("Status %q: domain rejects but application allows", status)
-					} else {
-						// Application should return ValidationError, not domain error
-						var validationError ValidationError
-						if errors.As(appErr, &validationError) {
-							t.Errorf("Status %q: expected ValidationError but got %T", status, appErr)
-						}
-						// Application should convert domain error message to "invalid status"
-						validationErr := func() ValidationError {
-							var target ValidationError
-							_ = errors.As(appErr, &target)
-							return target
-						}()
-						if validationErr.Message != "invalid status" {
-							t.Errorf("Status %q: expected 'invalid status' message but got %q",
-								status, validationErr.Message)
-						}
-					}
-				}
+	// Get actual behavior from application function
+	appErr := ValidateRepositoryStatus(status)
+
+	// They should behave the same for status validation
+	if (domainErr == nil) != (appErr == nil) {
+		t.Errorf("Domain and application validation should match for status %q: domain=%v, app=%v",
+			status, domainErr, appErr)
+	}
+}
+
+// assertApplicationReturnsValidationError verifies that the application returns a ValidationError for invalid statuses
+func assertApplicationReturnsValidationError(t *testing.T, status string) {
+	t.Helper()
+
+	// Skip SQL injection patterns as they have different error handling
+	if isSQLInjection(status) {
+		return
+	}
+
+	appErr := ValidateRepositoryStatus(status)
+	if appErr == nil {
+		return // Valid status, no error expected
+	}
+
+	// Application should return ValidationError, not domain error
+	var validationError ValidationError
+	if !errors.As(appErr, &validationError) {
+		t.Errorf("Application should return ValidationError for status %q, got %T", status, appErr)
+	}
+}
+
+// assertRefactoredDomainAppValidationMatch compares domain vs application validation results
+// This is kept for backward compatibility with existing tests
+func assertRefactoredDomainAppValidationMatch(t *testing.T, status string) {
+	t.Helper()
+	assertDomainApplicationValidationMatch(t, status)
+	assertApplicationReturnsValidationError(t, status)
+}
+
+// extractRefactoredValidationError safely extracts ValidationError from an error
+func extractRefactoredValidationError(err error) (ValidationError, bool) {
+	var validationError ValidationError
+	ok := errors.As(err, &validationError)
+	return validationError, ok
+}
+
+// assertRefactoredValidationErrorMessage validates that the error has the expected message
+func assertRefactoredValidationErrorMessage(t *testing.T, err error, expectedMessage string) {
+	t.Helper()
+
+	validationErr, ok := extractRefactoredValidationError(err)
+	if !ok {
+		t.Errorf("Expected ValidationError but got %T", err)
+		return
+	}
+
+	if validationErr.Message != expectedMessage {
+		t.Errorf("Expected message %q but got %q", expectedMessage, validationErr.Message)
+	}
+}
+
+// TestValidateRepositoryStatus_DomainIntegration_ValidStatuses tests statuses that should pass validation
+func TestValidateRepositoryStatus_DomainIntegration_ValidStatuses(t *testing.T) {
+	validStatuses := []string{"", "pending"}
+
+	for _, status := range validStatuses {
+		t.Run("valid_status_"+status, func(t *testing.T) {
+			if isSQLInjection(status) {
+				t.Skip("Skipping SQL injection test case")
 			}
+			assertRefactoredDomainAppValidationMatch(t, status)
+		})
+	}
+}
+
+// TestValidateRepositoryStatus_DomainIntegration_InvalidStatuses tests statuses that should fail validation
+func TestValidateRepositoryStatus_DomainIntegration_InvalidStatuses(t *testing.T) {
+	invalidStatuses := []string{"invalid", "PENDING"}
+
+	for _, status := range invalidStatuses {
+		t.Run("invalid_status_"+status, func(t *testing.T) {
+			if isSQLInjection(status) {
+				t.Skip("Skipping SQL injection test case")
+			}
+			assertRefactoredDomainAppValidationMatch(t, status)
+
+			// For invalid statuses, also verify error structure
+			appErr := ValidateRepositoryStatus(status)
+			if appErr != nil {
+				assertRefactoredValidationErrorMessage(t, appErr, "invalid status")
+			}
+		})
+	}
+}
+
+// TestValidateRepositoryStatus_DomainIntegration_ErrorHandling tests error type and message validation
+func TestValidateRepositoryStatus_DomainIntegration_ErrorHandling(t *testing.T) {
+	t.Run("validation_error_structure", func(t *testing.T) {
+		status := "definitely_invalid_status"
+		appErr := ValidateRepositoryStatus(status)
+
+		if appErr == nil {
+			t.Fatal("Expected error for invalid status")
+		}
+
+		validationErr, ok := extractRefactoredValidationError(appErr)
+		if !ok {
+			t.Errorf("Expected ValidationError but got %T", appErr)
+			return
+		}
+
+		if validationErr.Field != "status" {
+			t.Errorf("Expected field 'status' but got %q", validationErr.Field)
+		}
+
+		if validationErr.Message != "invalid status" {
+			t.Errorf("Expected message 'invalid status' but got %q", validationErr.Message)
 		}
 	})
 }

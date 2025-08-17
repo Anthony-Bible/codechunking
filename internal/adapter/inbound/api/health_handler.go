@@ -1,12 +1,11 @@
 package api
 
 import (
+	"codechunking/internal/application/dto"
+	"codechunking/internal/port/inbound"
 	"fmt"
 	"net/http"
 	"time"
-
-	"codechunking/internal/application/dto"
-	"codechunking/internal/port/inbound"
 )
 
 // HealthHandler handles HTTP requests for health check operations.
@@ -42,13 +41,13 @@ func (h *HealthHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		statusCode = http.StatusServiceUnavailable
 	}
 
-	if err := WriteJSON(w, statusCode, response); err != nil {
+	if writeErr := WriteJSON(w, statusCode, response); writeErr != nil {
 		// If JSON writing fails, set content-type and write a simple error response
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusInternalServerError)
-		if _, writeErr := w.Write([]byte("Health check response encoding failed")); writeErr != nil {
+		if _, writeFailErr := w.Write([]byte("Health check response encoding failed")); writeFailErr != nil {
 			// Unable to recover at this point, but avoid errcheck violation
-			_ = writeErr
+			_ = writeFailErr
 		}
 	}
 }
@@ -61,7 +60,7 @@ func (h *HealthHandler) addHealthHeaders(w http.ResponseWriter, response *dto.He
 	// Add NATS-specific headers if NATS dependency exists
 	if natsStatus, exists := response.Dependencies["nats"]; exists {
 		if natsDetails, ok := natsStatus.Details["nats_health"]; ok {
-			if natsHealth, ok := natsDetails.(dto.NATSHealthDetails); ok {
+			if natsHealth, detailsOk := natsDetails.(dto.NATSHealthDetails); detailsOk {
 				// Add NATS connection status header
 				connectionStatus := "disconnected"
 				if natsHealth.Connected {

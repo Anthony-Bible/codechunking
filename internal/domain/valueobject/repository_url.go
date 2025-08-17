@@ -82,8 +82,8 @@ func (uv *URLValidator) validateAndCreate(rawURL string) (RepositoryURL, error) 
 	}
 
 	// Perform structural validation (including port checks)
-	if err := uv.validateURLStructure(rawURL, parsedURL); err != nil {
-		return RepositoryURL{}, err
+	if validateErr := uv.validateURLStructure(rawURL, parsedURL); validateErr != nil {
+		return RepositoryURL{}, validateErr
 	}
 
 	// Use comprehensive normalization
@@ -237,7 +237,7 @@ func (uv *URLValidator) validateURLStructure(rawURL string, parsedURL *url.URL) 
 
 	// Extract hostname without port and normalize to lowercase for supported host check
 	hostname := strings.ToLower(parsedURL.Hostname())
-	if !security.StringPatterns.SupportedHosts[hostname] {
+	if !security.GetSupportedHosts()[hostname] {
 		return fmt.Errorf("unsupported host: %s. Supported hosts: github.com, gitlab.com, bitbucket.org", hostname)
 	}
 

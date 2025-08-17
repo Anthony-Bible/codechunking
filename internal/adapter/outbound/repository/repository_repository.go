@@ -161,83 +161,77 @@ func (r *PostgreSQLRepositoryRepository) FindByURL(
 	return r.queryRepositoryByRawURL(ctx, url, query)
 }
 
-// FindAll finds repositories with filters.
-func (r *PostgreSQLRepositoryRepository) FindAll(
-	ctx context.Context,
-	filters outbound.RepositoryFilters,
-) ([]*entity.Repository, int, error) {
-	// Validate pagination parameters
+func (r *PostgreSQLRepositoryRepository) validateFilters(filters outbound.RepositoryFilters) error {
 	if filters.Limit < 0 {
-		return nil, 0, ErrInvalidArgument
+		return ErrInvalidArgument
 	}
 	if filters.Limit == 0 {
-		return nil, 0, ErrInvalidArgument
+		return ErrInvalidArgument
 	}
 	if filters.Offset < 0 {
-		return nil, 0, ErrInvalidArgument
+		return ErrInvalidArgument
 	}
 
-	// Validate sort parameter
 	if filters.Sort != "" {
-		if err := r.validateSortParameter(filters.Sort); err != nil {
-			return nil, 0, err
-		}
+		return r.validateSortParameter(filters.Sort)
 	}
 
+	return nil
+}
+
+func (r *PostgreSQLRepositoryRepository) buildWhereClause(filters outbound.RepositoryFilters) (string, []interface{}) {
 	var whereConditions []string
 	var args []interface{}
 	argIndex := 1
 
-	// Base query
-	baseQuery := `FROM codechunking.repositories WHERE deleted_at IS NULL`
-
-	// Add status filter
 	if filters.Status != nil {
 		whereConditions = append(whereConditions, fmt.Sprintf("status = $%d", argIndex))
 		args = append(args, filters.Status.String())
 	}
 
-	// Build where clause
 	whereClause := ""
 	if len(whereConditions) > 0 {
 		whereClause = " AND " + strings.Join(whereConditions, " AND ")
 	}
 
-	// Build ORDER BY clause
-	orderBy := "ORDER BY created_at DESC"
-	if filters.Sort != "" {
-		// Parse field:direction format
-		parts := strings.Split(filters.Sort, ":")
-		field := parts[0]
-		direction := "asc"
-		if len(parts) > 1 {
-			direction = parts[1]
-		}
+	return whereClause, args
+}
 
-		// Build ORDER BY clause
-		switch field {
-		case "name":
-			if direction == "desc" {
-				orderBy = "ORDER BY name DESC"
-			} else {
-				orderBy = "ORDER BY name ASC"
-			}
-		case "created_at":
-			if direction == "desc" {
-				orderBy = "ORDER BY created_at DESC"
-			} else {
-				orderBy = "ORDER BY created_at ASC"
-			}
-		case "updated_at":
-			if direction == "desc" {
-				orderBy = "ORDER BY updated_at DESC"
-			} else {
-				orderBy = "ORDER BY updated_at ASC"
-			}
-		}
+func (r *PostgreSQLRepositoryRepository) buildOrderByClause(sort string) string {
+	if sort == "" {
+		return "ORDER BY created_at DESC"
 	}
 
-	limit := 50 // default
+	parts := strings.Split(sort, ":")
+	field := parts[0]
+	direction := "asc"
+	if len(parts) > 1 {
+		direction = parts[1]
+	}
+
+	switch field {
+	case "name":
+		if direction == "desc" {
+			return "ORDER BY name DESC"
+		}
+		return "ORDER BY name ASC"
+	case "created_at":
+		if direction == "desc" {
+			return "ORDER BY created_at DESC"
+		}
+		return "ORDER BY created_at ASC"
+	case "updated_at":
+		if direction == "desc" {
+			return "ORDER BY updated_at DESC"
+		}
+		return "ORDER BY updated_at ASC"
+	default:
+		return "ORDER BY created_at DESC"
+	}
+}
+
+func (r *PostgreSQLRepositoryRepository) getPaginationParams(filters outbound.RepositoryFilters) (int, int) {
+	limit := 50
 	if filters.Limit > 0 {
 		limit = filters.Limit
 	}
@@ -246,6 +240,23 @@ func (r *PostgreSQLRepositoryRepository) FindAll(
 	if filters.Offset > 0 {
 		offset = filters.Offset
 	}
+
+	return limit, offset
+}
+
+// FindAll finds repositories with filters.
+func (r *PostgreSQLRepositoryRepository) FindAll(
+	ctx context.Context,
+	filters outbound.RepositoryFilters,
+) ([]*entity.Repository, int, error) {
+	if err := r.validateFilters(filters); err != nil {
+		return nil, 0, err
+	}
+
+	baseQuery := `FROM codechunking.repositories WHERE deleted_at IS NULL`
+	whereClause, args := r.buildWhereClause(filters)
+	orderBy := r.buildOrderByClause(filters.Sort)
+	limit, offset := r.getPaginationParams(filters)
 
 	// Execute count and data queries using shared helper
 	qi := GetQueryInterface(ctx, r.pool)
@@ -275,16 +286,16 @@ func (r *PostgreSQLRepositoryRepository) FindAll(
 		var totalFiles, totalChunks int
 		var createdAt, updatedAt time.Time
 
-		err := rows.Scan(
+		scanErr := rows.Scan(
 			&id, &repoURL, &name, &description, &defaultBranch, &lastIndexedAt,
 			&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
 			&createdAt, &updatedAt, &deletedAt,
 		)
-		if err != nil {
-			return nil, 0, WrapError(err, "scan repository row")
+		if scanErr != nil {
+			return nil, 0, WrapError(scanErr, "scan repository row")
 		}
 
-		repo, err := r.scanRepositoryFromTime(
+		repo, scanRepoErr := r.scanRepositoryFromTime(
 			id,
 			repoURL,
 			name,
@@ -299,15 +310,15 @@ func (r *PostgreSQLRepositoryRepository) FindAll(
 			updatedAt,
 			deletedAt,
 		)
-		if err != nil {
-			return nil, 0, err
+		if scanRepoErr != nil {
+			return nil, 0, scanRepoErr
 		}
 
 		repositories = append(repositories, repo)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, 0, WrapError(err, "iterate repository rows")
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, 0, WrapError(rowsErr, "iterate repository rows")
 	}
 
 	return repositories, totalCount, nil

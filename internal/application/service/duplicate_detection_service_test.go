@@ -8,9 +8,10 @@ import (
 
 	"codechunking/internal/application/dto"
 	"codechunking/internal/domain/entity"
-	domain_errors "codechunking/internal/domain/errors/domain"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
+
+	domain_errors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -227,11 +228,11 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 
 			// Verify
 			if tt.shouldDetectDuplicate {
-				assert.Error(t, err, tt.description)
+				require.Error(t, err, tt.description)
 				assert.Equal(t, tt.expectedError, err, tt.description)
 				assert.Nil(t, response, "Response should be nil when duplicate is detected")
 			} else {
-				assert.NoError(t, err, tt.description)
+				require.NoError(t, err, tt.description)
 				assert.NotNil(t, response, "Response should not be nil when repository is created successfully")
 				assert.Equal(t, "test-repo", response.Name, "Response should contain correct repository name")
 			}
@@ -267,7 +268,7 @@ func TestCreateRepositoryService_NormalizedDuplicateDetectionWithDatabaseError(t
 	response, err := service.CreateRepository(ctx, request)
 
 	// Verify
-	assert.Error(t, err, "Should return error when database check fails")
+	require.Error(t, err, "Should return error when database check fails")
 	assert.Nil(t, response, "Response should be nil when error occurs")
 	assert.Contains(t, err.Error(), "database connection failed", "Error should contain original database error")
 

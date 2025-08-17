@@ -8,9 +8,10 @@ import (
 
 	"codechunking/internal/application/dto"
 	"codechunking/internal/domain/entity"
-	domain_errors "codechunking/internal/domain/errors/domain"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
+
+	domain_errors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -137,9 +138,9 @@ func TestCreateIndexingJobService_CreateIndexingJob_RepositoryNotFound(t *testin
 	response, err := service.CreateIndexingJob(ctx, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertNotCalled(t, "Save")
@@ -185,9 +186,9 @@ func TestCreateIndexingJobService_CreateIndexingJob_RepositoryNotEligible(t *tes
 	response, err := service.CreateIndexingJob(ctx, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertNotCalled(t, "Save")
@@ -234,10 +235,10 @@ func TestCreateIndexingJobService_CreateIndexingJob_SaveJobFails(t *testing.T) {
 	response, err := service.CreateIndexingJob(ctx, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "failed to save indexing job")
-	assert.ErrorIs(t, err, saveError)
+	require.ErrorIs(t, err, saveError)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertExpectations(t)
@@ -286,10 +287,10 @@ func TestCreateIndexingJobService_CreateIndexingJob_PublishJobFails(t *testing.T
 	response, err := service.CreateIndexingJob(ctx, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "failed to publish indexing job")
-	assert.ErrorIs(t, err, publishError)
+	require.ErrorIs(t, err, publishError)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertExpectations(t)
@@ -382,9 +383,9 @@ func TestGetIndexingJobService_GetIndexingJob_RepositoryNotFound(t *testing.T) {
 	response, err := service.GetIndexingJob(ctx, repositoryID, jobID)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertNotCalled(t, "FindByID")
@@ -425,9 +426,9 @@ func TestGetIndexingJobService_GetIndexingJob_JobNotFound(t *testing.T) {
 	response, err := service.GetIndexingJob(ctx, repositoryID, jobID)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
-	assert.ErrorIs(t, err, domain_errors.ErrJobNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrJobNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertExpectations(t)
@@ -484,9 +485,9 @@ func TestGetIndexingJobService_GetIndexingJob_JobBelongsToDifferentRepository(t 
 	response, err := service.GetIndexingJob(ctx, repositoryID, jobID)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
-	assert.ErrorIs(t, err, domain_errors.ErrJobNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrJobNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertExpectations(t)
@@ -654,9 +655,9 @@ func TestUpdateIndexingJobService_UpdateIndexingJob_JobNotFound(t *testing.T) {
 	response, err := service.UpdateIndexingJob(ctx, jobID, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
-	assert.ErrorIs(t, err, domain_errors.ErrJobNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrJobNotFound)
 
 	mockJobRepo.AssertExpectations(t)
 	mockJobRepo.AssertNotCalled(t, "Update")
@@ -698,7 +699,7 @@ func TestUpdateIndexingJobService_UpdateIndexingJob_InvalidStatusTransition(t *t
 	response, err := service.UpdateIndexingJob(ctx, jobID, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "invalid status transition")
 
@@ -814,9 +815,9 @@ func TestListIndexingJobsService_ListIndexingJobs_RepositoryNotFound(t *testing.
 	response, err := service.ListIndexingJobs(ctx, repositoryID, query)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertNotCalled(t, "FindByRepositoryID")
@@ -919,10 +920,10 @@ func TestListIndexingJobsService_ListIndexingJobs_DatabaseError(t *testing.T) {
 	response, err := service.ListIndexingJobs(ctx, repositoryID, query)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "failed to retrieve indexing jobs")
-	assert.ErrorIs(t, err, dbError)
+	require.ErrorIs(t, err, dbError)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertExpectations(t)

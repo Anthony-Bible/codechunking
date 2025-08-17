@@ -144,54 +144,22 @@ func FuzzURLEquivalenceDetection(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, url1, url2 string) {
-		// Skip obviously invalid inputs
-		if len(url1) < 15 || len(url2) < 15 {
-			return
-		}
-
-		if containsControlCharacters(url1) || containsControlCharacters(url2) {
-			return
-		}
-
-		// Only test with supported hosts
-		if !containsSupportedHost(url1) || !containsSupportedHost(url2) {
+		// Validate input for fuzz testing
+		if !isValidFuzzInput(url1, url2) {
 			return
 		}
 
 		// Attempt to normalize both URLs
-		// These functions don't exist yet - test should FAIL
-		normalized1, err1 := normalization.NormalizeRepositoryURL(url1)
-		normalized2, err2 := normalization.NormalizeRepositoryURL(url2)
+		normalized1, normalized2, err1, err2 := normalizeURLPair(url1, url2)
 
 		// If both normalizations succeed, check for equivalence
 		if err1 == nil && err2 == nil {
 			if normalized1 == normalized2 {
-				// URLs are equivalent - create RepositoryURL objects and verify they're equal
-				repoURL1, createErr1 := NewRepositoryURL(url1)
-				repoURL2, createErr2 := NewRepositoryURL(url2)
-
-				if createErr1 == nil && createErr2 == nil {
-					if !repoURL1.Equal(repoURL2) {
-						t.Errorf(
-							"Equivalent URLs should create equal RepositoryURL objects:\nURL1: %s -> %s\nURL2: %s -> %s",
-							url1,
-							normalized1,
-							url2,
-							normalized2,
-						)
-					}
-				}
+				// URLs are equivalent - verify RepositoryURL objects are equal
+				validateEquivalentURLs(t, url1, url2, normalized1, normalized2)
 			} else {
 				// URLs are not equivalent - verify RepositoryURL objects are different
-				repoURL1, createErr1 := NewRepositoryURL(url1)
-				repoURL2, createErr2 := NewRepositoryURL(url2)
-
-				if createErr1 == nil && createErr2 == nil {
-					if repoURL1.Equal(repoURL2) {
-						t.Errorf("Non-equivalent URLs should create different RepositoryURL objects:\nURL1: %s -> %s\nURL2: %s -> %s",
-							url1, normalized1, url2, normalized2)
-					}
-				}
+				validateNonEquivalentURLs(t, url1, url2, normalized1, normalized2)
 			}
 		}
 	})
@@ -278,6 +246,74 @@ func FuzzSecurityVulnerabilities(f *testing.F) {
 }
 
 // Helper functions for fuzzing validation
+
+// isValidFuzzInput validates that both URLs are suitable for fuzz testing.
+func isValidFuzzInput(url1, url2 string) bool {
+	// Skip obviously invalid inputs
+	if len(url1) < 15 || len(url2) < 15 {
+		return false
+	}
+
+	if containsControlCharacters(url1) || containsControlCharacters(url2) {
+		return false
+	}
+
+	// Only test with supported hosts
+	if !containsSupportedHost(url1) || !containsSupportedHost(url2) {
+		return false
+	}
+
+	return true
+}
+
+// normalizeURLPair attempts to normalize both URLs and returns the results.
+func normalizeURLPair(url1, url2 string) (string, string, error, error) {
+	normalized1, err1 := normalization.NormalizeRepositoryURL(url1)
+	normalized2, err2 := normalization.NormalizeRepositoryURL(url2)
+	return normalized1, normalized2, err1, err2
+}
+
+// createAndCompareRepositoryURLs creates RepositoryURL objects and compares them for equality.
+// Returns: areEqual, createErr1, createErr2
+func createAndCompareRepositoryURLs(url1, url2 string) (bool, error, error) {
+	repoURL1, createErr1 := NewRepositoryURL(url1)
+	repoURL2, createErr2 := NewRepositoryURL(url2)
+
+	if createErr1 != nil || createErr2 != nil {
+		return false, createErr1, createErr2
+	}
+
+	return repoURL1.Equal(repoURL2), nil, nil
+}
+
+// validateEquivalentURLs tests that URLs with equivalent normalized forms create equal RepositoryURL objects.
+func validateEquivalentURLs(t *testing.T, url1, url2, normalized1, normalized2 string) {
+	areEqual, createErr1, createErr2 := createAndCompareRepositoryURLs(url1, url2)
+
+	if createErr1 == nil && createErr2 == nil {
+		if !areEqual {
+			t.Errorf(
+				"Equivalent URLs should create equal RepositoryURL objects:\nURL1: %s -> %s\nURL2: %s -> %s",
+				url1,
+				normalized1,
+				url2,
+				normalized2,
+			)
+		}
+	}
+}
+
+// validateNonEquivalentURLs tests that URLs with different normalized forms create different RepositoryURL objects.
+func validateNonEquivalentURLs(t *testing.T, url1, url2, normalized1, normalized2 string) {
+	areEqual, createErr1, createErr2 := createAndCompareRepositoryURLs(url1, url2)
+
+	if createErr1 == nil && createErr2 == nil {
+		if areEqual {
+			t.Errorf("Non-equivalent URLs should create different RepositoryURL objects:\nURL1: %s -> %s\nURL2: %s -> %s",
+				url1, normalized1, url2, normalized2)
+		}
+	}
+}
 
 // containsControlCharacters checks if the string contains control characters.
 func containsControlCharacters(s string) bool {

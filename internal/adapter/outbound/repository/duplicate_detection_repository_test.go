@@ -111,11 +111,11 @@ func TestPostgreSQLRepositoryRepository_NormalizedURLConstraints(t *testing.T) {
 
 			if tt.expectConstraint {
 				// Should fail due to normalized URL constraint - this will PASS initially as constraint doesn't exist yet
-				assert.Error(t, err, tt.description)
+				require.Error(t, err, tt.description)
 				assert.Contains(t, err.Error(), "duplicate", tt.description+" - error should mention duplicate")
 			} else {
 				// Should succeed - different repositories should be allowed
-				assert.NoError(t, err, tt.description)
+				require.NoError(t, err, tt.description)
 			}
 
 			// Clean up after test

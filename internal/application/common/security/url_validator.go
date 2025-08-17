@@ -9,7 +9,8 @@ import (
 // URLSecurityValidator provides centralized URL security validation
 // to eliminate code duplication across the codebase.
 type URLSecurityValidator struct {
-	config *Config
+	config         *Config
+	stringPatterns *StringPatternsData
 }
 
 // NewURLSecurityValidator creates a new URL security validator.
@@ -18,7 +19,8 @@ func NewURLSecurityValidator(config *Config) *URLSecurityValidator {
 		config = DefaultConfig()
 	}
 	return &URLSecurityValidator{
-		config: config,
+		config:         config,
+		stringPatterns: GetStringPatterns(),
 	}
 }
 
@@ -52,7 +54,7 @@ func (v *URLSecurityValidator) ValidateSQLInjectionPatterns(rawURL string) error
 
 	// Check for common SQL injection patterns using lowercase URL
 	lowercaseURL := strings.ToLower(rawURL)
-	for _, pattern := range StringPatterns.SQLPatterns {
+	for _, pattern := range v.stringPatterns.SQLPatterns {
 		if strings.Contains(lowercaseURL, pattern) {
 			return errors.New("SQL injection pattern detected in URL")
 		}

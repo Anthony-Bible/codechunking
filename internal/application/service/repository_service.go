@@ -1,17 +1,17 @@
 package service
 
 import (
+	"codechunking/internal/application/common"
+	"codechunking/internal/application/dto"
+	"codechunking/internal/domain/entity"
+	"codechunking/internal/domain/valueobject"
+	"codechunking/internal/port/outbound"
 	"context"
 	"fmt"
 	"log/slog"
 	"time"
 
-	"codechunking/internal/application/common"
-	"codechunking/internal/application/dto"
-	"codechunking/internal/domain/entity"
 	domain_errors "codechunking/internal/domain/errors/domain"
-	"codechunking/internal/domain/valueobject"
-	"codechunking/internal/port/outbound"
 
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
@@ -90,12 +90,12 @@ func (s *CreateRepositoryService) CreateRepository(
 	repository := entity.NewRepository(repositoryURL, name, request.Description, request.DefaultBranch)
 
 	// Save repository
-	if err := s.repositoryRepo.Save(ctx, repository); err != nil {
+	if err = s.repositoryRepo.Save(ctx, repository); err != nil {
 		return nil, common.WrapServiceError(common.OpSaveRepository, err)
 	}
 
 	// Publish indexing job
-	if err := s.messagePublisher.PublishIndexingJob(ctx, repository.ID(), repository.URL().String()); err != nil {
+	if err = s.messagePublisher.PublishIndexingJob(ctx, repository.ID(), repository.URL().String()); err != nil {
 		return nil, common.WrapServiceError(common.OpPublishJob, err)
 	}
 
@@ -179,7 +179,7 @@ func (s *UpdateRepositoryService) UpdateRepository(
 	}
 
 	// Save updated repository
-	if err := s.repositoryRepo.Update(ctx, repository); err != nil {
+	if err = s.repositoryRepo.Update(ctx, repository); err != nil {
 		return nil, common.WrapServiceError(common.OpSaveRepository, err)
 	}
 
@@ -219,12 +219,12 @@ func (s *DeleteRepositoryService) DeleteRepository(ctx context.Context, id uuid.
 	}
 
 	// Archive repository
-	if err := repository.Archive(); err != nil {
+	if err = repository.Archive(); err != nil {
 		return common.WrapServiceError(common.OpDeleteRepository, err)
 	}
 
 	// Save updated repository
-	if err := s.repositoryRepo.Update(ctx, repository); err != nil {
+	if err = s.repositoryRepo.Update(ctx, repository); err != nil {
 		return common.WrapServiceError(common.OpSaveRepository, err)
 	}
 
@@ -541,14 +541,14 @@ func (s *PerformantDuplicateDetectionService) processSingleURLForDuplicateCheck(
 
 	// Fetch full repository details if duplicate exists
 	if exists {
-		existingRepo, err := s.repositoryRepo.FindByNormalizedURL(ctx, repositoryURL)
-		if err != nil {
-			result.Error = fmt.Errorf("failed to fetch existing repository: %w", err)
+		existingRepo, findErr := s.repositoryRepo.FindByNormalizedURL(ctx, repositoryURL)
+		if findErr != nil {
+			result.Error = fmt.Errorf("failed to fetch existing repository: %w", findErr)
 			result.ProcessingTime = time.Since(urlStartTime)
 			s.logger.ErrorContext(ctx, "Failed to fetch existing repository details",
 				"url", rawURL,
 				"normalized_url", result.NormalizedURL,
-				"error", err.Error(),
+				"error", findErr.Error(),
 				"processing_time", result.ProcessingTime)
 			// Check if error is due to context cancellation
 			if ctx.Err() != nil {

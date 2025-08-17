@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// TestSoftDeleteFunctionality tests soft delete operations across all entities.
+//nolint:gocognit // Comprehensive soft delete test requires testing many scenarios
 func TestSoftDeleteFunctionality(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -177,113 +177,161 @@ func TestSoftDeleteFunctionality(t *testing.T) {
 	})
 }
 
-// TestDatabaseConstraintValidation tests comprehensive database constraint validation.
-func TestDatabaseConstraintValidation(t *testing.T) {
+// TestRepositoryURLUniquenessConstraint tests that repositories with duplicate URLs are rejected.
+func TestRepositoryURLUniquenessConstraint(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
 
 	repoRepo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/unique-constraint")
+
+	// Create first repository
+	repo1 := entity.NewRepository(testURL, "First Repository", nil, nil)
+	err := repoRepo.Save(ctx, repo1)
+	if err != nil {
+		t.Fatalf("Failed to save first repository: %v", err)
+	}
+
+	// Try to create second repository with same URL
+	repo2 := entity.NewRepository(testURL, "Second Repository", nil, nil)
+	err = repoRepo.Save(ctx, repo2)
+
+	if err == nil {
+		t.Error("Expected unique constraint violation for duplicate URL")
+	}
+
+	// Verify error contains constraint information
+	if !isUniqueConstraintError(err) {
+		t.Errorf("Expected unique constraint error, got: %v", err)
+	}
+}
+
+// TestIndexingJobForeignKeyConstraint tests that jobs with invalid repository IDs are rejected.
+func TestIndexingJobForeignKeyConstraint(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 	ctx := context.Background()
 
-	t.Run("Repository URL uniqueness constraint", func(t *testing.T) {
-		testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/unique-constraint")
+	// Try to create job with non-existent repository ID
+	nonExistentRepoID := uuid.New()
+	invalidJob := createTestIndexingJob(t, nonExistentRepoID)
 
-		// Create first repository
-		repo1 := entity.NewRepository(testURL, "First Repository", nil, nil)
-		err := repoRepo.Save(ctx, repo1)
-		if err != nil {
-			t.Fatalf("Failed to save first repository: %v", err)
-		}
+	err := jobRepo.Save(ctx, invalidJob)
 
-		// Try to create second repository with same URL
-		repo2 := entity.NewRepository(testURL, "Second Repository", nil, nil)
-		err = repoRepo.Save(ctx, repo2)
+	if err == nil {
+		t.Error("Expected foreign key constraint violation")
+	}
 
-		if err == nil {
-			t.Error("Expected unique constraint violation for duplicate URL")
-		}
+	// Verify error is foreign key constraint
+	if !isForeignKeyConstraintError(err) {
+		t.Errorf("Expected foreign key constraint error, got: %v", err)
+	}
+}
 
-		// Verify error contains constraint information
-		if !isUniqueConstraintError(err) {
-			t.Errorf("Expected unique constraint error, got: %v", err)
-		}
-	})
+// TestRepositoryURLFormatValidation tests that valid repository URLs are accepted.
+func TestRepositoryURLFormatValidation(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
 
-	t.Run("IndexingJob foreign key constraint", func(t *testing.T) {
-		// Try to create job with non-existent repository ID
-		nonExistentRepoID := uuid.New()
-		invalidJob := createTestIndexingJob(t, nonExistentRepoID)
+	repoRepo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
 
-		err := jobRepo.Save(ctx, invalidJob)
+	// The domain layer should prevent invalid URLs, but test DB handles whatever is passed
+	testRepo := createTestRepository(t)
+	err := repoRepo.Save(ctx, testRepo)
+	if err != nil {
+		t.Errorf("Valid repository should save successfully: %v", err)
+	}
+}
 
-		if err == nil {
-			t.Error("Expected foreign key constraint violation")
-		}
+// TestRepositoryTimestampInitialization tests that timestamps are properly set on creation.
+func TestRepositoryTimestampInitialization(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
 
-		// Verify error is foreign key constraint
-		if !isForeignKeyConstraintError(err) {
-			t.Errorf("Expected foreign key constraint error, got: %v", err)
-		}
-	})
+	repoRepo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
 
-	t.Run("Repository URL format validation", func(t *testing.T) {
-		// The domain layer should prevent invalid URLs, but test DB handles whatever is passed
-		testRepo := createTestRepository(t)
-		err := repoRepo.Save(ctx, testRepo)
-		if err != nil {
-			t.Errorf("Valid repository should save successfully: %v", err)
-		}
-	})
+	// Test that timestamps are properly handled
+	testRepo := createTestRepository(t)
+	err := repoRepo.Save(ctx, testRepo)
+	if err != nil {
+		t.Fatalf("Failed to save repository: %v", err)
+	}
 
-	t.Run("Timestamp constraints", func(t *testing.T) {
-		// Test that timestamps are properly handled
-		testRepo := createTestRepository(t)
-		err := repoRepo.Save(ctx, testRepo)
-		if err != nil {
-			t.Fatalf("Failed to save repository: %v", err)
-		}
+	// Verify created_at and updated_at are set
+	savedRepo, err := repoRepo.FindByID(ctx, testRepo.ID())
+	if err != nil {
+		t.Fatalf("Failed to find saved repository: %v", err)
+	}
 
-		// Verify created_at and updated_at are set
-		savedRepo, err := repoRepo.FindByID(ctx, testRepo.ID())
-		if err != nil {
-			t.Fatalf("Failed to find saved repository: %v", err)
-		}
+	assertRepositoryTimestampsInitialized(t, savedRepo)
+}
 
-		if savedRepo.CreatedAt().IsZero() {
-			t.Error("CreatedAt should be set")
-		}
+// TestRepositoryTimestampUpdates tests that timestamps are properly updated on modification.
+func TestRepositoryTimestampUpdates(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
 
-		if savedRepo.UpdatedAt().IsZero() {
-			t.Error("UpdatedAt should be set")
-		}
+	repoRepo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
 
-		if savedRepo.CreatedAt().After(time.Now()) {
-			t.Error("CreatedAt should not be in the future")
-		}
+	// Create and save repository
+	testRepo := createTestRepository(t)
+	err := repoRepo.Save(ctx, testRepo)
+	if err != nil {
+		t.Fatalf("Failed to save repository: %v", err)
+	}
 
-		// Test update timestamp changes
-		originalUpdatedAt := savedRepo.UpdatedAt()
-		time.Sleep(1 * time.Millisecond) // Ensure timestamp difference
+	savedRepo, err := repoRepo.FindByID(ctx, testRepo.ID())
+	if err != nil {
+		t.Fatalf("Failed to find saved repository: %v", err)
+	}
 
-		savedRepo.UpdateName("Updated Name")
-		err = repoRepo.Update(ctx, savedRepo)
-		if err != nil {
-			t.Errorf("Failed to update repository: %v", err)
-		}
+	// Test update timestamp changes
+	originalUpdatedAt := savedRepo.UpdatedAt()
+	time.Sleep(1 * time.Millisecond) // Ensure timestamp difference
 
-		updatedRepo, err := repoRepo.FindByID(ctx, savedRepo.ID())
-		if err != nil {
-			t.Errorf("Failed to find updated repository: %v", err)
-		}
+	savedRepo.UpdateName("Updated Name")
+	err = repoRepo.Update(ctx, savedRepo)
+	if err != nil {
+		t.Errorf("Failed to update repository: %v", err)
+	}
 
-		if !updatedRepo.UpdatedAt().After(originalUpdatedAt) {
-			t.Error("UpdatedAt should be updated on modification")
-		}
-	})
+	updatedRepo, err := repoRepo.FindByID(ctx, savedRepo.ID())
+	if err != nil {
+		t.Errorf("Failed to find updated repository: %v", err)
+	}
+
+	if !updatedRepo.UpdatedAt().After(originalUpdatedAt) {
+		t.Error("UpdatedAt should be updated on modification")
+	}
+}
+
+// assertRepositoryTimestampsInitialized validates that repository timestamps are properly set.
+func assertRepositoryTimestampsInitialized(t *testing.T, repo *entity.Repository) {
+	t.Helper()
+
+	if repo.CreatedAt().IsZero() {
+		t.Error("CreatedAt should be set")
+	}
+
+	if repo.UpdatedAt().IsZero() {
+		t.Error("UpdatedAt should be set")
+	}
+
+	if repo.CreatedAt().After(time.Now()) {
+		t.Error("CreatedAt should not be in the future")
+	}
 }
 
 // TestPaginationAndPerformance tests pagination functionality and basic performance characteristics.
+//
+//nolint:gocognit // Comprehensive pagination and performance test requires testing many scenarios
 func TestPaginationAndPerformance(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -554,6 +602,8 @@ func TestPaginationAndPerformance(t *testing.T) {
 }
 
 // TestConcurrentAccess tests concurrent access patterns.
+//
+//nolint:gocognit // Comprehensive concurrency test requires testing many scenarios
 func TestConcurrentAccess(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -798,7 +848,7 @@ func TestConcurrentAccess(t *testing.T) {
 	})
 }
 
-// TestDomainEntityIntegration tests integration with existing domain entities and value objects.
+//nolint:gocognit // Comprehensive integration test requires testing many scenarios
 func TestDomainEntityIntegration(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()

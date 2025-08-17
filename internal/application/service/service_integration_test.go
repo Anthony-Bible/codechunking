@@ -1,14 +1,14 @@
 package service
 
 import (
+	"codechunking/internal/application/dto"
+	"codechunking/internal/domain/entity"
+	"codechunking/internal/domain/valueobject"
 	"context"
 	"testing"
 	"time"
 
-	"codechunking/internal/application/dto"
-	"codechunking/internal/domain/entity"
 	domain_errors "codechunking/internal/domain/errors/domain"
-	"codechunking/internal/domain/valueobject"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -151,7 +151,7 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 				}
 
 				response, err := service.CreateRepository(context.Background(), request)
-				assert.Error(t, err, "URL %s should be invalid", url)
+				require.Error(t, err, "URL %s should be invalid", url)
 				assert.Nil(t, response)
 			}
 		})
@@ -189,9 +189,9 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 			}
 
 			response, err := service.UpdateRepository(context.Background(), repositoryID, request)
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.Nil(t, response)
-			assert.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+			require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
 		})
 
 		// Test case: Partial updates
@@ -262,8 +262,8 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 			mockRepo.On("FindByID", context.Background(), repositoryID).Return(processingRepository, nil)
 
 			err := service.DeleteRepository(context.Background(), repositoryID)
-			assert.Error(t, err)
-			assert.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+			require.Error(t, err)
+			require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
 		})
 
 		// Test case: Soft delete behavior
@@ -301,7 +301,7 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 				Return(nil)
 
 			err := service.DeleteRepository(context.Background(), repositoryID)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		})
 	})
 
@@ -325,7 +325,7 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 				}
 
 				response, err := service.ListRepositories(context.Background(), query)
-				assert.Error(t, err, "Status %s should be invalid", status)
+				require.Error(t, err, "Status %s should be invalid", status)
 				assert.Nil(t, response)
 			}
 		})
@@ -394,9 +394,9 @@ func TestIndexingJobServiceBehaviorSpecification(t *testing.T) {
 				}
 
 				response, err := service.CreateIndexingJob(context.Background(), request)
-				assert.Error(t, err, "Should not allow job creation for status %s", status)
+				require.Error(t, err, "Should not allow job creation for status %s", status)
 				assert.Nil(t, response)
-				assert.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+				require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
 			}
 		})
 	})
@@ -433,7 +433,7 @@ func TestIndexingJobServiceBehaviorSpecification(t *testing.T) {
 			}
 
 			response, err := service.UpdateIndexingJob(context.Background(), jobID, request)
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.Nil(t, response)
 			assert.Contains(t, err.Error(), "invalid status transition")
 		})
@@ -526,9 +526,9 @@ func TestIndexingJobServiceBehaviorSpecification(t *testing.T) {
 			mockJobRepo.On("FindByID", context.Background(), jobID).Return(job, nil)
 
 			response, err := service.GetIndexingJob(context.Background(), repositoryID, jobID)
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.Nil(t, response)
-			assert.ErrorIs(t, err, domain_errors.ErrJobNotFound)
+			require.ErrorIs(t, err, domain_errors.ErrJobNotFound)
 		})
 
 		// Test case: Duration calculation
@@ -597,10 +597,10 @@ func TestServiceErrorHandlingSpecification(t *testing.T) {
 		mockRepo.On("FindByID", context.Background(), repositoryID).Return(nil, underlyingError)
 
 		response, err := service.GetRepository(context.Background(), repositoryID)
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Nil(t, response)
 		assert.Contains(t, err.Error(), "failed to retrieve repository") // Contextual error message
-		assert.ErrorIs(t, err, underlyingError)                          // Original error preserved
+		require.ErrorIs(t, err, underlyingError)                          // Original error preserved
 	})
 
 	t.Run("should preserve domain error semantics", func(t *testing.T) {
@@ -611,8 +611,8 @@ func TestServiceErrorHandlingSpecification(t *testing.T) {
 		mockRepo.On("FindByID", context.Background(), repositoryID).Return(nil, domain_errors.ErrRepositoryNotFound)
 
 		response, err := service.GetRepository(context.Background(), repositoryID)
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Nil(t, response)
-		assert.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound) // Domain error preserved for API layer
+		require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound) // Domain error preserved for API layer
 	})
 }

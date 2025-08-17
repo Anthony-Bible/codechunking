@@ -1,6 +1,8 @@
 package api
 
 import (
+	"codechunking/internal/config"
+	"codechunking/internal/port/inbound"
 	"context"
 	"errors"
 	"fmt"
@@ -9,9 +11,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-
-	"codechunking/internal/config"
-	"codechunking/internal/port/inbound"
 )
 
 // Server represents the HTTP API server.
@@ -225,7 +224,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Start server in goroutine
 	go func() {
-		if err := s.httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
+		if serveErr := s.httpServer.Serve(listener); serveErr != nil && serveErr != http.ErrServerClosed {
 			s.mu.Lock()
 			s.isRunning = false
 			s.mu.Unlock()
@@ -236,9 +235,9 @@ func (s *Server) Start(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		s.isRunning = false
-		if err := listener.Close(); err != nil {
+		if closeErr := listener.Close(); closeErr != nil {
 			// Log the error but continue with shutdown
-			_ = err
+			_ = closeErr
 		}
 		return ctx.Err()
 	default:

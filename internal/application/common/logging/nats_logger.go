@@ -147,14 +147,15 @@ func (n *natsApplicationLogger) LogNATSConnectionEvent(ctx context.Context, even
 		// Determine log level based on success/error
 		var level string
 		var errorStr string
-		if !event.Success && event.Error != nil {
+		switch {
+		case !event.Success && event.Error != nil:
 			level = "ERROR"
 			errorStr = event.Error.Error()
 			message = fmt.Sprintf("NATS connection failed: %s", event.Type)
-		} else if event.Type == "RECONNECTING" {
+		case event.Type == "RECONNECTING":
 			level = "WARN"
 			message = fmt.Sprintf("NATS reconnecting: %s", event.Type)
-		} else {
+		default:
 			level = "INFO"
 		}
 

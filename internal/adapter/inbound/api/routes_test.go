@@ -240,6 +240,52 @@ func TestRouteRegistry_ServeMuxIntegration(t *testing.T) {
 	}
 }
 
+// Helper function to create parameter capture handler
+func createParamCaptureHandler() (http.HandlerFunc, *map[string]string) {
+	var capturedParams map[string]string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedParams = ExtractPathParams(r)
+		w.WriteHeader(http.StatusOK)
+	})
+	return handler, &capturedParams
+}
+
+// Helper function to setup test registry with mocks
+func setupTestRegistryWithMocks(setupMocks func(*testutil.MockRepositoryService)) (*testutil.MockRepositoryService, *testutil.MockHealthService, *testutil.MockErrorHandler) {
+	mockHealthService := testutil.NewMockHealthService()
+	mockRepositoryService := testutil.NewMockRepositoryService()
+	mockErrorHandler := testutil.NewMockErrorHandler()
+
+	if setupMocks != nil {
+		setupMocks(mockRepositoryService)
+	}
+
+	return mockRepositoryService, mockHealthService, mockErrorHandler
+}
+
+// Helper function to register route based on path pattern
+func registerRouteForPath(registry *RouteRegistry, path string, handler http.HandlerFunc) error {
+	if strings.Contains(path, "/jobs/") {
+		return registry.RegisterRoute("GET /repositories/{id}/jobs/{job_id}", handler)
+	}
+	if strings.Contains(path, "/jobs") {
+		return registry.RegisterRoute("GET /repositories/{id}/jobs", handler)
+	}
+	if strings.Contains(path, "/repositories/") {
+		return registry.RegisterRoute("GET /repositories/{id}", handler)
+	}
+	return nil
+}
+
+// Helper function to assert extracted parameters
+func assertExtractedParams(t *testing.T, expectedParams map[string]string, capturedParams map[string]string) {
+	for key, expectedValue := range expectedParams {
+		actualValue, exists := capturedParams[key]
+		assert.True(t, exists, "Parameter %s should be extracted", key)
+		assert.Equal(t, expectedValue, actualValue, "Parameter %s should have correct value", key)
+	}
+}
+
 func TestRouteRegistry_PathParameterExtraction(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -289,61 +335,31 @@ func TestRouteRegistry_PathParameterExtraction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup
-			mockHealthService := testutil.NewMockHealthService()
-			mockRepositoryService := testutil.NewMockRepositoryService()
-			mockErrorHandler := testutil.NewMockErrorHandler()
+			// Setup test dependencies
+			_, _, _ = setupTestRegistryWithMocks(tt.setupMocks)
 
-			if tt.setupMocks != nil {
-				tt.setupMocks(mockRepositoryService)
-			}
+			// Create parameter capture handler
+			paramCapture, capturedParams := createParamCaptureHandler()
 
-			// Create a custom handler that captures path parameters
-			var capturedParams map[string]string
-			paramCapture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				capturedParams = ExtractPathParams(r)
-				w.WriteHeader(http.StatusOK)
-			})
-
-			_ = NewHealthHandler(mockHealthService, mockErrorHandler)
-			_ = NewRepositoryHandler(mockRepositoryService, mockErrorHandler)
-
+			// Setup registry and register route
 			registry := NewRouteRegistry()
-
-			// Override handlers with parameter capture for testing
-			if strings.Contains(tt.path, "/jobs/") {
-				if err := registry.RegisterRoute("GET /repositories/{id}/jobs/{job_id}", paramCapture); err != nil {
-					t.Errorf("Failed to register route: %v", err)
-				}
-			} else if strings.Contains(tt.path, "/jobs") {
-				if err := registry.RegisterRoute("GET /repositories/{id}/jobs", paramCapture); err != nil {
-					t.Errorf("Failed to register route: %v", err)
-				}
-			} else if strings.Contains(tt.path, "/repositories/") {
-				if err := registry.RegisterRoute("GET /repositories/{id}", paramCapture); err != nil {
-					t.Errorf("Failed to register route: %v", err)
-				}
+			if err := registerRouteForPath(registry, tt.path, paramCapture); err != nil {
+				t.Errorf("Failed to register route: %v", err)
+				return
 			}
 
+			// Build ServeMux and create request
 			mux := registry.BuildServeMux()
 			require.NotNil(t, mux)
-
-			// Create request
 			req := testutil.CreateRequest(tt.method, tt.path)
 			recorder := httptest.NewRecorder()
 
-			// Execute
+			// Execute request
 			mux.ServeHTTP(recorder, req)
 
-			// Assert
+			// Assert response and parameters
 			assert.Equal(t, http.StatusOK, recorder.Code)
-
-			// Verify extracted parameters
-			for key, expectedValue := range tt.expectedParams {
-				actualValue, exists := capturedParams[key]
-				assert.True(t, exists, "Parameter %s should be extracted", key)
-				assert.Equal(t, expectedValue, actualValue, "Parameter %s should have correct value", key)
-			}
+			assertExtractedParams(t, tt.expectedParams, *capturedParams)
 		})
 	}
 }
@@ -436,7 +452,7 @@ func TestRouteRegistry_RouteConflicts(t *testing.T) {
 		})
 
 		err = registry.RegisterRoute("GET /repositories/{repo_id}", conflictingHandler)
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "route conflict")
 	})
 }

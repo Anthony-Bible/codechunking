@@ -57,7 +57,7 @@ func TestApplicationLogger_CreateStructuredLogger(t *testing.T) {
 			logger, err := NewApplicationLogger(tt.config)
 
 			if tt.wantErr {
-				assert.Error(t, err)
+				require.Error(t, err)
 				assert.Nil(t, logger)
 				return
 			}
@@ -146,7 +146,7 @@ func TestApplicationLogger_LogLevels(t *testing.T) {
 			// Parse JSON log entry
 			var logEntry LogEntry
 			err := json.Unmarshal([]byte(output), &logEntry)
-			assert.NoError(t, err, "Log output should be valid JSON")
+			require.NoError(t, err, "Log output should be valid JSON")
 
 			// Verify log entry structure
 			assert.Equal(t, tt.level, logEntry.Level)
@@ -247,7 +247,7 @@ func TestApplicationLogger_StructuredFields(t *testing.T) {
 	assert.Equal(t, "https://github.com/user/repo", logEntry.Metadata["repository_url"])
 	assert.Contains(t, logEntry.Metadata, "duration")
 	assert.Equal(t, true, logEntry.Metadata["success"])
-	assert.Equal(t, float64(0), logEntry.Metadata["error_count"]) // JSON unmarshals numbers as float64
+	assert.InDelta(t, float64(0), logEntry.Metadata["error_count"], 0) // JSON unmarshals numbers as float64
 }
 
 // TestApplicationLogger_ContextualLogging tests context-aware logging.
@@ -292,7 +292,7 @@ func TestApplicationLogger_ContextualLogging(t *testing.T) {
 
 	// Verify operation metadata
 	assert.Equal(t, "get_repositories", logEntry.Metadata["operation"])
-	assert.Equal(t, float64(5), logEntry.Metadata["count"])
+	assert.InDelta(t, float64(5), logEntry.Metadata["count"], 0)
 }
 
 // TestApplicationLogger_ComponentLogging tests component-specific logging.
@@ -387,7 +387,7 @@ func TestApplicationLogger_ErrorLogging(t *testing.T) {
 	assert.Equal(t, "database connection failed", logEntry.Error)
 	assert.Equal(t, "repo-123", logEntry.Metadata["repository_id"])
 	assert.Equal(t, "save", logEntry.Metadata["operation"])
-	assert.Equal(t, float64(3), logEntry.Metadata["retry_count"])
+	assert.InDelta(t, float64(3), logEntry.Metadata["retry_count"], 0)
 	assert.Contains(t, logEntry.Metadata, "last_attempt")
 }
 
@@ -426,8 +426,8 @@ func TestApplicationLogger_PerformanceLogging(t *testing.T) {
 	assert.Contains(t, logEntry.Message, "Performance metrics")
 	assert.Contains(t, logEntry.Metadata, "operation")
 	assert.Contains(t, logEntry.Metadata, "duration")
-	assert.Equal(t, float64(5), logEntry.Metadata["repository_count"])
-	assert.Equal(t, float64(150), logEntry.Metadata["chunk_count"])
+	assert.InDelta(t, float64(5), logEntry.Metadata["repository_count"], 0)
+	assert.InDelta(t, float64(150), logEntry.Metadata["chunk_count"], 0)
 	assert.Equal(t, "45MB", logEntry.Metadata["memory_usage"])
 }
 
@@ -488,13 +488,13 @@ func TestApplicationLogger_ConfigurationValidation(t *testing.T) {
 			logger, err := NewApplicationLogger(tt.config)
 
 			if tt.wantErr {
-				assert.Error(t, err)
+				require.Error(t, err)
 				assert.Nil(t, logger)
 				if tt.errMsg != "" {
 					assert.Contains(t, strings.ToLower(err.Error()), strings.ToLower(tt.errMsg))
 				}
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				assert.NotNil(t, logger)
 			}
 		})
@@ -565,7 +565,7 @@ func TestApplicationLogger_LogFiltering(t *testing.T) {
 
 				var logEntry LogEntry
 				err := json.Unmarshal([]byte(output), &logEntry)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				assert.Equal(t, tt.logLevel, logEntry.Level)
 			} else {
 				assert.Empty(t, output, "Expected no log output for level %s with config %s", tt.logLevel, tt.configLevel)

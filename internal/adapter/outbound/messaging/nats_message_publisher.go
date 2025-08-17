@@ -89,41 +89,26 @@ func NewNATSMessagePublisher(cfg config.NATSConfig) (outbound.MessagePublisher, 
 }
 
 // PublishIndexingJob publishes an indexing job message to NATS JetStream.
-func (n *NATSMessagePublisher) PublishIndexingJob(
-	ctx context.Context,
-	repositoryID uuid.UUID,
-	repositoryURL string,
-) error {
-	start := time.Now()
-
-	// Check context first
-	select {
-	case <-ctx.Done():
-		n.updateMetrics(false, time.Since(start))
-		return ctx.Err()
-	default:
-	}
-
-	// Validate inputs first - these are user input errors, not system failures
+func (n *NATSMessagePublisher) validateInputs(repositoryID uuid.UUID, repositoryURL string) error {
 	if repositoryID == uuid.Nil {
 		return errors.New("repository ID cannot be nil")
 	}
 	if repositoryURL == "" {
 		return errors.New("repository URL cannot be empty")
 	}
+	return n.validateRepositoryURL(repositoryURL)
+}
 
-	// Validate URL format - be lenient for test URLs
+func (n *NATSMessagePublisher) validateRepositoryURL(repositoryURL string) error {
 	parsedURL, err := url.Parse(repositoryURL)
 	if err != nil {
 		return errors.New("invalid repository URL format")
 	}
 
-	// Check for valid scheme
 	if parsedURL.Scheme == "" || parsedURL.Host == "" {
 		return errors.New("invalid repository URL format")
 	}
 
-	// Check for supported schemes
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
 		return errors.New("unsupported URL scheme")
 	}
@@ -132,43 +117,40 @@ func (n *NATSMessagePublisher) PublishIndexingJob(
 		return errors.New("repository URL must end with .git")
 	}
 
-	// Check circuit breaker only after input validation
-	if n.isCircuitBreakerOpen() {
-		n.updateMetrics(false, time.Since(start))
-		return errors.New("circuit breaker open: too many recent failures")
+	return nil
+}
+
+func (n *NATSMessagePublisher) checkTestModeErrors(start time.Time) error {
+	if !n.isTestMode {
+		return nil
 	}
 
-	if n.isTestMode {
-		if !n.isConnected {
-			n.updateMetrics(false, time.Since(start))
-			// Try fallback mechanisms when NATS is not available
-			return n.tryFallbackDelivery(ctx, repositoryID, repositoryURL)
-		}
-		// In test mode, check if stream exists
-		if !n.streamExists {
-			n.updateMetrics(false, time.Since(start))
-			return errors.New("stream does not exist")
-		}
-
-		// Check for specific test error modes that simulate JetStream publish errors
-		switch n.testErrorMode {
-		case "stream_storage_full":
-			n.updateMetrics(false, time.Since(start))
-			return errors.New("stream storage exceeded")
-		case "message_too_large":
-			n.updateMetrics(false, time.Since(start))
-			return errors.New("message exceeds maximum size")
-		case "invalid_subject":
-			n.updateMetrics(false, time.Since(start))
-			return errors.New("invalid subject")
-		}
-	} else if n.js == nil {
+	if !n.isConnected {
 		n.updateMetrics(false, time.Since(start))
-		// Try fallback mechanisms when NATS is not available
-		return n.tryFallbackDelivery(ctx, repositoryID, repositoryURL)
+		return errors.New("not connected in test mode")
 	}
 
-	// Create message
+	if !n.streamExists {
+		n.updateMetrics(false, time.Since(start))
+		return errors.New("stream does not exist")
+	}
+
+	switch n.testErrorMode {
+	case "stream_storage_full":
+		n.updateMetrics(false, time.Since(start))
+		return errors.New("stream storage exceeded")
+	case "message_too_large":
+		n.updateMetrics(false, time.Since(start))
+		return errors.New("message exceeds maximum size")
+	case "invalid_subject":
+		n.updateMetrics(false, time.Since(start))
+		return errors.New("invalid subject")
+	}
+
+	return nil
+}
+
+func (n *NATSMessagePublisher) createAndMarshalMessage(repositoryID uuid.UUID, repositoryURL string) ([]byte, error) {
 	msg := IndexingJobMessage{
 		RepositoryID:  repositoryID,
 		RepositoryURL: repositoryURL,
@@ -176,16 +158,48 @@ func (n *NATSMessagePublisher) PublishIndexingJob(
 		MessageID:     uuid.New().String(),
 	}
 
-	// Serialize to JSON
-	data, err := json.Marshal(msg)
+	return json.Marshal(msg)
+}
+
+func (n *NATSMessagePublisher) PublishIndexingJob(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	repositoryURL string,
+) error {
+	start := time.Now()
+
+	select {
+	case <-ctx.Done():
+		n.updateMetrics(false, time.Since(start))
+		return ctx.Err()
+	default:
+	}
+
+	if err := n.validateInputs(repositoryID, repositoryURL); err != nil {
+		return err
+	}
+
+	if n.isCircuitBreakerOpen() {
+		n.updateMetrics(false, time.Since(start))
+		return errors.New("circuit breaker open: too many recent failures")
+	}
+
+	if err := n.checkTestModeErrors(start); err != nil {
+		return err
+	}
+
+	if !n.isTestMode && n.js == nil {
+		n.updateMetrics(false, time.Since(start))
+		return n.tryFallbackDelivery(ctx, repositoryID, repositoryURL)
+	}
+
+	data, err := n.createAndMarshalMessage(repositoryID, repositoryURL)
 	if err != nil {
 		n.updateMetrics(false, time.Since(start))
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	// Publish to JetStream (or simulate in test mode)
 	if n.isTestMode {
-		// In test mode, just simulate successful publish with metrics
 		n.updateMetrics(true, time.Since(start))
 		return nil
 	}
@@ -334,7 +348,7 @@ func (n *NATSMessagePublisher) EnsureStream() error {
 		}
 
 		// Check if stream already exists
-		if _, err := n.js.StreamInfo("INDEXING"); err == nil {
+		if _, streamErr := n.js.StreamInfo("INDEXING"); streamErr == nil {
 			// Stream exists, this is fine
 			return nil
 		}

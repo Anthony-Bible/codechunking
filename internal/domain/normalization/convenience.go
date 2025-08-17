@@ -4,26 +4,15 @@ import (
 	"codechunking/internal/application/common/security"
 )
 
-// defaultNormalizer is a shared instance for backward compatibility.
-var defaultNormalizer *URLNormalizer
-
-func init() {
-	// Initialize with default configuration for backward compatibility
-	defaultNormalizer = NewURLNormalizer(DefaultConfig(), security.DefaultConfig())
-}
-
 // NormalizeRepositoryURL provides backward compatibility with the original function signature.
-// It uses the default normalizer configuration for consistency with existing code.
+// It creates a normalizer with default configuration on each call to avoid global state.
 func NormalizeRepositoryURL(rawURL string) (string, error) {
-	return defaultNormalizer.Normalize(rawURL)
+	normalizer := NewURLNormalizer(DefaultConfig(), security.DefaultConfig())
+	return normalizer.Normalize(rawURL)
 }
 
-// GetDefaultNormalizer returns the default normalizer instance for advanced usage.
+// GetDefaultNormalizer returns a new normalizer instance with default configuration.
+// This replaces the global instance pattern to avoid global state.
 func GetDefaultNormalizer() *URLNormalizer {
-	return defaultNormalizer
-}
-
-// SetDefaultNormalizer allows customization of the default normalizer.
-func SetDefaultNormalizer(normalizer *URLNormalizer) {
-	defaultNormalizer = normalizer
+	return NewURLNormalizer(DefaultConfig(), security.DefaultConfig())
 }

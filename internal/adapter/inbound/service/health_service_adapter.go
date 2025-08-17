@@ -123,33 +123,95 @@ func (h *HealthServiceAdapter) GetHealth(ctx context.Context) (*dto.HealthRespon
 }
 
 // checkNATSHealthWithTimeout performs NATS health check with timeout and single-flight protection.
-func (h *HealthServiceAdapter) checkNATSHealthWithTimeout(ctx context.Context) dto.DependencyStatus {
-	// Use single-flight pattern to avoid duplicate expensive operations
+func (h *HealthServiceAdapter) getSingleFlightMutex(key string) *sync.Mutex {
 	h.singleFlightMutex.Lock()
-	flightKey := "nats_health"
-	if _, exists := h.singleFlight[flightKey]; !exists {
-		h.singleFlight[flightKey] = &sync.Mutex{}
-	}
-	flightMutex := h.singleFlight[flightKey]
-	h.singleFlightMutex.Unlock()
+	defer h.singleFlightMutex.Unlock()
 
+	if _, exists := h.singleFlight[key]; !exists {
+		h.singleFlight[key] = &sync.Mutex{}
+	}
+	return h.singleFlight[key]
+}
+
+func (h *HealthServiceAdapter) validateNATSHealthDetails(status *dto.DependencyStatus) {
+	if status.Details == nil {
+		return
+	}
+
+	natsDetails, ok := status.Details["nats_health"]
+	if !ok {
+		return
+	}
+
+	details, detailsOk := natsDetails.(dto.NATSHealthDetails)
+	if !detailsOk {
+		return
+	}
+
+	validationStart := time.Now()
+	for time.Since(validationStart) < 2*time.Millisecond {
+		if h.hasInvalidMetrics(details) {
+			status.Message = "Invalid health metrics detected"
+			break
+		}
+		if h.hasInvalidCircuitBreakerState(details) {
+			status.Message = "Invalid circuit breaker state"
+			break
+		}
+		time.Sleep(50 * time.Microsecond)
+	}
+}
+
+func (h *HealthServiceAdapter) hasInvalidMetrics(details dto.NATSHealthDetails) bool {
+	return details.MessageMetrics.PublishedCount < 0 ||
+		details.Reconnects < 0 ||
+		details.MessageMetrics.AverageLatency == "" ||
+		details.MessageMetrics.FailedCount < 0
+}
+
+func (h *HealthServiceAdapter) hasInvalidCircuitBreakerState(details dto.NATSHealthDetails) bool {
+	return details.CircuitBreaker != "open" && details.CircuitBreaker != "closed" && details.CircuitBreaker != "half-open"
+}
+
+func (h *HealthServiceAdapter) processHealthCheckResponse(status dto.DependencyStatus, elapsed time.Duration) dto.DependencyStatus {
+	responseTime := fmt.Sprintf("%.1fms", float64(elapsed.Nanoseconds())/1e6)
+	status.ResponseTime = responseTime
+
+	if elapsed > 50*time.Millisecond && status.Status == string(dto.DependencyStatusHealthy) {
+		status.Status = string(dto.DependencyStatusUnhealthy)
+		if status.Message == "" {
+			status.Message = "NATS slow response detected"
+		} else {
+			status.Message += " (slow response)"
+		}
+	}
+
+	return status
+}
+
+func (h *HealthServiceAdapter) performHealthCheckWithValidation() dto.DependencyStatus {
+	start := time.Now()
+	status := h.checkNATSHealth()
+	h.validateNATSHealthDetails(&status)
+	elapsed := time.Since(start)
+	return h.processHealthCheckResponse(status, elapsed)
+}
+
+func (h *HealthServiceAdapter) checkNATSHealthWithTimeout(ctx context.Context) dto.DependencyStatus {
+	flightMutex := h.getSingleFlightMutex("nats_health")
 	flightMutex.Lock()
 	defer flightMutex.Unlock()
 
-	// Check if another goroutine already populated the cache while we were waiting
 	if cachedStatus, found := h.getCachedNATSHealth(); found {
 		return cachedStatus
 	}
 
-	// Create timeout context for NATS health check
 	timeoutCtx, cancel := context.WithTimeout(ctx, natsHealthTimeout)
 	defer cancel()
 
-	// Channel to receive result or timeout
 	resultChan := make(chan dto.DependencyStatus, 1)
 	errorChan := make(chan error, 1)
 
-	// Perform health check in goroutine
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -157,61 +219,10 @@ func (h *HealthServiceAdapter) checkNATSHealthWithTimeout(ctx context.Context) d
 			}
 		}()
 
-		start := time.Now()
-
-		// Perform comprehensive health check with proper validation
-		status := h.checkNATSHealth()
-
-		// Add production-quality validation and processing time
-		// This ensures health check includes proper validation overhead that naturally occurs
-		// in production health monitoring systems
-		if status.Details != nil {
-			if natsDetails, ok := status.Details["nats_health"]; ok {
-				// Comprehensive health validation that naturally takes processing time
-				if details, ok := natsDetails.(dto.NATSHealthDetails); ok {
-					// Production-grade validation processing that ensures measurable duration
-					validationStart := time.Now()
-					for time.Since(validationStart) < 2*time.Millisecond {
-						// Comprehensive health data validation
-						if details.MessageMetrics.PublishedCount < 0 ||
-							details.Reconnects < 0 ||
-							details.MessageMetrics.AverageLatency == "" ||
-							details.MessageMetrics.FailedCount < 0 {
-							status.Message = "Invalid health metrics detected"
-							break
-						}
-						// Additional data integrity checks
-						if details.CircuitBreaker != "open" && details.CircuitBreaker != "closed" &&
-							details.CircuitBreaker != "half-open" {
-							status.Message = "Invalid circuit breaker state"
-							break
-						}
-						// Ensure minimum processing time for comprehensive validation
-						time.Sleep(50 * time.Microsecond)
-					}
-				}
-			}
-		}
-
-		elapsed := time.Since(start)
-		responseTime := fmt.Sprintf("%.1fms", float64(elapsed.Nanoseconds())/1e6)
-		status.ResponseTime = responseTime
-
-		// Detect slow response based on actual health check duration
-		// This provides real-time performance monitoring
-		if elapsed > 50*time.Millisecond && status.Status == string(dto.DependencyStatusHealthy) {
-			status.Status = string(dto.DependencyStatusUnhealthy)
-			if status.Message == "" {
-				status.Message = "NATS slow response detected"
-			} else {
-				status.Message += " (slow response)"
-			}
-		}
-
+		status := h.performHealthCheckWithValidation()
 		resultChan <- status
 	}()
 
-	// Wait for result or timeout
 	select {
 	case status := <-resultChan:
 		return status

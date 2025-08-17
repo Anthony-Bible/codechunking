@@ -1,16 +1,16 @@
 package service
 
 import (
+	"codechunking/internal/application/dto"
+	"codechunking/internal/domain/entity"
+	"codechunking/internal/domain/valueobject"
+	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
 	"testing"
 	"time"
 
-	"codechunking/internal/application/dto"
-	"codechunking/internal/domain/entity"
 	domain_errors "codechunking/internal/domain/errors/domain"
-	"codechunking/internal/domain/valueobject"
-	"codechunking/internal/port/outbound"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -165,7 +165,7 @@ func TestCreateRepositoryService_CreateRepository_InvalidURL(t *testing.T) {
 	response, err := service.CreateRepository(ctx, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "invalid repository URL")
 
@@ -195,9 +195,9 @@ func TestCreateRepositoryService_CreateRepository_RepositoryAlreadyExists(t *tes
 	response, err := service.CreateRepository(ctx, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryAlreadyExists)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryAlreadyExists)
 
 	mockRepo.AssertExpectations(t)
 	mockRepo.AssertNotCalled(t, "Save")
@@ -224,10 +224,10 @@ func TestCreateRepositoryService_CreateRepository_RepositoryExistsCheckFails(t *
 	response, err := service.CreateRepository(ctx, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "failed to check if repository exists")
-	assert.ErrorIs(t, err, dbError)
+	require.ErrorIs(t, err, dbError)
 
 	mockRepo.AssertExpectations(t)
 	mockRepo.AssertNotCalled(t, "Save")
@@ -255,10 +255,10 @@ func TestCreateRepositoryService_CreateRepository_SaveFails(t *testing.T) {
 	response, err := service.CreateRepository(ctx, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "failed to save repository")
-	assert.ErrorIs(t, err, saveError)
+	require.ErrorIs(t, err, saveError)
 
 	mockRepo.AssertExpectations(t)
 	mockPublisher.AssertNotCalled(t, "PublishIndexingJob")
@@ -287,10 +287,10 @@ func TestCreateRepositoryService_CreateRepository_PublishJobFails(t *testing.T) 
 	response, err := service.CreateRepository(ctx, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "failed to publish indexing job")
-	assert.ErrorIs(t, err, publishError)
+	require.ErrorIs(t, err, publishError)
 
 	mockRepo.AssertExpectations(t)
 	mockPublisher.AssertExpectations(t)
@@ -388,9 +388,9 @@ func TestGetRepositoryService_GetRepository_NotFound(t *testing.T) {
 	response, err := service.GetRepository(ctx, repositoryID)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
 
 	mockRepo.AssertExpectations(t)
 }
@@ -410,10 +410,10 @@ func TestGetRepositoryService_GetRepository_DatabaseError(t *testing.T) {
 	response, err := service.GetRepository(ctx, repositoryID)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "failed to retrieve repository")
-	assert.ErrorIs(t, err, dbError)
+	require.ErrorIs(t, err, dbError)
 
 	mockRepo.AssertExpectations(t)
 }
@@ -485,9 +485,9 @@ func TestUpdateRepositoryService_UpdateRepository_NotFound(t *testing.T) {
 	response, err := service.UpdateRepository(ctx, repositoryID, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockRepo.AssertNotCalled(t, "Update")
@@ -530,9 +530,9 @@ func TestUpdateRepositoryService_UpdateRepository_CannotUpdateProcessingReposito
 	response, err := service.UpdateRepository(ctx, repositoryID, request)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
 
 	mockRepo.AssertExpectations(t)
 	mockRepo.AssertNotCalled(t, "Update")
@@ -571,7 +571,7 @@ func TestDeleteRepositoryService_DeleteRepository_Success(t *testing.T) {
 	err := service.DeleteRepository(ctx, repositoryID)
 
 	// Assert
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	mockRepo.AssertExpectations(t)
 }
@@ -590,8 +590,8 @@ func TestDeleteRepositoryService_DeleteRepository_NotFound(t *testing.T) {
 	err := service.DeleteRepository(ctx, repositoryID)
 
 	// Assert
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.Error(t, err)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockRepo.AssertNotCalled(t, "Update")
@@ -629,8 +629,8 @@ func TestDeleteRepositoryService_DeleteRepository_CannotDeleteProcessingReposito
 	err := service.DeleteRepository(ctx, repositoryID)
 
 	// Assert
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+	require.Error(t, err)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
 
 	mockRepo.AssertExpectations(t)
 	mockRepo.AssertNotCalled(t, "Update")
@@ -762,7 +762,7 @@ func TestListRepositoriesService_ListRepositories_InvalidStatus(t *testing.T) {
 	response, err := service.ListRepositories(ctx, query)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "invalid repository status")
 
@@ -788,10 +788,10 @@ func TestListRepositoriesService_ListRepositories_DatabaseError(t *testing.T) {
 	response, err := service.ListRepositories(ctx, query)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "failed to retrieve repositories")
-	assert.ErrorIs(t, err, dbError)
+	require.ErrorIs(t, err, dbError)
 
 	mockRepo.AssertExpectations(t)
 }

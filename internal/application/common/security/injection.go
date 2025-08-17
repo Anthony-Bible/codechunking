@@ -8,15 +8,17 @@ import (
 
 // InjectionValidator provides consolidated XSS and SQL injection detection.
 type InjectionValidator struct {
-	config   *Config
-	patterns *Patterns
+	config         *Config
+	patterns       *Patterns
+	stringPatterns *StringPatternsData
 }
 
 // NewInjectionValidator creates a new injection validator.
 func NewInjectionValidator(config *Config) *InjectionValidator {
 	return &InjectionValidator{
-		config:   config,
-		patterns: GetPatterns(),
+		config:         config,
+		patterns:       GetPatterns(),
+		stringPatterns: GetStringPatterns(),
 	}
 }
 
@@ -62,7 +64,7 @@ func (iv *InjectionValidator) ValidateXSSAttacks(input string) error {
 	}
 
 	// Check string patterns for performance
-	for _, pattern := range StringPatterns.XSSPatterns {
+	for _, pattern := range iv.stringPatterns.XSSPatterns {
 		if strings.Contains(normalized, pattern) {
 			return &SecurityViolation{
 				Type:    "xss_pattern",
@@ -136,7 +138,7 @@ func (iv *InjectionValidator) ValidateSQLInjection(input string) error {
 	}
 
 	// Check string patterns for performance
-	for _, pattern := range StringPatterns.SQLPatterns {
+	for _, pattern := range iv.stringPatterns.SQLPatterns {
 		if strings.Contains(normalized, pattern) {
 			return &SecurityViolation{
 				Type:    "sql_pattern",
@@ -183,7 +185,7 @@ func (iv *InjectionValidator) ValidatePathTraversal(input string) error {
 
 	// Check string patterns
 	normalized := strings.ToLower(input)
-	for _, pattern := range StringPatterns.PathPatterns {
+	for _, pattern := range iv.stringPatterns.PathPatterns {
 		if strings.Contains(normalized, strings.ToLower(pattern)) {
 			return &SecurityViolation{
 				Type:    "path_pattern",
@@ -223,7 +225,7 @@ func (iv *InjectionValidator) ValidateControlCharacters(input string) error {
 
 	// Check for URL-encoded control characters
 	normalized := strings.ToLower(input)
-	for _, encoding := range StringPatterns.ControlEncodings {
+	for _, encoding := range iv.stringPatterns.ControlEncodings {
 		if strings.Contains(normalized, encoding) {
 			return &SecurityViolation{
 				Type:    "control_chars_encoded",

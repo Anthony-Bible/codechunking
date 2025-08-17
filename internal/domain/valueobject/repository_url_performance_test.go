@@ -114,19 +114,23 @@ func TestRepositoryURL_NoNormalizationOnMethodCalls(t *testing.T) {
 		}
 
 		// Verify consistency - standard deviation should be very low
-		var sum, sumSquares time.Duration
+		var sum time.Duration
+		var sumSquares int64
 		for _, duration := range times {
 			sum += duration
-			sumSquares += duration * duration
+			ns := duration.Nanoseconds()
+			sumSquares += ns * ns
 		}
 		mean := sum / time.Duration(len(times))
-		variance := (sumSquares/time.Duration(len(times)) - mean*mean)
+		meanNs := mean.Nanoseconds()
+		variance := time.Duration(sumSquares/int64(len(times)) - meanNs*meanNs)
 
 		t.Logf("Raw() method mean time: %v", mean)
 		t.Logf("Raw() method variance: %v", variance)
 
 		// Variance should be very low, indicating consistent performance
-		assert.Less(t, variance, 100*time.Microsecond*time.Microsecond,
+		maxVariance := time.Duration(100 * time.Microsecond.Nanoseconds() * time.Microsecond.Nanoseconds())
+		assert.Less(t, variance, maxVariance,
 			"Raw() method should have consistent performance")
 	})
 

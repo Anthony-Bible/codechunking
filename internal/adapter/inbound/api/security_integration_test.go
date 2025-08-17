@@ -425,13 +425,14 @@ func createSecureRepositoryHandler(service inbound.RepositoryService) http.Handl
 	// Create handler with mock service
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Simple mock implementation
-		if r.Method == http.MethodPost && r.URL.Path == "/repositories" {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/repositories":
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"message": "success"}`))
-		} else if r.Method == http.MethodGet && r.URL.Path == "/repositories" {
+		case r.Method == http.MethodGet && r.URL.Path == "/repositories":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"repositories": []}`))
-		} else {
+		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	})

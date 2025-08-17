@@ -1,11 +1,10 @@
 package common
 
 import (
+	"codechunking/internal/application/dto"
 	"errors"
 	"strings"
 	"testing"
-
-	"codechunking/internal/application/dto"
 )
 
 // TestNewValidationError tests the basic constructor function.
@@ -437,7 +436,9 @@ func TestValidationError_IsNil(t *testing.T) {
 	var err *ValidationError
 
 	// Test nil pointer behavior
-	if err != nil {
+	if err == nil {
+		t.Log("nil ValidationError pointer is correctly nil")
+	} else {
 		t.Error("nil ValidationError pointer should be nil")
 	}
 

@@ -72,9 +72,9 @@ func TestServiceFactory_MemoizedDatabasePool_BasicBehavior(t *testing.T) {
 		_, err3 := serviceFactory.GetDatabasePool()
 
 		// Assert - All calls should succeed
-		assert.NoError(t, err1, "First call should succeed")
-		assert.NoError(t, err2, "Second call should succeed")
-		assert.NoError(t, err3, "Third call should succeed")
+		require.NoError(t, err1, "First call should succeed")
+		require.NoError(t, err2, "Second call should succeed")
+		require.NoError(t, err3, "Third call should succeed")
 
 		// Verify that sync.Once was used (this will be detectable through implementation)
 		// The actual pool creation should have happened only once
@@ -157,7 +157,7 @@ func TestServiceFactory_MemoizedDatabasePool_ConcurrentAccess(t *testing.T) {
 
 		// Assert - All calls should succeed and return the same pool instance
 		for i := range numGoroutines {
-			assert.NoError(t, errors[i], "Goroutine %d should not return error", i)
+			require.NoError(t, errors[i], "Goroutine %d should not return error", i)
 			assert.NotNil(t, pools[i], "Goroutine %d should return non-nil pool", i)
 		}
 
@@ -211,7 +211,7 @@ func TestServiceFactory_MemoizedDatabasePool_ConcurrentAccess(t *testing.T) {
 
 		// Assert - All should get the same pool instance
 		for i := range numGoroutines {
-			assert.NoError(t, errors[i], "Concurrent call %d should succeed", i)
+			require.NoError(t, errors[i], "Concurrent call %d should succeed", i)
 			assert.NotNil(t, pools[i], "Concurrent call %d should return pool", i)
 		}
 
@@ -245,14 +245,14 @@ func TestServiceFactory_MemoizedDatabasePool_ErrorHandling(t *testing.T) {
 		pool1, err1 := serviceFactory.GetDatabasePool()
 
 		// Assert - First call fails
-		assert.Error(t, err1, "First call with invalid config should fail")
+		require.Error(t, err1, "First call with invalid config should fail")
 		assert.Nil(t, pool1, "Pool should be nil when creation fails")
 
 		// Act - Second call should also fail (error state doesn't stick)
 		pool2, err2 := serviceFactory.GetDatabasePool()
 
 		// Assert - Second call should also fail, but attempt should be made again
-		assert.Error(t, err2, "Second call should also fail with same invalid config")
+		require.Error(t, err2, "Second call should also fail with same invalid config")
 		assert.Nil(t, pool2, "Pool should still be nil on second failure")
 
 		// The key behavior: failed attempts don't prevent retries
@@ -281,7 +281,7 @@ func TestServiceFactory_MemoizedDatabasePool_ErrorHandling(t *testing.T) {
 
 		// Act - First call fails
 		pool1, err1 := serviceFactory.GetDatabasePool()
-		assert.Error(t, err1, "First call should fail with invalid config")
+		require.Error(t, err1, "First call should fail with invalid config")
 		assert.Nil(t, pool1, "Pool should be nil on failure")
 
 		// Act - Update config to valid values
@@ -299,12 +299,12 @@ func TestServiceFactory_MemoizedDatabasePool_ErrorHandling(t *testing.T) {
 		pool2, err2 := serviceFactory.GetDatabasePool()
 
 		// Assert - Should succeed with updated config
-		assert.NoError(t, err2, "Second call should succeed with valid config")
+		require.NoError(t, err2, "Second call should succeed with valid config")
 		assert.NotNil(t, pool2, "Pool should be created with valid config")
 
 		// Subsequent calls should return the same successful pool
 		pool3, err3 := serviceFactory.GetDatabasePool()
-		assert.NoError(t, err3, "Third call should succeed")
+		require.NoError(t, err3, "Third call should succeed")
 		assert.Same(t, pool2, pool3, "Subsequent calls should return same pool")
 	})
 
@@ -341,7 +341,7 @@ func TestServiceFactory_MemoizedDatabasePool_ErrorHandling(t *testing.T) {
 
 		// Assert - All should fail consistently
 		for i := range numGoroutines {
-			assert.Error(t, errors[i], "Concurrent call %d should fail", i)
+			require.Error(t, errors[i], "Concurrent call %d should fail", i)
 			assert.Nil(t, pools[i], "Concurrent call %d should return nil", i)
 		}
 
@@ -488,11 +488,11 @@ func TestServiceFactory_MemoizedDatabasePool_CleanupAndClose(t *testing.T) {
 
 		// Act - Close the service factory
 		err = serviceFactory.Close()
-		assert.NoError(t, err, "ServiceFactory.Close() should succeed")
+		require.NoError(t, err, "ServiceFactory.Close() should succeed")
 
 		// Assert - Pool should be closed and non-functional
 		err = pool.Ping(ctx)
-		assert.Error(t, err, "Pool should be closed and non-functional after ServiceFactory.Close()")
+		require.Error(t, err, "Pool should be closed and non-functional after ServiceFactory.Close()")
 	})
 
 	t.Run("close_is_safe_to_call_multiple_times", func(t *testing.T) {
@@ -520,9 +520,9 @@ func TestServiceFactory_MemoizedDatabasePool_CleanupAndClose(t *testing.T) {
 		err3 := serviceFactory.Close()
 
 		// Assert - All close calls should succeed
-		assert.NoError(t, err1, "First close should succeed")
-		assert.NoError(t, err2, "Second close should succeed")
-		assert.NoError(t, err3, "Third close should succeed")
+		require.NoError(t, err1, "First close should succeed")
+		require.NoError(t, err2, "Second close should succeed")
+		require.NoError(t, err3, "Third close should succeed")
 	})
 
 	t.Run("close_works_even_if_pool_was_never_created", func(t *testing.T) {
@@ -544,7 +544,7 @@ func TestServiceFactory_MemoizedDatabasePool_CleanupAndClose(t *testing.T) {
 		err := serviceFactory.Close()
 
 		// Assert - Should succeed gracefully
-		assert.NoError(t, err, "Close should succeed even when pool was never created")
+		require.NoError(t, err, "Close should succeed even when pool was never created")
 	})
 
 	t.Run("close_with_concurrent_access", func(t *testing.T) {
@@ -582,7 +582,7 @@ func TestServiceFactory_MemoizedDatabasePool_CleanupAndClose(t *testing.T) {
 
 		// Assert - All close attempts should succeed
 		for i := range 3 {
-			assert.NoError(t, closeErrors[i], "Concurrent close %d should succeed", i)
+			require.NoError(t, closeErrors[i], "Concurrent close %d should succeed", i)
 		}
 	})
 }

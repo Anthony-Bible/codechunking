@@ -1,14 +1,13 @@
 package repository
 
 import (
+	"codechunking/internal/domain/entity"
+	"codechunking/internal/domain/valueobject"
+	"codechunking/internal/port/outbound"
 	"context"
 	"fmt"
 	"strings"
 	"time"
-
-	"codechunking/internal/domain/entity"
-	"codechunking/internal/domain/valueobject"
-	"codechunking/internal/port/outbound"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -182,16 +181,16 @@ func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(
 		var filesProcessed, chunksCreated int
 		var createdAt, updatedAt time.Time
 
-		err := rows.Scan(
+		scanErr := rows.Scan(
 			&id, &repoID, &statusStr, &startedAt, &completedAt,
 			&errorMessage, &filesProcessed, &chunksCreated,
 			&createdAt, &updatedAt, &deletedAt,
 		)
-		if err != nil {
-			return nil, 0, WrapError(err, "scan indexing job row")
+		if scanErr != nil {
+			return nil, 0, WrapError(scanErr, "scan indexing job row")
 		}
 
-		job, err := r.scanIndexingJob(
+		job, scanJobErr := r.scanIndexingJob(
 			id,
 			repoID,
 			statusStr,
@@ -204,15 +203,15 @@ func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(
 			updatedAt,
 			deletedAt,
 		)
-		if err != nil {
-			return nil, 0, err
+		if scanJobErr != nil {
+			return nil, 0, scanJobErr
 		}
 
 		jobs = append(jobs, job)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, 0, WrapError(err, "iterate indexing job rows")
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, 0, WrapError(rowsErr, "iterate indexing job rows")
 	}
 
 	return jobs, totalCount, nil

@@ -9,23 +9,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// workerCmd represents the worker command.
-var workerCmd = &cobra.Command{
-	Use:   "worker",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
+// newWorkerCmd creates and returns the worker command.
+func newWorkerCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "worker",
+		Short: "A brief description of your command",
+		Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example:
 
 Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		slogger.InfoNoCtx("worker called", nil)
-	},
+		Run: func(cmd *cobra.Command, args []string) {
+			slogger.InfoNoCtx("worker called", nil)
+		},
+	}
 }
 
 func init() {
-	rootCmd.AddCommand(workerCmd)
+	rootCmd.AddCommand(newWorkerCmd())
 
 	// Here you will define your flags and configuration settings.
 

@@ -105,7 +105,7 @@ func TestHealthHandler_GetHealth_WithNATSEnhancedResponse(t *testing.T) {
 				// Verify reconnects
 				reconnects, ok := natsHealthMap["reconnects"].(float64) // JSON numbers are float64
 				require.True(t, ok)
-				assert.Equal(t, float64(2), reconnects)
+				assert.InDelta(t, float64(2), reconnects, 0)
 
 				// Verify JetStream status
 				jetstream, ok := natsHealthMap["jetstream_enabled"].(bool)
@@ -125,11 +125,11 @@ func TestHealthHandler_GetHealth_WithNATSEnhancedResponse(t *testing.T) {
 
 				publishedCount, ok := metrics["published_count"].(float64)
 				require.True(t, ok)
-				assert.Equal(t, float64(15674), publishedCount)
+				assert.InDelta(t, float64(15674), publishedCount, 0)
 
 				failedCount, ok := metrics["failed_count"].(float64)
 				require.True(t, ok)
-				assert.Equal(t, float64(8), failedCount)
+				assert.InDelta(t, float64(8), failedCount, 0)
 
 				avgLatency, ok := metrics["average_latency"].(string)
 				require.True(t, ok)
@@ -205,7 +205,7 @@ func TestHealthHandler_GetHealth_WithNATSEnhancedResponse(t *testing.T) {
 
 				// High failure count should be visible
 				metrics := natsHealthMap["message_metrics"].(map[string]interface{})
-				assert.Equal(t, float64(500), metrics["failed_count"].(float64))
+				assert.InDelta(t, float64(500), metrics["failed_count"].(float64), 0)
 			},
 		},
 		{
@@ -258,7 +258,7 @@ func TestHealthHandler_GetHealth_WithNATSEnhancedResponse(t *testing.T) {
 				assert.Contains(t, natsStatus.Message, "unstable")
 
 				natsHealthMap := natsStatus.Details["nats_health"].(map[string]interface{})
-				assert.Equal(t, float64(8), natsHealthMap["reconnects"].(float64))
+				assert.InDelta(t, float64(8), natsHealthMap["reconnects"].(float64), 0)
 				assert.Equal(t, "half-open", natsHealthMap["circuit_breaker"].(string))
 			},
 		},
@@ -438,7 +438,7 @@ func TestHealthHandler_GetHealth_PerformanceWithNATSMetrics(t *testing.T) {
 		// Verify complex server info is preserved
 		serverInfo := natsHealthMap["server_info"].(map[string]interface{})
 		assert.Equal(t, "production", serverInfo["cluster"].(string))
-		assert.Equal(t, float64(500), serverInfo["connections"].(float64))
+		assert.InDelta(t, float64(500), serverInfo["connections"].(float64), 0)
 		assert.Equal(t, "15.2GB", serverInfo["total_bytes"].(string))
 	})
 }
@@ -511,7 +511,7 @@ func TestHealthHandler_GetHealth_ConcurrentNATSHealthChecks(t *testing.T) {
 			natsHealthMap := natsStatus.Details["nats_health"].(map[string]interface{})
 			assert.True(t, natsHealthMap["connected"].(bool))
 			assert.Equal(t, "1h30m", natsHealthMap["uptime"].(string))
-			assert.Equal(t, float64(3), natsHealthMap["reconnects"].(float64))
+			assert.InDelta(t, float64(3), natsHealthMap["reconnects"].(float64), 0)
 		}
 	})
 }

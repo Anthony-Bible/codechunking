@@ -72,11 +72,12 @@ func (sm *SecurityMiddleware) ValidateInput(next http.Handler) http.Handler {
 				sm.writeSecurityError(w, "multiple security violations", http.StatusBadRequest)
 			} else {
 				// Handle the single violation with original logic
-				if violations[0].Error() == "payload too large" {
+				switch violations[0].Error() {
+				case "payload too large":
 					sm.writeSecurityError(w, "payload too large", http.StatusRequestEntityTooLarge)
-				} else if violations[0].Error() == "malicious SQL detected" {
+				case "malicious SQL detected":
 					sm.writeSecurityError(w, "malicious SQL detected", http.StatusBadRequest)
-				} else {
+				default:
 					sm.writeSecurityError(w, violations[0].Error(), http.StatusBadRequest)
 				}
 			}
@@ -136,7 +137,7 @@ func (sm *SecurityMiddleware) validateBodyForViolations(r *http.Request) error {
 	// Validate JSON content
 	if r.Header.Get("Content-Type") == "application/json" ||
 		strings.HasPrefix(r.Header.Get("Content-Type"), "application/json;") {
-		if err := sm.validateJSONContent(body); err != nil {
+		if err = sm.validateJSONContent(body); err != nil {
 			return err
 		}
 	}

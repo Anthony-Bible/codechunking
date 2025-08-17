@@ -332,12 +332,14 @@ type MiddlewareDefaults struct {
 
 // middlewareDefaults contains the standard middleware defaults for the application.
 // All middleware is enabled by default to provide a secure and observable system out-of-the-box.
-var middlewareDefaults = MiddlewareDefaults{
-	DefaultMiddleware: true, // Enable default middleware bundle
-	CORS:              true, // Enable CORS for web compatibility
-	SecurityHeaders:   true, // Enable security headers for protection
-	Logging:           true, // Enable logging for observability
-	ErrorHandling:     true, // Enable error handling for reliability
+func middlewareDefaults() MiddlewareDefaults {
+	return MiddlewareDefaults{
+		DefaultMiddleware: true, // Enable default middleware bundle
+		CORS:              true, // Enable CORS for web compatibility
+		SecurityHeaders:   true, // Enable security headers for protection
+		Logging:           true, // Enable logging for observability
+		ErrorHandling:     true, // Enable error handling for reliability
+	}
 }
 
 // shouldEnableMiddleware is a helper function that reduces code duplication across middleware toggle methods.
@@ -358,34 +360,35 @@ func (sf *ServiceFactory) shouldEnableMiddleware(configValue *bool, defaultValue
 
 // shouldEnableDefaultMiddleware determines if default middleware should be enabled.
 func (sf *ServiceFactory) shouldEnableDefaultMiddleware() bool {
-	return sf.shouldEnableMiddleware(sf.config.API.EnableDefaultMiddleware, middlewareDefaults.DefaultMiddleware)
+	return sf.shouldEnableMiddleware(sf.config.API.EnableDefaultMiddleware, middlewareDefaults().DefaultMiddleware)
 }
 
 // shouldEnableCORSMiddleware determines if CORS middleware should be enabled.
 func (sf *ServiceFactory) shouldEnableCORSMiddleware() bool {
-	return sf.shouldEnableMiddleware(sf.config.API.EnableCORS, middlewareDefaults.CORS)
+	return sf.shouldEnableMiddleware(sf.config.API.EnableCORS, middlewareDefaults().CORS)
 }
 
 // shouldEnableSecurityMiddleware determines if security headers middleware should be enabled.
 func (sf *ServiceFactory) shouldEnableSecurityMiddleware() bool {
-	return sf.shouldEnableMiddleware(sf.config.API.EnableSecurityHeaders, middlewareDefaults.SecurityHeaders)
+	return sf.shouldEnableMiddleware(sf.config.API.EnableSecurityHeaders, middlewareDefaults().SecurityHeaders)
 }
 
 // shouldEnableLoggingMiddleware determines if logging middleware should be enabled.
 func (sf *ServiceFactory) shouldEnableLoggingMiddleware() bool {
-	return sf.shouldEnableMiddleware(sf.config.API.EnableLogging, middlewareDefaults.Logging)
+	return sf.shouldEnableMiddleware(sf.config.API.EnableLogging, middlewareDefaults().Logging)
 }
 
 // shouldEnableErrorHandlingMiddleware determines if error handling middleware should be enabled.
 func (sf *ServiceFactory) shouldEnableErrorHandlingMiddleware() bool {
-	return sf.shouldEnableMiddleware(sf.config.API.EnableErrorHandling, middlewareDefaults.ErrorHandling)
+	return sf.shouldEnableMiddleware(sf.config.API.EnableErrorHandling, middlewareDefaults().ErrorHandling)
 }
 
-// apiCmd represents the api command.
-var apiCmd = &cobra.Command{
-	Use:   "api",
-	Short: "Start the API server",
-	Long: `Start the HTTP API server that provides REST endpoints for 
+// newAPICmd creates and returns the API command.
+func newAPICmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "api",
+		Short: "Start the API server",
+		Long: `Start the HTTP API server that provides REST endpoints for 
 repository management and code chunking operations.
 
 The server provides endpoints for:
@@ -394,7 +397,8 @@ The server provides endpoints for:
 - Indexing job management
 
 Configuration is loaded from config files and environment variables.`,
-	Run: runAPIServer,
+		Run: runAPIServer,
+	}
 }
 
 func runAPIServer(cmd *cobra.Command, args []string) {
@@ -415,9 +419,9 @@ func runAPIServer(cmd *cobra.Command, args []string) {
 	startCtx, startCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer startCancel()
 
-	if err := server.Start(startCtx); err != nil {
-		slogger.ErrorNoCtx("Failed to start server", slogger.Field("error", err))
-		os.Exit(1)
+	if startErr := server.Start(startCtx); startErr != nil {
+		slogger.ErrorNoCtx("Failed to start server", slogger.Field("error", startErr))
+		os.Exit(1) //nolint:gocritic // intentional exit without defer in error path
 	}
 
 	slogger.InfoNoCtx("API server started successfully", slogger.Field("address", server.Address()))
@@ -447,12 +451,12 @@ func gracefulShutdown(server *api.Server) {
 	// Attempt graceful shutdown
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		slogger.ErrorNoCtx("Error during server shutdown", slogger.Field("error", err))
-		os.Exit(1)
+		os.Exit(1) //nolint:gocritic // intentional exit without defer in error path
 	}
 
 	slogger.InfoNoCtx("API server shut down gracefully", nil)
 }
 
 func init() {
-	rootCmd.AddCommand(apiCmd)
+	rootCmd.AddCommand(newAPICmd())
 }

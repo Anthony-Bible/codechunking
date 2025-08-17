@@ -115,16 +115,16 @@ func TestValidateRepositoryStatus_RefactoringCompletionCriteria(t *testing.T) {
 		// Real verification happens in other tests
 	})
 
-	t.Run("post_refactoring_behavior_verification", func(t *testing.T) {
-		// After refactoring, these behaviors should be true:
-
-		// 1. Empty string handling matches domain allowEmpty=true
+	t.Run("post_refactoring_empty_string_handling", func(t *testing.T) {
+		// Empty string handling matches domain allowEmpty=true
 		err := ValidateRepositoryStatus("")
 		if err != nil {
 			t.Error("POST-REFACTORING: Empty string should be allowed (domain allowEmpty=true)")
 		}
+	})
 
-		// 2. Valid statuses work
+	t.Run("post_refactoring_valid_statuses", func(t *testing.T) {
+		// Valid statuses work
 		validStatuses := []string{"pending", "cloning", "processing", "completed", "failed", "archived"}
 		for _, status := range validStatuses {
 			err := ValidateRepositoryStatus(status)
@@ -132,34 +132,18 @@ func TestValidateRepositoryStatus_RefactoringCompletionCriteria(t *testing.T) {
 				t.Errorf("POST-REFACTORING: Valid status %q should pass, got: %v", status, err)
 			}
 		}
+	})
 
-		// 3. Invalid statuses fail with proper ValidationError
-		err = ValidateRepositoryStatus("invalid_status")
-		if err == nil {
-			t.Error("POST-REFACTORING: Invalid status should fail")
-		} else {
-			var validationErr ValidationError
-			if errors.As(err, &validationErr) {
-				if validationErr.Message != "invalid status" {
-					t.Errorf("POST-REFACTORING: Should use standard message 'invalid status', got %q", validationErr.Message)
-				}
-			} else {
-				t.Errorf("POST-REFACTORING: Should return ValidationError, got %T", err)
-			}
-		}
+	t.Run("post_refactoring_invalid_status_handling", func(t *testing.T) {
+		// Invalid statuses fail with proper ValidationError
+		err := ValidateRepositoryStatus("invalid_status")
+		assertInvalidStatusError(t, err, "invalid status")
+	})
 
-		// 4. SQL injection still caught
-		err = ValidateRepositoryStatus("'; DROP TABLE repositories; --")
-		if err == nil {
-			t.Error("POST-REFACTORING: SQL injection should be caught")
-		} else {
-			var validationErr ValidationError
-			if errors.As(err, &validationErr) {
-				if validationErr.Message != "contains malicious SQL" {
-					t.Errorf("POST-REFACTORING: SQL injection should return 'contains malicious SQL', got %q", validationErr.Message)
-				}
-			}
-		}
+	t.Run("post_refactoring_sql_injection_protection", func(t *testing.T) {
+		// SQL injection still caught
+		err := ValidateRepositoryStatus("'; DROP TABLE repositories; --")
+		assertInvalidStatusError(t, err, "contains malicious SQL")
 	})
 }
 
@@ -186,4 +170,23 @@ func TestValidateRepositoryStatus_CurrentImplementationProblems(t *testing.T) {
 		// This test always "passes" but documents the architectural issue
 		t.Log("REQUIRED FIX: Remove map, delegate to domain layer")
 	})
+}
+
+// assertInvalidStatusError is a helper function to validate error handling patterns
+func assertInvalidStatusError(t *testing.T, err error, expectedMessage string) {
+	t.Helper()
+	if err == nil {
+		t.Error("POST-REFACTORING: Invalid status should fail")
+		return
+	}
+
+	var validationErr ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Errorf("POST-REFACTORING: Should return ValidationError, got %T", err)
+		return
+	}
+
+	if validationErr.Message != expectedMessage {
+		t.Errorf("POST-REFACTORING: Should use message %q, got %q", expectedMessage, validationErr.Message)
+	}
 }

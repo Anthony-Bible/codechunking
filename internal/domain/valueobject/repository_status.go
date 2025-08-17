@@ -18,20 +18,22 @@ const (
 	RepositoryStatusArchived   RepositoryStatus = "archived"
 )
 
-// validStatuses contains all valid repository statuses.
-var validRepositoryStatuses = map[RepositoryStatus]bool{
-	RepositoryStatusPending:    true,
-	RepositoryStatusCloning:    true,
-	RepositoryStatusProcessing: true,
-	RepositoryStatusCompleted:  true,
-	RepositoryStatusFailed:     true,
-	RepositoryStatusArchived:   true,
+// validRepositoryStatuses returns all valid repository statuses.
+func validRepositoryStatuses() map[RepositoryStatus]bool {
+	return map[RepositoryStatus]bool{
+		RepositoryStatusPending:    true,
+		RepositoryStatusCloning:    true,
+		RepositoryStatusProcessing: true,
+		RepositoryStatusCompleted:  true,
+		RepositoryStatusFailed:     true,
+		RepositoryStatusArchived:   true,
+	}
 }
 
 // NewRepositoryStatus creates a new RepositoryStatus with validation.
 func NewRepositoryStatus(status string) (RepositoryStatus, error) {
 	s := RepositoryStatus(status)
-	if !validRepositoryStatuses[s] {
+	if !validRepositoryStatuses()[s] {
 		return "", fmt.Errorf("invalid repository status: %s", status)
 	}
 	return s, nil
@@ -90,8 +92,9 @@ func (s RepositoryStatus) CanTransitionTo(target RepositoryStatus) bool {
 
 // AllRepositoryStatuses returns all valid repository statuses.
 func AllRepositoryStatuses() []RepositoryStatus {
-	statuses := make([]RepositoryStatus, 0, len(validRepositoryStatuses))
-	for status := range validRepositoryStatuses {
+	validStatuses := validRepositoryStatuses()
+	statuses := make([]RepositoryStatus, 0, len(validStatuses))
+	for status := range validStatuses {
 		statuses = append(statuses, status)
 	}
 	return statuses
@@ -112,7 +115,7 @@ func checkRepositoryStatusValidity(status string) (isEmpty bool, isValidStatus b
 	if status == "" {
 		return true, false
 	}
-	return false, validRepositoryStatuses[RepositoryStatus(status)]
+	return false, validRepositoryStatuses()[RepositoryStatus(status)]
 }
 
 // IsValidRepositoryStatusString validates whether a string represents a valid repository status.

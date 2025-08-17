@@ -1,6 +1,7 @@
 package api
 
 import (
+	"codechunking/internal/adapter/inbound/api/util"
 	"context"
 	"fmt"
 	"io"
@@ -9,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"codechunking/internal/adapter/inbound/api/util"
 
 	"github.com/google/uuid"
 )
@@ -442,17 +441,19 @@ type CORSConfig struct {
 
 // DefaultCORSConfig provides sensible default CORS configuration.
 // Allows all origins (*), common HTTP methods, and standard headers.
-var DefaultCORSConfig = CORSConfig{
-	AllowedOrigins: []string{"*"},
-	AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-	AllowedHeaders: []string{"Content-Type", "Authorization"},
-	MaxAge:         DefaultCORSMaxAge,
+func DefaultCORSConfig() CORSConfig {
+	return CORSConfig{
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"Content-Type", "Authorization"},
+		MaxAge:         DefaultCORSMaxAge,
+	}
 }
 
 // NewCORSMiddleware creates CORS middleware with default configuration.
 // This is a convenience function that delegates to NewCORSMiddlewareWithConfig.
 func NewCORSMiddleware() func(http.Handler) http.Handler {
-	return NewCORSMiddlewareWithConfig(DefaultCORSConfig)
+	return NewCORSMiddlewareWithConfig(DefaultCORSConfig())
 }
 
 // NewCORSMiddlewareWithConfig creates CORS middleware with custom config.

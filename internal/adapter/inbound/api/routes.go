@@ -1,11 +1,10 @@
 package api
 
 import (
+	"codechunking/internal/adapter/inbound/api/testutil"
 	"fmt"
 	"net/http"
 	"strings"
-
-	"codechunking/internal/adapter/inbound/api/testutil"
 )
 
 // Route validation error message constants for consistent error handling.
@@ -59,19 +58,20 @@ func newRouteConflictError(conflictType, newPattern, existingPattern string) err
 	)
 }
 
-// validHTTPMethods contains the valid HTTP methods for route pattern validation.
-// This package-level variable eliminates map allocation on every validatePattern call,
-// improving performance while maintaining the same validation behavior.
-// The map is safe for concurrent read access during request validation.
-var validHTTPMethods = map[string]bool{
-	"GET": true, "POST": true, "PUT": true, "DELETE": true,
-	"PATCH": true, "HEAD": true, "OPTIONS": true,
+// validHTTPMethods returns the valid HTTP methods for route pattern validation.
+// This function eliminates map allocation on every validatePattern call by returning
+// a fresh map, while maintaining the same validation behavior.
+func validHTTPMethods() map[string]bool {
+	return map[string]bool{
+		"GET": true, "POST": true, "PUT": true, "DELETE": true,
+		"PATCH": true, "HEAD": true, "OPTIONS": true,
+	}
 }
 
 // isValidHTTPMethod performs case-insensitive validation of HTTP methods without
 // string allocation by using strings.EqualFold for comparison.
 func isValidHTTPMethod(method string) bool {
-	for validMethod := range validHTTPMethods {
+	for validMethod := range validHTTPMethods() {
 		if strings.EqualFold(method, validMethod) {
 			return true
 		}

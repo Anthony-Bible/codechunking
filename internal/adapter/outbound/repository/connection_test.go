@@ -195,10 +195,8 @@ func TestDatabaseConnection_ConfigValidation(t *testing.T) {
 				if err.Error() != tt.errorMsg {
 					t.Errorf("Expected error message '%s', got '%s'", tt.errorMsg, err.Error())
 				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no validation error but got: %v", err)
-				}
+			} else if err != nil {
+				t.Errorf("Expected no validation error but got: %v", err)
 			}
 		})
 	}

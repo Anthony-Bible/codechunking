@@ -2,7 +2,6 @@ package security
 
 import (
 	"regexp"
-	"sync"
 )
 
 // Patterns holds all pre-compiled security validation patterns.
@@ -33,17 +32,10 @@ type Patterns struct {
 	ControlChars *regexp.Regexp
 }
 
-var (
-	patterns     *Patterns
-	patternsOnce sync.Once
-)
-
-// GetPatterns returns the singleton instance of compiled patterns.
+// GetPatterns creates and returns a new instance of compiled patterns.
+// This replaces the singleton pattern to avoid global state.
 func GetPatterns() *Patterns {
-	patternsOnce.Do(func() {
-		patterns = compilePatterns()
-	})
-	return patterns
+	return compilePatterns()
 }
 
 // compilePatterns compiles all security patterns once at startup.
@@ -78,8 +70,8 @@ func compilePatterns() *Patterns {
 	return p
 }
 
-// StringPatterns holds commonly used string patterns for efficient matching.
-var StringPatterns = struct {
+// StringPatternsData holds commonly used string patterns for efficient matching.
+type StringPatternsData struct {
 	// XSS string patterns
 	XSSPatterns []string
 
@@ -97,72 +89,90 @@ var StringPatterns = struct {
 
 	// Supported Git hosts
 	SupportedHosts map[string]bool
-}{
-	XSSPatterns: []string{
-		"<script", "</script>", "<img", "onerror=", "onclick=", "onload=",
-		"javascript:", "data:text/html", "<svg", "<iframe", "&lt;script&gt;",
-		"<div", "onmouseover=", "onfocus=", "onblur=", "vbscript:",
-	},
-
-	SQLPatterns: []string{
-		"'; drop", "drop table", "union select", "insert into", "delete from",
-		"update ", "select ", "or 1=1", "and 1=1", "waitfor delay",
-		"information_schema", "/*", "--", "sleep(", "benchmark(",
-	},
-
-	PathPatterns: []string{
-		"../", "./", "..\\", ".\\",
-		"%2E%2E/", "%2E%2E\\", "%252E%252E/", "%252E%252E\\",
-		"%2E%2E%2F", "%2E%2E%5C", "..%2F", "..%5C",
-	},
-
-	ControlEncodings: []string{
-		"%00", "%01", "%02", "%03", "%04", "%05", "%06", "%07",
-		"%08", "%0B", "%0C", "%0E", "%0F", "%10", "%11", "%12",
-		"%13", "%14", "%15", "%16", "%17", "%18", "%19", "%1A",
-		"%1B", "%1C", "%1D", "%1E", "%1F", "%7F",
-	},
-
-	UnicodeAttacks: []rune{
-		'\u202D', '\u202E', '\u200B', '\u200C', // Directional override and zero-width
-		'ρ', // Greek rho that looks like 'p'
-	},
-
-	SupportedHosts: map[string]bool{
-		"github.com":    true,
-		"gitlab.com":    true,
-		"bitbucket.org": true,
-	},
 }
 
-// HTML entities that could be used for XSS.
-var HTMLEntities = map[string]string{
-	"&lt;":   "<",
-	"&gt;":   ">",
-	"&amp;":  "&",
-	"&quot;": "\"",
-	"&apos;": "'",
-	"&#60;":  "<",
-	"&#62;":  ">",
-	"&#39;":  "'",
-	"&#34;":  "\"",
+// GetStringPatterns returns a new instance of string patterns data.
+// This replaces the global StringPatterns variable to avoid global state.
+func GetStringPatterns() *StringPatternsData {
+	return &StringPatternsData{
+		XSSPatterns: []string{
+			"<script", "</script>", "<img", "onerror=", "onclick=", "onload=",
+			"javascript:", "data:text/html", "<svg", "<iframe", "&lt;script&gt;",
+			"<div", "onmouseover=", "onfocus=", "onblur=", "vbscript:",
+		},
+
+		SQLPatterns: []string{
+			"'; drop", "drop table", "union select", "insert into", "delete from",
+			"update ", "select ", "or 1=1", "and 1=1", "waitfor delay",
+			"information_schema", "/*", "--", "sleep(", "benchmark(",
+		},
+
+		PathPatterns: []string{
+			"../", "./", "..\\", ".\\",
+			"%2E%2E/", "%2E%2E\\", "%252E%252E/", "%252E%252E\\",
+			"%2E%2E%2F", "%2E%2E%5C", "..%2F", "..%5C",
+		},
+
+		ControlEncodings: []string{
+			"%00", "%01", "%02", "%03", "%04", "%05", "%06", "%07",
+			"%08", "%0B", "%0C", "%0E", "%0F", "%10", "%11", "%12",
+			"%13", "%14", "%15", "%16", "%17", "%18", "%19", "%1A",
+			"%1B", "%1C", "%1D", "%1E", "%1F", "%7F",
+		},
+
+		UnicodeAttacks: []rune{
+			'\u202D', '\u202E', '\u200B', '\u200C', // Directional override and zero-width
+			'ρ', // Greek rho that looks like 'p'
+		},
+
+		SupportedHosts: map[string]bool{
+			"github.com":    true,
+			"gitlab.com":    true,
+			"bitbucket.org": true,
+		},
+	}
 }
 
-// URLEncodings maps common attack characters to their URL-encoded forms.
-var URLEncodings = map[string][]string{
-	"<":  {"%3C", "%3c"},
-	">":  {"%3E", "%3e"},
-	"'":  {"%27"},
-	"\"": {"%22"},
-	"/":  {"%2F", "%2f"},
-	"\\": {"%5C", "%5c"},
-	";":  {"%3B", "%3b"},
-	" ":  {"%20", "+"},
+// HTMLEntities returns HTML entities that could be used for XSS.
+func HTMLEntities() map[string]string {
+	return map[string]string{
+		"&lt;":   "<",
+		"&gt;":   ">",
+		"&amp;":  "&",
+		"&quot;": "\"",
+		"&apos;": "'",
+		"&#60;":  "<",
+		"&#62;":  ">",
+		"&#39;":  "'",
+		"&#34;":  "\"",
+	}
 }
 
-// IsPatternCompiled checks if patterns have been compiled.
+// URLEncodings returns common attack characters mapped to their URL-encoded forms.
+func URLEncodings() map[string][]string {
+	return map[string][]string{
+		"<":  {"%3C", "%3c"},
+		">":  {"%3E", "%3e"},
+		"'":  {"%27"},
+		"\"": {"%22"},
+		"/":  {"%2F", "%2f"},
+		"\\": {"%5C", "%5c"},
+		";":  {"%3B", "%3b"},
+		" ":  {"%20", "+"},
+	}
+}
+
+// GetSupportedHosts returns the map of supported Git hosts.
+// This provides access to supported hosts without exposing global state.
+func GetSupportedHosts() map[string]bool {
+	return GetStringPatterns().SupportedHosts
+}
+
+// IsPatternCompiled checks if patterns are properly compiled by attempting to create them.
+// Since we no longer use global state, this validates pattern compilation directly.
 func IsPatternCompiled() bool {
-	return patterns != nil
+	p := GetPatterns()
+	return p != nil && p.GitURL != nil
 }
 
 // ValidatePatterns ensures all patterns are properly compiled.

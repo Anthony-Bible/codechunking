@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -90,7 +91,7 @@ type performanceMetrics struct {
 
 // Global object pool for log entries.
 var (
-	globalLogEntryPool = &logEntryPool{
+	globalLogEntryPool = &logEntryPool{ //nolint:gochecknoglobals // Performance-critical object pool for logging infrastructure
 		pool: sync.Pool{
 			New: func() interface{} {
 				return &LogEntry{
@@ -100,7 +101,7 @@ var (
 			},
 		},
 	}
-	globalPerformanceMetrics performanceMetrics
+	globalPerformanceMetrics performanceMetrics //nolint:gochecknoglobals // Performance-critical metrics for logging infrastructure
 )
 
 // applicationLoggerImpl implements ApplicationLogger and extended interfaces.
@@ -457,56 +458,72 @@ func (l *applicationLoggerImpl) WithComponent(component string) ApplicationLogge
 }
 
 // logEntry creates and logs a structured log entry with performance optimizations.
+func (l *applicationLoggerImpl) createBufferLogEntry(ctx context.Context, level, message, errorStr, correlationID string, fields Fields) *LogEntry {
+	component := l.component
+	if component == "" {
+		component = "default"
+	}
+
+	entry := &LogEntry{
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		Level:         level,
+		Message:       message,
+		CorrelationID: correlationID,
+		Component:     component,
+		Error:         errorStr,
+		Metadata:      make(map[string]interface{}),
+		Context:       make(map[string]interface{}),
+	}
+
+	l.addFieldsToEntry(entry, fields)
+	l.addContextToEntry(entry, ctx)
+	return entry
+}
+
+func (l *applicationLoggerImpl) addFieldsToEntry(entry *LogEntry, fields Fields) {
+	for key, value := range fields {
+		if key == "operation" {
+			if operation, ok := value.(string); ok {
+				entry.Operation = operation
+			}
+		}
+		entry.Metadata[key] = value
+	}
+}
+
+func (l *applicationLoggerImpl) addContextToEntry(entry *LogEntry, ctx context.Context) {
+	if requestID := getRequestIDFromContext(ctx); requestID != "" {
+		entry.Context["request_id"] = requestID
+	}
+
+	if userCtx := getUserContextFromContext(ctx); userCtx != nil {
+		entry.Context["user_id"] = userCtx.UserID
+		entry.Context["client_ip"] = userCtx.ClientIP
+		entry.Context["user_agent"] = userCtx.UserAgent
+	}
+}
+
+func (l *applicationLoggerImpl) getLogEntryFromPool() *LogEntry {
+	if l.config.EnableObjectPooling {
+		return globalLogEntryPool.getLogEntry()
+	}
+	return &LogEntry{
+		Metadata: make(map[string]interface{}),
+		Context:  make(map[string]interface{}),
+	}
+}
+
 func (l *applicationLoggerImpl) logEntry(ctx context.Context, level, message, errorStr string, fields Fields) {
 	start := time.Now()
 
-	// Check sampling early to avoid unnecessary work
 	if l.sampler != nil && !l.sampler.shouldSample() {
 		return
 	}
 
-	// Get or generate correlation ID
 	correlationID := getOrGenerateCorrelationID(ctx)
 
-	// For buffer output (testing), always use simple approach
 	if l.config.Output == "buffer" {
-		component := l.component
-		if component == "" {
-			component = "default"
-		}
-		entry := &LogEntry{
-			Timestamp:     time.Now().UTC().Format(time.RFC3339),
-			Level:         level,
-			Message:       message,
-			CorrelationID: correlationID,
-			Component:     component,
-			Error:         errorStr,
-			Metadata:      make(map[string]interface{}),
-			Context:       make(map[string]interface{}),
-		}
-
-		// Add fields to metadata
-		// Also extract special fields to set in the log entry structure
-		for key, value := range fields {
-			if key == "operation" {
-				if operation, ok := value.(string); ok {
-					entry.Operation = operation
-				}
-			}
-			entry.Metadata[key] = value
-		}
-
-		// Add context information
-		if requestID := getRequestIDFromContext(ctx); requestID != "" {
-			entry.Context["request_id"] = requestID
-		}
-
-		if userCtx := getUserContextFromContext(ctx); userCtx != nil {
-			entry.Context["user_id"] = userCtx.UserID
-			entry.Context["client_ip"] = userCtx.ClientIP
-			entry.Context["user_agent"] = userCtx.UserAgent
-		}
-
+		entry := l.createBufferLogEntry(ctx, level, message, errorStr, correlationID, fields)
 		l.writeLogEntry(entry)
 		return
 	}
@@ -781,32 +798,56 @@ func getLoggerOutput(logger interface{}) string {
 }
 
 // getLoggerOutputByOperation finds a log entry with specific operation.
-func getLoggerOutputByOperation(logger interface{}, operation string) string {
-	if appLogger, ok := logger.(*applicationLoggerImpl); ok && appLogger.buffer != nil {
-		output := strings.TrimSpace(appLogger.buffer.String())
+func parseLogEntryLine(line string) (*LogEntry, error) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil, errors.New("empty line")
+	}
 
-		if output != "" {
-			lines := strings.Split(output, "\n")
-			// Search for the line with the specific operation
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
-				if line != "" {
-					// Try to parse the JSON to check the operation
-					var entry LogEntry
-					if err := json.Unmarshal([]byte(line), &entry); err == nil {
-						if entry.Operation == operation {
-							return line
-						}
-						// Also check in metadata
-						if op, exists := entry.Metadata["operation"]; exists && op == operation {
-							return line
-						}
-					}
-				}
-			}
+	var entry LogEntry
+	err := json.Unmarshal([]byte(line), &entry)
+	return &entry, err
+}
+
+func entryMatchesOperation(entry *LogEntry, operation string) bool {
+	if entry.Operation == operation {
+		return true
+	}
+
+	if op, exists := entry.Metadata["operation"]; exists && op == operation {
+		return true
+	}
+
+	return false
+}
+
+func searchLogLinesForOperation(lines []string, operation string) string {
+	for _, line := range lines {
+		entry, err := parseLogEntryLine(line)
+		if err != nil {
+			continue
+		}
+
+		if entryMatchesOperation(entry, operation) {
+			return strings.TrimSpace(line)
 		}
 	}
 	return ""
+}
+
+func getLoggerOutputByOperation(logger interface{}, operation string) string {
+	appLogger, ok := logger.(*applicationLoggerImpl)
+	if !ok || appLogger.buffer == nil {
+		return ""
+	}
+
+	output := strings.TrimSpace(appLogger.buffer.String())
+	if output == "" {
+		return ""
+	}
+
+	lines := strings.Split(output, "\n")
+	return searchLogLinesForOperation(lines, operation)
 }
 
 // GetLoggerPerformanceMetrics returns current performance metrics.

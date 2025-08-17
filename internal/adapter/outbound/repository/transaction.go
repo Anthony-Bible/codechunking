@@ -44,8 +44,8 @@ func (tm *TransactionManager) WithTransaction(ctx context.Context, fn func(conte
 	}
 
 	// Commit the transaction
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+	if commitErr := tx.Commit(ctx); commitErr != nil {
+		return fmt.Errorf("failed to commit transaction: %w", commitErr)
 	}
 
 	return nil
@@ -78,8 +78,8 @@ func (tm *TransactionManager) WithTransactionIsolation(
 	}
 
 	// Commit the transaction
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+	if commitErr2 := tx.Commit(ctx); commitErr2 != nil {
+		return fmt.Errorf("failed to commit transaction: %w", commitErr2)
 	}
 
 	return nil

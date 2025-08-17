@@ -1,12 +1,11 @@
 package api
 
 import (
+	"codechunking/internal/adapter/inbound/api/testutil"
+	"codechunking/internal/config"
 	"context"
 	"testing"
 	"time"
-
-	"codechunking/internal/adapter/inbound/api/testutil"
-	"codechunking/internal/config"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

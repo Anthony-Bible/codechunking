@@ -1,11 +1,10 @@
 package common
 
 import (
+	"codechunking/internal/application/dto"
 	"fmt"
 	"strings"
 	"unicode"
-
-	"codechunking/internal/application/dto"
 )
 
 // ServiceError represents a service-level error with context.

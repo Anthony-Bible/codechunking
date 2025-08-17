@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"codechunking/internal/adapter/inbound/api/middleware"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -11,8 +12,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"codechunking/internal/adapter/inbound/api/middleware"
 )
 
 // TestCorrelationIntegration_HTTPToServiceLayer tests correlation ID propagation from HTTP to service layer.
@@ -167,7 +166,7 @@ func TestCorrelationIntegration_ServiceToNATS(t *testing.T) {
 	assert.Equal(t, correlationID, natsLogEntry.CorrelationID)
 
 	// Verify the repository ID was passed through correctly
-	assert.Equal(t, "repo-123", natsLogEntry.Metadata["repository_id"])
+	assert.InDelta(t, "repo-123", natsLogEntry.Metadata["repository_id"], 0)
 }
 
 // TestCorrelationIntegration_EndToEndWorkflow tests full end-to-end correlation across all components.
@@ -291,9 +290,9 @@ func TestCorrelationIntegration_EndToEndWorkflow(t *testing.T) {
 	// Verify repository ID is propagated through all operations
 	repoID := serviceLog.Metadata["repository_id"].(string)
 	assert.NotEmpty(t, repoID)
-	assert.Equal(t, repoID, indexingLog.Metadata["repository_id"])
-	assert.Equal(t, repoID, publisherLog.Metadata["repository_id"])
-	assert.Equal(t, repoID, consumerLog.Metadata["repository_id"])
+	assert.InDelta(t, repoID, indexingLog.Metadata["repository_id"], 0)
+	assert.InDelta(t, repoID, publisherLog.Metadata["repository_id"], 0)
+	assert.InDelta(t, repoID, consumerLog.Metadata["repository_id"], 0)
 }
 
 // TestCorrelationIntegration_ErrorPropagation tests correlation ID propagation during error scenarios.
@@ -360,7 +359,7 @@ func TestCorrelationIntegration_ErrorPropagation(t *testing.T) {
 					RepositoryID: "repo-error",
 					URL:          "invalid-url",
 				})
-				assert.Error(t, err)
+				require.Error(t, err)
 
 			case "nats_publisher":
 				// Test NATS publisher error
@@ -368,7 +367,7 @@ func TestCorrelationIntegration_ErrorPropagation(t *testing.T) {
 				err := errorService.PublishWithErroryPublisher(ctx, RepositoryRequest{
 					URL: "https://github.com/user/repo",
 				}, errorPublisher)
-				assert.Error(t, err)
+				require.Error(t, err)
 
 			case "nats_consumer":
 				// Test NATS consumer error (async)
@@ -379,7 +378,7 @@ func TestCorrelationIntegration_ErrorPropagation(t *testing.T) {
 					URL:           "https://github.com/user/repo",
 				}
 				err := errorConsumer.ProcessIndexingJob(ctx, jobMessage)
-				assert.Error(t, err)
+				require.Error(t, err)
 			}
 
 			// Verify all error logs have the same correlation ID

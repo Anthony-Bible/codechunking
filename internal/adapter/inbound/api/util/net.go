@@ -12,65 +12,91 @@ import (
 // 1. X-Forwarded-For (first valid IP)
 // 2. X-Real-IP
 // 3. RemoteAddr (with port stripped).
+func getIPFromXForwardedFor(header string) string {
+	if header == "" {
+		return ""
+	}
+
+	ips := strings.Split(header, ",")
+	for _, ip := range ips {
+		ip = strings.TrimSpace(ip)
+		if ip != "" && net.ParseIP(ip) != nil {
+			return ip
+		}
+	}
+	return ""
+}
+
+func getIPFromXRealIP(header string) string {
+	if header == "" {
+		return ""
+	}
+
+	ip := strings.TrimSpace(header)
+	if ip != "" && net.ParseIP(ip) != nil {
+		return ip
+	}
+	return ""
+}
+
+func extractIPFromIPv6WithPort(remoteAddr string) string {
+	if !strings.HasPrefix(remoteAddr, "[") {
+		return ""
+	}
+
+	idx := strings.LastIndex(remoteAddr, "]")
+	if idx == -1 {
+		return ""
+	}
+
+	return remoteAddr[1:idx]
+}
+
+func extractIPFromIPv4WithPort(remoteAddr string) string {
+	idx := strings.Index(remoteAddr, ":")
+	if idx == -1 {
+		return ""
+	}
+
+	ip := remoteAddr[:idx]
+	if ip == "" {
+		return ""
+	}
+
+	if net.ParseIP(ip) != nil && strings.Count(ip, ".") == 3 {
+		return ip
+	}
+	return ""
+}
+
+func extractIPFromRemoteAddr(remoteAddr string) string {
+	if remoteAddr == "" {
+		return ""
+	}
+
+	if ipv6IP := extractIPFromIPv6WithPort(remoteAddr); ipv6IP != "" {
+		return ipv6IP
+	}
+
+	if ipv4IP := extractIPFromIPv4WithPort(remoteAddr); ipv4IP != "" {
+		return ipv4IP
+	}
+
+	return remoteAddr
+}
+
 func ClientIP(r *http.Request) string {
 	if r == nil {
 		panic("request cannot be nil")
 	}
 
-	// 1. Check X-Forwarded-For header first
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Split by comma and check each IP
-		ips := strings.Split(xff, ",")
-		for _, ip := range ips {
-			ip = strings.TrimSpace(ip)
-			if ip != "" && net.ParseIP(ip) != nil {
-				return ip
-			}
-		}
+	if ip := getIPFromXForwardedFor(r.Header.Get("X-Forwarded-For")); ip != "" {
+		return ip
 	}
 
-	// 2. Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		ip := strings.TrimSpace(xri)
-		if ip != "" && net.ParseIP(ip) != nil {
-			return ip
-		}
+	if ip := getIPFromXRealIP(r.Header.Get("X-Real-IP")); ip != "" {
+		return ip
 	}
 
-	// 3. Fall back to RemoteAddr
-	if r.RemoteAddr == "" {
-		return ""
-	}
-
-	// Handle IPv6 with brackets and port: [2001:db8::1]:8080 -> 2001:db8::1
-	if strings.HasPrefix(r.RemoteAddr, "[") {
-		if idx := strings.LastIndex(r.RemoteAddr, "]"); idx != -1 {
-			if idx+1 < len(r.RemoteAddr) && r.RemoteAddr[idx+1] == ':' {
-				// Has port after bracket
-				return r.RemoteAddr[1:idx]
-			}
-			// No port after bracket (malformed, but handle gracefully)
-			return r.RemoteAddr[1:idx]
-		}
-	}
-
-	// Handle IPv4 with port: 192.168.1.100:8080 -> 192.168.1.100
-	// Also handle edge cases like ":8080" and "192.168.1.100:8080:extra"
-	if idx := strings.Index(r.RemoteAddr, ":"); idx != -1 {
-		ip := r.RemoteAddr[:idx]
-
-		// Handle case where there's only a port (":8080")
-		if ip == "" {
-			return ""
-		}
-
-		// Check if it's a valid IPv4 address
-		if net.ParseIP(ip) != nil && strings.Count(ip, ".") == 3 {
-			// It's an IPv4 address, so we can strip everything after the first colon
-			return ip
-		}
-	}
-
-	// Return as-is (IPv6 without brackets or no port)
-	return r.RemoteAddr
+	return extractIPFromRemoteAddr(r.RemoteAddr)
 }

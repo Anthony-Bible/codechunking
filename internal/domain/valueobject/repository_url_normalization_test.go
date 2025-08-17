@@ -132,7 +132,7 @@ func TestURLNormalizer_NormalizeURL(t *testing.T) {
 			normalized, err := normalization.NormalizeRepositoryURL(tt.input)
 
 			if tt.expectError {
-				assert.Error(t, err, tt.description)
+				require.Error(t, err, tt.description)
 				assert.Empty(t, normalized, "Normalized URL should be empty when error occurs")
 			} else {
 				require.NoError(t, err, tt.description)
@@ -320,7 +320,7 @@ func TestURLNormalizer_EdgeCases(t *testing.T) {
 			normalized, err := normalization.NormalizeRepositoryURL(tt.input)
 
 			if tt.expectError {
-				assert.Error(t, err, tt.description)
+				require.Error(t, err, tt.description)
 				assert.Empty(t, normalized, "Normalized URL should be empty when error occurs")
 			} else {
 				require.NoError(t, err, tt.description)
@@ -384,13 +384,11 @@ func TestRepositoryURL_NormalizedCreation(t *testing.T) {
 						"RepositoryURL from %s should have same string as RepositoryURL from %s",
 						tt.inputURLs[0], tt.inputURLs[i])
 				}
-			} else {
+			} else if len(repositoryURLs) >= 2 {
 				// RepositoryURL objects should be different
-				if len(repositoryURLs) >= 2 {
-					assert.False(t, repositoryURLs[0].Equal(repositoryURLs[1]),
-						"RepositoryURL created from %s should NOT equal RepositoryURL created from %s",
-						tt.inputURLs[0], tt.inputURLs[1])
-				}
+				assert.False(t, repositoryURLs[0].Equal(repositoryURLs[1]),
+					"RepositoryURL created from %s should NOT equal RepositoryURL created from %s",
+					tt.inputURLs[0], tt.inputURLs[1])
 			}
 		})
 	}

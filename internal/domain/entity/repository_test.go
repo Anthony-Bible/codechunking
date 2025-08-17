@@ -295,10 +295,8 @@ func TestRepository_UpdateStatus_InvalidTransitions(t *testing.T) {
 	ok := errors.As(err, &domainErr)
 	if !ok {
 		t.Errorf("Expected DomainError, got %T", err)
-	} else {
-		if domainErr.Code() != "INVALID_STATUS_TRANSITION" {
-			t.Errorf("Expected error code 'INVALID_STATUS_TRANSITION', got '%s'", domainErr.Code())
-		}
+	} else if domainErr.Code() != "INVALID_STATUS_TRANSITION" {
+		t.Errorf("Expected error code 'INVALID_STATUS_TRANSITION', got '%s'", domainErr.Code())
 	}
 
 	// Verify status and timestamp weren't changed
@@ -457,10 +455,8 @@ func TestRepository_Archive_AlreadyArchived(t *testing.T) {
 	ok := errors.As(err, &domainErr)
 	if !ok {
 		t.Errorf("Expected DomainError, got %T", err)
-	} else {
-		if domainErr.Code() != "ALREADY_ARCHIVED" {
-			t.Errorf("Expected error code 'ALREADY_ARCHIVED', got '%s'", domainErr.Code())
-		}
+	} else if domainErr.Code() != "ALREADY_ARCHIVED" {
+		t.Errorf("Expected error code 'ALREADY_ARCHIVED', got '%s'", domainErr.Code())
 	}
 }
 
@@ -511,10 +507,8 @@ func TestRepository_Restore_NotArchived(t *testing.T) {
 	ok := errors.As(err, &domainErr)
 	if !ok {
 		t.Errorf("Expected DomainError, got %T", err)
-	} else {
-		if domainErr.Code() != "NOT_ARCHIVED" {
-			t.Errorf("Expected error code 'NOT_ARCHIVED', got '%s'", domainErr.Code())
-		}
+	} else if domainErr.Code() != "NOT_ARCHIVED" {
+		t.Errorf("Expected error code 'NOT_ARCHIVED', got '%s'", domainErr.Code())
 	}
 }
 
@@ -577,7 +571,7 @@ func TestRepository_Equal(t *testing.T) {
 	}
 
 	// Same repository should be equal to itself
-	if !repo1.Equal(repo1) {
+	if !repo1.Equal(repo1) { //nolint:gocritic // valid reflexivity test for equality
 		t.Error("Expected repository to be equal to itself")
 	}
 

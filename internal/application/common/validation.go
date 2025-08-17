@@ -1,24 +1,25 @@
 package common
 
 import (
+	"codechunking/internal/application/common/security"
+	"codechunking/internal/domain/valueobject"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"codechunking/internal/application/common/security"
-	"codechunking/internal/domain/valueobject"
-
 	"github.com/google/uuid"
 )
 
-// ValidJobStatuses defines all valid job statuses.
-var ValidJobStatuses = map[string]bool{
-	"pending":   true,
-	"running":   true,
-	"completed": true,
-	"failed":    true,
-	"cancelled": true,
+// validJobStatuses returns all valid job statuses.
+func validJobStatuses() map[string]bool {
+	return map[string]bool{
+		"pending":   true,
+		"running":   true,
+		"completed": true,
+		"failed":    true,
+		"cancelled": true,
+	}
 }
 
 // ValidateRepositoryURL validates that a repository URL is not empty.
@@ -89,7 +90,7 @@ func ValidateRepositoryStatus(status string) error {
 
 // ValidateJobStatus validates job status.
 func ValidateJobStatus(status string) error {
-	if !ValidJobStatuses[status] {
+	if !validJobStatuses()[status] {
 		return NewValidationError("status", fmt.Sprintf("invalid status: %s", status))
 	}
 	return nil

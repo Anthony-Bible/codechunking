@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"codechunking/internal/config"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,8 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"codechunking/internal/config"
 
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
@@ -125,7 +124,7 @@ func TestAPICommand_GracefulShutdown(t *testing.T) {
 				defer cancel()
 
 				err := server.Shutdown(shutdownCtx)
-				assert.NoError(t, err, "Server should shut down gracefully")
+				require.NoError(t, err, "Server should shut down gracefully")
 			},
 		},
 		{
@@ -148,7 +147,7 @@ func TestAPICommand_GracefulShutdown(t *testing.T) {
 				err := server.Shutdown(shutdownCtx)
 				duration := time.Since(start)
 
-				assert.NoError(t, err, "Server should shut down gracefully")
+				require.NoError(t, err, "Server should shut down gracefully")
 				// Should take some time to wait for active requests
 				assert.Greater(t, duration, 50*time.Millisecond)
 			},
@@ -208,14 +207,9 @@ func TestAPICommand_GracefulShutdown(t *testing.T) {
 func TestAPICommand_ConfigurationIntegration(t *testing.T) {
 	t.Run("loads_configuration_from_environment", func(t *testing.T) {
 		// Set environment variables
-		_ = os.Setenv("CODECHUNK_API_HOST", "127.0.0.1")
-		_ = os.Setenv("CODECHUNK_API_PORT", "0")
-		_ = os.Setenv("CODECHUNK_API_READ_TIMEOUT", "15s")
-		defer func() {
-			_ = os.Unsetenv("CODECHUNK_API_HOST")
-			_ = os.Unsetenv("CODECHUNK_API_PORT")
-			_ = os.Unsetenv("CODECHUNK_API_READ_TIMEOUT")
-		}()
+		t.Setenv("CODECHUNK_API_HOST", "127.0.0.1")
+		t.Setenv("CODECHUNK_API_PORT", "0")
+		t.Setenv("CODECHUNK_API_READ_TIMEOUT", "15s")
 
 		// Create server using configuration loading
 		cfg, err := LoadAPIConfiguration()
@@ -347,7 +341,7 @@ func TestAPICommand_ErrorScenarios(t *testing.T) {
 			server, baseURL, err := startTestAPIServer(ctx, tt.config)
 
 			// Should fail to start
-			assert.Error(t, err)
+			require.Error(t, err)
 			if err != nil {
 				assert.Contains(t, err.Error(), tt.expectedError)
 			}

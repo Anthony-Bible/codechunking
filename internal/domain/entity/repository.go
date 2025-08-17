@@ -203,8 +203,13 @@ func (r *Repository) Archive() error {
 		return NewDomainError("repository is already archived", "ALREADY_ARCHIVED")
 	}
 
-	// Archive is a special administrative action that can be done from any status
-	// except when already archived
+	// Only allow archiving repositories in final states (completed or failed)
+	if r.status == valueobject.RepositoryStatusPending ||
+		r.status == valueobject.RepositoryStatusCloning ||
+		r.status == valueobject.RepositoryStatusProcessing {
+		return NewDomainError("cannot archive repository in active state", "INVALID_STATE_FOR_ARCHIVE")
+	}
+
 	r.status = valueobject.RepositoryStatusArchived
 	now := time.Now()
 	r.deletedAt = &now

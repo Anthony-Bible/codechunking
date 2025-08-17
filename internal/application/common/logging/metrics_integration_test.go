@@ -110,10 +110,10 @@ func TestMetricsIntegration_PrometheusStyleMetrics(t *testing.T) {
 			assert.Contains(t, logEntry.Message, "Metric recorded")
 
 			// Verify metric metadata
-			assert.Equal(t, tt.metricType, logEntry.Metadata["metric_type"])
-			assert.Equal(t, tt.metricName, logEntry.Metadata["metric_name"])
-			assert.Equal(t, tt.value, logEntry.Metadata["metric_value"])
-			assert.Equal(t, tt.operation, logEntry.Metadata["operation"])
+			assert.InDelta(t, tt.metricType, logEntry.Metadata["metric_type"], 0)
+			assert.InDelta(t, tt.metricName, logEntry.Metadata["metric_name"], 0)
+			assert.InDelta(t, tt.value, logEntry.Metadata["metric_value"], 0)
+			assert.InDelta(t, tt.operation, logEntry.Metadata["operation"], 0)
 
 			// Verify labels
 			assert.Contains(t, logEntry.Metadata, "labels")
@@ -273,7 +273,7 @@ func TestMetricsIntegration_ApplicationMetrics(t *testing.T) {
 			assert.NotEmpty(t, output, "Expected application metrics log output")
 
 			var logEntry LogEntry
-			err := json.Unmarshal([]byte(output), &logEntry)
+			err = json.Unmarshal([]byte(output), &logEntry)
 			require.NoError(t, err)
 
 			// Verify log structure
@@ -288,10 +288,10 @@ func TestMetricsIntegration_ApplicationMetrics(t *testing.T) {
 			}
 
 			// Verify specific metric values
-			assert.Equal(t, tt.metricsData.Category, logEntry.Metadata["category"])
-			assert.Equal(t, tt.metricsData.Operation, logEntry.Metadata["operation"])
-			assert.Equal(t, tt.metricsData.Throughput, logEntry.Metadata["throughput"])
-			assert.Equal(t, tt.metricsData.ErrorRate, logEntry.Metadata["error_rate"])
+			assert.InDelta(t, tt.metricsData.Category, logEntry.Metadata["category"], 0)
+			assert.InDelta(t, tt.metricsData.Operation, logEntry.Metadata["operation"], 0)
+			assert.InDelta(t, tt.metricsData.Throughput, logEntry.Metadata["throughput"], 0)
+			assert.InDelta(t, tt.metricsData.ErrorRate, logEntry.Metadata["error_rate"], 0)
 
 			// Verify latency metrics structure
 			latency := logEntry.Metadata["latency"].(map[string]interface{})
@@ -476,7 +476,7 @@ func TestMetricsIntegration_HealthMetrics(t *testing.T) {
 			assert.NotEmpty(t, output, "Expected health metrics log output")
 
 			var logEntry LogEntry
-			err := json.Unmarshal([]byte(output), &logEntry)
+			err = json.Unmarshal([]byte(output), &logEntry)
 			require.NoError(t, err)
 
 			// Verify log level matches health status
@@ -485,8 +485,8 @@ func TestMetricsIntegration_HealthMetrics(t *testing.T) {
 			assert.Equal(t, "health_check", logEntry.Operation)
 
 			// Verify health status in metadata
-			assert.Equal(t, tt.healthData.Overall.Status, logEntry.Metadata["overall_status"])
-			assert.Equal(t, tt.healthData.Overall.Message, logEntry.Metadata["overall_message"])
+			assert.InDelta(t, tt.healthData.Overall.Status, logEntry.Metadata["overall_status"], 0)
+			assert.InDelta(t, tt.healthData.Overall.Message, logEntry.Metadata["overall_message"], 0)
 
 			// Verify component health details
 			assert.Contains(t, logEntry.Metadata, "database")
@@ -608,7 +608,7 @@ func TestMetricsIntegration_CustomMetrics(t *testing.T) {
 			assert.NotEmpty(t, output, "Expected custom metrics log output")
 
 			var logEntry LogEntry
-			err := json.Unmarshal([]byte(output), &logEntry)
+			err = json.Unmarshal([]byte(output), &logEntry)
 			require.NoError(t, err)
 
 			// Verify log structure
@@ -623,8 +623,8 @@ func TestMetricsIntegration_CustomMetrics(t *testing.T) {
 			}
 
 			// Verify specific values
-			assert.Equal(t, tt.customMetrics.Namespace, logEntry.Metadata["namespace"])
-			assert.Equal(t, tt.customMetrics.Category, logEntry.Metadata["category"])
+			assert.InDelta(t, tt.customMetrics.Namespace, logEntry.Metadata["namespace"], 0)
+			assert.InDelta(t, tt.customMetrics.Category, logEntry.Metadata["category"], 0)
 
 			// Verify metrics structure
 			metrics := logEntry.Metadata["metrics"].(map[string]interface{})

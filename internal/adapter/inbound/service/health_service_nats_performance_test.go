@@ -502,86 +502,227 @@ func TestHealthServiceAdapter_MemoryEfficiency(t *testing.T) {
 	})
 }
 
+// stressTestConfig holds configuration for stress testing
+type stressTestConfig struct {
+	duration       time.Duration
+	maxConcurrency int
+	requestRate    time.Duration
+	channelSize    int
+}
+
+// stressTestResults holds the results of a stress test
+type stressTestResults struct {
+	totalRequests int64
+	totalErrors   int64
+	duration      time.Duration
+}
+
+// setupStressTestService creates a health service configured for stress testing
+func setupStressTestService() *HealthServiceAdapter {
+	mockNATS := testutil.NewMockMessagePublisherWithHealthMonitoring()
+	mockRepo := &mockRepositoryRepo{findAllResult: nil}
+	mockJobs := &mockIndexingJobRepo{}
+	return NewHealthServiceAdapter(mockRepo, mockJobs, mockNATS, "1.0.0").(*HealthServiceAdapter)
+}
+
+// runWorkerPool executes health checks using a worker pool pattern
+func runWorkerPool(service *HealthServiceAdapter, config stressTestConfig, requestChan <-chan struct{}, ctx context.Context) (int64, int64) {
+	var wg sync.WaitGroup
+	var totalRequests int64
+	var totalErrors int64
+
+	// Start workers
+	for range config.maxConcurrency {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range requestChan {
+				_, err := service.GetHealth(ctx)
+				atomic.AddInt64(&totalRequests, 1)
+				if err != nil {
+					atomic.AddInt64(&totalErrors, 1)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	return atomic.LoadInt64(&totalRequests), atomic.LoadInt64(&totalErrors)
+}
+
+// generateRequests creates a stream of requests at the specified rate
+func generateRequests(config stressTestConfig, ctx context.Context) <-chan struct{} {
+	requestChan := make(chan struct{}, config.channelSize)
+
+	go func() {
+		defer close(requestChan)
+		ticker := time.NewTicker(config.requestRate)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				select {
+				case requestChan <- struct{}{}:
+				default:
+					// Channel full, skip this request
+				}
+			}
+		}
+	}()
+
+	return requestChan
+}
+
+// calculateStressTestMetrics computes performance metrics from test results
+func calculateStressTestMetrics(results stressTestResults) (float64, float64) {
+	errorRate := float64(results.totalErrors) / float64(results.totalRequests)
+	throughput := float64(results.totalRequests) / results.duration.Seconds()
+	return errorRate, throughput
+}
+
+// validateStressTestResults performs assertions on stress test results
+func validateStressTestResults(t *testing.T, results stressTestResults) {
+	t.Logf("Processed %d requests with %d errors over %v", results.totalRequests, results.totalErrors, results.duration)
+
+	// Should handle significant load (expecting ~250-300 requests in 3 seconds at 100 RPS)
+	assert.Greater(t, results.totalRequests, int64(200), "Should process significant number of requests")
+
+	errorRate, throughput := calculateStressTestMetrics(results)
+
+	// Error rate should be low
+	assert.Less(t, errorRate, 0.01, "Error rate should be < 1%")
+
+	// Should achieve reasonable throughput (> 50 RPS)
+	assert.Greater(t, throughput, 50.0, "Should achieve > 50 RPS throughput")
+}
+
 func TestHealthServiceAdapter_StressTest(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping stress test in short mode")
 	}
 
 	t.Run("sustained_load_health_checks", func(t *testing.T) {
-		mockNATS := testutil.NewMockMessagePublisherWithHealthMonitoring()
-		mockRepo := &mockRepositoryRepo{findAllResult: nil}
-		mockJobs := &mockIndexingJobRepo{}
+		service := setupStressTestService()
 
-		service := NewHealthServiceAdapter(mockRepo, mockJobs, mockNATS, "1.0.0")
-
-		// Simulate sustained load for 3 seconds (fits within 10s test timeout)
-		duration := 3 * time.Second
-		maxConcurrency := 25
-
-		ctx, cancel := context.WithTimeout(context.Background(), duration)
-		defer cancel()
-
-		var wg sync.WaitGroup
-		var totalRequests int64
-		var totalErrors int64
-
-		// Worker pool pattern for sustained load
-		requestChan := make(chan struct{}, 1000)
-
-		// Start workers
-		for i := range maxConcurrency {
-			wg.Add(1)
-			go func(workerID int) {
-				defer wg.Done()
-
-				for range requestChan {
-					_, err := service.GetHealth(ctx)
-					atomic.AddInt64(&totalRequests, 1)
-
-					if err != nil {
-						atomic.AddInt64(&totalErrors, 1)
-					}
-				}
-			}(i)
+		config := stressTestConfig{
+			duration:       3 * time.Second,
+			maxConcurrency: 25,
+			requestRate:    10 * time.Millisecond, // 100 RPS
+			channelSize:    1000,
 		}
 
-		// Request generator
-		go func() {
-			defer close(requestChan)
-			ticker := time.NewTicker(10 * time.Millisecond) // 100 RPS
-			defer ticker.Stop()
+		ctx, cancel := context.WithTimeout(context.Background(), config.duration)
+		defer cancel()
 
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					select {
-					case requestChan <- struct{}{}:
-					default:
-						// Channel full, skip this request
-					}
-				}
-			}
-		}()
+		requestChan := generateRequests(config, ctx)
+		totalRequests, totalErrors := runWorkerPool(service, config, requestChan, ctx)
 
-		wg.Wait()
+		results := stressTestResults{
+			totalRequests: totalRequests,
+			totalErrors:   totalErrors,
+			duration:      config.duration,
+		}
 
 		// This test will fail without proper optimizations for sustained load
-		finalRequests := atomic.LoadInt64(&totalRequests)
-		finalErrors := atomic.LoadInt64(&totalErrors)
+		validateStressTestResults(t, results)
+	})
+}
 
-		t.Logf("Processed %d requests with %d errors over %v", finalRequests, finalErrors, duration)
+func TestHealthServiceAdapter_StressTest_ServiceSetup(t *testing.T) {
+	t.Run("creates_service_with_correct_configuration", func(t *testing.T) {
+		service := setupStressTestService()
 
-		// Should handle significant load (expecting ~250-300 requests in 3 seconds at 100 RPS)
-		assert.Greater(t, finalRequests, int64(200), "Should process significant number of requests")
+		require.NotNil(t, service)
 
-		// Error rate should be low
-		errorRate := float64(finalErrors) / float64(finalRequests)
-		assert.Less(t, errorRate, 0.01, "Error rate should be < 1%")
+		// Verify service can handle basic health check
+		response, err := service.GetHealth(context.Background())
+		require.NoError(t, err)
+		require.NotNil(t, response)
+		assert.Equal(t, "healthy", response.Status)
+	})
+}
 
-		// Should achieve reasonable throughput (> 50 RPS)
-		throughput := float64(finalRequests) / duration.Seconds()
-		assert.Greater(t, throughput, 50.0, "Should achieve > 50 RPS throughput")
+func TestHealthServiceAdapter_StressTest_WorkerPoolPattern(t *testing.T) {
+	t.Run("worker_pool_processes_requests_correctly", func(t *testing.T) {
+		service := setupStressTestService()
+
+		config := stressTestConfig{
+			duration:       100 * time.Millisecond,
+			maxConcurrency: 5,
+			requestRate:    10 * time.Millisecond,
+			channelSize:    50,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), config.duration)
+		defer cancel()
+
+		// Create a small number of requests to test worker pool
+		requestChan := make(chan struct{}, 10)
+		for i := 0; i < 10; i++ {
+			requestChan <- struct{}{}
+		}
+		close(requestChan)
+
+		totalRequests, totalErrors := runWorkerPool(service, config, requestChan, ctx)
+
+		assert.Equal(t, int64(10), totalRequests)
+		assert.Equal(t, int64(0), totalErrors)
+	})
+}
+
+func TestHealthServiceAdapter_StressTest_RequestGeneration(t *testing.T) {
+	t.Run("generates_requests_at_specified_rate", func(t *testing.T) {
+		config := stressTestConfig{
+			duration:       200 * time.Millisecond,
+			maxConcurrency: 5,
+			requestRate:    50 * time.Millisecond, // 20 RPS
+			channelSize:    100,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), config.duration)
+		defer cancel()
+
+		requestChan := generateRequests(config, ctx)
+
+		// Count requests generated
+		var requestCount int
+		for range requestChan {
+			requestCount++
+		}
+
+		// Should generate approximately 4 requests in 200ms at 20 RPS
+		assert.GreaterOrEqual(t, requestCount, 2)
+		assert.LessOrEqual(t, requestCount, 6)
+	})
+}
+
+func TestHealthServiceAdapter_StressTest_MetricsCalculation(t *testing.T) {
+	t.Run("calculates_metrics_correctly", func(t *testing.T) {
+		results := stressTestResults{
+			totalRequests: 100,
+			totalErrors:   5,
+			duration:      2 * time.Second,
+		}
+
+		errorRate, throughput := calculateStressTestMetrics(results)
+
+		assert.Equal(t, 0.05, errorRate)  // 5/100 = 0.05
+		assert.Equal(t, 50.0, throughput) // 100/2 = 50 RPS
+	})
+
+	t.Run("handles_zero_errors_correctly", func(t *testing.T) {
+		results := stressTestResults{
+			totalRequests: 200,
+			totalErrors:   0,
+			duration:      4 * time.Second,
+		}
+
+		errorRate, throughput := calculateStressTestMetrics(results)
+
+		assert.Equal(t, 0.0, errorRate)
+		assert.Equal(t, 50.0, throughput)
 	})
 }

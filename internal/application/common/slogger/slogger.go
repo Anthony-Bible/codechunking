@@ -10,14 +10,28 @@ import (
 // Fields is an alias for logging.Fields for convenience.
 type Fields = logging.Fields
 
+// LoggerManager manages logger instances with proper encapsulation.
+type LoggerManager struct {
+	logger logging.ApplicationLogger
+	once   sync.Once
+}
+
 var (
-	globalLogger logging.ApplicationLogger
-	once         sync.Once
+	defaultManagerInstance *LoggerManager //nolint:gochecknoglobals // Required for singleton logging infrastructure
+	defaultManagerOnce     sync.Once      //nolint:gochecknoglobals // Required for thread-safe singleton initialization
 )
 
-// initGlobalLogger initializes the global logger instance.
-func initGlobalLogger() {
-	once.Do(func() {
+// getDefaultManager returns the singleton logger manager instance.
+func getDefaultManager() *LoggerManager {
+	defaultManagerOnce.Do(func() {
+		defaultManagerInstance = &LoggerManager{}
+	})
+	return defaultManagerInstance
+}
+
+// initLogger initializes the logger instance.
+func (lm *LoggerManager) initLogger() {
+	lm.once.Do(func() {
 		config := logging.Config{
 			Level:            "INFO",
 			Format:           "json",
@@ -30,23 +44,33 @@ func initGlobalLogger() {
 		logger, err := logging.NewApplicationLogger(config)
 		if err != nil {
 			// Fallback - this should not happen with valid config
-			panic("Failed to initialize global logger: " + err.Error())
+			panic("Failed to initialize logger: " + err.Error())
 		}
-		globalLogger = logger
+		lm.logger = logger
 	})
 }
 
-// getLogger returns the global logger instance, initializing it if necessary.
-func getLogger() logging.ApplicationLogger {
-	if globalLogger == nil {
-		initGlobalLogger()
+// getLogger returns the logger instance, initializing it if necessary.
+func (lm *LoggerManager) getLogger() logging.ApplicationLogger {
+	if lm.logger == nil {
+		lm.initLogger()
 	}
-	return globalLogger
+	return lm.logger
+}
+
+// SetLogger allows setting a custom logger (useful for testing).
+func (lm *LoggerManager) SetLogger(logger logging.ApplicationLogger) {
+	lm.logger = logger
+}
+
+// getLogger returns the default logger instance.
+func getLogger() logging.ApplicationLogger {
+	return getDefaultManager().getLogger()
 }
 
 // SetGlobalLogger allows setting a custom global logger (useful for testing).
 func SetGlobalLogger(logger logging.ApplicationLogger) {
-	globalLogger = logger
+	getDefaultManager().SetLogger(logger)
 }
 
 // Context-aware logging functions (preferred)

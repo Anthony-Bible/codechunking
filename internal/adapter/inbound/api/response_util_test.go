@@ -160,7 +160,7 @@ func TestWriteJSON_VariousDataTypes(t *testing.T) {
 			err := WriteJSON(recorder, tt.statusCode, tt.data)
 
 			if tt.expectedErr {
-				assert.Error(t, err, "WriteJSON should return error for case: %s", tt.name)
+				require.Error(t, err, "WriteJSON should return error for case: %s", tt.name)
 			} else {
 				require.NoError(t, err, "WriteJSON should not return error for case: %s", tt.name)
 				assert.Equal(t, tt.statusCode, recorder.Code, "Status code should match for case: %s", tt.name)
@@ -226,7 +226,7 @@ func TestWriteJSON_ErrorHandling(t *testing.T) {
 				)
 				assert.Empty(t, recorder.Body.String(), "Body should be empty when encoding fails")
 			} else {
-				assert.NoError(t, err, "WriteJSON should not return error for case: %s", tt.name)
+				require.NoError(t, err, "WriteJSON should not return error for case: %s", tt.name)
 			}
 		})
 	}
@@ -331,8 +331,8 @@ func TestWriteJSON_ConcurrentAccess(t *testing.T) {
 					decodeErr := json.Unmarshal(recorder.Body.Bytes(), &response)
 					assert.NoError(t, decodeErr, "Response should be valid JSON")
 					if decodeErr == nil {
-						assert.Equal(t, float64(goroutineID), response["goroutine_id"]) // JSON numbers are float64
-						assert.Equal(t, float64(j), response["call_number"])
+						assert.InDelta(t, float64(goroutineID), response["goroutine_id"], 0) // JSON numbers are float64
+						assert.InDelta(t, float64(j), response["call_number"], 0)
 					}
 				}
 			}
@@ -343,7 +343,7 @@ func TestWriteJSON_ConcurrentAccess(t *testing.T) {
 
 	// Verify all calls succeeded
 	for i, err := range results {
-		assert.NoError(t, err, "Concurrent call %d should not fail", i)
+		require.NoError(t, err, "Concurrent call %d should not fail", i)
 	}
 }
 

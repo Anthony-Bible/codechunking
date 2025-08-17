@@ -112,7 +112,7 @@ type asyncHTTPLogEvent struct {
 
 // Global optimizations.
 var (
-	globalHTTPLogEntryPool = &httpLogEntryPool{
+	globalHTTPLogEntryPool = &httpLogEntryPool{ //nolint:gochecknoglobals // Performance-critical object pool for middleware
 		pool: sync.Pool{
 			New: func() interface{} {
 				return &HTTPLogEntry{
@@ -122,90 +122,162 @@ var (
 			},
 		},
 	}
-	globalMiddlewareMetrics middlewareMetrics
+	globalMiddlewareMetrics middlewareMetrics //nolint:gochecknoglobals // Performance-critical metrics collection
 )
 
-// Global log buffer for testing.
-var logBuffer *bytes.Buffer
+// LogBuffer manages a buffer for testing middleware logs.
+type LogBuffer struct {
+	buffer *bytes.Buffer
+	mu     sync.Mutex
+}
 
-func init() {
-	logBuffer = &bytes.Buffer{}
+// NewLogBuffer creates a new log buffer for testing.
+func NewLogBuffer() *LogBuffer {
+	return &LogBuffer{
+		buffer: &bytes.Buffer{},
+	}
+}
+
+// WriteString writes a string to the buffer in a thread-safe manner.
+func (lb *LogBuffer) WriteString(s string) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	lb.buffer.WriteString(s)
+}
+
+// String returns the buffer contents as a string.
+func (lb *LogBuffer) String() string {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	return lb.buffer.String()
+}
+
+// Len returns the buffer length.
+func (lb *LogBuffer) Len() int {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	return lb.buffer.Len()
+}
+
+// Reset clears the buffer.
+func (lb *LogBuffer) Reset() {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	lb.buffer.Reset()
+}
+
+// Write implements io.Writer for compatibility with fmt.Fprintf.
+func (lb *LogBuffer) Write(p []byte) (n int, err error) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	return lb.buffer.Write(p)
+}
+
+var (
+	logBufferInstance *LogBuffer //nolint:gochecknoglobals // Test infrastructure for middleware logging
+	logBufferOnce     sync.Once  //nolint:gochecknoglobals // Required for thread-safe test buffer initialization
+)
+
+// getLogBuffer returns the singleton log buffer instance.
+func getLogBuffer() *LogBuffer {
+	logBufferOnce.Do(func() {
+		logBufferInstance = NewLogBuffer()
+	})
+	return logBufferInstance
 }
 
 // NewStructuredLoggingMiddleware creates HTTP structured logging middleware with performance optimizations.
-func NewStructuredLoggingMiddleware(config LoggingConfig) func(http.Handler) http.Handler {
-	// Set default performance values
+func setLoggingConfigDefaults(config *LoggingConfig) {
 	if config.AsyncBufferSize == 0 {
 		config.AsyncBufferSize = 1000
 	}
 	if config.MaxRequestsPerSecond == 0 {
 		config.MaxRequestsPerSecond = 10000
 	}
+}
 
-	// Initialize async processing if enabled
-	var asyncChannel chan asyncHTTPLogEvent
-	if config.EnableAsyncLogging {
-		asyncChannel = make(chan asyncHTTPLogEvent, config.AsyncBufferSize)
-		startAsyncHTTPLogProcessor(asyncChannel)
+func initializeAsyncLogging(config LoggingConfig) chan asyncHTTPLogEvent {
+	if !config.EnableAsyncLogging {
+		return nil
 	}
+	asyncChannel := make(chan asyncHTTPLogEvent, config.AsyncBufferSize)
+	startAsyncHTTPLogProcessor(asyncChannel)
+	return asyncChannel
+}
 
-	// Start memory monitoring if enabled
+func initializeMemoryMonitoring(config LoggingConfig) {
 	if config.MaxMemoryMB > 0 || config.EnableResourceMetrics {
 		startHTTPMemoryMonitor(config)
 	}
+}
+
+func shouldExcludePath(path string, excludePaths []string) bool {
+	for _, excludePath := range excludePaths {
+		if path == excludePath {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldDropForSampling(sampleRate float64) bool {
+	if sampleRate > 0 && sampleRate < 1 {
+		return rand.Float64() > sampleRate
+	}
+	return false
+}
+
+func checkAndHandleRateLimit(maxRequestsPerSecond int, w http.ResponseWriter) bool {
+	if maxRequestsPerSecond <= 0 {
+		return true
+	}
+	if !checkRateLimit(maxRequestsPerSecond) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error": "Rate limit exceeded"}`))
+		return false
+	}
+	return true
+}
+
+func getOrGenerateCorrelationID(r *http.Request) string {
+	correlationID := r.Header.Get("X-Correlation-ID")
+	if correlationID == "" || !isValidCorrelationID(correlationID) {
+		correlationID = uuid.New().String()
+	}
+	return correlationID
+}
+
+func NewStructuredLoggingMiddleware(config LoggingConfig) func(http.Handler) http.Handler {
+	setLoggingConfigDefaults(&config)
+	asyncChannel := initializeAsyncLogging(config)
+	initializeMemoryMonitoring(config)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Check if path should be excluded
-			for _, excludePath := range config.ExcludePaths {
-				if r.URL.Path == excludePath {
-					next.ServeHTTP(w, r)
-					return
-				}
+			if shouldExcludePath(r.URL.Path, config.ExcludePaths) {
+				next.ServeHTTP(w, r)
+				return
 			}
 
-			// Check sampling rate and rate limiting
-			if config.SampleRate > 0 && config.SampleRate < 1 {
-				if rand.Float64() > config.SampleRate {
-					atomic.AddInt64(&globalMiddlewareMetrics.droppedRequests, 1)
-					next.ServeHTTP(w, r)
-					return
-				}
+			if shouldDropForSampling(config.SampleRate) {
+				atomic.AddInt64(&globalMiddlewareMetrics.droppedRequests, 1)
+				next.ServeHTTP(w, r)
+				return
 			}
 
-			// Rate limiting check
-			if config.MaxRequestsPerSecond > 0 {
-				if !checkRateLimit(config.MaxRequestsPerSecond) {
-					atomic.AddInt64(&globalMiddlewareMetrics.droppedRequests, 1)
-					w.WriteHeader(http.StatusTooManyRequests)
-					_, _ = w.Write([]byte(`{"error": "Rate limit exceeded"}`))
-					return
-				}
+			if !checkAndHandleRateLimit(config.MaxRequestsPerSecond, w) {
+				atomic.AddInt64(&globalMiddlewareMetrics.droppedRequests, 1)
+				return
 			}
 
-			// Get or generate correlation ID
-			correlationID := r.Header.Get("X-Correlation-ID")
-			if correlationID == "" {
-				correlationID = uuid.New().String()
-			} else if !isValidCorrelationID(correlationID) {
-				// Invalid format, generate new one
-				correlationID = uuid.New().String()
-			}
-
-			// Add correlation ID to context
+			correlationID := getOrGenerateCorrelationID(r)
 			ctx := context.WithValue(r.Context(), CorrelationIDKey, correlationID)
 			r = r.WithContext(ctx)
-
-			// Set correlation ID in response header
 			w.Header().Set("X-Correlation-ID", correlationID)
 
-			// Wrap response writer
 			rw := newResponseWriter(w)
-
-			// Record start time
 			start := time.Now()
 
-			// Handle panics
 			defer func() {
 				if err := recover(); err != nil {
 					logPanicRecovery(config, correlationID, r, err)
@@ -214,20 +286,15 @@ func NewStructuredLoggingMiddleware(config LoggingConfig) func(http.Handler) htt
 				}
 			}()
 
-			// Execute request
 			next.ServeHTTP(rw, r)
-
-			// Calculate duration
 			duration := time.Since(start)
 
-			// Log the request with optimizations
 			if config.EnableAsyncLogging && asyncChannel != nil {
 				logHTTPRequestAsync(config, correlationID, r, rw, duration, asyncChannel)
 			} else {
 				logHTTPRequest(config, correlationID, r, rw, duration)
 			}
 
-			// Update performance metrics
 			atomic.AddInt64(&globalMiddlewareMetrics.totalRequests, 1)
 			updateMiddlewareLatency(duration)
 		})
@@ -246,9 +313,9 @@ func startAsyncHTTPLogProcessor(asyncChannel chan asyncHTTPLogEvent) {
 
 // Rate limiting for HTTP requests.
 var (
-	rateCounter   int64
-	lastRateReset time.Time
-	rateMutex     sync.RWMutex
+	rateCounter   int64        //nolint:gochecknoglobals // Performance-critical rate limiting state
+	lastRateReset time.Time    //nolint:gochecknoglobals // Performance-critical rate limiting state
+	rateMutex     sync.RWMutex //nolint:gochecknoglobals // Performance-critical rate limiting state
 )
 
 func checkRateLimit(maxPerSec int) bool {
@@ -284,7 +351,7 @@ func startHTTPMemoryMonitor(config LoggingConfig) {
 
 			if config.MaxMemoryMB > 0 && currentMB > config.MaxMemoryMB {
 				// Could implement memory pressure response here
-				fmt.Fprintf(logBuffer,
+				fmt.Fprintf(getLogBuffer(),
 					`{"timestamp":"%s","level":"WARN","message":"High memory usage in middleware","memory_mb":%d}`+"\n",
 					time.Now().UTC().Format(time.RFC3339), currentMB)
 			}
@@ -431,7 +498,7 @@ func buildHTTPLogEntry(
 	}
 	// Include 'error' keyword in message for error scenarios expected by tests
 	if rw.statusCode >= 500 || rw.statusCode == http.StatusRequestTimeout {
-		message = message + " error"
+		message += " error"
 	}
 
 	// Fill log entry efficiently
@@ -472,7 +539,7 @@ func writeHTTPLogEntry(entry *HTTPLogEntry) {
 
 	bytesWritten := len(jsonData)
 	atomic.AddInt64(&globalMiddlewareMetrics.totalBytes, int64(bytesWritten))
-	logBuffer.WriteString(string(jsonData) + "\n")
+	getLogBuffer().WriteString(string(jsonData) + "\n")
 }
 
 // logPanicRecovery logs panic recovery.
@@ -493,7 +560,7 @@ func logPanicRecovery(config LoggingConfig, correlationID string, r *http.Reques
 	}
 
 	jsonData, _ := json.Marshal(entry)
-	logBuffer.WriteString(string(jsonData) + "\n")
+	getLogBuffer().WriteString(string(jsonData) + "\n")
 }
 
 // Helper functions.
@@ -599,11 +666,11 @@ func GetCorrelationIDFromContext(ctx context.Context) string {
 
 // Test helper functions.
 func getMiddlewareLogOutput() string {
-	if logBuffer.Len() == 0 {
+	if getLogBuffer().Len() == 0 {
 		return ""
 	}
-	output := strings.TrimSpace(logBuffer.String())
-	logBuffer.Reset()
+	output := strings.TrimSpace(getLogBuffer().String())
+	getLogBuffer().Reset()
 
 	// Return last log entry
 	lines := strings.Split(output, "\n")

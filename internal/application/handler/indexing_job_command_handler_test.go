@@ -1,12 +1,12 @@
 package handler
 
 import (
+	"codechunking/internal/application/dto"
 	"context"
 	"errors"
 	"testing"
 	"time"
 
-	"codechunking/internal/application/dto"
 	domain_errors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
@@ -139,9 +139,9 @@ func TestCreateIndexingJobCommandHandler_Handle_RepositoryNotFound(t *testing.T)
 	result, err := handler.Handle(ctx, command)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -169,9 +169,9 @@ func TestCreateIndexingJobCommandHandler_Handle_RepositoryProcessing(t *testing.
 	result, err := handler.Handle(ctx, command)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
 
 	mockService.AssertExpectations(t)
 }
@@ -191,7 +191,7 @@ func TestCreateIndexingJobCommandHandler_Handle_ValidationError(t *testing.T) {
 	result, err := handler.Handle(ctx, command)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "validation failed")
 
@@ -264,9 +264,9 @@ func TestGetIndexingJobQueryHandler_Handle_JobNotFound(t *testing.T) {
 	result, err := handler.Handle(ctx, query)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.ErrorIs(t, err, domain_errors.ErrJobNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrJobNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -292,9 +292,9 @@ func TestGetIndexingJobQueryHandler_Handle_RepositoryNotFound(t *testing.T) {
 	result, err := handler.Handle(ctx, query)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -446,7 +446,7 @@ func TestUpdateIndexingJobCommandHandler_Handle_ValidationError(t *testing.T) {
 	result, err := handler.Handle(ctx, command)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "validation failed")
 
@@ -476,9 +476,9 @@ func TestUpdateIndexingJobCommandHandler_Handle_JobNotFound(t *testing.T) {
 	result, err := handler.Handle(ctx, command)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.ErrorIs(t, err, domain_errors.ErrJobNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrJobNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -570,9 +570,9 @@ func TestListIndexingJobsQueryHandler_Handle_RepositoryNotFound(t *testing.T) {
 	result, err := handler.Handle(ctx, query)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -682,7 +682,7 @@ func TestListIndexingJobsQueryHandler_Handle_ValidationError(t *testing.T) {
 	result, err := handler.Handle(ctx, query)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "validation failed")
 
@@ -715,9 +715,9 @@ func TestListIndexingJobsQueryHandler_Handle_DatabaseError(t *testing.T) {
 	result, err := handler.Handle(ctx, query)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.ErrorIs(t, err, dbError)
+	require.ErrorIs(t, err, dbError)
 
 	mockService.AssertExpectations(t)
 }

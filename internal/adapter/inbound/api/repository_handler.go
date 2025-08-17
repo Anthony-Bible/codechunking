@@ -1,14 +1,13 @@
 package api
 
 import (
+	"codechunking/internal/application/common"
+	"codechunking/internal/application/dto"
+	"codechunking/internal/port/inbound"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
-
-	"codechunking/internal/application/common"
-	"codechunking/internal/application/dto"
-	"codechunking/internal/port/inbound"
 
 	"github.com/google/uuid"
 )
@@ -106,8 +105,8 @@ func (h *RepositoryHandler) GetRepositoryJobs(w http.ResponseWriter, r *http.Req
 	}
 
 	query := h.parseIndexingJobListQuery(r)
-	if err := h.validateIndexingJobListQuery(query); err != nil {
-		h.errorHandler.HandleValidationError(w, r, err)
+	if validateErr := h.validateIndexingJobListQuery(query); validateErr != nil {
+		h.errorHandler.HandleValidationError(w, r, validateErr)
 		return
 	}
 

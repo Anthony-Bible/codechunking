@@ -285,76 +285,80 @@ func TestDomainError_ImmutabilityAfterCreation(t *testing.T) {
 	}
 }
 
-func TestDomainError_EdgeCases(t *testing.T) {
-	t.Run("Nil string handling", func(t *testing.T) {
-		// Go doesn't have null strings, but test edge cases
-		err := NewDomainError("", "")
+// Helper function to create a string of repeated characters
+func createRepeatedString(char byte, length int) string {
+	bytes := make([]byte, length)
+	for i := range bytes {
+		bytes[i] = char
+	}
+	return string(bytes)
+}
 
-		if err == nil {
-			t.Fatal("Expected non-nil error even with empty strings")
-		}
+// Helper function to verify domain error fields match expected values
+func verifyDomainErrorFields(t *testing.T, err *DomainError, expectedMessage, expectedCode string) {
+	t.Helper()
 
-		if err.Error() != "" {
-			t.Errorf("Expected empty error message, got '%s'", err.Error())
-		}
+	if err == nil {
+		t.Fatal("Expected non-nil error")
+	}
 
-		if err.Code() != "" {
-			t.Errorf("Expected empty code, got '%s'", err.Code())
-		}
-	})
+	if err.Error() != expectedMessage {
+		t.Errorf("Expected error message '%s', got '%s'", expectedMessage, err.Error())
+	}
 
-	t.Run("Very long strings", func(t *testing.T) {
-		longMessage := make([]byte, 10000)
-		for i := range longMessage {
-			longMessage[i] = 'A'
-		}
-		longMessageStr := string(longMessage)
+	if err.Code() != expectedCode {
+		t.Errorf("Expected error code '%s', got '%s'", expectedCode, err.Code())
+	}
 
-		longCode := make([]byte, 1000)
-		for i := range longCode {
-			longCode[i] = 'B'
-		}
-		longCodeStr := string(longCode)
+	if err.Message() != expectedMessage {
+		t.Errorf("Expected message '%s', got '%s'", expectedMessage, err.Message())
+	}
+}
 
-		err := NewDomainError(longMessageStr, longCodeStr)
+// Helper function to run concurrent access tests
+func runConcurrentAccessTest(t *testing.T, err *DomainError, numGoroutines, operationsPerGoroutine int) {
+	t.Helper()
 
-		if err.Error() != longMessageStr {
-			t.Error("Long message not preserved correctly")
-		}
+	done := make(chan bool, numGoroutines)
 
-		if err.Code() != longCodeStr {
-			t.Error("Long code not preserved correctly")
-		}
-	})
+	for range numGoroutines {
+		go func() {
+			for range operationsPerGoroutine {
+				_ = err.Error()
+				_ = err.Message()
+				_ = err.Code()
+			}
+			done <- true
+		}()
+	}
 
-	t.Run("Concurrent access", func(t *testing.T) {
-		err := NewDomainError("Concurrent test", "CONCURRENT")
+	for range numGoroutines {
+		<-done
+	}
+}
 
-		// Test concurrent access (should be safe as it's read-only)
-		done := make(chan bool, 10)
+func TestDomainError_EmptyStringHandling(t *testing.T) {
+	// Go doesn't have null strings, but test edge cases with empty strings
+	err := NewDomainError("", "")
+	verifyDomainErrorFields(t, err, "", "")
+}
 
-		for range 10 {
-			go func() {
-				for range 100 {
-					_ = err.Error()
-					_ = err.Message()
-					_ = err.Code()
-				}
-				done <- true
-			}()
-		}
+func TestDomainError_VeryLongStrings(t *testing.T) {
+	longMessage := createRepeatedString('A', 10000)
+	longCode := createRepeatedString('B', 1000)
 
-		for range 10 {
-			<-done
-		}
+	err := NewDomainError(longMessage, longCode)
+	verifyDomainErrorFields(t, err, longMessage, longCode)
+}
 
-		// Verify values are still correct after concurrent access
-		if err.Error() != "Concurrent test" {
-			t.Error("Error message corrupted after concurrent access")
-		}
+func TestDomainError_ConcurrentAccess(t *testing.T) {
+	expectedMessage := "Concurrent test"
+	expectedCode := "CONCURRENT"
+	err := NewDomainError(expectedMessage, expectedCode)
 
-		if err.Code() != "CONCURRENT" {
-			t.Error("Error code corrupted after concurrent access")
-		}
-	})
+	// Test concurrent access (should be safe as it's read-only)
+	runConcurrentAccessTest(t, err, 10, 100)
+
+	// Verify values are still correct after concurrent access
+	verifyDomainErrorFields(t, err, expectedMessage, expectedCode)
 }

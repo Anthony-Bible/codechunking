@@ -264,96 +264,56 @@ func TestJobStatus_Constants(t *testing.T) {
 	}
 }
 
-func TestJobStatus_TransitionChains(t *testing.T) {
-	// Test complete transition chains
-	t.Run("Happy path flow", func(t *testing.T) {
-		// pending -> running -> completed
-		status := JobStatusPending
+func TestJobStatus_HappyPathFlow(t *testing.T) {
+	// Test complete successful flow: pending -> running -> completed
+	assertCanTransition(t, JobStatusPending, JobStatusRunning)
+	assertCanTransition(t, JobStatusRunning, JobStatusCompleted)
 
-		if !status.CanTransitionTo(JobStatusRunning) {
-			t.Error("Should be able to transition from pending to running")
-		}
-		status = JobStatusRunning
+	// Completed is terminal - no further transitions
+	assertTerminalStateCannotTransitionToAny(t, JobStatusCompleted)
+}
 
-		if !status.CanTransitionTo(JobStatusCompleted) {
-			t.Error("Should be able to transition from running to completed")
-		}
+func TestJobStatus_FailurePathFlow(t *testing.T) {
+	// Test failure flow: pending -> running -> failed
+	assertCanTransition(t, JobStatusPending, JobStatusRunning)
+	assertCanTransition(t, JobStatusRunning, JobStatusFailed)
 
-		// Completed is terminal - no further transitions
-		status = JobStatusCompleted
-		terminalTransitions := []JobStatus{
-			JobStatusPending, JobStatusRunning, JobStatusFailed, JobStatusCancelled,
-		}
+	// Failed is terminal - cannot restart
+	assertCannotTransition(t, JobStatusFailed, JobStatusPending)
+	assertTerminalStateCannotTransitionToAny(t, JobStatusFailed)
+}
 
-		for _, target := range terminalTransitions {
-			if status.CanTransitionTo(target) {
-				t.Errorf("Terminal status %s should not be able to transition to %s", status, target)
-			}
-		}
-	})
+func TestJobStatus_CancellationFromNonTerminalStates(t *testing.T) {
+	// Can cancel from pending and running states
+	assertCanTransition(t, JobStatusPending, JobStatusCancelled)
+	assertCanTransition(t, JobStatusRunning, JobStatusCancelled)
+}
 
-	t.Run("Failure path", func(t *testing.T) {
-		// pending -> running -> failed
-		status := JobStatusPending
+func TestJobStatus_TerminalStatesCannotBeCancelled(t *testing.T) {
+	// Terminal states cannot be cancelled
+	terminalStates := []JobStatus{
+		JobStatusCompleted,
+		JobStatusFailed,
+		JobStatusCancelled,
+	}
 
-		if !status.CanTransitionTo(JobStatusRunning) {
-			t.Error("Should be able to transition from pending to running")
-		}
-		status = JobStatusRunning
+	for _, terminal := range terminalStates {
+		assertCannotTransition(t, terminal, JobStatusCancelled)
+	}
+}
 
-		if !status.CanTransitionTo(JobStatusFailed) {
-			t.Error("Should be able to transition from running to failed")
-		}
+func TestJobStatus_NoRestartFromTerminalStates(t *testing.T) {
+	// Terminal states cannot restart to pending or running
+	terminalStates := []JobStatus{
+		JobStatusCompleted,
+		JobStatusFailed,
+		JobStatusCancelled,
+	}
 
-		// Failed is terminal
-		status = JobStatusFailed
-		if status.CanTransitionTo(JobStatusPending) {
-			t.Error("Failed status should not be able to transition back to pending")
-		}
-	})
-
-	t.Run("Cancellation paths", func(t *testing.T) {
-		// Can cancel from pending
-		if !JobStatusPending.CanTransitionTo(JobStatusCancelled) {
-			t.Error("Should be able to cancel from pending")
-		}
-
-		// Can cancel from running
-		if !JobStatusRunning.CanTransitionTo(JobStatusCancelled) {
-			t.Error("Should be able to cancel from running")
-		}
-
-		// Cannot cancel from terminal states
-		terminalStates := []JobStatus{
-			JobStatusCompleted,
-			JobStatusFailed,
-			JobStatusCancelled,
-		}
-
-		for _, terminal := range terminalStates {
-			if terminal.CanTransitionTo(JobStatusCancelled) {
-				t.Errorf("Should not be able to cancel from terminal state %s", terminal)
-			}
-		}
-	})
-
-	t.Run("No restart capability", func(t *testing.T) {
-		// Unlike repository status, job status doesn't allow restarting
-		terminalStates := []JobStatus{
-			JobStatusCompleted,
-			JobStatusFailed,
-			JobStatusCancelled,
-		}
-
-		for _, terminal := range terminalStates {
-			if terminal.CanTransitionTo(JobStatusPending) {
-				t.Errorf("Terminal status %s should not be able to restart to pending", terminal)
-			}
-			if terminal.CanTransitionTo(JobStatusRunning) {
-				t.Errorf("Terminal status %s should not be able to transition to running", terminal)
-			}
-		}
-	})
+	for _, terminal := range terminalStates {
+		assertCannotTransition(t, terminal, JobStatusPending)
+		assertCannotTransition(t, terminal, JobStatusRunning)
+	}
 }
 
 func TestJobStatus_TerminalStateConsistency(t *testing.T) {
@@ -403,6 +363,39 @@ func TestJobStatus_TerminalStateConsistency(t *testing.T) {
 					t.Errorf("Terminal status %s should not be able to transition to %s", terminal, target)
 				}
 			})
+		}
+	}
+}
+
+// Helper functions to reduce duplication and improve readability
+
+func assertCanTransition(t *testing.T, from, to JobStatus) {
+	t.Helper()
+	if !from.CanTransitionTo(to) {
+		t.Errorf("Should be able to transition from %s to %s", from, to)
+	}
+}
+
+func assertCannotTransition(t *testing.T, from, to JobStatus) {
+	t.Helper()
+	if from.CanTransitionTo(to) {
+		t.Errorf("Should not be able to transition from %s to %s", from, to)
+	}
+}
+
+func assertTerminalStateCannotTransitionToAny(t *testing.T, terminal JobStatus) {
+	t.Helper()
+	allTargets := []JobStatus{
+		JobStatusPending,
+		JobStatusRunning,
+		JobStatusCompleted,
+		JobStatusFailed,
+		JobStatusCancelled,
+	}
+
+	for _, target := range allTargets {
+		if terminal.CanTransitionTo(target) {
+			t.Errorf("Terminal status %s should not be able to transition to %s", terminal, target)
 		}
 	}
 }

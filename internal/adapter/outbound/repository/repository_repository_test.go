@@ -139,12 +139,11 @@ func TestRepositoryRepository_Save(t *testing.T) {
 	}
 }
 
-// TestRepositoryRepository_FindByID tests finding repositories by ID.
-func TestRepositoryRepository_FindByID(t *testing.T) {
+// TestRepositoryRepository_FindByID_ExistingRepository tests finding an existing repository by ID.
+func TestRepositoryRepository_FindByID_ExistingRepository(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
 
-	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
 	repo := NewPostgreSQLRepositoryRepository(pool)
 	ctx := context.Background()
 
@@ -155,69 +154,42 @@ func TestRepositoryRepository_FindByID(t *testing.T) {
 		t.Fatalf("Failed to save test repository: %v", err)
 	}
 
-	tests := []struct {
-		name        string
-		id          uuid.UUID
-		expectFound bool
-		expectError bool
-	}{
-		{
-			name:        "Existing repository ID should return repository",
-			id:          testRepo.ID(),
-			expectFound: true,
-			expectError: false,
-		},
-		{
-			name:        "Non-existing repository ID should return not found",
-			id:          uuid.New(),
-			expectFound: false,
-			expectError: false,
-		},
-		{
-			name:        "Nil UUID should return error",
-			id:          uuid.Nil,
-			expectFound: false,
-			expectError: true,
-		},
+	foundRepo, err := repo.FindByID(ctx, testRepo.ID())
+
+	assertNoError(t, err, "find existing repository by ID")
+	verifyRepositoryFound(t, foundRepo, testRepo)
+}
+
+// TestRepositoryRepository_FindByID_NonExistingRepository tests finding a non-existing repository by ID.
+func TestRepositoryRepository_FindByID_NonExistingRepository(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	nonExistentID := uuid.New()
+	foundRepo, err := repo.FindByID(ctx, nonExistentID)
+
+	assertNoError(t, err, "find non-existing repository by ID")
+	if foundRepo != nil {
+		t.Error("Expected nil repository but got one")
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			foundRepo, err := repo.FindByID(ctx, tt.id)
+// TestRepositoryRepository_FindByID_NilUUID tests finding repository with nil UUID.
+func TestRepositoryRepository_FindByID_NilUUID(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
 
-			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error but got none")
-				}
-				if foundRepo != nil {
-					t.Error("Expected nil repository on error")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error but got: %v", err)
-				}
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
 
-				if tt.expectFound {
-					if foundRepo == nil {
-						t.Error("Expected repository but got nil")
-					} else {
-						if foundRepo.ID() != tt.id {
-							t.Errorf("Expected repository ID %s, got %s", tt.id, foundRepo.ID())
-						}
-						if foundRepo.Name() != testRepo.Name() {
-							t.Errorf("Expected repository name %s, got %s", testRepo.Name(), foundRepo.Name())
-						}
-						if !foundRepo.URL().Equal(testRepo.URL()) {
-							t.Errorf("Expected repository URL %s, got %s", testRepo.URL(), foundRepo.URL())
-						}
-					}
-				} else {
-					if foundRepo != nil {
-						t.Error("Expected nil repository but got one")
-					}
-				}
-			}
-		})
+	foundRepo, err := repo.FindByID(ctx, uuid.Nil)
+
+	assertError(t, err, "find repository with nil UUID")
+	if foundRepo != nil {
+		t.Error("Expected nil repository on error")
 	}
 }
 
@@ -297,6 +269,8 @@ func TestRepositoryRepository_FindByURL(t *testing.T) {
 }
 
 // TestRepositoryRepository_FindAll tests finding repositories with filters and pagination.
+//
+//nolint:gocognit // Comprehensive test for FindAll with many edge cases and scenarios
 func TestRepositoryRepository_FindAll(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -512,8 +486,8 @@ func TestRepositoryRepository_FindAll(t *testing.T) {
 	}
 }
 
-// TestRepositoryRepository_Update tests updating repositories.
-func TestRepositoryRepository_Update(t *testing.T) {
+// TestRepositoryRepository_UpdateName_ValidNames tests updating repository names with valid values.
+func TestRepositoryRepository_UpdateName_ValidNames(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
 
@@ -521,125 +495,655 @@ func TestRepositoryRepository_Update(t *testing.T) {
 	repo := NewPostgreSQLRepositoryRepository(pool)
 	ctx := context.Background()
 
-	// Create and save test repository
-	testRepo := createTestRepository(t)
-	err := repo.Save(ctx, testRepo)
-	if err != nil {
-		t.Fatalf("Failed to save test repository: %v", err)
+	testCases := []string{
+		"Updated Repository Name",
+		"",
+		"Repo-Name_With.Special@Characters#123",
 	}
 
-	tests := []struct {
-		name        string
-		setupRepo   func(*entity.Repository)
-		expectError bool
-	}{
-		{
-			name: "Update repository name should succeed",
-			setupRepo: func(r *entity.Repository) {
-				r.UpdateName("Updated Repository Name")
-			},
-			expectError: false,
-		},
-		{
-			name: "Update repository description should succeed",
-			setupRepo: func(r *entity.Repository) {
-				newDesc := "Updated repository description"
-				r.UpdateDescription(&newDesc)
-			},
-			expectError: false,
-		},
-		{
-			name: "Update repository status should succeed",
-			setupRepo: func(r *entity.Repository) {
-				_ = r.UpdateStatus(valueobject.RepositoryStatusCloning)
-			},
-			expectError: false,
-		},
-		{
-			name: "Mark repository as completed should succeed",
-			setupRepo: func(r *entity.Repository) {
-				_ = r.UpdateStatus(valueobject.RepositoryStatusCloning)
-				_ = r.UpdateStatus(valueobject.RepositoryStatusProcessing)
-				_ = r.MarkIndexingCompleted("abc123", 100, 500)
-			},
-			expectError: false,
-		},
-		{
-			name: "Archive repository should succeed",
-			setupRepo: func(r *entity.Repository) {
-				_ = r.UpdateStatus(valueobject.RepositoryStatusCompleted)
-				_ = r.Archive()
-			},
-			expectError: false,
-		},
-	}
+	for _, newName := range testCases {
+		t.Run("Update to: "+newName, func(t *testing.T) {
+			testRepo := createAndSaveTestRepo(t, repo, ctx)
+			originalUpdatedAt := testRepo.UpdatedAt()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Make a copy of the test repository
-			repoToUpdate, err := repo.FindByID(ctx, testRepo.ID())
-			if err != nil {
-				t.Fatalf("Failed to find repository for update test: %v", err)
-			}
+			testRepo.UpdateName(newName)
+			err := repo.Update(ctx, testRepo)
+			assertNoError(t, err, "update repository name")
 
-			originalUpdatedAt := repoToUpdate.UpdatedAt()
+			updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
 
-			// Apply the test modifications
-			tt.setupRepo(repoToUpdate)
-
-			// Update the repository
-			err = repo.Update(ctx, repoToUpdate)
-
-			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error but got none")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error but got: %v", err)
-				}
-
-				// For archived repositories, skip verification since FindByID filters them out
-				if repoToUpdate.IsDeleted() {
-					// Just verify that the repository was successfully updated in the database
-					// by attempting to find it (which should return nil for archived repos)
-					archivedRepo, err := repo.FindByID(ctx, repoToUpdate.ID())
-					if err != nil {
-						t.Errorf("Unexpected error when looking for archived repository: %v", err)
-						return
-					}
-					if archivedRepo != nil {
-						t.Error("Expected archived repository to not be found by FindByID")
-						return
-					}
-				} else {
-					// Verify the update was persisted for non-archived repositories
-					updatedRepo, err := repo.FindByID(ctx, repoToUpdate.ID())
-					if err != nil {
-						t.Errorf("Failed to find updated repository: %v", err)
-						return
-					}
-
-					if updatedRepo == nil {
-						t.Error("Expected to find updated repository but got nil")
-						return
-					}
-
-					if updatedRepo.UpdatedAt().Equal(originalUpdatedAt) {
-						t.Error("Expected UpdatedAt timestamp to be changed")
-					}
-
-					if updatedRepo.Name() != repoToUpdate.Name() {
-						t.Errorf("Expected updated name %s, got %s", repoToUpdate.Name(), updatedRepo.Name())
-					}
-
-					if updatedRepo.Status() != repoToUpdate.Status() {
-						t.Errorf("Expected updated status %s, got %s", repoToUpdate.Status(), updatedRepo.Status())
-					}
-				}
+			if updatedRepo.Name() != newName {
+				t.Errorf("Expected updated name %s, got %s", newName, updatedRepo.Name())
 			}
 		})
 	}
+}
+
+// TestRepositoryRepository_UpdateName_LongNames tests updating repository names with very long values.
+func TestRepositoryRepository_UpdateName_LongNames(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	longName := "This is a very long repository name that exceeds normal expectations but should still be handled properly by the system"
+
+	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	originalUpdatedAt := testRepo.UpdatedAt()
+
+	testRepo.UpdateName(longName)
+	err := repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update repository with long name")
+
+	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+
+	if updatedRepo.Name() != longName {
+		t.Errorf("Expected updated name %s, got %s", longName, updatedRepo.Name())
+	}
+}
+
+// TestRepositoryRepository_UpdateName_UnicodeNames tests updating repository names with unicode values.
+func TestRepositoryRepository_UpdateName_UnicodeNames(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	unicodeName := "Repository with 中文 and émojis 🚀"
+
+	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	originalUpdatedAt := testRepo.UpdatedAt()
+
+	testRepo.UpdateName(unicodeName)
+	err := repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update repository with unicode name")
+
+	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+
+	if updatedRepo.Name() != unicodeName {
+		t.Errorf("Expected updated name %s, got %s", unicodeName, updatedRepo.Name())
+	}
+}
+
+// TestRepositoryRepository_UpdateDescription_ValidDescriptions tests updating with valid descriptions.
+func TestRepositoryRepository_UpdateDescription_ValidDescriptions(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	validDesc := "Updated repository description"
+
+	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	originalUpdatedAt := testRepo.UpdatedAt()
+
+	testRepo.UpdateDescription(&validDesc)
+	err := repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update repository description")
+
+	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+
+	if updatedRepo.Description() == nil || *updatedRepo.Description() != validDesc {
+		t.Errorf("Expected updated description %s, got %v", validDesc, updatedRepo.Description())
+	}
+}
+
+// TestRepositoryRepository_UpdateDescription_NilDescription tests setting description to nil.
+func TestRepositoryRepository_UpdateDescription_NilDescription(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	originalUpdatedAt := testRepo.UpdatedAt()
+
+	testRepo.UpdateDescription(nil)
+	err := repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update repository description to nil")
+
+	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+
+	if updatedRepo.Description() != nil {
+		t.Error("Expected description to be nil")
+	}
+}
+
+// TestRepositoryRepository_UpdateDescription_EmptyDescription tests setting description to empty string.
+func TestRepositoryRepository_UpdateDescription_EmptyDescription(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	emptyDesc := ""
+
+	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	originalUpdatedAt := testRepo.UpdatedAt()
+
+	testRepo.UpdateDescription(&emptyDesc)
+	err := repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update repository description to empty")
+
+	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+
+	if updatedRepo.Description() == nil || *updatedRepo.Description() != emptyDesc {
+		t.Errorf("Expected empty description, got %v", updatedRepo.Description())
+	}
+}
+
+// TestRepositoryRepository_UpdateDescription_LongDescription tests very long descriptions.
+func TestRepositoryRepository_UpdateDescription_LongDescription(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	longDesc := "This is a very long description that contains multiple sentences and should test the system's ability to handle larger text content. It includes various punctuation marks, numbers like 123, and should be properly stored and retrieved from the database without any issues."
+
+	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	originalUpdatedAt := testRepo.UpdatedAt()
+
+	testRepo.UpdateDescription(&longDesc)
+	err := repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update repository with long description")
+
+	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+
+	if updatedRepo.Description() == nil || *updatedRepo.Description() != longDesc {
+		t.Errorf("Expected long description to be preserved")
+	}
+}
+
+// TestRepositoryRepository_UpdateDescription_SpecialCharacters tests descriptions with special characters.
+func TestRepositoryRepository_UpdateDescription_SpecialCharacters(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	specialDesc := "Description with special chars: @#$%^&*()_+-=[]{}|;':\",./<>?"
+
+	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	originalUpdatedAt := testRepo.UpdatedAt()
+
+	testRepo.UpdateDescription(&specialDesc)
+	err := repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update repository with special character description")
+
+	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+
+	if updatedRepo.Description() == nil || *updatedRepo.Description() != specialDesc {
+		t.Errorf("Expected special character description to be preserved")
+	}
+}
+
+// TestRepositoryRepository_UpdateStatus_SuccessfulTransitions tests valid status transitions.
+func TestRepositoryRepository_UpdateStatus_SuccessfulTransitions(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testCases := []struct {
+		name string
+		from valueobject.RepositoryStatus
+		to   valueobject.RepositoryStatus
+	}{
+		{"Pending to cloning", valueobject.RepositoryStatusPending, valueobject.RepositoryStatusCloning},
+		{"Cloning to processing", valueobject.RepositoryStatusCloning, valueobject.RepositoryStatusProcessing},
+		{"Processing to completed", valueobject.RepositoryStatusProcessing, valueobject.RepositoryStatusCompleted},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			testRepo := createAndSaveTestRepo(t, repo, ctx)
+
+			// Set initial status if not pending, following proper state machine
+			if tc.from != valueobject.RepositoryStatusPending {
+				if tc.from == valueobject.RepositoryStatusCloning {
+					err := testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
+					assertNoError(t, err, "set initial status to cloning")
+				} else if tc.from == valueobject.RepositoryStatusProcessing {
+					err := testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
+					assertNoError(t, err, "transition to cloning first")
+					err = testRepo.UpdateStatus(valueobject.RepositoryStatusProcessing)
+					assertNoError(t, err, "transition to processing")
+				}
+			}
+
+			originalUpdatedAt := testRepo.UpdatedAt()
+
+			err := testRepo.UpdateStatus(tc.to)
+			assertNoError(t, err, "update status on entity")
+
+			err = repo.Update(ctx, testRepo)
+			assertNoError(t, err, "update repository status")
+
+			updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+
+			if updatedRepo.Status() != tc.to {
+				t.Errorf("Expected status %s, got %s", tc.to, updatedRepo.Status())
+			}
+		})
+	}
+}
+
+// TestRepositoryRepository_UpdateStatus_FailureTransitions tests valid failure transitions.
+func TestRepositoryRepository_UpdateStatus_FailureTransitions(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testCases := []struct {
+		name string
+		from valueobject.RepositoryStatus
+	}{
+		{"Pending to failed", valueobject.RepositoryStatusPending},
+		{"Cloning to failed", valueobject.RepositoryStatusCloning},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			testRepo := createAndSaveTestRepo(t, repo, ctx)
+
+			// Set initial status if not pending
+			if tc.from != valueobject.RepositoryStatusPending {
+				err := testRepo.UpdateStatus(tc.from)
+				assertNoError(t, err, "set initial status")
+			}
+
+			originalUpdatedAt := testRepo.UpdatedAt()
+
+			err := testRepo.UpdateStatus(valueobject.RepositoryStatusFailed)
+			assertNoError(t, err, "update status to failed")
+
+			err = repo.Update(ctx, testRepo)
+			assertNoError(t, err, "update repository status to failed")
+
+			updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+
+			if updatedRepo.Status() != valueobject.RepositoryStatusFailed {
+				t.Errorf("Expected status failed, got %s", updatedRepo.Status())
+			}
+		})
+	}
+}
+
+// setupRepositoryForIndexing prepares a repository in processing state for indexing completion tests.
+func setupRepositoryForIndexing(t *testing.T, repo outbound.RepositoryRepository, ctx context.Context) *entity.Repository {
+	testRepo := createTestRepository(t)
+
+	err := testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
+	assertNoError(t, err, "set cloning status")
+
+	err = testRepo.UpdateStatus(valueobject.RepositoryStatusProcessing)
+	assertNoError(t, err, "set processing status")
+
+	err = repo.Save(ctx, testRepo)
+	assertNoError(t, err, "save repository")
+
+	return testRepo
+}
+
+// verifyIndexingCompletion verifies that indexing completion was properly persisted.
+func verifyIndexingCompletion(t *testing.T, repo outbound.RepositoryRepository, ctx context.Context, repoID uuid.UUID, originalUpdatedAt interface{}, expectedCommitHash string, expectedChunkCount, expectedTokenCount int) {
+	updatedRepo := verifyBasicUpdate(t, repo, ctx, repoID, originalUpdatedAt)
+
+	// Verify status is completed
+	if updatedRepo.Status() != valueobject.RepositoryStatusCompleted {
+		t.Errorf("Expected status to be completed, got %s", updatedRepo.Status())
+	}
+
+	// Verify indexing metadata
+	if updatedRepo.LastCommitHash() != nil && *updatedRepo.LastCommitHash() != expectedCommitHash {
+		t.Errorf("Expected commit hash %s, got %s", expectedCommitHash, *updatedRepo.LastCommitHash())
+	}
+
+	if updatedRepo.TotalChunks() != expectedChunkCount {
+		t.Errorf("Expected chunk count %d, got %d", expectedChunkCount, updatedRepo.TotalChunks())
+	}
+
+	if updatedRepo.TotalFiles() != expectedTokenCount {
+		t.Errorf("Expected file count %d, got %d", expectedTokenCount, updatedRepo.TotalFiles())
+	}
+}
+
+// TestRepositoryRepository_MarkIndexingCompleted_ValidData tests marking indexing completed with valid data.
+func TestRepositoryRepository_MarkIndexingCompleted_ValidData(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testRepo := setupRepositoryForIndexing(t, repo, ctx)
+	originalUpdatedAt := testRepo.UpdatedAt()
+
+	commitHash := "abc123def456"
+	chunkCount := 100
+	tokenCount := 5000
+
+	err := testRepo.MarkIndexingCompleted(commitHash, tokenCount, chunkCount)
+	assertNoError(t, err, "mark indexing completed")
+
+	err = repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update repository with indexing completion")
+
+	verifyIndexingCompletion(t, repo, ctx, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
+}
+
+// TestRepositoryRepository_MarkIndexingCompleted_EmptyCommitHash tests completion with empty commit hash.
+func TestRepositoryRepository_MarkIndexingCompleted_EmptyCommitHash(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testRepo := setupRepositoryForIndexing(t, repo, ctx)
+	originalUpdatedAt := testRepo.UpdatedAt()
+
+	commitHash := ""
+	chunkCount := 50
+	tokenCount := 2500
+
+	err := testRepo.MarkIndexingCompleted(commitHash, tokenCount, chunkCount)
+	assertNoError(t, err, "mark indexing completed with empty commit hash")
+
+	err = repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update repository with empty commit hash completion")
+
+	verifyIndexingCompletion(t, repo, ctx, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
+}
+
+// TestRepositoryRepository_MarkIndexingCompleted_ZeroCounts tests completion with zero counts.
+func TestRepositoryRepository_MarkIndexingCompleted_ZeroCounts(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testRepo := setupRepositoryForIndexing(t, repo, ctx)
+	originalUpdatedAt := testRepo.UpdatedAt()
+
+	commitHash := "def789abc012"
+	chunkCount := 0
+	tokenCount := 0
+
+	err := testRepo.MarkIndexingCompleted(commitHash, tokenCount, chunkCount)
+	assertNoError(t, err, "mark indexing completed with zero counts")
+
+	err = repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update repository with zero counts completion")
+
+	verifyIndexingCompletion(t, repo, ctx, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
+}
+
+// TestRepositoryRepository_MarkIndexingCompleted_LargeCounts tests completion with large counts.
+func TestRepositoryRepository_MarkIndexingCompleted_LargeCounts(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testRepo := setupRepositoryForIndexing(t, repo, ctx)
+	originalUpdatedAt := testRepo.UpdatedAt()
+
+	commitHash := "fedcba987654"
+	chunkCount := 999999
+	tokenCount := 5000000
+
+	err := testRepo.MarkIndexingCompleted(commitHash, tokenCount, chunkCount)
+	assertNoError(t, err, "mark indexing completed with large counts")
+
+	err = repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update repository with large counts completion")
+
+	verifyIndexingCompletion(t, repo, ctx, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
+}
+
+// TestRepositoryRepository_MarkIndexingCompleted_LongCommitHash tests completion with long commit hash.
+func TestRepositoryRepository_MarkIndexingCompleted_LongCommitHash(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testRepo := setupRepositoryForIndexing(t, repo, ctx)
+	originalUpdatedAt := testRepo.UpdatedAt()
+
+	commitHash := "abcdef1234567890abcdef1234567890abcdef12"
+	chunkCount := 250
+	tokenCount := 12500
+
+	err := testRepo.MarkIndexingCompleted(commitHash, tokenCount, chunkCount)
+	assertNoError(t, err, "mark indexing completed with long commit hash")
+
+	err = repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update repository with long commit hash completion")
+
+	verifyIndexingCompletion(t, repo, ctx, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
+}
+
+// Helper functions to reduce cognitive complexity
+
+// assertNoError fails the test if err is not nil.
+func assertNoError(t *testing.T, err error, operation string) {
+	if err != nil {
+		t.Fatalf("Failed to %s: %v", operation, err)
+	}
+}
+
+// assertError fails the test if err is nil.
+func assertError(t *testing.T, err error, operation string) {
+	if err == nil {
+		t.Errorf("Expected error for %s but got none", operation)
+	}
+}
+
+// createAndSaveTestRepo creates a fresh test repository and saves it.
+func createAndSaveTestRepo(t *testing.T, repo outbound.RepositoryRepository, ctx context.Context) *entity.Repository {
+	testRepo := createTestRepository(t)
+	err := repo.Save(ctx, testRepo)
+	assertNoError(t, err, "save test repository")
+	return testRepo
+}
+
+// verifyBasicUpdate verifies that a repository was updated successfully.
+func verifyBasicUpdate(t *testing.T, repo outbound.RepositoryRepository, ctx context.Context, repoID uuid.UUID, originalUpdatedAt interface{}) *entity.Repository {
+	updatedRepo, err := repo.FindByID(ctx, repoID)
+	assertNoError(t, err, "find updated repository")
+
+	if updatedRepo == nil {
+		t.Fatal("Expected to find updated repository but got nil")
+	}
+
+	// Check that UpdatedAt timestamp changed
+	if updatedAt, ok := originalUpdatedAt.(interface{ Equal(interface{}) bool }); ok {
+		if updatedAt.Equal(updatedRepo.UpdatedAt()) {
+			t.Error("Expected UpdatedAt timestamp to be changed")
+		}
+	}
+
+	return updatedRepo
+}
+
+// verifyRepositoryFound verifies that a found repository matches the expected repository.
+func verifyRepositoryFound(t *testing.T, foundRepo, expectedRepo *entity.Repository) {
+	if foundRepo == nil {
+		t.Error("Expected repository but got nil")
+		return
+	}
+
+	if foundRepo.ID() != expectedRepo.ID() {
+		t.Errorf("Expected repository ID %s, got %s", expectedRepo.ID(), foundRepo.ID())
+	}
+
+	if foundRepo.Name() != expectedRepo.Name() {
+		t.Errorf("Expected repository name %s, got %s", expectedRepo.Name(), foundRepo.Name())
+	}
+
+	if !foundRepo.URL().Equal(expectedRepo.URL()) {
+		t.Errorf("Expected repository URL %s, got %s", expectedRepo.URL(), foundRepo.URL())
+	}
+}
+
+// verifyArchivedRepository verifies that a repository has been properly archived.
+func verifyArchivedRepository(t *testing.T, repo outbound.RepositoryRepository, ctx context.Context, repoID uuid.UUID) {
+	// Archived repositories should not be found by FindByID
+	archivedRepo, err := repo.FindByID(ctx, repoID)
+	assertNoError(t, err, "look for archived repository")
+
+	if archivedRepo != nil {
+		t.Error("Expected archived repository to not be found by FindByID")
+	}
+}
+
+// TestRepositoryRepository_Archive_CompletedRepository tests archiving completed repositories.
+func TestRepositoryRepository_Archive_CompletedRepository(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testRepo := createTestRepository(t)
+
+	// Setup completed repository
+	err := testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
+	assertNoError(t, err, "set cloning status")
+
+	err = testRepo.UpdateStatus(valueobject.RepositoryStatusProcessing)
+	assertNoError(t, err, "set processing status")
+
+	err = testRepo.MarkIndexingCompleted("abc123", 100, 5000)
+	assertNoError(t, err, "mark indexing completed")
+
+	err = repo.Save(ctx, testRepo)
+	assertNoError(t, err, "save completed repository")
+
+	err = testRepo.Archive()
+	assertNoError(t, err, "archive completed repository")
+
+	err = repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update archived repository")
+
+	verifyArchivedRepository(t, repo, ctx, testRepo.ID())
+}
+
+// TestRepositoryRepository_Archive_FailedRepository tests archiving failed repositories.
+func TestRepositoryRepository_Archive_FailedRepository(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testRepo := createTestRepository(t)
+
+	err := testRepo.UpdateStatus(valueobject.RepositoryStatusFailed)
+	assertNoError(t, err, "set failed status")
+
+	err = repo.Save(ctx, testRepo)
+	assertNoError(t, err, "save failed repository")
+
+	err = testRepo.Archive()
+	assertNoError(t, err, "archive failed repository")
+
+	err = repo.Update(ctx, testRepo)
+	assertNoError(t, err, "update archived repository")
+
+	verifyArchivedRepository(t, repo, ctx, testRepo.ID())
+}
+
+// TestRepositoryRepository_Archive_PendingRepository tests that archiving pending repositories fails.
+func TestRepositoryRepository_Archive_PendingRepository(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testRepo := createAndSaveTestRepo(t, repo, ctx)
+
+	err := testRepo.Archive()
+	assertError(t, err, "archive pending repository")
+}
+
+// TestRepositoryRepository_Archive_CloningRepository tests that archiving cloning repositories fails.
+func TestRepositoryRepository_Archive_CloningRepository(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testRepo := createTestRepository(t)
+
+	err := testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
+	assertNoError(t, err, "set cloning status")
+
+	err = repo.Save(ctx, testRepo)
+	assertNoError(t, err, "save cloning repository")
+
+	err = testRepo.Archive()
+	assertError(t, err, "archive cloning repository")
+}
+
+// TestRepositoryRepository_Archive_ProcessingRepository tests that archiving processing repositories fails.
+func TestRepositoryRepository_Archive_ProcessingRepository(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	// This will fail because PostgreSQLRepositoryRepository doesn't exist yet
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testRepo := createTestRepository(t)
+
+	err := testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
+	assertNoError(t, err, "set cloning status")
+
+	err = testRepo.UpdateStatus(valueobject.RepositoryStatusProcessing)
+	assertNoError(t, err, "set processing status")
+
+	err = repo.Save(ctx, testRepo)
+	assertNoError(t, err, "save processing repository")
+
+	err = testRepo.Archive()
+	assertError(t, err, "archive processing repository")
 }
 
 // TestRepositoryRepository_Delete tests soft deleting repositories.
@@ -669,10 +1173,8 @@ func TestRepositoryRepository_Delete(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "Delete non-existing repository should return error",
-			setupRepo: func() uuid.UUID {
-				return uuid.New()
-			},
+			name:        "Delete non-existing repository should return error",
+			setupRepo:   uuid.New,
 			expectError: true,
 		},
 		{

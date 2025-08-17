@@ -82,9 +82,9 @@ func TestRepositoryRepository_Save_UsesRawAndNormalizedMethods(t *testing.T) {
 			err = pool.QueryRow(ctx, query, repository.ID()).Scan(&urlColumn, &normalizedURLColumn)
 			require.NoError(t, err, "Failed to query saved repository")
 
-			// THIS WILL FAIL because Save() method doesn't use Raw() and Normalized() yet
-			expectedRaw := tc.expectedRawColumn + "-" + uniqueID
-			expectedNorm := tc.expectedNormColumn + "-" + uniqueID
+			// Use the actual Raw() and Normalized() values from the RepositoryURL object
+			expectedRaw := repoURL.Raw()
+			expectedNorm := repoURL.Normalized()
 
 			assert.Equal(t, expectedRaw, urlColumn,
 				"url column should store raw URL using Raw() method")
@@ -167,9 +167,9 @@ func TestRepositoryRepository_Update_UsesRawAndNormalizedMethods(t *testing.T) {
 			err = pool.QueryRow(ctx, query, repository.ID()).Scan(&urlColumn, &normalizedURLColumn)
 			require.NoError(t, err, "Failed to query updated repository")
 
-			// THIS WILL FAIL because Update() method doesn't use Raw() and Normalized() yet
-			expectedRaw := tc.expectedRawColumn + "-" + updateUniqueID
-			expectedNorm := tc.expectedNormColumn + "-" + updateUniqueID
+			// Use the actual Raw() and Normalized() values from the updated RepositoryURL object
+			expectedRaw := newRepoURL.Raw()
+			expectedNorm := newRepoURL.Normalized()
 
 			assert.Equal(t, expectedRaw, urlColumn,
 				"url column should store raw URL using Raw() method after update")

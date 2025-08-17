@@ -1,16 +1,15 @@
 package api
 
 import (
+	"codechunking/internal/adapter/inbound/api/testutil"
+	"codechunking/internal/application/dto"
+	"codechunking/internal/domain/errors/domain"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"codechunking/internal/adapter/inbound/api/testutil"
-	"codechunking/internal/application/dto"
-	"codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -688,7 +687,7 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 				require.NoError(t, err)
 
 				assert.Equal(t, testutil.TestJobID1(), response.ID)
-				assert.Equal(t, testutil.TestRepositoryID1, response.RepositoryID)
+				assert.Equal(t, testutil.TestRepositoryID1(), response.RepositoryID)
 				assert.Equal(t, "completed", response.Status)
 				assert.Equal(t, 1250, response.FilesProcessed)
 				assert.Equal(t, 5000, response.ChunksCreated)

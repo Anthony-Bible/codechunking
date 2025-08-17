@@ -1,11 +1,10 @@
 package entity
 
 import (
+	"codechunking/internal/domain/valueobject"
 	"errors"
 	"testing"
 	"time"
-
-	"codechunking/internal/domain/valueobject"
 
 	"github.com/google/uuid"
 )
@@ -409,7 +408,9 @@ func TestRepository_Archive(t *testing.T) {
 	testURL, _ := valueobject.NewRepositoryURL("https://github.com/owner/repo")
 	repo := NewRepository(testURL, "Test", nil, nil)
 
-	// Set to a state that can be archived
+	// Set to a state that can be archived (must go through proper transitions)
+	_ = repo.UpdateStatus(valueobject.RepositoryStatusCloning)
+	_ = repo.UpdateStatus(valueobject.RepositoryStatusProcessing)
 	_ = repo.UpdateStatus(valueobject.RepositoryStatusCompleted)
 
 	originalUpdatedAt := repo.UpdatedAt()
@@ -441,7 +442,9 @@ func TestRepository_Archive_AlreadyArchived(t *testing.T) {
 	testURL, _ := valueobject.NewRepositoryURL("https://github.com/owner/repo")
 	repo := NewRepository(testURL, "Test", nil, nil)
 
-	// Archive the repository first
+	// Archive the repository first (must go through proper transitions)
+	_ = repo.UpdateStatus(valueobject.RepositoryStatusCloning)
+	_ = repo.UpdateStatus(valueobject.RepositoryStatusProcessing)
 	_ = repo.UpdateStatus(valueobject.RepositoryStatusCompleted)
 	_ = repo.Archive()
 
@@ -464,7 +467,9 @@ func TestRepository_Restore(t *testing.T) {
 	testURL, _ := valueobject.NewRepositoryURL("https://github.com/owner/repo")
 	repo := NewRepository(testURL, "Test", nil, nil)
 
-	// Archive the repository first
+	// Archive the repository first (must go through proper transitions)
+	_ = repo.UpdateStatus(valueobject.RepositoryStatusCloning)
+	_ = repo.UpdateStatus(valueobject.RepositoryStatusProcessing)
 	_ = repo.UpdateStatus(valueobject.RepositoryStatusCompleted)
 	_ = repo.Archive()
 

@@ -1,12 +1,11 @@
 package api
 
 import (
+	"codechunking/internal/adapter/inbound/api/testutil"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"codechunking/internal/adapter/inbound/api/testutil"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -240,7 +239,7 @@ func TestRouteRegistry_ServeMuxIntegration(t *testing.T) {
 	}
 }
 
-// Helper function to create parameter capture handler
+// Helper function to create parameter capture handler.
 func createParamCaptureHandler() (http.HandlerFunc, *map[string]string) {
 	var capturedParams map[string]string
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -250,8 +249,10 @@ func createParamCaptureHandler() (http.HandlerFunc, *map[string]string) {
 	return handler, &capturedParams
 }
 
-// Helper function to setup test registry with mocks
-func setupTestRegistryWithMocks(setupMocks func(*testutil.MockRepositoryService)) (*testutil.MockRepositoryService, *testutil.MockHealthService, *testutil.MockErrorHandler) {
+// Helper function to setup test registry with mocks.
+func setupTestRegistryWithMocks(
+	setupMocks func(*testutil.MockRepositoryService),
+) (*testutil.MockRepositoryService, *testutil.MockHealthService, *testutil.MockErrorHandler) {
 	mockHealthService := testutil.NewMockHealthService()
 	mockRepositoryService := testutil.NewMockRepositoryService()
 	mockErrorHandler := testutil.NewMockErrorHandler()
@@ -263,7 +264,7 @@ func setupTestRegistryWithMocks(setupMocks func(*testutil.MockRepositoryService)
 	return mockRepositoryService, mockHealthService, mockErrorHandler
 }
 
-// Helper function to register route based on path pattern
+// Helper function to register route based on path pattern.
 func registerRouteForPath(registry *RouteRegistry, path string, handler http.HandlerFunc) error {
 	if strings.Contains(path, "/jobs/") {
 		return registry.RegisterRoute("GET /repositories/{id}/jobs/{job_id}", handler)
@@ -277,7 +278,7 @@ func registerRouteForPath(registry *RouteRegistry, path string, handler http.Han
 	return nil
 }
 
-// Helper function to assert extracted parameters
+// Helper function to assert extracted parameters.
 func assertExtractedParams(t *testing.T, expectedParams map[string]string, capturedParams map[string]string) {
 	for key, expectedValue := range expectedParams {
 		actualValue, exists := capturedParams[key]
@@ -681,27 +682,27 @@ func TestRouteValidation_ErrorMessageConstants(t *testing.T) {
 		}{
 			{
 				constantName:   "ErrEmptyPattern",
-				expectedValue:  "route pattern cannot be empty",
+				expectedValue:  "ErrEmptyPattern: route pattern cannot be empty",
 				usageLocations: []string{"validatePattern"},
 			},
 			{
 				constantName:   "ErrWhitespacePattern",
-				expectedValue:  "route pattern cannot be only whitespace",
+				expectedValue:  "ErrWhitespacePattern: route pattern cannot be only whitespace",
 				usageLocations: []string{"validatePattern"},
 			},
 			{
 				constantName:   "ErrInvalidPatternFormat",
-				expectedValue:  "invalid route pattern format: must have format 'METHOD /path'",
+				expectedValue:  "ErrInvalidPatternFormat: invalid route pattern format: must have format 'METHOD /path'",
 				usageLocations: []string{"validatePattern"},
 			},
 			{
 				constantName:   "ErrEmptyMethod",
-				expectedValue:  "HTTP method cannot be empty",
+				expectedValue:  "ErrEmptyMethod: HTTP method cannot be empty",
 				usageLocations: []string{"validatePattern"},
 			},
 			{
 				constantName:   "ErrInvalidMethod",
-				expectedValue:  "invalid HTTP method: must be one of GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
+				expectedValue:  "ErrInvalidMethod: invalid HTTP method 'INVALID' in pattern 'INVALID /health': must be one of GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
 				usageLocations: []string{"validatePattern", "isValidHTTPMethod"},
 			},
 		}

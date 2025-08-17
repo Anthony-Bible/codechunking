@@ -1,12 +1,11 @@
 package valueobject
 
 import (
+	"codechunking/internal/domain/normalization"
 	"strings"
 	"testing"
 	"time"
 	"unicode"
-
-	"codechunking/internal/domain/normalization"
 )
 
 // FuzzNormalizeRepositoryURL tests URL normalization with random inputs
@@ -274,7 +273,7 @@ func normalizeURLPair(url1, url2 string) (string, string, error, error) {
 }
 
 // createAndCompareRepositoryURLs creates RepositoryURL objects and compares them for equality.
-// Returns: areEqual, createErr1, createErr2
+// Returns: areEqual, createErr1, createErr2.
 func createAndCompareRepositoryURLs(url1, url2 string) (bool, error, error) {
 	repoURL1, createErr1 := NewRepositoryURL(url1)
 	repoURL2, createErr2 := NewRepositoryURL(url2)
@@ -309,8 +308,13 @@ func validateNonEquivalentURLs(t *testing.T, url1, url2, normalized1, normalized
 
 	if createErr1 == nil && createErr2 == nil {
 		if areEqual {
-			t.Errorf("Non-equivalent URLs should create different RepositoryURL objects:\nURL1: %s -> %s\nURL2: %s -> %s",
-				url1, normalized1, url2, normalized2)
+			t.Errorf(
+				"Non-equivalent URLs should create different RepositoryURL objects:\nURL1: %s -> %s\nURL2: %s -> %s",
+				url1,
+				normalized1,
+				url2,
+				normalized2,
+			)
 		}
 	}
 }

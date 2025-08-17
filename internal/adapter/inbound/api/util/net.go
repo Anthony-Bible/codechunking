@@ -82,6 +82,11 @@ func extractIPFromRemoteAddr(remoteAddr string) string {
 		return ipv4IP
 	}
 
+	// If no valid IP was extracted and the remoteAddr is malformed (e.g., ":8080"), return empty string
+	if strings.HasPrefix(remoteAddr, ":") {
+		return ""
+	}
+
 	return remoteAddr
 }
 

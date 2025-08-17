@@ -166,7 +166,7 @@ func TestCorrelationIntegration_ServiceToNATS(t *testing.T) {
 	assert.Equal(t, correlationID, natsLogEntry.CorrelationID)
 
 	// Verify the repository ID was passed through correctly
-	assert.InDelta(t, "repo-123", natsLogEntry.Metadata["repository_id"], 0)
+	assert.Equal(t, "repo-123", natsLogEntry.Metadata["repository_id"])
 }
 
 // TestCorrelationIntegration_EndToEndWorkflow tests full end-to-end correlation across all components.
@@ -290,9 +290,9 @@ func TestCorrelationIntegration_EndToEndWorkflow(t *testing.T) {
 	// Verify repository ID is propagated through all operations
 	repoID := serviceLog.Metadata["repository_id"].(string)
 	assert.NotEmpty(t, repoID)
-	assert.InDelta(t, repoID, indexingLog.Metadata["repository_id"], 0)
-	assert.InDelta(t, repoID, publisherLog.Metadata["repository_id"], 0)
-	assert.InDelta(t, repoID, consumerLog.Metadata["repository_id"], 0)
+	assert.Equal(t, repoID, indexingLog.Metadata["repository_id"])
+	assert.Equal(t, repoID, publisherLog.Metadata["repository_id"])
+	assert.Equal(t, repoID, consumerLog.Metadata["repository_id"])
 }
 
 // TestCorrelationIntegration_ErrorPropagation tests correlation ID propagation during error scenarios.

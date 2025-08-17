@@ -102,11 +102,11 @@ func TestNATSLogger_ConnectionEvents(t *testing.T) {
 			assert.Equal(t, "nats-connection-123", logEntry.CorrelationID)
 
 			// Verify NATS-specific metadata
-			assert.InDelta(t, tt.event.Type, logEntry.Metadata["event_type"], 0)
-			assert.InDelta(t, tt.event.ServerURL, logEntry.Metadata["server_url"], 0)
-			assert.InDelta(t, tt.event.ConnectionID, logEntry.Metadata["connection_id"], 0)
+			assert.Equal(t, tt.event.Type, logEntry.Metadata["event_type"])
+			assert.Equal(t, tt.event.ServerURL, logEntry.Metadata["server_url"])
+			assert.Equal(t, tt.event.ConnectionID, logEntry.Metadata["connection_id"])
 			assert.InDelta(t, float64(tt.event.AttemptCount), logEntry.Metadata["attempt_count"], 0)
-			assert.InDelta(t, tt.event.Success, logEntry.Metadata["success"], 0)
+			assert.Equal(t, tt.event.Success, logEntry.Metadata["success"])
 
 			if tt.event.Duration > 0 {
 				assert.Contains(t, logEntry.Metadata, "duration")
@@ -117,7 +117,7 @@ func TestNATSLogger_ConnectionEvents(t *testing.T) {
 			}
 
 			if tt.event.Reason != "" {
-				assert.InDelta(t, tt.event.Reason, logEntry.Metadata["reason"], 0)
+				assert.Equal(t, tt.event.Reason, logEntry.Metadata["reason"])
 			}
 		})
 	}
@@ -203,19 +203,19 @@ func TestNATSLogger_MessagePublishing(t *testing.T) {
 			assert.Equal(t, "publish-correlation-456", logEntry.CorrelationID)
 
 			// Verify NATS publish-specific metadata
-			assert.InDelta(t, tt.event.Subject, logEntry.Metadata["subject"], 0)
-			assert.InDelta(t, tt.event.MessageID, logEntry.Metadata["message_id"], 0)
+			assert.Equal(t, tt.event.Subject, logEntry.Metadata["subject"])
+			assert.Equal(t, tt.event.MessageID, logEntry.Metadata["message_id"])
 			assert.InDelta(t, float64(tt.event.MessageSize), logEntry.Metadata["message_size"], 0)
-			assert.InDelta(t, tt.event.Success, logEntry.Metadata["success"], 0)
+			assert.Equal(t, tt.event.Success, logEntry.Metadata["success"])
 			assert.Contains(t, logEntry.Metadata, "duration")
 			assert.InDelta(t, float64(tt.event.Retries), logEntry.Metadata["retries"], 0)
 
 			if tt.event.QueueName != "" {
-				assert.InDelta(t, tt.event.QueueName, logEntry.Metadata["queue_name"], 0)
+				assert.Equal(t, tt.event.QueueName, logEntry.Metadata["queue_name"])
 			}
 
 			if tt.event.DeliveryPolicy != "" {
-				assert.InDelta(t, tt.event.DeliveryPolicy, logEntry.Metadata["delivery_policy"], 0)
+				assert.Equal(t, tt.event.DeliveryPolicy, logEntry.Metadata["delivery_policy"])
 			}
 
 			if tt.event.Error != nil {
@@ -313,12 +313,12 @@ func TestNATSLogger_MessageConsumption(t *testing.T) {
 			assert.Equal(t, "consume-correlation-789", logEntry.CorrelationID)
 
 			// Verify NATS consume-specific metadata
-			assert.InDelta(t, tt.event.Subject, logEntry.Metadata["subject"], 0)
-			assert.InDelta(t, tt.event.MessageID, logEntry.Metadata["message_id"], 0)
+			assert.Equal(t, tt.event.Subject, logEntry.Metadata["subject"])
+			assert.Equal(t, tt.event.MessageID, logEntry.Metadata["message_id"])
 			assert.InDelta(t, float64(tt.event.MessageSize), logEntry.Metadata["message_size"], 0)
-			assert.InDelta(t, tt.event.Success, logEntry.Metadata["success"], 0)
+			assert.Equal(t, tt.event.Success, logEntry.Metadata["success"])
 			assert.Contains(t, logEntry.Metadata, "processing_time")
-			assert.InDelta(t, tt.event.ConsumerGroup, logEntry.Metadata["consumer_group"], 0)
+			assert.Equal(t, tt.event.ConsumerGroup, logEntry.Metadata["consumer_group"])
 			assert.InDelta(t, float64(tt.event.DeliveryAttempt), logEntry.Metadata["delivery_attempt"], 0)
 			assert.Contains(t, logEntry.Metadata, "queued_time")
 
@@ -331,12 +331,12 @@ func TestNATSLogger_MessageConsumption(t *testing.T) {
 			}
 
 			if tt.event.WillRetry {
-				assert.InDelta(t, true, logEntry.Metadata["will_retry"], 0)
+				assert.Equal(t, true, logEntry.Metadata["will_retry"])
 				assert.Contains(t, logEntry.Metadata, "next_retry_at")
 			}
 
 			if tt.event.Rejected {
-				assert.InDelta(t, true, logEntry.Metadata["rejected"], 0)
+				assert.Equal(t, true, logEntry.Metadata["rejected"])
 			}
 		})
 	}
@@ -441,13 +441,13 @@ func TestNATSLogger_JetStreamOperations(t *testing.T) {
 			assert.Equal(t, "jetstream-correlation-101", logEntry.CorrelationID)
 
 			// Verify JetStream-specific metadata
-			assert.InDelta(t, tt.event.Operation, logEntry.Metadata["js_operation"], 0)
-			assert.InDelta(t, tt.event.StreamName, logEntry.Metadata["stream_name"], 0)
-			assert.InDelta(t, tt.event.Success, logEntry.Metadata["success"], 0)
+			assert.Equal(t, tt.event.Operation, logEntry.Metadata["js_operation"])
+			assert.Equal(t, tt.event.StreamName, logEntry.Metadata["stream_name"])
+			assert.Equal(t, tt.event.Success, logEntry.Metadata["success"])
 			assert.Contains(t, logEntry.Metadata, "duration")
 
 			if tt.event.ConsumerName != "" {
-				assert.InDelta(t, tt.event.ConsumerName, logEntry.Metadata["consumer_name"], 0)
+				assert.Equal(t, tt.event.ConsumerName, logEntry.Metadata["consumer_name"])
 			}
 
 			if tt.event.StreamConfig != nil {
@@ -529,7 +529,7 @@ func TestNATSLogger_PerformanceMetrics(t *testing.T) {
 	assert.InDelta(t, float64(5), logEntry.Metadata["connection_count"], 0)
 	assert.InDelta(t, float64(8), logEntry.Metadata["active_consumers"], 0)
 	assert.InDelta(t, float64(150), logEntry.Metadata["queue_depth"], 0)
-	assert.InDelta(t, "128MB", logEntry.Metadata["memory_usage"], 0)
+	assert.Equal(t, "128MB", logEntry.Metadata["memory_usage"])
 	assert.Contains(t, logEntry.Metadata, "time_window")
 }
 
@@ -593,8 +593,8 @@ func TestNATSLogger_ErrorCorrelation(t *testing.T) {
 	// Both errors should have same correlation ID for tracing
 	assert.Equal(t, correlationID, publishLogEntry.CorrelationID)
 	assert.Equal(t, correlationID, consumeLogEntry.CorrelationID)
-	assert.InDelta(t, "msg-error-001", publishLogEntry.Metadata["message_id"], 0)
-	assert.InDelta(t, "msg-error-001", consumeLogEntry.Metadata["message_id"], 0)
+	assert.Equal(t, "msg-error-001", publishLogEntry.Metadata["message_id"])
+	assert.Equal(t, "msg-error-001", consumeLogEntry.Metadata["message_id"])
 }
 
 // Test helper - structures are now implemented in nats_logger.go

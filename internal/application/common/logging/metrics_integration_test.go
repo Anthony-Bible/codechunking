@@ -110,10 +110,10 @@ func TestMetricsIntegration_PrometheusStyleMetrics(t *testing.T) {
 			assert.Contains(t, logEntry.Message, "Metric recorded")
 
 			// Verify metric metadata
-			assert.InDelta(t, tt.metricType, logEntry.Metadata["metric_type"], 0)
-			assert.InDelta(t, tt.metricName, logEntry.Metadata["metric_name"], 0)
+			assert.Equal(t, tt.metricType, logEntry.Metadata["metric_type"])
+			assert.Equal(t, tt.metricName, logEntry.Metadata["metric_name"])
 			assert.InDelta(t, tt.value, logEntry.Metadata["metric_value"], 0)
-			assert.InDelta(t, tt.operation, logEntry.Metadata["operation"], 0)
+			assert.Equal(t, tt.operation, logEntry.Metadata["operation"])
 
 			// Verify labels
 			assert.Contains(t, logEntry.Metadata, "labels")
@@ -288,8 +288,8 @@ func TestMetricsIntegration_ApplicationMetrics(t *testing.T) {
 			}
 
 			// Verify specific metric values
-			assert.InDelta(t, tt.metricsData.Category, logEntry.Metadata["category"], 0)
-			assert.InDelta(t, tt.metricsData.Operation, logEntry.Metadata["operation"], 0)
+			assert.Equal(t, tt.metricsData.Category, logEntry.Metadata["category"])
+			assert.Equal(t, tt.metricsData.Operation, logEntry.Metadata["operation"])
 			assert.InDelta(t, tt.metricsData.Throughput, logEntry.Metadata["throughput"], 0)
 			assert.InDelta(t, tt.metricsData.ErrorRate, logEntry.Metadata["error_rate"], 0)
 
@@ -485,8 +485,8 @@ func TestMetricsIntegration_HealthMetrics(t *testing.T) {
 			assert.Equal(t, "health_check", logEntry.Operation)
 
 			// Verify health status in metadata
-			assert.InDelta(t, tt.healthData.Overall.Status, logEntry.Metadata["overall_status"], 0)
-			assert.InDelta(t, tt.healthData.Overall.Message, logEntry.Metadata["overall_message"], 0)
+			assert.Equal(t, tt.healthData.Overall.Status, logEntry.Metadata["overall_status"])
+			assert.Equal(t, tt.healthData.Overall.Message, logEntry.Metadata["overall_message"])
 
 			// Verify component health details
 			assert.Contains(t, logEntry.Metadata, "database")
@@ -623,8 +623,8 @@ func TestMetricsIntegration_CustomMetrics(t *testing.T) {
 			}
 
 			// Verify specific values
-			assert.InDelta(t, tt.customMetrics.Namespace, logEntry.Metadata["namespace"], 0)
-			assert.InDelta(t, tt.customMetrics.Category, logEntry.Metadata["category"], 0)
+			assert.Equal(t, tt.customMetrics.Namespace, logEntry.Metadata["namespace"])
+			assert.Equal(t, tt.customMetrics.Category, logEntry.Metadata["category"])
 
 			// Verify metrics structure
 			metrics := logEntry.Metadata["metrics"].(map[string]interface{})

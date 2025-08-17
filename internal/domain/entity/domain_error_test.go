@@ -15,7 +15,7 @@ func TestNewDomainError(t *testing.T) {
 			name:     "Normal error creation",
 			message:  "Something went wrong",
 			code:     "SOMETHING_WRONG",
-			expected: &DomainError{message: "Something went wrong", code: "SOMETHING_WRONG"},
+			expected: NewDomainError("Something went wrong", "SOMETHING_WRONG"),
 		},
 		{
 			name:     "Empty message",
@@ -285,7 +285,7 @@ func TestDomainError_ImmutabilityAfterCreation(t *testing.T) {
 	}
 }
 
-// Helper function to create a string of repeated characters
+// Helper function to create a string of repeated characters.
 func createRepeatedString(char byte, length int) string {
 	bytes := make([]byte, length)
 	for i := range bytes {
@@ -294,7 +294,7 @@ func createRepeatedString(char byte, length int) string {
 	return string(bytes)
 }
 
-// Helper function to verify domain error fields match expected values
+// Helper function to verify domain error fields match expected values.
 func verifyDomainErrorFields(t *testing.T, err *DomainError, expectedMessage, expectedCode string) {
 	t.Helper()
 
@@ -315,7 +315,7 @@ func verifyDomainErrorFields(t *testing.T, err *DomainError, expectedMessage, ex
 	}
 }
 
-// Helper function to run concurrent access tests
+// Helper function to run concurrent access tests.
 func runConcurrentAccessTest(t *testing.T, err *DomainError, numGoroutines, operationsPerGoroutine int) {
 	t.Helper()
 

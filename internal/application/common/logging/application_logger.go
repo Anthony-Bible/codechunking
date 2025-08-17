@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bytes"
+	"codechunking/internal/adapter/inbound/api/middleware"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,8 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"codechunking/internal/adapter/inbound/api/middleware"
 
 	"github.com/google/uuid"
 )
@@ -458,7 +457,11 @@ func (l *applicationLoggerImpl) WithComponent(component string) ApplicationLogge
 }
 
 // logEntry creates and logs a structured log entry with performance optimizations.
-func (l *applicationLoggerImpl) createBufferLogEntry(ctx context.Context, level, message, errorStr, correlationID string, fields Fields) *LogEntry {
+func (l *applicationLoggerImpl) createBufferLogEntry(
+	ctx context.Context,
+	level, message, errorStr, correlationID string,
+	fields Fields,
+) *LogEntry {
 	component := l.component
 	if component == "" {
 		component = "default"

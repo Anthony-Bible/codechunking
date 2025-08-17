@@ -1,6 +1,8 @@
 package messaging
 
 import (
+	"codechunking/internal/config"
+	"codechunking/internal/port/outbound"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,9 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"codechunking/internal/config"
-	"codechunking/internal/port/outbound"
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"

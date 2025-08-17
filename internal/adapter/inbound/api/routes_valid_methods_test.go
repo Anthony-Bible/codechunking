@@ -533,10 +533,10 @@ func getPackageValidMethodsVariable() interface{} {
 	return nil
 }
 
-// TestCurrentImplementation_AllocationBaseline documents the current state
-// This test should PASS initially and shows the problem we're trying to solve.
-func TestCurrentImplementation_AllocationBaseline(t *testing.T) {
-	t.Run("current_implementation_creates_map_on_each_call", func(t *testing.T) {
+// TestOptimizedImplementation_AllocationBaseline verifies the optimized implementation
+// This test verifies that optimization successfully reduced allocations.
+func TestOptimizedImplementation_AllocationBaseline(t *testing.T) {
+	t.Run("optimized_implementation_uses_minimal_allocations", func(t *testing.T) {
 		registry := NewRouteRegistry()
 
 		// Measure current allocation behavior
@@ -556,10 +556,10 @@ func TestCurrentImplementation_AllocationBaseline(t *testing.T) {
 		allocsDiff := m2.Mallocs - m1.Mallocs
 		t.Logf("Current implementation: %d allocations for 100 calls", allocsDiff)
 
-		// This documents the current (inefficient) behavior
-		// We expect roughly 100+ allocations (1 per call or more)
-		assert.GreaterOrEqual(t, allocsDiff, uint64(50),
-			"Current implementation should show significant allocations (indicating the problem exists)")
+		// After optimization: We expect minimal allocations
+		// Optimized implementation should have very few allocations (previously 100+, now <10)
+		assert.LessOrEqual(t, allocsDiff, uint64(10),
+			"Optimized implementation should show minimal allocations (indicating the optimization worked)")
 	})
 }
 

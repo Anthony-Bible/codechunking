@@ -1,11 +1,10 @@
 package common
 
 import (
+	"codechunking/internal/domain/valueobject"
 	"errors"
 	"strings"
 	"testing"
-
-	"codechunking/internal/domain/valueobject"
 )
 
 // TestValidateRepositoryStatus_DomainIntegrationRequired tests that FAIL with current map-based implementation
@@ -181,7 +180,7 @@ func TestValidateRepositoryStatus_DomainIntegrationRequired(t *testing.T) {
 
 // Helper functions for validation testing to reduce cognitive complexity
 
-// assertValidationError checks that err is a ValidationError with the expected message
+// assertValidationError checks that err is a ValidationError with the expected message.
 func assertValidationError(t *testing.T, err error, expectedMessage string) {
 	t.Helper()
 	var validationError ValidationError
@@ -194,7 +193,7 @@ func assertValidationError(t *testing.T, err error, expectedMessage string) {
 	}
 }
 
-// assertStatusValid checks that a status is accepted by ValidateRepositoryStatus
+// assertStatusValid checks that a status is accepted by ValidateRepositoryStatus.
 func assertStatusValid(t *testing.T, status string) {
 	t.Helper()
 	err := ValidateRepositoryStatus(status)
@@ -203,7 +202,7 @@ func assertStatusValid(t *testing.T, status string) {
 	}
 }
 
-// assertStatusInvalid checks that a status is rejected by ValidateRepositoryStatus
+// assertStatusInvalid checks that a status is rejected by ValidateRepositoryStatus.
 func assertStatusInvalid(t *testing.T, status string, expectedMessage string) {
 	t.Helper()
 	err := ValidateRepositoryStatus(status)
@@ -214,7 +213,7 @@ func assertStatusInvalid(t *testing.T, status string, expectedMessage string) {
 	assertValidationError(t, err, expectedMessage)
 }
 
-// TestValidateRepositoryStatus_SignaturePreservation verifies the function signature remains unchanged
+// TestValidateRepositoryStatus_SignaturePreservation verifies the function signature remains unchanged.
 func TestValidateRepositoryStatus_SignaturePreservation(t *testing.T) {
 	// This test verifies that after refactoring, the function signature remains the same
 	// and behavior is preserved for all current use cases
@@ -225,7 +224,7 @@ func TestValidateRepositoryStatus_SignaturePreservation(t *testing.T) {
 	}
 }
 
-// TestValidateRepositoryStatus_InvalidStatusesRemainInvalid verifies invalid statuses are still rejected
+// TestValidateRepositoryStatus_InvalidStatusesRemainInvalid verifies invalid statuses are still rejected.
 func TestValidateRepositoryStatus_InvalidStatusesRemainInvalid(t *testing.T) {
 	invalidStatuses := []string{"invalid", "PENDING", "unknown", "   ", " pending "}
 
@@ -236,7 +235,7 @@ func TestValidateRepositoryStatus_InvalidStatusesRemainInvalid(t *testing.T) {
 	}
 }
 
-// TestValidateRepositoryStatus_DomainValidStatusesConsistency tests domain layer valid statuses
+// TestValidateRepositoryStatus_DomainValidStatusesConsistency tests domain layer valid statuses.
 func TestValidateRepositoryStatus_DomainValidStatusesConsistency(t *testing.T) {
 	// Test every status that domain layer knows about
 	allDomainStatuses := []string{"pending", "cloning", "processing", "completed", "failed", "archived"}
@@ -262,7 +261,7 @@ func TestValidateRepositoryStatus_DomainValidStatusesConsistency(t *testing.T) {
 	}
 }
 
-// TestValidateRepositoryStatus_DomainInvalidStatusesConsistency tests domain layer invalid statuses
+// TestValidateRepositoryStatus_DomainInvalidStatusesConsistency tests domain layer invalid statuses.
 func TestValidateRepositoryStatus_DomainInvalidStatusesConsistency(t *testing.T) {
 	// Test invalid statuses - both should reject
 	invalidStatuses := []string{"invalid", "nonexistent", "PENDING"}

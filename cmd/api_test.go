@@ -637,9 +637,10 @@ func LoadAPIConfiguration() (*config.Config, error) {
 	if err := v.ReadInConfig(); err != nil {
 		// Config file not found; use defaults and environment
 		var configFileNotFoundError viper.ConfigFileNotFoundError
-		if errors.As(err, &configFileNotFoundError) {
+		if !errors.As(err, &configFileNotFoundError) {
 			return nil, err
 		}
+		// Continue with defaults and environment when config file is not found
 	}
 
 	// Load configuration with better error handling

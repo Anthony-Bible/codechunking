@@ -1,12 +1,11 @@
 package cmd
 
 import (
+	"codechunking/internal/config"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
-
-	"codechunking/internal/config"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"

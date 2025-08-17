@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"codechunking/internal/adapter/inbound/api/util"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,8 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"codechunking/internal/adapter/inbound/api/util"
 
 	"github.com/google/uuid"
 )

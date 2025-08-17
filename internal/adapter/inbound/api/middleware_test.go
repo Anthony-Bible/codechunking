@@ -1,14 +1,13 @@
 package api
 
 import (
+	"codechunking/internal/adapter/inbound/api/testutil"
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"codechunking/internal/adapter/inbound/api/testutil"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -466,7 +465,7 @@ func validateQueryParameterRequest(t *testing.T, logOutput string) {
 
 // Helper functions for middleware chain testing
 
-// createMiddlewareWithSharedLogger creates middleware chain with shared logging buffer
+// createMiddlewareWithSharedLogger creates middleware chain with shared logging buffer.
 func createMiddlewareWithSharedLogger(logBuffer *strings.Builder) []Middleware {
 	return []Middleware{
 		NewLoggingMiddleware(NewTestLogger(logBuffer)),
@@ -475,7 +474,7 @@ func createMiddlewareWithSharedLogger(logBuffer *strings.Builder) []Middleware {
 	}
 }
 
-// createMiddlewareForErrorRecovery creates middleware chain for error recovery testing
+// createMiddlewareForErrorRecovery creates middleware chain for error recovery testing.
 func createMiddlewareForErrorRecovery() []Middleware {
 	return []Middleware{
 		NewCORSMiddleware(),
@@ -484,7 +483,7 @@ func createMiddlewareForErrorRecovery() []Middleware {
 	}
 }
 
-// createNormalTestHandler creates a handler that returns successful response
+// createNormalTestHandler creates a handler that returns successful response.
 func createNormalTestHandler() http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -495,14 +494,14 @@ func createNormalTestHandler() http.HandlerFunc {
 	})
 }
 
-// createPanicTestHandler creates a handler that panics
+// createPanicTestHandler creates a handler that panics.
 func createPanicTestHandler() http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("test panic")
 	})
 }
 
-// validateCorrectOrder validates middleware execution in correct order
+// validateCorrectOrder validates middleware execution in correct order.
 func validateCorrectOrder(t *testing.T, recorder *httptest.ResponseRecorder, logOutput string) {
 	// Should have CORS headers
 	assert.Equal(t, "*", recorder.Header().Get("Access-Control-Allow-Origin"))
@@ -513,7 +512,7 @@ func validateCorrectOrder(t *testing.T, recorder *httptest.ResponseRecorder, log
 	assert.Equal(t, http.StatusOK, recorder.Code)
 }
 
-// validateErrorRecovery validates error middleware catches panic after other middleware
+// validateErrorRecovery validates error middleware catches panic after other middleware.
 func validateErrorRecovery(t *testing.T, recorder *httptest.ResponseRecorder) {
 	// Should still have CORS headers even after panic
 	assert.Equal(t, "*", recorder.Header().Get("Access-Control-Allow-Origin"))

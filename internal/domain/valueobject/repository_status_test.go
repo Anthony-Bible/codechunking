@@ -287,7 +287,7 @@ func TestRepositoryStatus_Constants(t *testing.T) {
 	}
 }
 
-// Helper function to assert valid repository status transition
+// Helper function to assert valid repository status transition.
 func assertRepoStatusTransition(t *testing.T, from, to RepositoryStatus, operation string) {
 	t.Helper()
 	if !from.CanTransitionTo(to) {
@@ -295,7 +295,7 @@ func assertRepoStatusTransition(t *testing.T, from, to RepositoryStatus, operati
 	}
 }
 
-// Helper function to test transitions for multiple repository statuses
+// Helper function to test transitions for multiple repository statuses.
 func testMultipleRepoTransitions(t *testing.T, statuses []RepositoryStatus, target RepositoryStatus, operation string) {
 	t.Helper()
 	for _, status := range statuses {

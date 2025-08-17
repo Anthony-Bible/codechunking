@@ -1,15 +1,14 @@
 package service
 
 import (
+	"codechunking/internal/adapter/inbound/api/testutil"
+	"codechunking/internal/application/dto"
+	"codechunking/internal/port/outbound"
 	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"codechunking/internal/adapter/inbound/api/testutil"
-	"codechunking/internal/application/dto"
-	"codechunking/internal/port/outbound"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -125,14 +124,14 @@ func TestHealthServiceAdapter_NATSPerformance(t *testing.T) {
 	})
 }
 
-// concurrentTestResult holds the results of concurrent health check testing
+// concurrentTestResult holds the results of concurrent health check testing.
 type concurrentTestResult struct {
 	successCount int64
 	errorCount   int64
 	responses    [][]dto.HealthResponse
 }
 
-// setupHealthServiceForConcurrentTest creates a health service with standard mocks for concurrent testing
+// setupHealthServiceForConcurrentTest creates a health service with standard mocks for concurrent testing.
 func setupHealthServiceForConcurrentTest() (*HealthServiceAdapter, *testutil.MockMessagePublisherWithHealthMonitoring) {
 	mockNATS := testutil.NewMockMessagePublisherWithHealthMonitoring()
 	mockRepo := &mockRepositoryRepo{findAllResult: nil}
@@ -141,8 +140,11 @@ func setupHealthServiceForConcurrentTest() (*HealthServiceAdapter, *testutil.Moc
 	return service, mockNATS
 }
 
-// runBasicConcurrentHealthChecks executes concurrent health checks and returns results
-func runBasicConcurrentHealthChecks(service *HealthServiceAdapter, numGoroutines, callsPerGoroutine int) *concurrentTestResult {
+// runBasicConcurrentHealthChecks executes concurrent health checks and returns results.
+func runBasicConcurrentHealthChecks(
+	service *HealthServiceAdapter,
+	numGoroutines, callsPerGoroutine int,
+) *concurrentTestResult {
 	var wg sync.WaitGroup
 	var successCount int64
 	var errorCount int64
@@ -177,7 +179,7 @@ func runBasicConcurrentHealthChecks(service *HealthServiceAdapter, numGoroutines
 	}
 }
 
-// validateResponseConsistency checks that all health responses are consistent and valid
+// validateResponseConsistency checks that all health responses are consistent and valid.
 func validateResponseConsistency(t *testing.T, results [][]dto.HealthResponse) {
 	for i := range results {
 		for j := range results[i] {
@@ -194,8 +196,11 @@ func validateResponseConsistency(t *testing.T, results [][]dto.HealthResponse) {
 	}
 }
 
-// runConcurrentTestWithStateChanges executes concurrent health checks while changing NATS state
-func runConcurrentTestWithStateChanges(service *HealthServiceAdapter, mockNATS *testutil.MockMessagePublisherWithHealthMonitoring) []dto.HealthResponse {
+// runConcurrentTestWithStateChanges executes concurrent health checks while changing NATS state.
+func runConcurrentTestWithStateChanges(
+	service *HealthServiceAdapter,
+	mockNATS *testutil.MockMessagePublisherWithHealthMonitoring,
+) []dto.HealthResponse {
 	const numReaders = 20
 	const numReads = 5
 
@@ -502,7 +507,7 @@ func TestHealthServiceAdapter_MemoryEfficiency(t *testing.T) {
 	})
 }
 
-// stressTestConfig holds configuration for stress testing
+// stressTestConfig holds configuration for stress testing.
 type stressTestConfig struct {
 	duration       time.Duration
 	maxConcurrency int
@@ -510,14 +515,14 @@ type stressTestConfig struct {
 	channelSize    int
 }
 
-// stressTestResults holds the results of a stress test
+// stressTestResults holds the results of a stress test.
 type stressTestResults struct {
 	totalRequests int64
 	totalErrors   int64
 	duration      time.Duration
 }
 
-// setupStressTestService creates a health service configured for stress testing
+// setupStressTestService creates a health service configured for stress testing.
 func setupStressTestService() *HealthServiceAdapter {
 	mockNATS := testutil.NewMockMessagePublisherWithHealthMonitoring()
 	mockRepo := &mockRepositoryRepo{findAllResult: nil}
@@ -525,8 +530,13 @@ func setupStressTestService() *HealthServiceAdapter {
 	return NewHealthServiceAdapter(mockRepo, mockJobs, mockNATS, "1.0.0").(*HealthServiceAdapter)
 }
 
-// runWorkerPool executes health checks using a worker pool pattern
-func runWorkerPool(service *HealthServiceAdapter, config stressTestConfig, requestChan <-chan struct{}, ctx context.Context) (int64, int64) {
+// runWorkerPool executes health checks using a worker pool pattern.
+func runWorkerPool(
+	service *HealthServiceAdapter,
+	config stressTestConfig,
+	requestChan <-chan struct{},
+	ctx context.Context,
+) (int64, int64) {
 	var wg sync.WaitGroup
 	var totalRequests int64
 	var totalErrors int64
@@ -550,7 +560,7 @@ func runWorkerPool(service *HealthServiceAdapter, config stressTestConfig, reque
 	return atomic.LoadInt64(&totalRequests), atomic.LoadInt64(&totalErrors)
 }
 
-// generateRequests creates a stream of requests at the specified rate
+// generateRequests creates a stream of requests at the specified rate.
 func generateRequests(config stressTestConfig, ctx context.Context) <-chan struct{} {
 	requestChan := make(chan struct{}, config.channelSize)
 
@@ -576,14 +586,14 @@ func generateRequests(config stressTestConfig, ctx context.Context) <-chan struc
 	return requestChan
 }
 
-// calculateStressTestMetrics computes performance metrics from test results
+// calculateStressTestMetrics computes performance metrics from test results.
 func calculateStressTestMetrics(results stressTestResults) (float64, float64) {
 	errorRate := float64(results.totalErrors) / float64(results.totalRequests)
 	throughput := float64(results.totalRequests) / results.duration.Seconds()
 	return errorRate, throughput
 }
 
-// validateStressTestResults performs assertions on stress test results
+// validateStressTestResults performs assertions on stress test results.
 func validateStressTestResults(t *testing.T, results stressTestResults) {
 	t.Logf("Processed %d requests with %d errors over %v", results.totalRequests, results.totalErrors, results.duration)
 
@@ -661,7 +671,7 @@ func TestHealthServiceAdapter_StressTest_WorkerPoolPattern(t *testing.T) {
 
 		// Create a small number of requests to test worker pool
 		requestChan := make(chan struct{}, 10)
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			requestChan <- struct{}{}
 		}
 		close(requestChan)

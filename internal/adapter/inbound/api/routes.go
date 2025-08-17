@@ -25,6 +25,7 @@ const (
 	TmplPathMustStartWithSlash  = "path '%s' in pattern '%s' must start with '/'"
 	TmplPathContainsDoubleSlash = "path '%s' in pattern '%s' contains double slashes"
 	TmplUnmatchedClosingBrace   = "invalid parameter syntax in pattern '%s': unmatched closing brace at position %d"
+	TmplInvalidMethod           = "ErrInvalidMethod: invalid HTTP method '%s' in pattern '%s': must be one of GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS"
 )
 
 // Parameter validation error codes for structured error reporting.
@@ -44,34 +45,36 @@ const (
 // newParameterSyntaxError creates a structured parameter syntax error with consistent formatting
 // This helper consolidates all parameter validation errors into a consistent format.
 func newParameterSyntaxError(errorCode, pattern string, details ...interface{}) error {
-	return fmt.Errorf("newParameterSyntaxError %s in pattern '%s': %v", errorCode, pattern, details)
+	return fmt.Errorf(
+		"newParameterSyntaxError: invalid parameter syntax %s in pattern '%s': %v",
+		errorCode,
+		pattern,
+		details,
+	)
 }
 
 // newRouteConflictError creates a structured route conflict error with consistent formatting
 // This helper consolidates all route conflict errors into a consistent format for easier debugging.
 func newRouteConflictError(conflictType, newPattern, existingPattern string) error {
 	return fmt.Errorf(
-		"newRouteConflictError %s: pattern '%s' conflicts with existing pattern '%s'",
+		"newRouteConflictError: route conflict %s: pattern '%s' conflicts with existing pattern '%s'",
 		conflictType,
 		newPattern,
 		existingPattern,
 	)
 }
 
-// validHTTPMethods returns the valid HTTP methods for route pattern validation.
-// This function eliminates map allocation on every validatePattern call by returning
-// a fresh map, while maintaining the same validation behavior.
-func validHTTPMethods() map[string]bool {
-	return map[string]bool{
-		"GET": true, "POST": true, "PUT": true, "DELETE": true,
-		"PATCH": true, "HEAD": true, "OPTIONS": true,
-	}
+// validHTTPMethods is the package-level variable containing valid HTTP methods for route pattern validation.
+// This variable eliminates map allocation on every validatePattern call.
+var validHTTPMethods = map[string]bool{
+	"GET": true, "POST": true, "PUT": true, "DELETE": true,
+	"PATCH": true, "HEAD": true, "OPTIONS": true,
 }
 
 // isValidHTTPMethod performs case-insensitive validation of HTTP methods without
 // string allocation by using strings.EqualFold for comparison.
 func isValidHTTPMethod(method string) bool {
-	for validMethod := range validHTTPMethods() {
+	for validMethod := range validHTTPMethods {
 		if strings.EqualFold(method, validMethod) {
 			return true
 		}
@@ -168,31 +171,54 @@ func (r *RouteRegistry) GetPatterns() []string {
 	return r.patterns
 }
 
+// trimSpaceIfNeeded efficiently trims whitespace only when necessary to avoid allocations.
+func trimSpaceIfNeeded(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	// Check if trimming is actually needed to avoid unnecessary allocations
+	if s[0] == ' ' || s[0] == '\t' || s[0] == '\r' || s[0] == '\n' ||
+		s[len(s)-1] == ' ' || s[len(s)-1] == '\t' || s[len(s)-1] == '\r' || s[len(s)-1] == '\n' {
+		return strings.TrimSpace(s)
+	}
+	return s
+}
+
+// parseMethodAndPath efficiently parses method and path without slice allocation.
+func parseMethodAndPath(pattern string) (method, path string, err error) {
+	spaceIndex := strings.Index(pattern, " ")
+	if spaceIndex == -1 {
+		return "", "", fmt.Errorf("ErrInvalidPatternFormat: %s", ErrInvalidPatternFormat)
+	}
+
+	method = trimSpaceIfNeeded(pattern[:spaceIndex])
+	path = trimSpaceIfNeeded(pattern[spaceIndex+1:])
+	return method, path, nil
+}
+
 // validatePattern validates a Go 1.22+ ServeMux pattern with detailed error messages.
 func (r *RouteRegistry) validatePattern(pattern string) error {
 	if pattern == "" {
-		return fmt.Errorf("%s", ErrEmptyPattern)
+		return fmt.Errorf("ErrEmptyPattern: %s", ErrEmptyPattern)
 	}
 
 	if strings.TrimSpace(pattern) == "" {
-		return fmt.Errorf("%s", ErrWhitespacePattern)
+		return fmt.Errorf("ErrWhitespacePattern: %s", ErrWhitespacePattern)
 	}
 
-	// Split method and path
-	parts := strings.SplitN(pattern, " ", 2)
-	if len(parts) != 2 {
-		return fmt.Errorf("%s", ErrInvalidPatternFormat)
+	// Parse method and path without slice allocation
+	method, path, err := parseMethodAndPath(pattern)
+	if err != nil {
+		return err
 	}
-
-	method, path := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 
 	// Validate HTTP method
 	if method == "" {
-		return fmt.Errorf("%s", ErrEmptyMethod)
+		return fmt.Errorf("ErrEmptyMethod: %s", ErrEmptyMethod)
 	}
 
 	if !isValidHTTPMethod(method) {
-		return fmt.Errorf("%s", ErrInvalidMethod)
+		return fmt.Errorf(TmplInvalidMethod, method, pattern)
 	}
 
 	// Validate path
@@ -219,9 +245,20 @@ func (r *RouteRegistry) validatePattern(pattern string) error {
 	return nil
 }
 
+// containsString checks if a slice contains a string without allocation.
+func containsString(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
 // validateParameterSyntax validates Go 1.22+ path parameter syntax with detailed error messages.
+// Optimized to use slice instead of map to reduce allocations.
 func (r *RouteRegistry) validateParameterSyntax(path, pattern string) error {
-	paramNames := make(map[string]bool)
+	var paramNames []string // Only allocate when first parameter is found
 	braceCount := 0
 
 	// Find all parameters and validate syntax
@@ -258,15 +295,20 @@ func (r *RouteRegistry) validateParameterSyntax(path, pattern string) error {
 				)
 			}
 
-			// Check for duplicate parameter names
-			if paramNames[paramName] {
+			// Check for duplicate parameter names using slice scan
+			if containsString(paramNames, paramName) {
 				return newParameterSyntaxError(
 					ParamDuplicateName,
 					pattern,
 					fmt.Sprintf("duplicate parameter name '%s'", paramName),
 				)
 			}
-			paramNames[paramName] = true
+
+			// Lazy allocation: only allocate slice when first parameter is found
+			if paramNames == nil {
+				paramNames = make([]string, 0, 4) // Pre-allocate for up to 4 params (typical case)
+			}
+			paramNames = append(paramNames, paramName)
 
 			i += closing + 1
 		case '}':
@@ -295,22 +337,18 @@ func isValidParameterName(name string) bool {
 
 // checkRouteConflict checks for conflicting route patterns with detailed error messages.
 func (r *RouteRegistry) checkRouteConflict(newPattern string) error {
-	// Parse the new pattern
-	newParts := strings.SplitN(newPattern, " ", 2)
-	if len(newParts) != 2 {
+	// Parse the new pattern without allocation
+	newMethod, newPath, err := parseMethodAndPath(newPattern)
+	if err != nil {
 		return nil // Already handled by validation
 	}
 
-	newMethod, newPath := strings.TrimSpace(newParts[0]), strings.TrimSpace(newParts[1])
-
 	// Check against all existing patterns
 	for _, existingPattern := range r.patterns {
-		existingParts := strings.SplitN(existingPattern, " ", 2)
-		if len(existingParts) != 2 {
+		existingMethod, existingPath, err := parseMethodAndPath(existingPattern)
+		if err != nil {
 			continue // Skip malformed patterns
 		}
-
-		existingMethod, existingPath := strings.TrimSpace(existingParts[0]), strings.TrimSpace(existingParts[1])
 
 		// Same method, check for path conflicts
 		if strings.EqualFold(newMethod, existingMethod) {

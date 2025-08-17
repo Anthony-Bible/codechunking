@@ -1,12 +1,11 @@
 package cmd
 
 import (
+	"codechunking/internal/config"
 	"context"
 	"sync"
 	"testing"
 	"time"
-
-	"codechunking/internal/config"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"

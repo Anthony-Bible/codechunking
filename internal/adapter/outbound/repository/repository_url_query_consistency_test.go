@@ -1,11 +1,10 @@
 package repository
 
 import (
-	"context"
-	"testing"
-
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/valueobject"
+	"context"
+	"testing"
 
 	"github.com/google/uuid"
 )
@@ -193,7 +192,12 @@ func skipIfURLsIdentical(t *testing.T, url valueobject.RepositoryURL, uniqueURL 
 }
 
 // saveTestRepository creates and saves a test repository with the given URL and name.
-func saveTestRepository(ctx context.Context, repo *PostgreSQLRepositoryRepository, url valueobject.RepositoryURL, name string) error {
+func saveTestRepository(
+	ctx context.Context,
+	repo *PostgreSQLRepositoryRepository,
+	url valueobject.RepositoryURL,
+	name string,
+) error {
 	testRepo := entity.NewRepository(url, name, nil, nil)
 	return repo.Save(ctx, testRepo)
 }

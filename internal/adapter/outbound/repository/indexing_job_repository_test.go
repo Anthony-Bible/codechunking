@@ -1,13 +1,12 @@
 package repository
 
 import (
-	"context"
-	"testing"
-	"time"
-
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
+	"context"
+	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -155,7 +154,10 @@ func TestIndexingJobRepository_FindByID_InvalidInput(t *testing.T) {
 
 // Helper function to setup a job for update testing.
 // Reduces setup duplication across focused update tests.
-func setupJobForUpdate(t *testing.T, pool *pgxpool.Pool) (*PostgreSQLIndexingJobRepository, *entity.IndexingJob, context.Context) {
+func setupJobForUpdate(
+	t *testing.T,
+	pool *pgxpool.Pool,
+) (*PostgreSQLIndexingJobRepository, *entity.IndexingJob, context.Context) {
 	// Create a test repository first (needed for foreign key)
 	repoRepo := NewPostgreSQLRepositoryRepository(pool)
 	testRepo := createTestRepository(t)
@@ -180,7 +182,13 @@ func setupJobForUpdate(t *testing.T, pool *pgxpool.Pool) (*PostgreSQLIndexingJob
 
 // Helper function to verify job persistence after update.
 // Reduces validation duplication across focused update tests.
-func verifyJobPersistence(t *testing.T, jobRepo *PostgreSQLIndexingJobRepository, ctx context.Context, expectedJob *entity.IndexingJob, originalUpdatedAt time.Time) {
+func verifyJobPersistence(
+	t *testing.T,
+	jobRepo *PostgreSQLIndexingJobRepository,
+	ctx context.Context,
+	expectedJob *entity.IndexingJob,
+	originalUpdatedAt time.Time,
+) {
 	updatedJob, err := jobRepo.FindByID(ctx, expectedJob.ID())
 	if err != nil {
 		t.Fatalf("Failed to find updated job: %v", err)
@@ -211,7 +219,12 @@ func verifyJobPersistence(t *testing.T, jobRepo *PostgreSQLIndexingJobRepository
 
 // Helper function to verify archived job behavior.
 // Reduces validation duplication for soft delete testing.
-func verifyArchivedJobBehavior(t *testing.T, jobRepo *PostgreSQLIndexingJobRepository, ctx context.Context, archivedJob *entity.IndexingJob) {
+func verifyArchivedJobBehavior(
+	t *testing.T,
+	jobRepo *PostgreSQLIndexingJobRepository,
+	ctx context.Context,
+	archivedJob *entity.IndexingJob,
+) {
 	// For archived jobs, FindByID should return nil (soft deleted)
 	foundJob, err := jobRepo.FindByID(ctx, archivedJob.ID())
 	if err != nil {
@@ -500,7 +513,12 @@ func TestIndexingJobRepository_Update_NonExistentJob(t *testing.T) {
 
 // Helper function to create and save a test job.
 // Reduces duplication across Delete tests.
-func createAndSaveTestJob(t *testing.T, jobRepo *PostgreSQLIndexingJobRepository, repoID uuid.UUID, ctx context.Context) uuid.UUID {
+func createAndSaveTestJob(
+	t *testing.T,
+	jobRepo *PostgreSQLIndexingJobRepository,
+	repoID uuid.UUID,
+	ctx context.Context,
+) uuid.UUID {
 	testJob := createTestIndexingJob(t, repoID)
 	err := jobRepo.Save(ctx, testJob)
 	if err != nil {
@@ -511,7 +529,12 @@ func createAndSaveTestJob(t *testing.T, jobRepo *PostgreSQLIndexingJobRepository
 
 // Helper function to create and save a completed test job.
 // Reduces duplication across Delete tests.
-func createAndSaveCompletedTestJob(t *testing.T, jobRepo *PostgreSQLIndexingJobRepository, repoID uuid.UUID, ctx context.Context) uuid.UUID {
+func createAndSaveCompletedTestJob(
+	t *testing.T,
+	jobRepo *PostgreSQLIndexingJobRepository,
+	repoID uuid.UUID,
+	ctx context.Context,
+) uuid.UUID {
 	testJob := createTestIndexingJob(t, repoID)
 	_ = testJob.Start()
 	_ = testJob.Complete(100, 500)
@@ -693,7 +716,12 @@ func TestIndexingJobRepository_ConcurrentUpdates(t *testing.T) {
 
 // setupTestRepositoryWithJobs creates a test repository and saves the specified number of jobs.
 // This helper reduces setup duplication across focused tests.
-func setupTestRepositoryWithJobs(t *testing.T, jobRepo *PostgreSQLIndexingJobRepository, repoRepo *PostgreSQLRepositoryRepository, numJobs int) (*entity.Repository, []*entity.IndexingJob) {
+func setupTestRepositoryWithJobs(
+	t *testing.T,
+	jobRepo *PostgreSQLIndexingJobRepository,
+	repoRepo *PostgreSQLRepositoryRepository,
+	numJobs int,
+) (*entity.Repository, []*entity.IndexingJob) {
 	ctx := context.Background()
 	testRepo := createTestRepository(t)
 	err := repoRepo.Save(ctx, testRepo)
@@ -702,7 +730,7 @@ func setupTestRepositoryWithJobs(t *testing.T, jobRepo *PostgreSQLIndexingJobRep
 	}
 
 	jobs := make([]*entity.IndexingJob, numJobs)
-	for i := 0; i < numJobs; i++ {
+	for i := range numJobs {
 		job := createTestIndexingJob(t, testRepo.ID())
 		err := jobRepo.Save(ctx, job)
 		if err != nil {

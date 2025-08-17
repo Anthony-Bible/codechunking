@@ -1,11 +1,10 @@
 package common
 
 import (
+	"codechunking/internal/domain/valueobject"
 	"errors"
 	"strings"
 	"testing"
-
-	"codechunking/internal/domain/valueobject"
 )
 
 // TestValidateRepositoryStatus_RefactoredBehavior tests that ValidateRepositoryStatus
@@ -172,7 +171,7 @@ func isSQLInjection(input string) bool {
 	return false
 }
 
-// assertDomainApplicationValidationMatch verifies that domain and application validation behave identically
+// assertDomainApplicationValidationMatch verifies that domain and application validation behave identically.
 func assertDomainApplicationValidationMatch(t *testing.T, status string) {
 	t.Helper()
 
@@ -194,7 +193,7 @@ func assertDomainApplicationValidationMatch(t *testing.T, status string) {
 	}
 }
 
-// assertApplicationReturnsValidationError verifies that the application returns a ValidationError for invalid statuses
+// assertApplicationReturnsValidationError verifies that the application returns a ValidationError for invalid statuses.
 func assertApplicationReturnsValidationError(t *testing.T, status string) {
 	t.Helper()
 
@@ -216,21 +215,21 @@ func assertApplicationReturnsValidationError(t *testing.T, status string) {
 }
 
 // assertRefactoredDomainAppValidationMatch compares domain vs application validation results
-// This is kept for backward compatibility with existing tests
+// This is kept for backward compatibility with existing tests.
 func assertRefactoredDomainAppValidationMatch(t *testing.T, status string) {
 	t.Helper()
 	assertDomainApplicationValidationMatch(t, status)
 	assertApplicationReturnsValidationError(t, status)
 }
 
-// extractRefactoredValidationError safely extracts ValidationError from an error
+// extractRefactoredValidationError safely extracts ValidationError from an error.
 func extractRefactoredValidationError(err error) (ValidationError, bool) {
 	var validationError ValidationError
 	ok := errors.As(err, &validationError)
 	return validationError, ok
 }
 
-// assertRefactoredValidationErrorMessage validates that the error has the expected message
+// assertRefactoredValidationErrorMessage validates that the error has the expected message.
 func assertRefactoredValidationErrorMessage(t *testing.T, err error, expectedMessage string) {
 	t.Helper()
 
@@ -245,7 +244,7 @@ func assertRefactoredValidationErrorMessage(t *testing.T, err error, expectedMes
 	}
 }
 
-// TestValidateRepositoryStatus_DomainIntegration_ValidStatuses tests statuses that should pass validation
+// TestValidateRepositoryStatus_DomainIntegration_ValidStatuses tests statuses that should pass validation.
 func TestValidateRepositoryStatus_DomainIntegration_ValidStatuses(t *testing.T) {
 	validStatuses := []string{"", "pending"}
 
@@ -259,7 +258,7 @@ func TestValidateRepositoryStatus_DomainIntegration_ValidStatuses(t *testing.T) 
 	}
 }
 
-// TestValidateRepositoryStatus_DomainIntegration_InvalidStatuses tests statuses that should fail validation
+// TestValidateRepositoryStatus_DomainIntegration_InvalidStatuses tests statuses that should fail validation.
 func TestValidateRepositoryStatus_DomainIntegration_InvalidStatuses(t *testing.T) {
 	invalidStatuses := []string{"invalid", "PENDING"}
 
@@ -279,7 +278,7 @@ func TestValidateRepositoryStatus_DomainIntegration_InvalidStatuses(t *testing.T
 	}
 }
 
-// TestValidateRepositoryStatus_DomainIntegration_ErrorHandling tests error type and message validation
+// TestValidateRepositoryStatus_DomainIntegration_ErrorHandling tests error type and message validation.
 func TestValidateRepositoryStatus_DomainIntegration_ErrorHandling(t *testing.T) {
 	t.Run("validation_error_structure", func(t *testing.T) {
 		status := "definitely_invalid_status"

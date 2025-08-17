@@ -600,7 +600,7 @@ func TestServiceErrorHandlingSpecification(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, response)
 		assert.Contains(t, err.Error(), "failed to retrieve repository") // Contextual error message
-		require.ErrorIs(t, err, underlyingError)                          // Original error preserved
+		require.ErrorIs(t, err, underlyingError)                         // Original error preserved
 	})
 
 	t.Run("should preserve domain error semantics", func(t *testing.T) {

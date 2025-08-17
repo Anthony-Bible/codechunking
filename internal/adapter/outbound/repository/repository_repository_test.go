@@ -1,12 +1,11 @@
 package repository
 
 import (
-	"context"
-	"testing"
-
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
+	"context"
+	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -680,10 +679,11 @@ func TestRepositoryRepository_UpdateStatus_SuccessfulTransitions(t *testing.T) {
 
 			// Set initial status if not pending, following proper state machine
 			if tc.from != valueobject.RepositoryStatusPending {
-				if tc.from == valueobject.RepositoryStatusCloning {
+				switch tc.from {
+				case valueobject.RepositoryStatusCloning:
 					err := testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
 					assertNoError(t, err, "set initial status to cloning")
-				} else if tc.from == valueobject.RepositoryStatusProcessing {
+				case valueobject.RepositoryStatusProcessing:
 					err := testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
 					assertNoError(t, err, "transition to cloning first")
 					err = testRepo.UpdateStatus(valueobject.RepositoryStatusProcessing)
@@ -753,7 +753,11 @@ func TestRepositoryRepository_UpdateStatus_FailureTransitions(t *testing.T) {
 }
 
 // setupRepositoryForIndexing prepares a repository in processing state for indexing completion tests.
-func setupRepositoryForIndexing(t *testing.T, repo outbound.RepositoryRepository, ctx context.Context) *entity.Repository {
+func setupRepositoryForIndexing(
+	t *testing.T,
+	repo outbound.RepositoryRepository,
+	ctx context.Context,
+) *entity.Repository {
 	testRepo := createTestRepository(t)
 
 	err := testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
@@ -769,7 +773,15 @@ func setupRepositoryForIndexing(t *testing.T, repo outbound.RepositoryRepository
 }
 
 // verifyIndexingCompletion verifies that indexing completion was properly persisted.
-func verifyIndexingCompletion(t *testing.T, repo outbound.RepositoryRepository, ctx context.Context, repoID uuid.UUID, originalUpdatedAt interface{}, expectedCommitHash string, expectedChunkCount, expectedTokenCount int) {
+func verifyIndexingCompletion(
+	t *testing.T,
+	repo outbound.RepositoryRepository,
+	ctx context.Context,
+	repoID uuid.UUID,
+	originalUpdatedAt interface{},
+	expectedCommitHash string,
+	expectedChunkCount, expectedTokenCount int,
+) {
 	updatedRepo := verifyBasicUpdate(t, repo, ctx, repoID, originalUpdatedAt)
 
 	// Verify status is completed
@@ -941,7 +953,13 @@ func createAndSaveTestRepo(t *testing.T, repo outbound.RepositoryRepository, ctx
 }
 
 // verifyBasicUpdate verifies that a repository was updated successfully.
-func verifyBasicUpdate(t *testing.T, repo outbound.RepositoryRepository, ctx context.Context, repoID uuid.UUID, originalUpdatedAt interface{}) *entity.Repository {
+func verifyBasicUpdate(
+	t *testing.T,
+	repo outbound.RepositoryRepository,
+	ctx context.Context,
+	repoID uuid.UUID,
+	originalUpdatedAt interface{},
+) *entity.Repository {
 	updatedRepo, err := repo.FindByID(ctx, repoID)
 	assertNoError(t, err, "find updated repository")
 

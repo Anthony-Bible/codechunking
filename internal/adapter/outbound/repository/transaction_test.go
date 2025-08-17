@@ -1,14 +1,13 @@
 package repository
 
 import (
+	"codechunking/internal/domain/entity"
+	"codechunking/internal/domain/valueobject"
+	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
 	"fmt"
 	"testing"
-
-	"codechunking/internal/domain/entity"
-	"codechunking/internal/domain/valueobject"
-	"codechunking/internal/port/outbound"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -278,7 +277,11 @@ type deadlockTestData struct {
 }
 
 // setupDeadlockTestRepositories creates and saves two test repositories for deadlock testing.
-func setupDeadlockTestRepositories(t *testing.T, ctx context.Context, repoRepo outbound.RepositoryRepository) *deadlockTestData {
+func setupDeadlockTestRepositories(
+	t *testing.T,
+	ctx context.Context,
+	repoRepo outbound.RepositoryRepository,
+) *deadlockTestData {
 	// Create two test repositories
 	testRepo1 := createTestRepository(t)
 	uniqueID2 := uuid.New().String()
@@ -302,7 +305,14 @@ func setupDeadlockTestRepositories(t *testing.T, ctx context.Context, repoRepo o
 }
 
 // runDeadlockProneTransaction runs a transaction that updates repositories in a specific order.
-func runDeadlockProneTransaction(ctx context.Context, txManager *TransactionManager, repoRepo outbound.RepositoryRepository, data *deadlockTestData, firstRepoID, secondRepoID uuid.UUID, txName string) error {
+func runDeadlockProneTransaction(
+	ctx context.Context,
+	txManager *TransactionManager,
+	repoRepo outbound.RepositoryRepository,
+	data *deadlockTestData,
+	firstRepoID, secondRepoID uuid.UUID,
+	txName string,
+) error {
 	return txManager.WithTransactionRetry(ctx, 3, func(ctx context.Context) error {
 		// Update first repository
 		firstRepo, err := repoRepo.FindByID(ctx, firstRepoID)
@@ -332,7 +342,12 @@ func runDeadlockProneTransaction(ctx context.Context, txManager *TransactionMana
 }
 
 // runConcurrentDeadlockTransactions runs two transactions concurrently in opposite order.
-func runConcurrentDeadlockTransactions(ctx context.Context, txManager *TransactionManager, repoRepo outbound.RepositoryRepository, data *deadlockTestData) (error, error) {
+func runConcurrentDeadlockTransactions(
+	ctx context.Context,
+	txManager *TransactionManager,
+	repoRepo outbound.RepositoryRepository,
+	data *deadlockTestData,
+) (error, error) {
 	tx1Done := make(chan error, 1)
 	tx2Done := make(chan error, 1)
 
@@ -392,7 +407,7 @@ func TestTransactionManager_DeadlockRetry(t *testing.T) {
 		data := setupDeadlockTestRepositories(t, ctx, repoRepo)
 
 		// Run multiple iterations to increase likelihood of testing retry mechanism
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			err1, err2 := runConcurrentDeadlockTransactions(ctx, txManager, repoRepo, data)
 
 			// At least one transaction should always succeed
@@ -471,7 +486,11 @@ func setupAtomicTransactionTest(t *testing.T) *atomicTransactionTestSetup {
 }
 
 // performAtomicRepositoryAndJobSave executes atomic save operation within a transaction.
-func performAtomicRepositoryAndJobSave(t *testing.T, setup *atomicTransactionTestSetup, testRepo *entity.Repository) error {
+func performAtomicRepositoryAndJobSave(
+	t *testing.T,
+	setup *atomicTransactionTestSetup,
+	testRepo *entity.Repository,
+) error {
 	return setup.txManager.WithTransaction(setup.ctx, func(ctx context.Context) error {
 		// Create repository
 		if err := setup.repoRepo.Save(ctx, testRepo); err != nil {

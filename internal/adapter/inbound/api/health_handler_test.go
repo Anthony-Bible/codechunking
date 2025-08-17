@@ -1,6 +1,7 @@
-package api
+package api_test
 
 import (
+	"codechunking/internal/adapter/inbound/api"
 	"codechunking/internal/adapter/inbound/api/testutil"
 	"codechunking/internal/application/dto"
 	"errors"
@@ -171,7 +172,7 @@ func TestHealthHandler_GetHealth(t *testing.T) {
 			mockErrorHandler := testutil.NewMockErrorHandler()
 			tt.mockSetup(mockHealthService)
 
-			handler := NewHealthHandler(mockHealthService, mockErrorHandler)
+			handler := api.NewHealthHandler(mockHealthService, mockErrorHandler)
 
 			// Create request
 			req := testutil.CreateRequest(http.MethodGet, "/health")
@@ -231,7 +232,7 @@ func TestHealthHandler_StatusCodeMapping(t *testing.T) {
 				Build()
 			mockHealthService.ExpectGetHealth(&response, nil)
 
-			handler := NewHealthHandler(mockHealthService, mockErrorHandler)
+			handler := api.NewHealthHandler(mockHealthService, mockErrorHandler)
 
 			// Create request
 			req := testutil.CreateRequest(http.MethodGet, "/health")
@@ -257,7 +258,7 @@ func TestHealthHandler_ResponseHeaders(t *testing.T) {
 			Build()
 		mockHealthService.ExpectGetHealth(&response, nil)
 
-		handler := NewHealthHandler(mockHealthService, mockErrorHandler)
+		handler := api.NewHealthHandler(mockHealthService, mockErrorHandler)
 
 		// Create request
 		req := testutil.CreateRequest(http.MethodGet, "/health")
@@ -282,7 +283,7 @@ func TestHealthHandler_ErrorHandling(t *testing.T) {
 		serviceError := errors.New("database connection failed")
 		mockHealthService.ExpectGetHealth(nil, serviceError)
 
-		handler := NewHealthHandler(mockHealthService, mockErrorHandler)
+		handler := api.NewHealthHandler(mockHealthService, mockErrorHandler)
 
 		// Create request
 		req := testutil.CreateRequest(http.MethodGet, "/health")
@@ -334,7 +335,7 @@ func TestHealthHandler_Integration(t *testing.T) {
 
 		mockHealthService.ExpectGetHealth(&response, nil)
 
-		handler := NewHealthHandler(mockHealthService, mockErrorHandler)
+		handler := api.NewHealthHandler(mockHealthService, mockErrorHandler)
 
 		// Create request
 		req := testutil.CreateRequest(http.MethodGet, "/health")

@@ -1,16 +1,15 @@
 package service
 
 import (
+	"codechunking/internal/application/dto"
+	"codechunking/internal/port/inbound"
+	"codechunking/internal/port/outbound"
 	"context"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"codechunking/internal/application/dto"
-	"codechunking/internal/port/inbound"
-	"codechunking/internal/port/outbound"
 )
 
 // Configuration constants for production-ready health monitoring.
@@ -170,10 +169,14 @@ func (h *HealthServiceAdapter) hasInvalidMetrics(details dto.NATSHealthDetails) 
 }
 
 func (h *HealthServiceAdapter) hasInvalidCircuitBreakerState(details dto.NATSHealthDetails) bool {
-	return details.CircuitBreaker != "open" && details.CircuitBreaker != "closed" && details.CircuitBreaker != "half-open"
+	return details.CircuitBreaker != "open" && details.CircuitBreaker != "closed" &&
+		details.CircuitBreaker != "half-open"
 }
 
-func (h *HealthServiceAdapter) processHealthCheckResponse(status dto.DependencyStatus, elapsed time.Duration) dto.DependencyStatus {
+func (h *HealthServiceAdapter) processHealthCheckResponse(
+	status dto.DependencyStatus,
+	elapsed time.Duration,
+) dto.DependencyStatus {
 	responseTime := fmt.Sprintf("%.1fms", float64(elapsed.Nanoseconds())/1e6)
 	status.ResponseTime = responseTime
 

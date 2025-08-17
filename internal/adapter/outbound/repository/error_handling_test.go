@@ -287,8 +287,8 @@ func TestContextCancellation(t *testing.T) {
 	})
 }
 
-// TestInvalidInput tests invalid input parameter handling.
-func TestInvalidInput(t *testing.T) {
+// TestNilEntityInput tests nil entity save operations.
+func TestNilEntityInput(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
 
@@ -298,114 +298,75 @@ func TestInvalidInput(t *testing.T) {
 
 	t.Run("Nil repository save", func(t *testing.T) {
 		err := repoRepo.Save(ctx, nil)
-
-		if err == nil {
-			t.Error("Expected error when saving nil repository")
-		}
-
-		if !isInvalidArgumentError(err) {
-			t.Errorf("Expected invalid argument error, got: %v", err)
-		}
+		assertInvalidArgumentError(t, err, "saving nil repository")
 	})
 
 	t.Run("Nil indexing job save", func(t *testing.T) {
 		err := jobRepo.Save(ctx, nil)
-
-		if err == nil {
-			t.Error("Expected error when saving nil indexing job")
-		}
-
-		if !isInvalidArgumentError(err) {
-			t.Errorf("Expected invalid argument error, got: %v", err)
-		}
+		assertInvalidArgumentError(t, err, "saving nil indexing job")
 	})
 
 	t.Run("Find by nil UUID", func(t *testing.T) {
 		_, err := repoRepo.FindByID(ctx, uuid.Nil)
-
-		if err == nil {
-			t.Error("Expected error when finding by nil UUID")
-		}
-
-		if !isInvalidArgumentError(err) {
-			t.Errorf("Expected invalid argument error, got: %v", err)
-		}
+		assertInvalidArgumentError(t, err, "finding by nil UUID")
 	})
+}
 
-	t.Run("Invalid pagination parameters", func(t *testing.T) {
-		// Test negative limit
-		_, _, err := repoRepo.FindAll(ctx, outbound.RepositoryFilters{
-			Limit:  -1,
-			Offset: 0,
+// TestInvalidPaginationParameters tests invalid pagination parameter handling.
+func TestInvalidPaginationParameters(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repoRepo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testCases := []struct {
+		name   string
+		limit  int
+		offset int
+	}{
+		{"negative limit", -1, 0},
+		{"negative offset", 10, -1},
+		{"zero limit", 0, 0},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := repoRepo.FindAll(ctx, outbound.RepositoryFilters{
+				Limit:  tc.limit,
+				Offset: tc.offset,
+			})
+			assertInvalidArgumentError(t, err, tc.name)
 		})
+	}
+}
 
-		if err == nil {
-			t.Error("Expected error for negative limit")
-		}
+// TestInvalidSortParameters tests invalid sort parameter handling.
+func TestInvalidSortParameters(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
 
-		if !isInvalidArgumentError(err) {
-			t.Errorf("Expected invalid argument error for negative limit, got: %v", err)
-		}
+	repoRepo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
 
-		// Test negative offset
-		_, _, err = repoRepo.FindAll(ctx, outbound.RepositoryFilters{
-			Limit:  10,
-			Offset: -1,
+	testCases := []struct {
+		name string
+		sort string
+	}{
+		{"invalid sort field", "invalid_field:asc"},
+		{"invalid sort direction", "name:invalid"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := repoRepo.FindAll(ctx, outbound.RepositoryFilters{
+				Limit:  10,
+				Offset: 0,
+				Sort:   tc.sort,
+			})
+			assertInvalidArgumentError(t, err, tc.name)
 		})
-
-		if err == nil {
-			t.Error("Expected error for negative offset")
-		}
-
-		if !isInvalidArgumentError(err) {
-			t.Errorf("Expected invalid argument error for negative offset, got: %v", err)
-		}
-
-		// Test zero limit
-		_, _, err = repoRepo.FindAll(ctx, outbound.RepositoryFilters{
-			Limit:  0,
-			Offset: 0,
-		})
-
-		if err == nil {
-			t.Error("Expected error for zero limit")
-		}
-
-		if !isInvalidArgumentError(err) {
-			t.Errorf("Expected invalid argument error for zero limit, got: %v", err)
-		}
-	})
-
-	t.Run("Invalid sort parameter", func(t *testing.T) {
-		_, _, err := repoRepo.FindAll(ctx, outbound.RepositoryFilters{
-			Limit:  10,
-			Offset: 0,
-			Sort:   "invalid_field:asc",
-		})
-
-		if err == nil {
-			t.Error("Expected error for invalid sort field")
-		}
-
-		if !isInvalidArgumentError(err) {
-			t.Errorf("Expected invalid argument error for invalid sort, got: %v", err)
-		}
-
-		// Test invalid sort direction
-		_, _, err = repoRepo.FindAll(ctx, outbound.RepositoryFilters{
-			Limit:  10,
-			Offset: 0,
-			Sort:   "name:invalid",
-		})
-
-		if err == nil {
-			t.Error("Expected error for invalid sort direction")
-		}
-
-		if !isInvalidArgumentError(err) {
-			t.Errorf("Expected invalid argument error for invalid sort direction, got: %v", err)
-		}
-	})
+	}
 }
 
 // TestDatabaseSpecificErrors tests PostgreSQL-specific error scenarios.
@@ -609,4 +570,18 @@ func getViolatedConstraint(err error) string {
 		}
 	}
 	return ""
+}
+
+// assertInvalidArgumentError is a helper function to check for invalid argument errors.
+func assertInvalidArgumentError(t *testing.T, err error, operation string) {
+	t.Helper()
+
+	if err == nil {
+		t.Errorf("Expected error for %s", operation)
+		return
+	}
+
+	if !isInvalidArgumentError(err) {
+		t.Errorf("Expected invalid argument error for %s, got: %v", operation, err)
+	}
 }

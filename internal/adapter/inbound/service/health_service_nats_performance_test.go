@@ -125,120 +125,165 @@ func TestHealthServiceAdapter_NATSPerformance(t *testing.T) {
 	})
 }
 
-func TestHealthServiceAdapter_ConcurrentAccess(t *testing.T) {
-	t.Run("concurrent_health_checks_are_thread_safe", func(t *testing.T) {
-		mockNATS := testutil.NewMockMessagePublisherWithHealthMonitoring()
-		mockRepo := &mockRepositoryRepo{findAllResult: nil}
-		mockJobs := &mockIndexingJobRepo{}
+// concurrentTestResult holds the results of concurrent health check testing
+type concurrentTestResult struct {
+	successCount int64
+	errorCount   int64
+	responses    [][]dto.HealthResponse
+}
 
-		service := NewHealthServiceAdapter(mockRepo, mockJobs, mockNATS, "1.0.0")
+// setupHealthServiceForConcurrentTest creates a health service with standard mocks for concurrent testing
+func setupHealthServiceForConcurrentTest() (*HealthServiceAdapter, *testutil.MockMessagePublisherWithHealthMonitoring) {
+	mockNATS := testutil.NewMockMessagePublisherWithHealthMonitoring()
+	mockRepo := &mockRepositoryRepo{findAllResult: nil}
+	mockJobs := &mockIndexingJobRepo{}
+	service := NewHealthServiceAdapter(mockRepo, mockJobs, mockNATS, "1.0.0").(*HealthServiceAdapter)
+	return service, mockNATS
+}
 
-		const numGoroutines = 50
-		const callsPerGoroutine = 10
+// runBasicConcurrentHealthChecks executes concurrent health checks and returns results
+func runBasicConcurrentHealthChecks(service *HealthServiceAdapter, numGoroutines, callsPerGoroutine int) *concurrentTestResult {
+	var wg sync.WaitGroup
+	var successCount int64
+	var errorCount int64
+	results := make([][]dto.HealthResponse, numGoroutines)
 
-		var wg sync.WaitGroup
-		var successCount int64
-		var errorCount int64
-		results := make([][]dto.HealthResponse, numGoroutines)
+	// Launch concurrent health checks
+	for i := range numGoroutines {
+		wg.Add(1)
+		go func(goroutineID int) {
+			defer wg.Done()
+			results[goroutineID] = make([]dto.HealthResponse, callsPerGoroutine)
 
-		// Launch concurrent health checks
-		for i := range numGoroutines {
-			wg.Add(1)
-			go func(goroutineID int) {
-				defer wg.Done()
-
-				results[goroutineID] = make([]dto.HealthResponse, callsPerGoroutine)
-
-				for j := range callsPerGoroutine {
-					response, err := service.GetHealth(context.Background())
-					if err != nil {
-						atomic.AddInt64(&errorCount, 1)
-						continue
-					}
-
-					atomic.AddInt64(&successCount, 1)
-					results[goroutineID][j] = *response
-				}
-			}(i)
-		}
-
-		wg.Wait()
-
-		// All calls should succeed
-		totalCalls := int64(numGoroutines * callsPerGoroutine)
-		assert.Equal(t, totalCalls, successCount, "All concurrent health checks should succeed")
-		assert.Equal(t, int64(0), errorCount, "No errors should occur during concurrent access")
-
-		// Validate consistency across all responses
-		for i := range numGoroutines {
 			for j := range callsPerGoroutine {
-				response := results[i][j]
-
-				// All responses should be healthy and consistent
-				assert.Equal(t, "healthy", response.Status)
-				assert.NotNil(t, response.Dependencies)
-
-				natsStatus, exists := response.Dependencies["nats"]
-				require.True(t, exists, "NATS dependency should exist in all responses")
-				assert.Equal(t, "healthy", natsStatus.Status)
-			}
-		}
-	})
-
-	t.Run("concurrent_access_with_nats_state_changes", func(t *testing.T) {
-		mockNATS := testutil.NewMockMessagePublisherWithHealthMonitoring()
-		mockRepo := &mockRepositoryRepo{findAllResult: nil}
-		mockJobs := &mockIndexingJobRepo{}
-
-		service := NewHealthServiceAdapter(mockRepo, mockJobs, mockNATS, "1.0.0")
-
-		const numReaders = 20
-		const numReads = 5
-
-		var wg sync.WaitGroup
-		var allResponses []dto.HealthResponse
-		var responsesMutex sync.Mutex
-
-		// Start concurrent readers
-		for range numReaders {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-
-				for range numReads {
-					response, err := service.GetHealth(context.Background())
-					if err != nil {
-						continue
-					}
-
-					responsesMutex.Lock()
-					allResponses = append(allResponses, *response)
-					responsesMutex.Unlock()
-
-					time.Sleep(10 * time.Millisecond)
+				response, err := service.GetHealth(context.Background())
+				if err != nil {
+					atomic.AddInt64(&errorCount, 1)
+					continue
 				}
-			}()
-		}
 
-		// Simulate NATS state changes during concurrent access
+				atomic.AddInt64(&successCount, 1)
+				results[goroutineID][j] = *response
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	return &concurrentTestResult{
+		successCount: successCount,
+		errorCount:   errorCount,
+		responses:    results,
+	}
+}
+
+// validateResponseConsistency checks that all health responses are consistent and valid
+func validateResponseConsistency(t *testing.T, results [][]dto.HealthResponse) {
+	for i := range results {
+		for j := range results[i] {
+			response := results[i][j]
+
+			// All responses should be healthy and consistent
+			assert.Equal(t, "healthy", response.Status)
+			assert.NotNil(t, response.Dependencies)
+
+			natsStatus, exists := response.Dependencies["nats"]
+			require.True(t, exists, "NATS dependency should exist in all responses")
+			assert.Equal(t, "healthy", natsStatus.Status)
+		}
+	}
+}
+
+// runConcurrentTestWithStateChanges executes concurrent health checks while changing NATS state
+func runConcurrentTestWithStateChanges(service *HealthServiceAdapter, mockNATS *testutil.MockMessagePublisherWithHealthMonitoring) []dto.HealthResponse {
+	const numReaders = 20
+	const numReads = 5
+
+	var wg sync.WaitGroup
+	var allResponses []dto.HealthResponse
+	var responsesMutex sync.Mutex
+
+	// Start concurrent readers
+	for range numReaders {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 
-			states := []outbound.MessagePublisherHealthStatus{
-				{Connected: true, Uptime: "1h", Reconnects: 0, JetStreamEnabled: true, CircuitBreaker: "closed"},
-				{Connected: false, Uptime: "0s", Reconnects: 1, JetStreamEnabled: false, CircuitBreaker: "open"},
-				{Connected: true, Uptime: "30s", Reconnects: 2, JetStreamEnabled: true, CircuitBreaker: "closed"},
-				{Connected: true, Uptime: "1h30m", Reconnects: 2, JetStreamEnabled: true, CircuitBreaker: "closed"},
-			}
+			for range numReads {
+				response, err := service.GetHealth(context.Background())
+				if err != nil {
+					continue
+				}
 
-			for _, state := range states {
-				mockNATS.SetConnectionHealth(state)
-				time.Sleep(25 * time.Millisecond)
+				responsesMutex.Lock()
+				allResponses = append(allResponses, *response)
+				responsesMutex.Unlock()
+
+				time.Sleep(10 * time.Millisecond)
 			}
 		}()
+	}
 
-		wg.Wait()
+	// Simulate NATS state changes during concurrent access
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		states := []outbound.MessagePublisherHealthStatus{
+			{Connected: true, Uptime: "1h", Reconnects: 0, JetStreamEnabled: true, CircuitBreaker: "closed"},
+			{Connected: false, Uptime: "0s", Reconnects: 1, JetStreamEnabled: false, CircuitBreaker: "open"},
+			{Connected: true, Uptime: "30s", Reconnects: 2, JetStreamEnabled: true, CircuitBreaker: "closed"},
+			{Connected: true, Uptime: "1h30m", Reconnects: 2, JetStreamEnabled: true, CircuitBreaker: "closed"},
+		}
+
+		for _, state := range states {
+			mockNATS.SetConnectionHealth(state)
+			time.Sleep(25 * time.Millisecond)
+		}
+	}()
+
+	wg.Wait()
+	return allResponses
+}
+
+func TestHealthServiceAdapter_ThreadSafety(t *testing.T) {
+	t.Run("concurrent_health_checks_are_thread_safe", func(t *testing.T) {
+		service, _ := setupHealthServiceForConcurrentTest()
+
+		const numGoroutines = 50
+		const callsPerGoroutine = 10
+
+		result := runBasicConcurrentHealthChecks(service, numGoroutines, callsPerGoroutine)
+
+		// All calls should succeed
+		totalCalls := int64(numGoroutines * callsPerGoroutine)
+		assert.Equal(t, totalCalls, result.successCount, "All concurrent health checks should succeed")
+		assert.Equal(t, int64(0), result.errorCount, "No errors should occur during concurrent access")
+	})
+}
+
+func TestHealthServiceAdapter_ConcurrentResponseConsistency(t *testing.T) {
+	t.Run("concurrent_responses_maintain_consistency", func(t *testing.T) {
+		service, _ := setupHealthServiceForConcurrentTest()
+
+		const numGoroutines = 50
+		const callsPerGoroutine = 10
+
+		result := runBasicConcurrentHealthChecks(service, numGoroutines, callsPerGoroutine)
+
+		// Validate consistency across all responses
+		validateResponseConsistency(t, result.responses)
+	})
+}
+
+func TestHealthServiceAdapter_StateChangesDuringConcurrency(t *testing.T) {
+	t.Run("concurrent_access_with_nats_state_changes", func(t *testing.T) {
+		service, mockNATS := setupHealthServiceForConcurrentTest()
+
+		allResponses := runConcurrentTestWithStateChanges(service, mockNATS)
+
+		const numReaders = 20
+		const numReads = 5
 
 		// This test will fail because proper concurrent access handling is not implemented
 		// Should have collected responses from all readers
@@ -252,7 +297,9 @@ func TestHealthServiceAdapter_ConcurrentAccess(t *testing.T) {
 			assert.NotNil(t, response.Dependencies)
 		}
 	})
+}
 
+func TestHealthServiceAdapter_RateLimitingProtection(t *testing.T) {
 	t.Run("health_check_rate_limiting_protects_nats", func(t *testing.T) {
 		mockNATS := testutil.NewMockMessagePublisherWithHealthMonitoring()
 		mockRepo := &mockRepositoryRepo{findAllResult: nil}
@@ -356,10 +403,6 @@ func TestHealthServiceAdapter_MemoryEfficiency(t *testing.T) {
 	})
 
 	t.Run("large_nats_server_info_handled_efficiently", func(t *testing.T) {
-		_ = testutil.NewMockMessagePublisherWithHealthMonitoring()
-		_ = &mockRepositoryRepo{findAllResult: nil}
-		_ = &mockIndexingJobRepo{}
-
 		// Create large server info to test serialization efficiency
 		largeServerInfo := map[string]interface{}{
 			"version":          "2.9.0",

@@ -23,7 +23,7 @@ func NewDefaultErrorHandler() ErrorHandler {
 }
 
 // HandleValidationError handles validation errors by returning 400 Bad Request.
-func (h *DefaultErrorHandler) HandleValidationError(w http.ResponseWriter, r *http.Request, err error) {
+func (h *DefaultErrorHandler) HandleValidationError(w http.ResponseWriter, _ *http.Request, err error) {
 	var validationErr common.ValidationError
 	if errors.As(err, &validationErr) {
 		response := dto.NewErrorResponse(
@@ -47,7 +47,7 @@ func (h *DefaultErrorHandler) HandleValidationError(w http.ResponseWriter, r *ht
 }
 
 // HandleServiceError handles service errors by mapping them to appropriate HTTP status codes.
-func (h *DefaultErrorHandler) HandleServiceError(w http.ResponseWriter, r *http.Request, err error) {
+func (h *DefaultErrorHandler) HandleServiceError(w http.ResponseWriter, _ *http.Request, err error) {
 	switch {
 	case errors.Is(err, domain.ErrRepositoryNotFound):
 		response := dto.NewErrorResponse(

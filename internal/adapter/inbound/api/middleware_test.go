@@ -44,7 +44,7 @@ func TestLoggingMiddleware(t *testing.T) {
 			var logOutput strings.Builder
 			logger := NewTestLogger(&logOutput)
 
-			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.responseCode)
 				if _, err := w.Write([]byte("response body")); err != nil {
 					// In tests, write errors to ResponseRecorder are unlikely, but handle to avoid errcheck
@@ -86,7 +86,7 @@ func TestLoggingMiddleware_RequestTiming(t *testing.T) {
 		var logOutput strings.Builder
 		logger := NewTestLogger(&logOutput)
 
-		slowHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slowHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			time.Sleep(100 * time.Millisecond) // Simulate slow handler
 			w.WriteHeader(http.StatusOK)
 		})
@@ -178,7 +178,7 @@ func TestCORSMiddleware(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
-			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				if _, err := w.Write([]byte("success")); err != nil {
 					t.Logf("Failed to write response: %v", err)
@@ -219,7 +219,7 @@ func TestErrorHandlingMiddleware(t *testing.T) {
 	}{
 		{
 			name: "handles_panic_and_returns_500",
-			handlerFunc: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handlerFunc: http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 				panic("something went wrong")
 			}),
 			expectedCode: http.StatusInternalServerError,
@@ -230,7 +230,7 @@ func TestErrorHandlingMiddleware(t *testing.T) {
 		},
 		{
 			name: "passes_through_normal_response",
-			handlerFunc: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handlerFunc: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				if _, err := w.Write([]byte("normal response")); err != nil {
 					t.Logf("Failed to write response: %v", err)
@@ -260,7 +260,7 @@ func TestErrorHandlingMiddleware(t *testing.T) {
 		},
 		{
 			name: "handles_custom_error_types",
-			handlerFunc: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handlerFunc: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				// Simulate custom error handling
 				// Add error context for testing
 				_ = r.WithContext(context.WithValue(r.Context(), errorContextKey, "validation_failed"))
@@ -354,7 +354,7 @@ func TestMiddlewareChain_ErrorRecovery(t *testing.T) {
 
 func TestMiddlewareChain_EmptyChain(t *testing.T) {
 	t.Run("empty_middleware_chain_passes_through", func(t *testing.T) {
-		finalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		finalHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			if _, err := w.Write([]byte("direct response")); err != nil {
 				t.Logf("Failed to write response: %v", err)
@@ -485,7 +485,7 @@ func createMiddlewareForErrorRecovery() []Middleware {
 
 // createNormalTestHandler creates a handler that returns successful response.
 func createNormalTestHandler() http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte("success")); err != nil {
 			// In tests, write errors to ResponseRecorder are unlikely, but handle to avoid errcheck
@@ -496,7 +496,7 @@ func createNormalTestHandler() http.HandlerFunc {
 
 // createPanicTestHandler creates a handler that panics.
 func createPanicTestHandler() http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		panic("test panic")
 	})
 }
@@ -532,7 +532,7 @@ func TestMiddleware_Configuration(t *testing.T) {
 
 		middleware := NewCORSMiddlewareWithConfig(corsConfig)
 
-		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
@@ -581,7 +581,7 @@ func TestDefaultCORSConfig_Constants(t *testing.T) {
 func TestNewCORSMiddleware_UsesDefaultConfig(t *testing.T) {
 	t.Run("new_cors_middleware_delegates_to_configurable_version", func(t *testing.T) {
 		// This test will fail until NewCORSMiddleware is refactored to use DefaultCORSConfig
-		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
 
@@ -653,7 +653,7 @@ func TestCORSMiddlewareWithConfig_UsesStringsJoin(t *testing.T) {
 		}
 
 		middleware := NewCORSMiddlewareWithConfig(config)
-		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
@@ -681,7 +681,7 @@ func TestCORSMiddlewareWithConfig_UsesStringsJoin(t *testing.T) {
 		}
 
 		middleware := NewCORSMiddlewareWithConfig(config)
-		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
@@ -710,7 +710,7 @@ func TestCORSMiddlewareWithConfig_MaxAgeHandling(t *testing.T) {
 		}
 
 		middleware := NewCORSMiddlewareWithConfig(config)
-		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
@@ -741,7 +741,7 @@ func TestCORSMiddlewareWithConfig_MaxAgeHandling(t *testing.T) {
 		}
 
 		middleware := NewCORSMiddlewareWithConfig(config)
-		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
@@ -768,7 +768,7 @@ func TestCORSMiddlewareWithConfig_OptionsRequestStatusCode(t *testing.T) {
 		}
 
 		middleware := NewCORSMiddlewareWithConfig(config)
-		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
@@ -787,7 +787,7 @@ func TestBackwardCompatibility_ExactBehaviorPreservation(t *testing.T) {
 		// This comprehensive test ensures that after refactoring, the behavior
 		// is preserved exactly, including edge cases and specific formatting
 
-		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("success"))
 		})

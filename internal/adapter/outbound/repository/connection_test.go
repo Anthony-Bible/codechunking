@@ -244,7 +244,7 @@ func TestConnectionPool_Concurrent(t *testing.T) {
 	done := make(chan bool, numGoroutines)
 
 	for i := range numGoroutines {
-		go func(id int) {
+		go func(_ int) {
 			defer func() { done <- true }()
 
 			conn, err := pool.Acquire(ctx)

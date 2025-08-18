@@ -2,6 +2,7 @@ package handler
 
 import (
 	"codechunking/internal/application/common"
+	"codechunking/internal/application/defaults"
 	"codechunking/internal/application/dto"
 	"context"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Service interfaces.
+// CreateIndexingJobService defines the interface for creating indexing jobs.
 type CreateIndexingJobService interface {
 	CreateIndexingJob(ctx context.Context, request dto.CreateIndexingJobRequest) (*dto.IndexingJobResponse, error)
 }
@@ -184,7 +185,7 @@ func (h *ListIndexingJobsQueryHandler) Handle(
 	}
 
 	// Apply defaults (service will handle this but we can do it here for validation)
-	common.ApplyIndexingJobListDefaults(&dtoQuery)
+	defaults.ApplyIndexingJobListDefaults(&dtoQuery)
 
 	// Execute service
 	return h.service.ListIndexingJobs(ctx, query.RepositoryID, dtoQuery)
@@ -195,7 +196,7 @@ func (h *ListIndexingJobsQueryHandler) validateListQuery(query ListIndexingJobsQ
 	if err := common.ValidateUUID(query.RepositoryID, "repository ID"); err != nil {
 		return err
 	}
-	if err := common.ValidatePaginationLimit(query.Limit, common.MaxIndexingJobListLimit, "limit"); err != nil {
+	if err := common.ValidatePaginationLimit(query.Limit, defaults.MaxIndexingJobListLimit, "limit"); err != nil {
 		return err
 	}
 	return nil

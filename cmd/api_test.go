@@ -29,28 +29,28 @@ func TestAPICommand_Integration(t *testing.T) {
 	}{
 		{
 			name: "starts_api_server_successfully_with_default_config",
-			setupFunc: func(t *testing.T) *config.Config {
+			setupFunc: func(_ *testing.T) *config.Config {
 				return createDefaultTestConfig()
 			},
 			validateFunc: validateHealthEndpoint,
 		},
 		{
 			name: "api_server_handles_all_routes_correctly",
-			setupFunc: func(t *testing.T) *config.Config {
+			setupFunc: func(_ *testing.T) *config.Config {
 				return createCustomAPIConfig("127.0.0.1", "0", 10*time.Second, 10*time.Second)
 			},
 			validateFunc: validateAllAPIRoutes,
 		},
 		{
 			name: "api_server_respects_custom_configuration",
-			setupFunc: func(t *testing.T) *config.Config {
+			setupFunc: func(_ *testing.T) *config.Config {
 				return createCustomTimeoutConfig(30*time.Second, 45*time.Second)
 			},
 			validateFunc: validateCustomTimeouts,
 		},
 		{
 			name: "api_server_fails_gracefully_with_invalid_config",
-			setupFunc: func(t *testing.T) *config.Config {
+			setupFunc: func(_ *testing.T) *config.Config {
 				return &config.Config{
 					API: config.APIConfig{
 						Host:         "256.256.256.256", // Invalid IP
@@ -119,7 +119,7 @@ func TestAPICommand_GracefulShutdown(t *testing.T) {
 				defer func() { _ = resp.Body.Close() }()
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
 			},
-			shutdownFunc: func(t *testing.T, server APIServer, baseURL string) {
+			shutdownFunc: func(t *testing.T, server APIServer, _ string) {
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 
@@ -129,7 +129,7 @@ func TestAPICommand_GracefulShutdown(t *testing.T) {
 		},
 		{
 			name: "server_waits_for_active_requests_during_shutdown",
-			setupFunc: func(t *testing.T, baseURL string) {
+			setupFunc: func(_ *testing.T, baseURL string) {
 				// Start a long-running request in background
 				go func() {
 					resp, err := http.Get(baseURL + "/health?slow=true")
@@ -139,7 +139,7 @@ func TestAPICommand_GracefulShutdown(t *testing.T) {
 				}()
 				time.Sleep(100 * time.Millisecond) // Let request start
 			},
-			shutdownFunc: func(t *testing.T, server APIServer, baseURL string) {
+			shutdownFunc: func(t *testing.T, server APIServer, _ string) {
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 
@@ -154,10 +154,10 @@ func TestAPICommand_GracefulShutdown(t *testing.T) {
 		},
 		{
 			name: "server_shutdown_respects_context_timeout",
-			setupFunc: func(t *testing.T, baseURL string) {
+			setupFunc: func(_ *testing.T, _ string) {
 				// No special setup needed
 			},
-			shutdownFunc: func(t *testing.T, server APIServer, baseURL string) {
+			shutdownFunc: func(t *testing.T, server APIServer, _ string) {
 				// Very short timeout
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 				defer cancel()
@@ -364,7 +364,7 @@ func newTestServerSetup(cfg *config.Config) *testServerSetup {
 }
 
 // startTestAPIServer starts an API server for testing with improved error handling and organization.
-func startTestAPIServer(ctx context.Context, cfg *config.Config) (APIServer, string, error) {
+func startTestAPIServer(_ context.Context, cfg *config.Config) (APIServer, string, error) {
 	setup := newTestServerSetup(cfg)
 	return setup.start()
 }
@@ -375,10 +375,7 @@ func (s *testServerSetup) start() (APIServer, string, error) {
 		return nil, "", err
 	}
 
-	httpServer, err := s.createHTTPServer()
-	if err != nil {
-		return nil, "", err
-	}
+	httpServer := s.createHTTPServer()
 
 	listener, err := s.startListener(httpServer)
 	if err != nil {
@@ -403,9 +400,9 @@ func (s *testServerSetup) validateAndPrepareConfig() error {
 	return validateConfigValues(s.config)
 }
 
-// createHTTPServer creates the HTTP server with proper error handling.
-func (s *testServerSetup) createHTTPServer() (*http.Server, error) {
-	return createTestHTTPServer(s.config), nil
+// createHTTPServer creates the HTTP server.
+func (s *testServerSetup) createHTTPServer() *http.Server {
+	return createTestHTTPServer(s.config)
 }
 
 // startListener starts the server listener with improved error handling.

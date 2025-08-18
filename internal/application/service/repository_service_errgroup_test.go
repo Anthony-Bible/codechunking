@@ -23,7 +23,7 @@ type ContextAwareMockRepo struct {
 	callCount *int64
 }
 
-func (m *ContextAwareMockRepo) ExistsByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (bool, error) {
+func (m *ContextAwareMockRepo) ExistsByNormalizedURL(ctx context.Context, _ valueobject.RepositoryURL) (bool, error) {
 	atomic.AddInt64(m.callCount, 1)
 
 	// Check if context is already cancelled
@@ -165,7 +165,7 @@ func TestBatchCheckDuplicates_EarlyReturnOnAllInvalidURLs(t *testing.T) {
 	mockRepo.On("ExistsByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(
 		false, // Return false for exists
 		nil,   // No error
-	).Run(func(args mock.Arguments) {
+	).Run(func(_ mock.Arguments) {
 		atomic.AddInt64(&callCount, 1)
 	}).Maybe() // Maybe() because we expect NO calls in the optimized version
 
@@ -224,7 +224,7 @@ func TestBatchCheckDuplicates_ErrorPropagation(t *testing.T) {
 	mockRepo.On("ExistsByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(
 		false,         // Always return false for exists
 		databaseError, // Return error for all calls to simulate failure
-	).Run(func(args mock.Arguments) {
+	).Run(func(_ mock.Arguments) {
 		atomic.AddInt64(&processedCount, 1)
 	})
 
@@ -279,13 +279,13 @@ func TestBatchCheckDuplicates_BoundedWorkerPool(t *testing.T) {
 	mockRepo.On("ExistsByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(
 		false, // Return false for exists
 		nil,   // No error
-	).Run(func(args mock.Arguments) {
+	).Run(func(_ mock.Arguments) {
 		current := atomic.AddInt64(&concurrentCalls, 1)
 
 		// Track maximum concurrent calls
 		for {
-			max := atomic.LoadInt64(&maxConcurrentCalls)
-			if current <= max || atomic.CompareAndSwapInt64(&maxConcurrentCalls, max, current) {
+			currentMax := atomic.LoadInt64(&maxConcurrentCalls)
+			if current <= currentMax || atomic.CompareAndSwapInt64(&maxConcurrentCalls, currentMax, current) {
 				break
 			}
 		}

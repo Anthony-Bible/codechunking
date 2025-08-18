@@ -56,7 +56,7 @@ func TestRepositoryHandler_CreateRepository(t *testing.T) {
 		{
 			name:           "invalid_json_body_returns_400_bad_request",
 			requestBody:    `{"invalid": json}`, // Invalid JSON
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error", // MockErrorHandler returns generic validation error
 		},
@@ -65,7 +65,7 @@ func TestRepositoryHandler_CreateRepository(t *testing.T) {
 			requestBody: map[string]interface{}{
 				"name": "test-repo",
 			},
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
@@ -74,7 +74,7 @@ func TestRepositoryHandler_CreateRepository(t *testing.T) {
 			requestBody: testutil.NewCreateRepositoryRequestBuilder().
 				WithURL("").
 				Build(),
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
@@ -189,14 +189,14 @@ func TestRepositoryHandler_GetRepository(t *testing.T) {
 		{
 			name:           "missing_id_parameter_returns_400_bad_request",
 			repositoryID:   "", // Simulates missing mux var
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
 		{
 			name:           "invalid_uuid_format_returns_400_bad_request",
 			repositoryID:   "invalid-uuid",
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
@@ -326,21 +326,21 @@ func TestRepositoryHandler_ListRepositories(t *testing.T) {
 		{
 			name:           "invalid_limit_too_high_returns_400_bad_request",
 			queryParams:    "?limit=101",
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
 		{
 			name:           "invalid_limit_too_low_returns_400_bad_request",
 			queryParams:    "?limit=0",
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
 		{
 			name:           "invalid_offset_negative_returns_400_bad_request",
 			queryParams:    "?offset=-1",
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
@@ -428,14 +428,14 @@ func TestRepositoryHandler_DeleteRepository(t *testing.T) {
 		{
 			name:           "missing_id_parameter_returns_400_bad_request",
 			repositoryID:   "",
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
 		{
 			name:           "invalid_uuid_format_returns_400_bad_request",
 			repositoryID:   "invalid-uuid",
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
@@ -554,14 +554,14 @@ func TestRepositoryHandler_GetRepositoryJobs(t *testing.T) {
 		{
 			name:           "missing_repository_id_returns_400_bad_request",
 			repositoryID:   "",
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
 		{
 			name:           "invalid_repository_uuid_returns_400_bad_request",
 			repositoryID:   "invalid-uuid",
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
@@ -578,7 +578,7 @@ func TestRepositoryHandler_GetRepositoryJobs(t *testing.T) {
 			name:           "invalid_limit_exceeds_maximum_returns_400_bad_request",
 			repositoryID:   testutil.TestRepositoryID1().String(),
 			queryParams:    "?limit=51",
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
@@ -699,7 +699,7 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 			name:           "missing_repository_id_returns_400_bad_request",
 			repositoryID:   "",
 			jobID:          testutil.TestJobID1().String(),
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
@@ -707,7 +707,7 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 			name:           "missing_job_id_returns_400_bad_request",
 			repositoryID:   testutil.TestRepositoryID1().String(),
 			jobID:          "",
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
@@ -715,7 +715,7 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 			name:           "invalid_repository_uuid_returns_400_bad_request",
 			repositoryID:   "invalid-uuid",
 			jobID:          testutil.TestJobID1().String(),
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
@@ -723,7 +723,7 @@ func TestRepositoryHandler_GetIndexingJob(t *testing.T) {
 			name:           "invalid_job_uuid_returns_400_bad_request",
 			repositoryID:   testutil.TestRepositoryID1().String(),
 			jobID:          "invalid-uuid",
-			mockSetup:      func(mock *testutil.MockRepositoryService) {},
+			mockSetup:      func(_ *testutil.MockRepositoryService) {},
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "validation error",
 		},
@@ -808,7 +808,7 @@ func TestRepositoryHandler_QueryParameterParsing(t *testing.T) {
 
 		// Mock setup to capture the parsed query
 		var capturedQuery dto.RepositoryListQuery
-		mockService.ListRepositoriesFunc = func(ctx context.Context, query dto.RepositoryListQuery) (*dto.RepositoryListResponse, error) {
+		mockService.ListRepositoriesFunc = func(_ context.Context, query dto.RepositoryListQuery) (*dto.RepositoryListResponse, error) {
 			capturedQuery = query
 			return &dto.RepositoryListResponse{
 				Repositories: []dto.RepositoryResponse{},
@@ -839,7 +839,7 @@ func TestRepositoryHandler_QueryParameterParsing(t *testing.T) {
 
 		// Mock setup to capture the parsed query
 		var capturedQuery dto.IndexingJobListQuery
-		mockService.GetRepositoryJobsFunc = func(ctx context.Context, repositoryID uuid.UUID, query dto.IndexingJobListQuery) (*dto.IndexingJobListResponse, error) {
+		mockService.GetRepositoryJobsFunc = func(_ context.Context, _ uuid.UUID, query dto.IndexingJobListQuery) (*dto.IndexingJobListResponse, error) {
 			capturedQuery = query
 			return &dto.IndexingJobListResponse{
 				Jobs:       []dto.IndexingJobResponse{},

@@ -39,7 +39,7 @@ type MockRepositoryService struct {
 	GetIndexingJobCalls    []GetIndexingJobCall
 }
 
-// Call structs for tracking method invocations.
+// CreateRepositoryCall tracks method invocations for CreateRepository calls.
 type CreateRepositoryCall struct {
 	Ctx     context.Context
 	Request dto.CreateRepositoryRequest
@@ -188,39 +188,39 @@ func (m *MockRepositoryService) GetIndexingJob(
 	return nil, errors.New("mock not configured")
 }
 
-// Helper methods for setting up mock expectations.
+// ExpectCreateRepository sets up the mock to return the given response and error for CreateRepository calls.
 func (m *MockRepositoryService) ExpectCreateRepository(response *dto.RepositoryResponse, err error) {
-	m.CreateRepositoryFunc = func(ctx context.Context, request dto.CreateRepositoryRequest) (*dto.RepositoryResponse, error) {
+	m.CreateRepositoryFunc = func(_ context.Context, _ dto.CreateRepositoryRequest) (*dto.RepositoryResponse, error) {
 		return response, err
 	}
 }
 
 func (m *MockRepositoryService) ExpectGetRepository(response *dto.RepositoryResponse, err error) {
-	m.GetRepositoryFunc = func(ctx context.Context, id uuid.UUID) (*dto.RepositoryResponse, error) {
+	m.GetRepositoryFunc = func(_ context.Context, _ uuid.UUID) (*dto.RepositoryResponse, error) {
 		return response, err
 	}
 }
 
 func (m *MockRepositoryService) ExpectListRepositories(response *dto.RepositoryListResponse, err error) {
-	m.ListRepositoriesFunc = func(ctx context.Context, query dto.RepositoryListQuery) (*dto.RepositoryListResponse, error) {
+	m.ListRepositoriesFunc = func(_ context.Context, _ dto.RepositoryListQuery) (*dto.RepositoryListResponse, error) {
 		return response, err
 	}
 }
 
 func (m *MockRepositoryService) ExpectDeleteRepository(err error) {
-	m.DeleteRepositoryFunc = func(ctx context.Context, id uuid.UUID) error {
+	m.DeleteRepositoryFunc = func(_ context.Context, _ uuid.UUID) error {
 		return err
 	}
 }
 
 func (m *MockRepositoryService) ExpectGetRepositoryJobs(response *dto.IndexingJobListResponse, err error) {
-	m.GetRepositoryJobsFunc = func(ctx context.Context, repositoryID uuid.UUID, query dto.IndexingJobListQuery) (*dto.IndexingJobListResponse, error) {
+	m.GetRepositoryJobsFunc = func(_ context.Context, _ uuid.UUID, _ dto.IndexingJobListQuery) (*dto.IndexingJobListResponse, error) {
 		return response, err
 	}
 }
 
 func (m *MockRepositoryService) ExpectGetIndexingJob(response *dto.IndexingJobResponse, err error) {
-	m.GetIndexingJobFunc = func(ctx context.Context, repositoryID, jobID uuid.UUID) (*dto.IndexingJobResponse, error) {
+	m.GetIndexingJobFunc = func(_ context.Context, _, _ uuid.UUID) (*dto.IndexingJobResponse, error) {
 		return response, err
 	}
 }
@@ -268,7 +268,7 @@ func (m *MockHealthService) GetHealth(ctx context.Context) (*dto.HealthResponse,
 }
 
 func (m *MockHealthService) ExpectGetHealth(response *dto.HealthResponse, err error) {
-	m.GetHealthFunc = func(ctx context.Context) (*dto.HealthResponse, error) {
+	m.GetHealthFunc = func(_ context.Context) (*dto.HealthResponse, error) {
 		return response, err
 	}
 }

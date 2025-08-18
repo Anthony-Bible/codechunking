@@ -278,8 +278,8 @@ func TestURLNormalizer_EdgeCases(t *testing.T) {
 		},
 		{
 			name:           "very_long_valid_url",
-			input:          "https://github.com/" + generateLongRepoName(100) + "/" + generateLongRepoName(100),
-			expectedOutput: "https://github.com/" + generateLongRepoName(100) + "/" + generateLongRepoName(100),
+			input:          "https://github.com/" + generateLongRepoName() + "/" + generateLongRepoName(),
+			expectedOutput: "https://github.com/" + generateLongRepoName() + "/" + generateLongRepoName(),
 			expectError:    false,
 			description:    "Should handle very long but valid URLs",
 		},
@@ -394,8 +394,8 @@ func TestRepositoryURL_NormalizedCreation(t *testing.T) {
 }
 
 // generateLongRepoName is a helper function for testing long repository names.
-func generateLongRepoName(length int) string {
-	result := make([]byte, length)
+func generateLongRepoName() string {
+	result := make([]byte, 100)
 	for i := range result {
 		result[i] = 'a' + byte(i%26)
 	}

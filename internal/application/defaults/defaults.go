@@ -1,4 +1,4 @@
-package common
+package defaults
 
 import "codechunking/internal/application/dto"
 

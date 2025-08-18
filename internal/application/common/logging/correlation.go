@@ -314,7 +314,7 @@ func NewMockErrorService(logger ApplicationLogger, scenario ErrorScenario) MockI
 	}
 }
 
-func (s *mockErrorService) ProcessRepository(ctx context.Context, req RepositoryProcessingRequest) error {
+func (s *mockErrorService) ProcessRepository(ctx context.Context, _ RepositoryProcessingRequest) error {
 	if s.scenario.Component == componentService {
 		s.logger.Error(ctx, "Repository processing failed", Fields{
 			"error_type": s.scenario.ErrorType,
@@ -438,7 +438,7 @@ func getAllConcurrentLogOutputs() []string {
 	return logOutputs
 }
 
-func getAsyncServiceLogOutputs(service interface{}) []string {
+func getAsyncServiceLogOutputs(_ interface{}) []string {
 	// For GREEN phase, return mock async operation logs
 	return []string{
 		`{"timestamp":"2025-01-01T12:00:00Z","level":"INFO","message":"Async job started","correlation_id":"async-processing-999","component":"async-service","operation":"async_job_start","metadata":{"job_id":"job-123"}}`,
@@ -460,7 +460,7 @@ func NewMockErrorNATSPublisher(logger ApplicationLogger, scenario ErrorScenario)
 	}
 }
 
-func (p *mockErrorNATSPublisher) PublishIndexingJob(ctx context.Context, message interface{}) error {
+func (p *mockErrorNATSPublisher) PublishIndexingJob(ctx context.Context, _ interface{}) error {
 	p.logger.Error(ctx, "NATS publish failed", Fields{
 		"error_type": p.scenario.ErrorType,
 		"operation":  "nats_publish",

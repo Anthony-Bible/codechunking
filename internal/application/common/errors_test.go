@@ -1,3 +1,5 @@
+// Package common contains tests for the common package.
+// revive:disable:var-naming - allow package name "common" in tests
 package common
 
 import (

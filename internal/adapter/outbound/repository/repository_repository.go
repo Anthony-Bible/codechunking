@@ -117,7 +117,7 @@ func (r *PostgreSQLRepositoryRepository) FindByID(ctx context.Context, id uuid.U
 	)
 	if err != nil {
 		if IsNotFoundError(err) {
-			return nil, nil
+			return nil, nil //nolint:nilnil // Not found is not an error condition for Find methods
 		}
 		return nil, WrapError(err, "find repository by ID")
 	}
@@ -504,7 +504,7 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByRawURL(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil // Not found, return nil without error
+			return nil, nil //nolint:nilnil // Not found is not an error condition for Find methods
 		}
 		return nil, WrapError(err, "query repository by raw URL")
 	}
@@ -546,7 +546,7 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByNormalizedURL(
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil // Not found
+			return nil, nil //nolint:nilnil // Not found is not an error condition for Find methods
 		}
 		return nil, WrapError(err, "query repository by normalized URL")
 	}

@@ -420,7 +420,7 @@ func TestRepositoryHandler_ComprehensiveSecurity(t *testing.T) {
 
 // Helper functions for creating secure handlers
 
-func createSecureRepositoryHandler(service inbound.RepositoryService) http.Handler {
+func createSecureRepositoryHandler(_ inbound.RepositoryService) http.Handler {
 	// Create handler with mock service
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Simple mock implementation
@@ -474,7 +474,7 @@ func TestSecurityMiddlewareStack(t *testing.T) {
 			// This should FAIL - comprehensive security stack not implemented
 			securityStack := CreateSecurityMiddlewareStack()
 
-			handler := securityStack(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := securityStack(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				if _, err := w.Write([]byte(`{"message": "success"}`)); err != nil {
 					t.Logf("Failed to write response: %v", err)

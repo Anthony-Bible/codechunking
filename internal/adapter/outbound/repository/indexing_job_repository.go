@@ -91,7 +91,7 @@ func (r *PostgreSQLIndexingJobRepository) FindByID(ctx context.Context, id uuid.
 	)
 	if err != nil {
 		if IsNotFoundError(err) {
-			return nil, nil
+			return nil, nil //nolint:nilnil // Not found is not an error condition for Find methods
 		}
 		return nil, WrapError(err, "find indexing job by ID")
 	}

@@ -1,5 +1,5 @@
-// Package util provides utility functions for the API layer.
-package util
+// Package netutil provides network utility functions for the API layer.
+package netutil
 
 import (
 	"net"

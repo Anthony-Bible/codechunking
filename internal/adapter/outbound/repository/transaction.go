@@ -146,7 +146,7 @@ func isRetryableError(err error) bool {
 type txContextKey struct{}
 
 // GetTx retrieves a transaction from context, or returns the pool if no transaction exists.
-func GetTx(ctx context.Context, pool *pgxpool.Pool) pgx.Tx {
+func GetTx(ctx context.Context, _ *pgxpool.Pool) pgx.Tx {
 	if tx, ok := ctx.Value(txContextKey{}).(pgx.Tx); ok {
 		return tx
 	}

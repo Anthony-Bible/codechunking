@@ -161,23 +161,23 @@ func (e *ConstraintError) Is(target error) bool {
 	}
 }
 
-// RepositoryError represents a repository-specific error.
-type RepositoryError struct {
+// Error - represents a repository-specific error.
+type Error struct {
 	Operation string
 	Err       error
 }
 
-func (e *RepositoryError) Error() string {
+func (e *Error) Error() string {
 	return fmt.Sprintf("repository operation '%s' failed: %v", e.Operation, e.Err)
 }
 
-func (e *RepositoryError) Unwrap() error {
+func (e *Error) Unwrap() error {
 	return e.Err
 }
 
 // NewRepositoryError creates a new repository error.
-func NewRepositoryError(operation string, err error) *RepositoryError {
-	return &RepositoryError{
+func NewRepositoryError(operation string, err error) *Error {
+	return &Error{
 		Operation: operation,
 		Err:       WrapError(err, operation),
 	}

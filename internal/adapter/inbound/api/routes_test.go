@@ -129,7 +129,7 @@ func TestRouteRegistry_ServeMuxIntegration(t *testing.T) {
 			method:       http.MethodGet,
 			path:         "/health",
 			expectedCode: http.StatusOK,
-			setupMocks: func(health *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
+			setupMocks: func(health *testutil.MockHealthService, _ *testutil.MockRepositoryService) {
 				response := testutil.NewHealthResponseBuilder().
 					WithStatus("healthy").
 					WithVersion("1.0.0").
@@ -142,7 +142,7 @@ func TestRouteRegistry_ServeMuxIntegration(t *testing.T) {
 			method:       http.MethodGet,
 			path:         "/repositories",
 			expectedCode: http.StatusOK,
-			setupMocks: func(health *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
+			setupMocks: func(_ *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
 				response := testutil.NewRepositoryListResponseBuilder().Build()
 				repo.ExpectListRepositories(&response, nil)
 			},
@@ -152,7 +152,7 @@ func TestRouteRegistry_ServeMuxIntegration(t *testing.T) {
 			method:       http.MethodPost,
 			path:         "/repositories",
 			expectedCode: http.StatusAccepted,
-			setupMocks: func(health *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
+			setupMocks: func(_ *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
 				response := testutil.NewRepositoryResponseBuilder().Build()
 				repo.ExpectCreateRepository(&response, nil)
 			},
@@ -162,7 +162,7 @@ func TestRouteRegistry_ServeMuxIntegration(t *testing.T) {
 			method:       http.MethodGet,
 			path:         "/repositories/123e4567-e89b-12d3-a456-426614174000",
 			expectedCode: http.StatusOK,
-			setupMocks: func(health *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
+			setupMocks: func(_ *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
 				response := testutil.NewRepositoryResponseBuilder().Build()
 				repo.ExpectGetRepository(&response, nil)
 			},
@@ -172,7 +172,7 @@ func TestRouteRegistry_ServeMuxIntegration(t *testing.T) {
 			method:       http.MethodDelete,
 			path:         "/repositories/123e4567-e89b-12d3-a456-426614174000",
 			expectedCode: http.StatusNoContent,
-			setupMocks: func(health *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
+			setupMocks: func(_ *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
 				repo.ExpectDeleteRepository(nil)
 			},
 		},
@@ -181,7 +181,7 @@ func TestRouteRegistry_ServeMuxIntegration(t *testing.T) {
 			method:       http.MethodGet,
 			path:         "/repositories/123e4567-e89b-12d3-a456-426614174000/jobs",
 			expectedCode: http.StatusOK,
-			setupMocks: func(health *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
+			setupMocks: func(_ *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
 				response := testutil.NewIndexingJobListResponseBuilder().Build()
 				repo.ExpectGetRepositoryJobs(&response, nil)
 			},
@@ -191,7 +191,7 @@ func TestRouteRegistry_ServeMuxIntegration(t *testing.T) {
 			method:       http.MethodGet,
 			path:         "/repositories/123e4567-e89b-12d3-a456-426614174000/jobs/456e7890-e89b-12d3-a456-426614174001",
 			expectedCode: http.StatusOK,
-			setupMocks: func(health *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
+			setupMocks: func(_ *testutil.MockHealthService, repo *testutil.MockRepositoryService) {
 				response := testutil.NewIndexingJobResponseBuilder().Build()
 				repo.ExpectGetIndexingJob(&response, nil)
 			},
@@ -440,7 +440,7 @@ func TestRouteRegistry_RouteConflicts(t *testing.T) {
 		registry := NewRouteRegistry()
 
 		// Register initial route
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
 
@@ -448,7 +448,7 @@ func TestRouteRegistry_RouteConflicts(t *testing.T) {
 		require.NoError(t, err)
 
 		// Try to register conflicting route
-		conflictingHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conflictingHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusConflict)
 		})
 
@@ -489,7 +489,7 @@ func TestRouteRegistry_InvalidPatterns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			registry := NewRouteRegistry()
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+			handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
 
 			err := registry.RegisterRoute(tt.pattern, handler)
 
@@ -506,7 +506,7 @@ func TestRouteValidation_NormalizedErrorMessages(t *testing.T) {
 	t.Run("validation_errors_use_normalized_message_constants", func(t *testing.T) {
 		// This test will fail until error message constants are defined and used
 		registry := NewRouteRegistry()
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+		handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
 
 		tests := []struct {
 			name                string
@@ -568,7 +568,7 @@ func TestRouteValidation_NormalizedErrorMessages(t *testing.T) {
 	t.Run("parameter_validation_errors_use_helper_functions", func(t *testing.T) {
 		// This test will fail until parameter validation error helpers are implemented
 		registry := NewRouteRegistry()
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+		handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
 
 		tests := []struct {
 			name               string
@@ -623,7 +623,7 @@ func TestRouteValidation_NormalizedErrorMessages(t *testing.T) {
 	t.Run("route_conflict_errors_use_normalized_messages", func(t *testing.T) {
 		// This test will fail until route conflict error messages are normalized
 		registry := NewRouteRegistry()
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+		handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
 
 		// Register first route
 		err := registry.RegisterRoute("GET /repos/{id}", handler)
@@ -714,7 +714,7 @@ func TestRouteValidation_ErrorMessageConstants(t *testing.T) {
 
 				// For now, we'll test that the error messages are consistent across usage
 				registry := NewRouteRegistry()
-				handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+				handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
 
 				var err error
 				switch tt.constantName {
@@ -742,7 +742,7 @@ func TestRouteValidation_ErrorMessageConstants(t *testing.T) {
 	t.Run("error_message_templates_are_consistent", func(t *testing.T) {
 		// This test will fail until error message templates are implemented
 		registry := NewRouteRegistry()
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+		handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
 
 		// Test that error messages with parameters use consistent templates
 		templateTests := []struct {

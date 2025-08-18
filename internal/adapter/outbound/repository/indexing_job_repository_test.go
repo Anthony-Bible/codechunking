@@ -13,7 +13,7 @@ import (
 )
 
 // createTestIndexingJob creates a test indexing job entity.
-func createTestIndexingJob(t *testing.T, repositoryID uuid.UUID) *entity.IndexingJob {
+func createTestIndexingJob(_ *testing.T, repositoryID uuid.UUID) *entity.IndexingJob {
 	return entity.NewIndexingJob(repositoryID)
 }
 
@@ -183,9 +183,9 @@ func setupJobForUpdate(
 // Helper function to verify job persistence after update.
 // Reduces validation duplication across focused update tests.
 func verifyJobPersistence(
+	ctx context.Context,
 	t *testing.T,
 	jobRepo *PostgreSQLIndexingJobRepository,
-	ctx context.Context,
 	expectedJob *entity.IndexingJob,
 	originalUpdatedAt time.Time,
 ) {
@@ -220,9 +220,9 @@ func verifyJobPersistence(
 // Helper function to verify archived job behavior.
 // Reduces validation duplication for soft delete testing.
 func verifyArchivedJobBehavior(
+	ctx context.Context,
 	t *testing.T,
 	jobRepo *PostgreSQLIndexingJobRepository,
-	ctx context.Context,
 	archivedJob *entity.IndexingJob,
 ) {
 	// For archived jobs, FindByID should return nil (soft deleted)
@@ -267,7 +267,7 @@ func TestIndexingJobRepository_Update_StartJob(t *testing.T) {
 	}
 
 	// Verify persistence and status change
-	verifyJobPersistence(t, jobRepo, ctx, jobToUpdate, originalUpdatedAt)
+	verifyJobPersistence(ctx, t, jobRepo, jobToUpdate, originalUpdatedAt)
 
 	// Verify specific start job behavior
 	updatedJob, _ := jobRepo.FindByID(ctx, jobToUpdate.ID())
@@ -308,7 +308,7 @@ func TestIndexingJobRepository_Update_CompleteJob(t *testing.T) {
 	}
 
 	// Verify persistence and completion data
-	verifyJobPersistence(t, jobRepo, ctx, jobToUpdate, originalUpdatedAt)
+	verifyJobPersistence(ctx, t, jobRepo, jobToUpdate, originalUpdatedAt)
 
 	// Verify specific completion behavior
 	updatedJob, _ := jobRepo.FindByID(ctx, jobToUpdate.ID())
@@ -358,7 +358,7 @@ func TestIndexingJobRepository_Update_FailJob(t *testing.T) {
 	}
 
 	// Verify persistence and failure data
-	verifyJobPersistence(t, jobRepo, ctx, jobToUpdate, originalUpdatedAt)
+	verifyJobPersistence(ctx, t, jobRepo, jobToUpdate, originalUpdatedAt)
 
 	// Verify specific failure behavior
 	updatedJob, _ := jobRepo.FindByID(ctx, jobToUpdate.ID())
@@ -404,7 +404,7 @@ func TestIndexingJobRepository_Update_CancelJob(t *testing.T) {
 	}
 
 	// Verify persistence and cancellation
-	verifyJobPersistence(t, jobRepo, ctx, jobToUpdate, originalUpdatedAt)
+	verifyJobPersistence(ctx, t, jobRepo, jobToUpdate, originalUpdatedAt)
 
 	// Verify specific cancellation behavior
 	updatedJob, _ := jobRepo.FindByID(ctx, jobToUpdate.ID())
@@ -442,7 +442,7 @@ func TestIndexingJobRepository_Update_ProgressUpdates(t *testing.T) {
 	}
 
 	// Verify persistence and progress data
-	verifyJobPersistence(t, jobRepo, ctx, jobToUpdate, originalUpdatedAt)
+	verifyJobPersistence(ctx, t, jobRepo, jobToUpdate, originalUpdatedAt)
 
 	// Verify specific progress update behavior
 	updatedJob, _ := jobRepo.FindByID(ctx, jobToUpdate.ID())
@@ -487,7 +487,7 @@ func TestIndexingJobRepository_Update_ArchiveJob(t *testing.T) {
 	}
 
 	// Verify archival behavior (soft delete)
-	verifyArchivedJobBehavior(t, jobRepo, ctx, jobToUpdate)
+	verifyArchivedJobBehavior(ctx, t, jobRepo, jobToUpdate)
 }
 
 // TestIndexingJobRepository_Update_NonExistentJob tests updating a non-existent job.
@@ -514,10 +514,10 @@ func TestIndexingJobRepository_Update_NonExistentJob(t *testing.T) {
 // Helper function to create and save a test job.
 // Reduces duplication across Delete tests.
 func createAndSaveTestJob(
+	ctx context.Context,
 	t *testing.T,
 	jobRepo *PostgreSQLIndexingJobRepository,
 	repoID uuid.UUID,
-	ctx context.Context,
 ) uuid.UUID {
 	testJob := createTestIndexingJob(t, repoID)
 	err := jobRepo.Save(ctx, testJob)
@@ -530,10 +530,10 @@ func createAndSaveTestJob(
 // Helper function to create and save a completed test job.
 // Reduces duplication across Delete tests.
 func createAndSaveCompletedTestJob(
+	ctx context.Context,
 	t *testing.T,
 	jobRepo *PostgreSQLIndexingJobRepository,
 	repoID uuid.UUID,
-	ctx context.Context,
 ) uuid.UUID {
 	testJob := createTestIndexingJob(t, repoID)
 	_ = testJob.Start()
@@ -547,7 +547,7 @@ func createAndSaveCompletedTestJob(
 
 // Helper function to verify job deletion.
 // Reduces validation duplication across Delete tests.
-func verifyJobDeleted(t *testing.T, jobRepo *PostgreSQLIndexingJobRepository, ctx context.Context, jobID uuid.UUID) {
+func verifyJobDeleted(ctx context.Context, t *testing.T, jobRepo *PostgreSQLIndexingJobRepository, jobID uuid.UUID) {
 	deletedJob, err := jobRepo.FindByID(ctx, jobID)
 	if err == nil && deletedJob != nil {
 		t.Error("Expected deleted job to not be found")
@@ -570,7 +570,7 @@ func TestIndexingJobRepository_Delete_ExistingJob(t *testing.T) {
 	}
 
 	// Verify job is soft deleted
-	verifyJobDeleted(t, jobRepo, ctx, testJob.ID())
+	verifyJobDeleted(ctx, t, jobRepo, testJob.ID())
 }
 
 // TestIndexingJobRepository_Delete_CompletedJob tests deleting a completed job.
@@ -591,7 +591,7 @@ func TestIndexingJobRepository_Delete_CompletedJob(t *testing.T) {
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 
 	// Create and save completed job
-	jobID := createAndSaveCompletedTestJob(t, jobRepo, testRepo.ID(), ctx)
+	jobID := createAndSaveCompletedTestJob(ctx, t, jobRepo, testRepo.ID())
 
 	// Delete the completed job
 	err = jobRepo.Delete(ctx, jobID)
@@ -601,7 +601,7 @@ func TestIndexingJobRepository_Delete_CompletedJob(t *testing.T) {
 	}
 
 	// Verify job is soft deleted
-	verifyJobDeleted(t, jobRepo, ctx, jobID)
+	verifyJobDeleted(ctx, t, jobRepo, jobID)
 }
 
 // TestIndexingJobRepository_Delete_NonExistentJob tests deleting a non-existent job.
@@ -717,12 +717,12 @@ func TestIndexingJobRepository_ConcurrentUpdates(t *testing.T) {
 // setupTestRepositoryWithJobs creates a test repository and saves the specified number of jobs.
 // This helper reduces setup duplication across focused tests.
 func setupTestRepositoryWithJobs(
+	ctx context.Context,
 	t *testing.T,
 	jobRepo *PostgreSQLIndexingJobRepository,
 	repoRepo *PostgreSQLRepositoryRepository,
 	numJobs int,
-) (*entity.Repository, []*entity.IndexingJob) {
-	ctx := context.Background()
+) *entity.Repository {
 	testRepo := createTestRepository(t)
 	err := repoRepo.Save(ctx, testRepo)
 	if err != nil {
@@ -739,7 +739,7 @@ func setupTestRepositoryWithJobs(
 		jobs[i] = job
 	}
 
-	return testRepo, jobs
+	return testRepo
 }
 
 // validateJobResults validates that returned jobs match expectations.
@@ -772,10 +772,10 @@ func TestIndexingJobRepository_FindByRepositoryID_BasicRetrieval(t *testing.T) {
 
 	repoRepo := NewPostgreSQLRepositoryRepository(pool)
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
+	ctx := context.Background()
 
 	// Setup: Create repository with 5 test jobs
-	testRepo, _ := setupTestRepositoryWithJobs(t, jobRepo, repoRepo, 5)
-	ctx := context.Background()
+	testRepo := setupTestRepositoryWithJobs(ctx, t, jobRepo, repoRepo, 5)
 
 	// Test: Retrieve all jobs with standard pagination
 	filters := outbound.IndexingJobFilters{
@@ -802,10 +802,10 @@ func TestIndexingJobRepository_FindByRepositoryID_Pagination(t *testing.T) {
 
 	repoRepo := NewPostgreSQLRepositoryRepository(pool)
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
+	ctx := context.Background()
 
 	// Setup: Create repository with 15 test jobs for pagination testing
-	testRepo, _ := setupTestRepositoryWithJobs(t, jobRepo, repoRepo, 15)
-	ctx := context.Background()
+	testRepo := setupTestRepositoryWithJobs(ctx, t, jobRepo, repoRepo, 15)
 
 	tests := []struct {
 		name          string
@@ -867,8 +867,8 @@ func TestIndexingJobRepository_FindByRepositoryID_RepositoryIsolation(t *testing
 	ctx := context.Background()
 
 	// Setup: Create two repositories with different numbers of jobs
-	testRepo1, _ := setupTestRepositoryWithJobs(t, jobRepo, repoRepo, 7)
-	testRepo2, _ := setupTestRepositoryWithJobs(t, jobRepo, repoRepo, 3)
+	testRepo1 := setupTestRepositoryWithJobs(ctx, t, jobRepo, repoRepo, 7)
+	testRepo2 := setupTestRepositoryWithJobs(ctx, t, jobRepo, repoRepo, 3)
 
 	filters := outbound.IndexingJobFilters{
 		Limit:  10,
@@ -911,7 +911,7 @@ func TestIndexingJobRepository_FindByRepositoryID_InvalidParameters(t *testing.T
 	ctx := context.Background()
 
 	// Setup: Create a test repository for valid repository ID comparisons
-	testRepo, _ := setupTestRepositoryWithJobs(t, jobRepo, repoRepo, 1)
+	testRepo := setupTestRepositoryWithJobs(ctx, t, jobRepo, repoRepo, 1)
 
 	tests := []struct {
 		name         string
@@ -981,7 +981,7 @@ func TestIndexingJobRepository_FindByRepositoryID_EmptyResults(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup: Create a repository with jobs, but query for a different one
-	_, _ = setupTestRepositoryWithJobs(t, jobRepo, repoRepo, 5)
+	_ = setupTestRepositoryWithJobs(ctx, t, jobRepo, repoRepo, 5)
 	nonExistentRepoID := uuid.New()
 
 	filters := outbound.IndexingJobFilters{

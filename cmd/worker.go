@@ -1,3 +1,4 @@
+// Package cmd provides command-line interface functionality for the codechunking application.
 /*
 Copyright © 2025 NAME HERE <EMAIL ADDRESS>
 */
@@ -20,7 +21,7 @@ and usage of using your command. For example:
 Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			slogger.InfoNoCtx("worker called", nil)
 		},
 	}

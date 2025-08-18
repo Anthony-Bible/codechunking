@@ -94,7 +94,7 @@ func TestWriteJSON_VariousDataTypes(t *testing.T) {
 				{ID: uuid.New(), URL: "https://github.com/user/repo2", Status: "pending"},
 			},
 			expectedErr: false,
-			validateFn: func(t *testing.T, recorder *httptest.ResponseRecorder, originalData interface{}) {
+			validateFn: func(t *testing.T, recorder *httptest.ResponseRecorder, _ interface{}) {
 				var decoded []dto.RepositoryResponse
 				err := json.Unmarshal(recorder.Body.Bytes(), &decoded)
 				require.NoError(t, err)
@@ -108,7 +108,7 @@ func TestWriteJSON_VariousDataTypes(t *testing.T) {
 			statusCode:  http.StatusOK,
 			data:        "simple string response",
 			expectedErr: false,
-			validateFn: func(t *testing.T, recorder *httptest.ResponseRecorder, originalData interface{}) {
+			validateFn: func(t *testing.T, recorder *httptest.ResponseRecorder, _ interface{}) {
 				var decoded string
 				err := json.Unmarshal(recorder.Body.Bytes(), &decoded)
 				require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestWriteJSON_VariousDataTypes(t *testing.T) {
 			statusCode:  http.StatusOK,
 			data:        12345,
 			expectedErr: false,
-			validateFn: func(t *testing.T, recorder *httptest.ResponseRecorder, originalData interface{}) {
+			validateFn: func(t *testing.T, recorder *httptest.ResponseRecorder, _ interface{}) {
 				var decoded int
 				err := json.Unmarshal(recorder.Body.Bytes(), &decoded)
 				require.NoError(t, err)
@@ -132,7 +132,7 @@ func TestWriteJSON_VariousDataTypes(t *testing.T) {
 			statusCode:  http.StatusNoContent,
 			data:        nil,
 			expectedErr: false,
-			validateFn: func(t *testing.T, recorder *httptest.ResponseRecorder, originalData interface{}) {
+			validateFn: func(t *testing.T, recorder *httptest.ResponseRecorder, _ interface{}) {
 				bodyBytes := recorder.Body.Bytes()
 				expectedJSON := []byte("null\n") // JSON encoding of nil produces "null"
 				assert.JSONEq(t, string(expectedJSON), string(bodyBytes))
@@ -143,7 +143,7 @@ func TestWriteJSON_VariousDataTypes(t *testing.T) {
 			statusCode:  http.StatusOK,
 			data:        map[string]interface{}{},
 			expectedErr: false,
-			validateFn: func(t *testing.T, recorder *httptest.ResponseRecorder, originalData interface{}) {
+			validateFn: func(t *testing.T, recorder *httptest.ResponseRecorder, _ interface{}) {
 				var decoded map[string]interface{}
 				err := json.Unmarshal(recorder.Body.Bytes(), &decoded)
 				require.NoError(t, err)

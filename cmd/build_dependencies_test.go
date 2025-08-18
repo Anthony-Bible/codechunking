@@ -351,7 +351,7 @@ func TestServiceFactory_BuildDependencies_MethodExists(t *testing.T) {
 }
 
 // Helper function to check if a method exists (for testing purposes).
-func hasMethod(obj interface{}, methodName string) bool {
+func hasMethod(obj interface{}, _ string) bool {
 	// This is a simplified check - in reality we'd use reflection
 	// But for TDD purposes, we know this will fail until the method is implemented
 	// Note: Method should exist after GREEN phase implementation

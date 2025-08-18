@@ -2,6 +2,7 @@ package handler
 
 import (
 	"codechunking/internal/application/common"
+	"codechunking/internal/application/defaults"
 	"codechunking/internal/application/dto"
 	"context"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Service interfaces.
+// CreateRepositoryService defines the interface for creating repositories.
 type CreateRepositoryService interface {
 	CreateRepository(ctx context.Context, request dto.CreateRepositoryRequest) (*dto.RepositoryResponse, error)
 }
@@ -225,7 +226,7 @@ func (h *ListRepositoriesQueryHandler) Handle(
 	}
 
 	// Apply defaults (service will handle this but we can do it here for validation)
-	common.ApplyRepositoryListDefaults(&dtoQuery)
+	defaults.ApplyRepositoryListDefaults(&dtoQuery)
 
 	// Execute service
 	return h.service.ListRepositories(ctx, dtoQuery)
@@ -236,7 +237,7 @@ func (h *ListRepositoriesQueryHandler) validateListQuery(query ListRepositoriesQ
 	if err := common.ValidateRepositoryStatus(query.Status); err != nil {
 		return err
 	}
-	if err := common.ValidatePaginationLimit(query.Limit, common.MaxRepositoryListLimit, "limit"); err != nil {
+	if err := common.ValidatePaginationLimit(query.Limit, defaults.MaxRepositoryListLimit, "limit"); err != nil {
 		return err
 	}
 	return nil

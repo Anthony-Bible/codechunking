@@ -479,7 +479,7 @@ func TestRouteRegistration_WithRefactoredValidation(t *testing.T) {
 			pattern := fmt.Sprintf("%s /test/%s", method, strings.ToLower(method))
 
 			// This should work both before and after refactoring
-			err := registry.RegisterRoute(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+			err := registry.RegisterRoute(pattern, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 			require.NoError(t, err, "Should be able to register route with method %s", method)
 
 			// Verify route was registered

@@ -2,6 +2,7 @@ package service
 
 import (
 	"codechunking/internal/application/common"
+	"codechunking/internal/application/defaults"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/valueobject"
@@ -242,7 +243,7 @@ func (s *ListIndexingJobsService) ListIndexingJobs(
 	}
 
 	// Apply defaults
-	common.ApplyIndexingJobListDefaults(&query)
+	defaults.ApplyIndexingJobListDefaults(&query)
 
 	// Convert query to filters
 	filters := outbound.IndexingJobFilters{

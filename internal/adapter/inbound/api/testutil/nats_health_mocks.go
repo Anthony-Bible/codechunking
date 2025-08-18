@@ -69,7 +69,7 @@ func NewMockMessagePublisherWithHealthMonitoring() *MockMessagePublisherWithHeal
 	}
 }
 
-// MessagePublisher interface implementation.
+// PublishIndexingJob publishes an indexing job message and tracks the call for testing.
 func (m *MockMessagePublisherWithHealthMonitoring) PublishIndexingJob(
 	ctx context.Context,
 	repositoryID uuid.UUID,
@@ -106,7 +106,7 @@ func (m *MockMessagePublisherWithHealthMonitoring) PublishIndexingJob(
 	return nil
 }
 
-// MessagePublisherHealth interface implementation.
+// GetConnectionHealth returns the current connection health status for testing.
 func (m *MockMessagePublisherWithHealthMonitoring) GetConnectionHealth() outbound.MessagePublisherHealthStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -156,7 +156,7 @@ func (m *MockMessagePublisherWithHealthMonitoring) GetMessageMetrics() outbound.
 	return m.messageMetrics
 }
 
-// Test helper methods.
+// SetConnectionHealth sets the connection health status for testing purposes.
 func (m *MockMessagePublisherWithHealthMonitoring) SetConnectionHealth(health outbound.MessagePublisherHealthStatus) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -267,8 +267,8 @@ func (b *NATSHealthResponseBuilder) WithReconnects(count int) *NATSHealthRespons
 	return b
 }
 
-func (b *NATSHealthResponseBuilder) WithLastError(error string) *NATSHealthResponseBuilder {
-	b.natsHealth.LastError = error
+func (b *NATSHealthResponseBuilder) WithLastError(errorMsg string) *NATSHealthResponseBuilder {
+	b.natsHealth.LastError = errorMsg
 	return b
 }
 
@@ -320,7 +320,7 @@ func (b *NATSHealthResponseBuilder) Build() dto.NATSHealthDetails {
 	return b.natsHealth
 }
 
-// Enhanced HealthResponseBuilder that supports NATS details.
+// EnhancedHealthResponseBuilder provides an enhanced HealthResponseBuilder that supports NATS details.
 type EnhancedHealthResponseBuilder struct {
 	response dto.HealthResponse
 }
@@ -383,7 +383,7 @@ func (b *EnhancedHealthResponseBuilder) BuildEnhanced() dto.HealthResponse {
 	return b.response
 }
 
-// Test scenario builders for common NATS health scenarios.
+// CreateHealthyNATSScenario creates a test scenario for healthy NATS connection.
 func CreateHealthyNATSScenario() dto.HealthResponse {
 	natsHealth := NewNATSHealthResponseBuilder().
 		WithConnection(true).

@@ -223,7 +223,7 @@ func TestSecurityValidationMiddleware(t *testing.T) {
 			securityMiddleware := NewSecurityValidationMiddleware()
 
 			// Mock handler that should only be called for valid requests
-			handler := securityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := securityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.expectedStatus)
 				_, _ = w.Write([]byte(`{"message": "success"}`))
 			}))
@@ -316,7 +316,7 @@ func TestInputSanitizationMiddleware(t *testing.T) {
 			// This middleware doesn't exist yet - tests should FAIL initially
 			sanitizationMiddleware := NewInputSanitizationMiddleware()
 
-			handler := sanitizationMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := sanitizationMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.expectedStatus)
 				_, _ = w.Write([]byte(`{"message": "success"}`))
 			}))
@@ -377,7 +377,7 @@ func TestRateLimitingMiddleware(t *testing.T) {
 			// This middleware doesn't exist yet - tests should FAIL initially
 			rateLimitMiddleware := NewRateLimitingMiddleware(tt.rateLimitConfig)
 
-			handler := rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"message": "success"}`))
 			}))
@@ -453,7 +453,7 @@ func TestContentTypeValidationMiddleware(t *testing.T) {
 			// This middleware doesn't exist yet - tests should FAIL initially
 			contentTypeMiddleware := NewContentTypeValidationMiddleware()
 
-			handler := contentTypeMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := contentTypeMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.expectedStatus)
 				_, _ = w.Write([]byte(`{"message": "success"}`))
 			}))
@@ -479,7 +479,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 	t.Run("adds_security_headers", func(t *testing.T) {
 		securityMiddleware := NewSecurityHeadersMiddleware()
 
-		handler := securityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := securityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("success"))
 		}))

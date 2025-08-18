@@ -20,13 +20,13 @@ const (
 	defaultNATSMaxReconnects      = 5
 )
 
-// CmdConfig holds the command configuration.
-type CmdConfig struct {
+// Config holds the command configuration.
+type Config struct {
 	cfgFile string
 	cfg     *config.Config
 }
 
-var cmdConfig CmdConfig //nolint:gochecknoglobals // Standard CLI pattern for Cobra command configuration
+var cmdConfig Config //nolint:gochecknoglobals // Standard CLI pattern for Cobra command configuration
 
 // rootCmd represents the base command when called without any subcommands.
 var rootCmd = newRootCmd() //nolint:gochecknoglobals // Standard Cobra CLI pattern for root command

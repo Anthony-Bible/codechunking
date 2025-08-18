@@ -500,9 +500,9 @@ func (n *NATSMessagePublisher) ResetCircuitBreaker() {
 
 // tryFallbackDelivery attempts fallback delivery mechanisms when NATS is unavailable.
 func (n *NATSMessagePublisher) tryFallbackDelivery(
-	ctx context.Context,
-	repositoryID uuid.UUID,
-	repositoryURL string,
+	_ context.Context,
+	_ uuid.UUID,
+	_ string,
 ) error {
 	// Check if fallback mode is enabled (for testing graceful degradation)
 	// In normal circuit breaker scenarios, return standard error

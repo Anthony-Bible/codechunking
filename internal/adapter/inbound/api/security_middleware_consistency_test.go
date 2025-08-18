@@ -21,13 +21,13 @@ func TestNewSecurityHeadersMiddleware_DelegatestoUnified(t *testing.T) {
 	}{
 		{
 			name:        "delegates_to_unified_for_https_requests",
-			request:     createHTTPSRequest("GET", "/test"),
+			request:     createHTTPSRequest(),
 			expectHSTS:  true,
 			description: "HTTPS requests should delegate to unified middleware with HSTS",
 		},
 		{
 			name:        "delegates_to_unified_for_http_requests",
-			request:     createHTTPRequest("GET", "/test"),
+			request:     createHTTPRequest(),
 			expectHSTS:  false,
 			description: "HTTP requests should delegate to unified middleware without HSTS",
 		},
@@ -41,7 +41,7 @@ func TestNewSecurityHeadersMiddleware_DelegatestoUnified(t *testing.T) {
 			legacyMiddleware := NewSecurityHeadersMiddleware()
 			unifiedMiddleware := NewUnifiedSecurityMiddleware(nil)
 
-			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte("OK"))
 			})
@@ -112,7 +112,7 @@ func TestNewSecurityHeadersMiddleware_NoHardcodedHeaders(t *testing.T) {
 			"X-Content-Type-Options":  "nosniff",                         // Unified default
 		}
 
-		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
 
@@ -120,7 +120,7 @@ func TestNewSecurityHeadersMiddleware_NoHardcodedHeaders(t *testing.T) {
 		legacyMiddleware := NewSecurityHeadersMiddleware()
 		handler := legacyMiddleware(nextHandler)
 
-		req := createHTTPSRequest("GET", "/test")
+		req := createHTTPSRequest()
 		recorder := httptest.NewRecorder()
 
 		handler.ServeHTTP(recorder, req)
@@ -152,7 +152,7 @@ func TestCreateSecurityMiddlewareStack_UsesUnifiedMiddleware(t *testing.T) {
 		// FAILING TEST: This test expects CreateSecurityMiddlewareStack to use
 		// the unified middleware, but it currently calls the legacy implementation.
 
-		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("OK"))
 		})
@@ -166,7 +166,7 @@ func TestCreateSecurityMiddlewareStack_UsesUnifiedMiddleware(t *testing.T) {
 		unifiedHandler := unifiedSecurityMiddleware(nextHandler)
 
 		// Test with HTTPS request
-		req := createHTTPSRequest("GET", "/test")
+		req := createHTTPSRequest()
 
 		stackRecorder := httptest.NewRecorder()
 		unifiedRecorder := httptest.NewRecorder()
@@ -203,7 +203,7 @@ func TestCreateSecurityMiddlewareStack_ConfigurableHeaders(t *testing.T) {
 		// This test defines the expected API after refactoring
 		// The stack should either accept configuration or use a configurable unified middleware
 
-		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
 
@@ -212,7 +212,7 @@ func TestCreateSecurityMiddlewareStack_ConfigurableHeaders(t *testing.T) {
 		stackMiddleware := CreateSecurityMiddlewareStack()
 		handler := stackMiddleware(nextHandler)
 
-		req := createHTTPSRequest("GET", "/test")
+		req := createHTTPSRequest()
 		recorder := httptest.NewRecorder()
 
 		handler.ServeHTTP(recorder, req)
@@ -266,7 +266,7 @@ func TestSecurityMiddleware_BackwardCompatibilityPreserved(t *testing.T) {
 			middleware := tt.middlewareFunc()
 			require.NotNil(t, middleware, "Middleware function should not be nil")
 
-			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte("OK"))
 			})
@@ -275,7 +275,7 @@ func TestSecurityMiddleware_BackwardCompatibilityPreserved(t *testing.T) {
 			require.NotNil(t, handler, "Middleware should return a valid handler")
 
 			// Test basic functionality
-			req := createHTTPSRequest("GET", "/test")
+			req := createHTTPSRequest()
 			recorder := httptest.NewRecorder()
 
 			// Should not panic
@@ -306,7 +306,7 @@ func TestSecurityMiddleware_ConsistentHeaderBehavior(t *testing.T) {
 		// FAILING TEST: This test expects all middleware paths to produce identical headers
 		// after delegation to unified implementation.
 
-		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
 
@@ -317,7 +317,7 @@ func TestSecurityMiddleware_ConsistentHeaderBehavior(t *testing.T) {
 			"NewUnifiedSecurityMiddleware":  NewUnifiedSecurityMiddleware(nil),
 		}
 
-		req := createHTTPSRequest("GET", "/test")
+		req := createHTTPSRequest()
 		recorders := make(map[string]*httptest.ResponseRecorder)
 
 		// Execute request through each middleware path
@@ -365,12 +365,12 @@ func TestSecurityMiddleware_DelegationInternals(t *testing.T) {
 
 		// Test specific hardcoded values that should change after delegation
 		legacyMiddleware := NewSecurityHeadersMiddleware()
-		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
 
 		handler := legacyMiddleware(nextHandler)
-		req := createHTTPSRequest("GET", "/test")
+		req := createHTTPSRequest()
 		recorder := httptest.NewRecorder()
 
 		handler.ServeHTTP(recorder, req)
@@ -402,14 +402,14 @@ func TestCreateSecurityMiddlewareStack_NoDuplicateHeaders(t *testing.T) {
 		// FAILING TEST: This test expects no header duplication after refactoring
 		// Current implementation might have duplicates if it applies both legacy and unified middleware
 
-		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
 
 		stackMiddleware := CreateSecurityMiddlewareStack()
 		handler := stackMiddleware(nextHandler)
 
-		req := createHTTPSRequest("GET", "/test")
+		req := createHTTPSRequest()
 		recorder := httptest.NewRecorder()
 
 		handler.ServeHTTP(recorder, req)

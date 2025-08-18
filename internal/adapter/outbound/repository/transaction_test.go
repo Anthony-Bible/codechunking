@@ -278,8 +278,8 @@ type deadlockTestData struct {
 
 // setupDeadlockTestRepositories creates and saves two test repositories for deadlock testing.
 func setupDeadlockTestRepositories(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	repoRepo outbound.RepositoryRepository,
 ) *deadlockTestData {
 	// Create two test repositories
@@ -309,7 +309,7 @@ func runDeadlockProneTransaction(
 	ctx context.Context,
 	txManager *TransactionManager,
 	repoRepo outbound.RepositoryRepository,
-	data *deadlockTestData,
+	_ *deadlockTestData,
 	firstRepoID, secondRepoID uuid.UUID,
 	txName string,
 ) error {
@@ -380,7 +380,7 @@ func TestTransactionManager_DeadlockDetection(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Deadlock detection and retry mechanism", func(t *testing.T) {
-		data := setupDeadlockTestRepositories(t, ctx, repoRepo)
+		data := setupDeadlockTestRepositories(ctx, t, repoRepo)
 		err1, err2 := runConcurrentDeadlockTransactions(ctx, txManager, repoRepo, data)
 
 		// At least one should succeed (retry mechanism should handle deadlock)
@@ -404,7 +404,7 @@ func TestTransactionManager_DeadlockRetry(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Retry mechanism resolves deadlocks", func(t *testing.T) {
-		data := setupDeadlockTestRepositories(t, ctx, repoRepo)
+		data := setupDeadlockTestRepositories(ctx, t, repoRepo)
 
 		// Run multiple iterations to increase likelihood of testing retry mechanism
 		for i := range 3 {

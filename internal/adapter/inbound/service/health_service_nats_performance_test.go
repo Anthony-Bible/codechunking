@@ -532,10 +532,10 @@ func setupStressTestService() *HealthServiceAdapter {
 
 // runWorkerPool executes health checks using a worker pool pattern.
 func runWorkerPool(
+	ctx context.Context,
 	service *HealthServiceAdapter,
 	config stressTestConfig,
 	requestChan <-chan struct{},
-	ctx context.Context,
 ) (int64, int64) {
 	var wg sync.WaitGroup
 	var totalRequests int64
@@ -561,7 +561,7 @@ func runWorkerPool(
 }
 
 // generateRequests creates a stream of requests at the specified rate.
-func generateRequests(config stressTestConfig, ctx context.Context) <-chan struct{} {
+func generateRequests(ctx context.Context, config stressTestConfig) <-chan struct{} {
 	requestChan := make(chan struct{}, config.channelSize)
 
 	go func() {
@@ -627,8 +627,8 @@ func TestHealthServiceAdapter_StressTest(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), config.duration)
 		defer cancel()
 
-		requestChan := generateRequests(config, ctx)
-		totalRequests, totalErrors := runWorkerPool(service, config, requestChan, ctx)
+		requestChan := generateRequests(ctx, config)
+		totalRequests, totalErrors := runWorkerPool(ctx, service, config, requestChan)
 
 		results := stressTestResults{
 			totalRequests: totalRequests,
@@ -676,7 +676,7 @@ func TestHealthServiceAdapter_StressTest_WorkerPoolPattern(t *testing.T) {
 		}
 		close(requestChan)
 
-		totalRequests, totalErrors := runWorkerPool(service, config, requestChan, ctx)
+		totalRequests, totalErrors := runWorkerPool(ctx, service, config, requestChan)
 
 		assert.Equal(t, int64(10), totalRequests)
 		assert.Equal(t, int64(0), totalErrors)
@@ -695,7 +695,7 @@ func TestHealthServiceAdapter_StressTest_RequestGeneration(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), config.duration)
 		defer cancel()
 
-		requestChan := generateRequests(config, ctx)
+		requestChan := generateRequests(ctx, config)
 
 		// Count requests generated
 		var requestCount int

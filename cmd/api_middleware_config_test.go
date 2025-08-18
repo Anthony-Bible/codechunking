@@ -473,7 +473,7 @@ func TestServiceFactory_MiddlewareConfigValidation(t *testing.T) {
 	}{
 		{
 			name: "valid middleware configuration",
-			configModifier: func(cfg *config.Config) {
+			configModifier: func(_ *config.Config) {
 				GetConfig().API.EnableDefaultMiddleware = boolPtr(true)
 				GetConfig().API.EnableCORS = boolPtr(true)
 				GetConfig().API.EnableSecurityHeaders = boolPtr(true)
@@ -483,7 +483,7 @@ func TestServiceFactory_MiddlewareConfigValidation(t *testing.T) {
 		},
 		{
 			name: "conflicting middleware configuration",
-			configModifier: func(cfg *config.Config) {
+			configModifier: func(_ *config.Config) {
 				GetConfig().API.EnableDefaultMiddleware = boolPtr(false)
 				GetConfig().API.EnableCORS = boolPtr(true) // individual enable when default is disabled
 			},
@@ -492,7 +492,7 @@ func TestServiceFactory_MiddlewareConfigValidation(t *testing.T) {
 		},
 		{
 			name: "nil configuration should use defaults",
-			configModifier: func(cfg *config.Config) {
+			configModifier: func(_ *config.Config) {
 				// Leave all middleware settings as nil/default
 			},
 			expectError: false,
@@ -548,7 +548,7 @@ func assertBoolPtr(t *testing.T, fieldName string, expected, actual *bool) {
 }
 
 // createTestConfig creates a minimal valid config for testing.
-func createTestConfig(t *testing.T) *config.Config {
+func createTestConfig(_ *testing.T) *config.Config {
 	return &config.Config{
 		API: config.APIConfig{
 			Host: "localhost",

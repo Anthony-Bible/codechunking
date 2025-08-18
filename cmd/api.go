@@ -1,3 +1,4 @@
+// Package cmd provides command line interface functionality for the codechunking application.
 /*
 Copyright © 2025 NAME HERE <EMAIL ADDRESS>
 */
@@ -404,7 +405,7 @@ Configuration is loaded from config files and environment variables.`,
 	}
 }
 
-func runAPIServer(cmd *cobra.Command, args []string) {
+func runAPIServer(_ *cobra.Command, _ []string) {
 	// Load configuration
 	cfg := config.New(viper.GetViper())
 

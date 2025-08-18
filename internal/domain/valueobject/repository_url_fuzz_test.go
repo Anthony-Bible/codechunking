@@ -108,7 +108,7 @@ func containsMaliciousContent(input string) bool {
 }
 
 // validateAcceptedURL ensures accepted URLs meet security standards.
-func validateAcceptedURL(t *testing.T, url RepositoryURL, originalInput string) {
+func validateAcceptedURL(t *testing.T, url RepositoryURL, _ string) {
 	urlStr := url.String()
 
 	// URL should not contain dangerous characters

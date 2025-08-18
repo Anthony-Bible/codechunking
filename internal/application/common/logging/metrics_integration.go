@@ -26,7 +26,7 @@ const (
 	RequestDurationAvg   = 0.15
 )
 
-// Metrics-specific structures.
+// MetricsConfig configures metrics integration for the application logger.
 type MetricsConfig struct {
 	EnablePrometheusIntegration bool
 	EnableApplicationMetrics    bool

@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"bytes"
-	"codechunking/internal/adapter/inbound/api/util"
+	"codechunking/internal/adapter/inbound/api/netutil"
 	"context"
 	"crypto/rand"
 	"encoding/binary"
@@ -39,7 +39,7 @@ const (
 	logLevelError = 3
 )
 
-// HTTP logging structures.
+// HTTPLogEntry represents the structure for HTTP request logging.
 type HTTPLogEntry struct {
 	Timestamp     string                 `json:"timestamp"`
 	Level         string                 `json:"level"`
@@ -512,7 +512,7 @@ func buildHTTPLogEntry(
 	}
 
 	// Add client IP
-	clientIP := util.ClientIP(r)
+	clientIP := netutil.ClientIP(r)
 	if clientIP != "" {
 		request["client_ip"] = clientIP
 	}
@@ -579,7 +579,7 @@ func writeHTTPLogEntry(entry *HTTPLogEntry) {
 }
 
 // logPanicRecovery logs panic recovery.
-func logPanicRecovery(config LoggingConfig, correlationID string, r *http.Request, panicValue interface{}) {
+func logPanicRecovery(_ LoggingConfig, correlationID string, r *http.Request, panicValue interface{}) {
 	entry := HTTPLogEntry{
 		Timestamp:     time.Now().UTC().Format(time.RFC3339),
 		Level:         "ERROR",
@@ -641,7 +641,7 @@ func getRequestSize(r *http.Request) int64 {
 func addPerformanceMetrics(
 	request map[string]interface{},
 	r *http.Request,
-	rw *responseWriter,
+	_ *responseWriter,
 	duration time.Duration,
 	config LoggingConfig,
 ) {

@@ -12,16 +12,16 @@ import (
 )
 
 // Test helper functions.
-func createHTTPSRequest(method, path string) *http.Request {
-	req := testutil.CreateRequest(method, path)
+func createHTTPSRequest() *http.Request {
+	req := testutil.CreateRequest("GET", "/test")
 	req.TLS = &tls.ConnectionState{
 		Version: tls.VersionTLS12,
 	}
 	return req
 }
 
-func createHTTPRequest(method, path string) *http.Request {
-	return testutil.CreateRequest(method, path)
+func createHTTPRequest() *http.Request {
+	return testutil.CreateRequest("GET", "/test")
 }
 
 func assertSecurityHeader(t *testing.T, w *httptest.ResponseRecorder, headerName, expectedValue string) {
@@ -38,10 +38,10 @@ func assertSecurityHeader(t *testing.T, w *httptest.ResponseRecorder, headerName
 	)
 }
 
-func assertNoHeader(t *testing.T, w *httptest.ResponseRecorder, headerName string) {
+func assertNoHeader(t *testing.T, w *httptest.ResponseRecorder) {
 	t.Helper()
-	actualValue := w.Header().Get(headerName)
-	assert.Empty(t, actualValue, "Header %s should not be set, but got %s", headerName, actualValue)
+	actualValue := w.Header().Get("Strict-Transport-Security")
+	assert.Empty(t, actualValue, "Header Strict-Transport-Security should not be set, but got %s", actualValue)
 }
 
 func TestNewUnifiedSecurityMiddleware_DefaultConfiguration(t *testing.T) {
@@ -53,13 +53,13 @@ func TestNewUnifiedSecurityMiddleware_DefaultConfiguration(t *testing.T) {
 	}{
 		{
 			name:        "default_config_with_https_sets_all_headers_including_hsts",
-			request:     createHTTPSRequest("GET", "/test"),
+			request:     createHTTPSRequest(),
 			expectHSTS:  true,
 			description: "HTTPS request with default config should set all security headers including HSTS",
 		},
 		{
 			name:        "default_config_with_http_sets_all_headers_except_hsts",
-			request:     createHTTPRequest("GET", "/test"),
+			request:     createHTTPRequest(),
 			expectHSTS:  false,
 			description: "HTTP request with default config should set all security headers except HSTS",
 		},
@@ -71,7 +71,7 @@ func TestNewUnifiedSecurityMiddleware_DefaultConfiguration(t *testing.T) {
 			middleware := NewUnifiedSecurityMiddleware(nil)
 
 			// Create test handler
-			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte("OK"))
 			})
@@ -96,7 +96,7 @@ func TestNewUnifiedSecurityMiddleware_DefaultConfiguration(t *testing.T) {
 			if tt.expectHSTS {
 				assertSecurityHeader(t, w, "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 			} else {
-				assertNoHeader(t, w, "Strict-Transport-Security")
+				assertNoHeader(t, w)
 			}
 		})
 	}
@@ -137,13 +137,13 @@ func TestNewUnifiedSecurityMiddleware_CustomReferrerPolicy(t *testing.T) {
 			}
 
 			middleware := NewUnifiedSecurityMiddleware(config)
-			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})
 
 			handler := middleware(nextHandler)
 			w := httptest.NewRecorder()
-			req := createHTTPSRequest("GET", "/test")
+			req := createHTTPSRequest()
 
 			handler.ServeHTTP(w, req)
 
@@ -187,13 +187,13 @@ func TestNewUnifiedSecurityMiddleware_CustomCSPPolicy(t *testing.T) {
 			}
 
 			middleware := NewUnifiedSecurityMiddleware(config)
-			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})
 
 			handler := middleware(nextHandler)
 			w := httptest.NewRecorder()
-			req := createHTTPSRequest("GET", "/test")
+			req := createHTTPSRequest()
 
 			handler.ServeHTTP(w, req)
 
@@ -216,7 +216,7 @@ func TestNewUnifiedSecurityMiddleware_HStsConfiguration(t *testing.T) {
 			config: &SecurityHeadersConfig{
 				HStsEnabled: boolPtr(false),
 			},
-			request:       createHTTPSRequest("GET", "/test"),
+			request:       createHTTPSRequest(),
 			expectedHSTS:  "",
 			expectHSTSSet: false,
 			description:   "When HSTS is disabled, header should not be set even for HTTPS requests",
@@ -226,7 +226,7 @@ func TestNewUnifiedSecurityMiddleware_HStsConfiguration(t *testing.T) {
 			config: &SecurityHeadersConfig{
 				HStsEnabled: boolPtr(true),
 			},
-			request:       createHTTPRequest("GET", "/test"),
+			request:       createHTTPRequest(),
 			expectedHSTS:  "",
 			expectHSTSSet: false,
 			description:   "When request is HTTP, HSTS should not be set even if enabled",
@@ -236,7 +236,7 @@ func TestNewUnifiedSecurityMiddleware_HStsConfiguration(t *testing.T) {
 			config: &SecurityHeadersConfig{
 				HStsEnabled: boolPtr(true),
 			},
-			request:       createHTTPSRequest("GET", "/test"),
+			request:       createHTTPSRequest(),
 			expectedHSTS:  "max-age=31536000; includeSubDomains",
 			expectHSTSSet: true,
 			description:   "Default HSTS values should be used when enabled for HTTPS",
@@ -247,7 +247,7 @@ func TestNewUnifiedSecurityMiddleware_HStsConfiguration(t *testing.T) {
 				HStsEnabled: boolPtr(true),
 				HStsMaxAge:  7776000, // 90 days
 			},
-			request:       createHTTPSRequest("GET", "/test"),
+			request:       createHTTPSRequest(),
 			expectedHSTS:  "max-age=7776000; includeSubDomains",
 			expectHSTSSet: true,
 			description:   "Custom max-age should be used when specified",
@@ -258,7 +258,7 @@ func TestNewUnifiedSecurityMiddleware_HStsConfiguration(t *testing.T) {
 				HStsEnabled:    boolPtr(true),
 				HStsSubdomains: boolPtr(false),
 			},
-			request:       createHTTPSRequest("GET", "/test"),
+			request:       createHTTPSRequest(),
 			expectedHSTS:  "max-age=31536000",
 			expectHSTSSet: true,
 			description:   "HSTS without includeSubDomains when disabled",
@@ -269,7 +269,7 @@ func TestNewUnifiedSecurityMiddleware_HStsConfiguration(t *testing.T) {
 				HStsEnabled: boolPtr(true),
 				HStsPreload: boolPtr(true),
 			},
-			request:       createHTTPSRequest("GET", "/test"),
+			request:       createHTTPSRequest(),
 			expectedHSTS:  "max-age=31536000; includeSubDomains; preload",
 			expectHSTSSet: true,
 			description:   "HSTS with preload directive when enabled",
@@ -282,7 +282,7 @@ func TestNewUnifiedSecurityMiddleware_HStsConfiguration(t *testing.T) {
 				HStsSubdomains: boolPtr(false),
 				HStsPreload:    boolPtr(true),
 			},
-			request:       createHTTPSRequest("GET", "/test"),
+			request:       createHTTPSRequest(),
 			expectedHSTS:  "max-age=15552000; preload",
 			expectHSTSSet: true,
 			description:   "All HSTS options should work together",
@@ -292,7 +292,7 @@ func TestNewUnifiedSecurityMiddleware_HStsConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			middleware := NewUnifiedSecurityMiddleware(tt.config)
-			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})
 
@@ -304,7 +304,7 @@ func TestNewUnifiedSecurityMiddleware_HStsConfiguration(t *testing.T) {
 			if tt.expectHSTSSet {
 				assertSecurityHeader(t, w, "Strict-Transport-Security", tt.expectedHSTS)
 			} else {
-				assertNoHeader(t, w, "Strict-Transport-Security")
+				assertNoHeader(t, w)
 			}
 		})
 	}
@@ -346,13 +346,13 @@ func TestNewUnifiedSecurityMiddleware_CustomBasicHeaders(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			middleware := NewUnifiedSecurityMiddleware(tt.config)
-			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})
 
 			handler := middleware(nextHandler)
 			w := httptest.NewRecorder()
-			req := createHTTPSRequest("GET", "/test")
+			req := createHTTPSRequest()
 
 			handler.ServeHTTP(w, req)
 
@@ -368,12 +368,12 @@ func TestNewUnifiedSecurityMiddleware_BackwardCompatibility(t *testing.T) {
 		oldMiddleware := NewSecurityMiddleware()
 		newMiddleware := NewUnifiedSecurityMiddleware(nil) // default config
 
-		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
 
 		// Test with HTTPS request
-		httpsReq := createHTTPSRequest("GET", "/test")
+		httpsReq := createHTTPSRequest()
 
 		// Test old middleware
 		oldHandler := oldMiddleware(nextHandler)
@@ -407,12 +407,12 @@ func TestNewUnifiedSecurityMiddleware_BackwardCompatibility(t *testing.T) {
 		oldMiddleware := NewSecurityMiddleware()
 		newMiddleware := NewUnifiedSecurityMiddleware(nil)
 
-		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
 
 		// Test with HTTP request
-		httpReq := createHTTPRequest("GET", "/test")
+		httpReq := createHTTPRequest()
 
 		// Test old middleware
 		oldHandler := oldMiddleware(nextHandler)
@@ -440,8 +440,8 @@ func TestNewUnifiedSecurityMiddleware_BackwardCompatibility(t *testing.T) {
 		}
 
 		// HSTS should not be set for either
-		assertNoHeader(t, oldRecorder, "Strict-Transport-Security")
-		assertNoHeader(t, newRecorder, "Strict-Transport-Security")
+		assertNoHeader(t, oldRecorder)
+		assertNoHeader(t, newRecorder)
 	})
 }
 
@@ -468,13 +468,13 @@ func TestNewUnifiedSecurityMiddleware_EdgeCases(t *testing.T) {
 			middleware := NewUnifiedSecurityMiddleware(tt.config)
 			require.NotNil(t, middleware, "Middleware should be created even with nil/empty config")
 
-			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})
 
 			handler := middleware(nextHandler)
 			w := httptest.NewRecorder()
-			req := createHTTPSRequest("GET", "/test")
+			req := createHTTPSRequest()
 
 			// Should not panic and should set default headers
 			require.NotPanics(t, func() {
@@ -536,7 +536,7 @@ func TestNewUnifiedSecurityMiddleware_TLSContextVariations(t *testing.T) {
 			}
 
 			middleware := NewUnifiedSecurityMiddleware(config)
-			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})
 
@@ -552,7 +552,7 @@ func TestNewUnifiedSecurityMiddleware_TLSContextVariations(t *testing.T) {
 			if tt.expectHSTS {
 				assertSecurityHeader(t, w, "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 			} else {
-				assertNoHeader(t, w, "Strict-Transport-Security")
+				assertNoHeader(t, w)
 			}
 		})
 	}
@@ -563,7 +563,7 @@ func TestNewUnifiedSecurityMiddleware_HeadersNotOverwritten(t *testing.T) {
 		config := &SecurityHeadersConfig{}
 		middleware := NewUnifiedSecurityMiddleware(config)
 
-		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			// Handler sets a security header before middleware
 			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 			w.WriteHeader(http.StatusOK)
@@ -571,7 +571,7 @@ func TestNewUnifiedSecurityMiddleware_HeadersNotOverwritten(t *testing.T) {
 
 		handler := middleware(nextHandler)
 		w := httptest.NewRecorder()
-		req := createHTTPSRequest("GET", "/test")
+		req := createHTTPSRequest()
 
 		handler.ServeHTTP(w, req)
 
@@ -597,13 +597,13 @@ func TestNewUnifiedSecurityMiddleware_ComprehensiveConfiguration(t *testing.T) {
 		}
 
 		middleware := NewUnifiedSecurityMiddleware(config)
-		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
 
 		handler := middleware(nextHandler)
 		w := httptest.NewRecorder()
-		req := createHTTPSRequest("GET", "/test")
+		req := createHTTPSRequest()
 
 		handler.ServeHTTP(w, req)
 

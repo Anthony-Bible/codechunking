@@ -8,15 +8,15 @@ import (
 	"time"
 )
 
-// SecurityLogger provides structured logging for security events.
-type SecurityLogger interface {
-	LogViolation(ctx context.Context, event SecurityEvent)
-	LogMetric(ctx context.Context, metric SecurityMetric)
+// Logger provides structured logging for security events.
+type Logger interface {
+	LogViolation(ctx context.Context, event Event)
+	LogMetric(ctx context.Context, metric Metric)
 	LogAccess(ctx context.Context, access AccessEvent)
 }
 
-// SecurityEvent represents a security violation event.
-type SecurityEvent struct {
+// Event represents a security violation event.
+type Event struct {
 	Type             string            `json:"type"`
 	Severity         string            `json:"severity"`
 	Message          string            `json:"message"`
@@ -38,8 +38,8 @@ type ViolationDetails struct {
 	Description string `json:"description,omitempty"`
 }
 
-// SecurityMetric represents security-related metrics.
-type SecurityMetric struct {
+// Metric represents security-related metrics.
+type Metric struct {
 	Name      string            `json:"name"`
 	Value     float64           `json:"value"`
 	Labels    map[string]string `json:"labels,omitempty"`
@@ -62,7 +62,7 @@ type AccessEvent struct {
 // DefaultSecurityLogger provides a default implementation.
 type DefaultSecurityLogger struct {
 	config  *Config
-	metrics SecurityMetrics
+	metrics Metrics
 }
 
 // NewDefaultSecurityLogger creates a new default security logger.
@@ -74,7 +74,7 @@ func NewDefaultSecurityLogger(config *Config) *DefaultSecurityLogger {
 }
 
 // LogViolation logs a security violation event.
-func (dsl *DefaultSecurityLogger) LogViolation(ctx context.Context, event SecurityEvent) {
+func (dsl *DefaultSecurityLogger) LogViolation(ctx context.Context, event Event) {
 	if !dsl.config.LogSecurityViolations {
 		return
 	}
@@ -150,7 +150,7 @@ func (dsl *DefaultSecurityLogger) LogViolation(ctx context.Context, event Securi
 }
 
 // LogMetric logs a security metric.
-func (dsl *DefaultSecurityLogger) LogMetric(ctx context.Context, metric SecurityMetric) {
+func (dsl *DefaultSecurityLogger) LogMetric(ctx context.Context, metric Metric) {
 	if metric.Timestamp.IsZero() {
 		metric.Timestamp = time.Now()
 	}
@@ -234,8 +234,8 @@ func (dsl *DefaultSecurityLogger) sanitizeLogValue(value string) string {
 	return sanitized
 }
 
-// SecurityMetrics tracks security-related metrics.
-type SecurityMetrics interface {
+// Metrics tracks security-related metrics.
+type Metrics interface {
 	IncrementViolation(violationType string)
 	RecordMetric(name string, value float64, labels map[string]string)
 	RecordAccess(accessType string, statusCode int)
@@ -253,7 +253,7 @@ type DefaultSecurityMetrics struct {
 }
 
 // NewSecurityMetrics creates a new security metrics instance.
-func NewSecurityMetrics() SecurityMetrics {
+func NewSecurityMetrics() Metrics {
 	return &DefaultSecurityMetrics{
 		violationCounts: make(map[string]int64),
 		accessCounts:    make(map[string]int64),
@@ -271,7 +271,7 @@ func (dsm *DefaultSecurityMetrics) IncrementViolation(violationType string) {
 }
 
 // RecordMetric records a custom security metric.
-func (dsm *DefaultSecurityMetrics) RecordMetric(name string, value float64, labels map[string]string) {
+func (dsm *DefaultSecurityMetrics) RecordMetric(name string, value float64, _ map[string]string) {
 	dsm.mutex.Lock()
 	defer dsm.mutex.Unlock()
 
@@ -336,8 +336,8 @@ func (dsm *DefaultSecurityMetrics) GetMetrics() map[string]interface{} {
 }
 
 // CreateSecurityEvent creates a new security event.
-func CreateSecurityEvent(violationType, message string, severity string) SecurityEvent {
-	return SecurityEvent{
+func CreateSecurityEvent(violationType, message string, severity string) Event {
+	return Event{
 		Type:             violationType,
 		Severity:         severity,
 		Message:          message,
@@ -348,14 +348,14 @@ func CreateSecurityEvent(violationType, message string, severity string) Securit
 }
 
 // WithField adds field information to a security event.
-func (se SecurityEvent) WithField(field, value string) SecurityEvent {
+func (se Event) WithField(field, value string) Event {
 	se.ViolationDetails.Field = field
 	se.ViolationDetails.Value = value
 	return se
 }
 
 // WithContext adds context information to a security event.
-func (se SecurityEvent) WithContext(key, value string) SecurityEvent {
+func (se Event) WithContext(key, value string) Event {
 	if se.Context == nil {
 		se.Context = make(map[string]string)
 	}
@@ -364,7 +364,7 @@ func (se SecurityEvent) WithContext(key, value string) SecurityEvent {
 }
 
 // WithRequest adds request information to a security event.
-func (se SecurityEvent) WithRequest(requestID, clientIP, userAgent, path, method string) SecurityEvent {
+func (se Event) WithRequest(requestID, clientIP, userAgent, path, method string) Event {
 	se.RequestID = requestID
 	se.ClientIP = clientIP
 	se.UserAgent = userAgent
@@ -376,11 +376,11 @@ func (se SecurityEvent) WithRequest(requestID, clientIP, userAgent, path, method
 // NullSecurityLogger provides a no-op implementation for testing.
 type NullSecurityLogger struct{}
 
-func (nsl *NullSecurityLogger) LogViolation(ctx context.Context, event SecurityEvent) {}
-func (nsl *NullSecurityLogger) LogMetric(ctx context.Context, metric SecurityMetric)  {}
-func (nsl *NullSecurityLogger) LogAccess(ctx context.Context, access AccessEvent)     {}
+func (nsl *NullSecurityLogger) LogViolation(_ context.Context, _ Event)    {}
+func (nsl *NullSecurityLogger) LogMetric(_ context.Context, _ Metric)      {}
+func (nsl *NullSecurityLogger) LogAccess(_ context.Context, _ AccessEvent) {}
 
 // NewNullSecurityLogger creates a null security logger.
-func NewNullSecurityLogger() SecurityLogger {
+func NewNullSecurityLogger() Logger {
 	return &NullSecurityLogger{}
 }

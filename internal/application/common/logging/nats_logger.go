@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// NATS-specific event structures.
+// NATSConnectionEvent represents a NATS connection event with associated metadata.
 type NATSConnectionEvent struct {
 	Type         string // CONNECTED, DISCONNECTED, RECONNECTING, CONNECTION_FAILED
 	ServerURL    string

@@ -664,17 +664,17 @@ func TestServiceFactory_MemoizedDatabasePool_FieldsExist(t *testing.T) {
 // Helper functions that will be used to verify the expected structure exists
 // These will fail until the actual implementation is done
 
-func serviceFactoryHasPoolField(sf *ServiceFactory) bool {
+func serviceFactoryHasPoolField(_ *ServiceFactory) bool {
 	// Since we implemented the fields, this should return true
 	return true
 }
 
-func serviceFactoryHasPoolOnceField(sf *ServiceFactory) bool {
+func serviceFactoryHasPoolOnceField(_ *ServiceFactory) bool {
 	// Since we implemented the fields, this should return true
 	return true
 }
 
-func serviceFactoryHasPoolErrorField(sf *ServiceFactory) bool {
+func serviceFactoryHasPoolErrorField(_ *ServiceFactory) bool {
 	// Since we implemented the fields, this should return true
 	return true
 }

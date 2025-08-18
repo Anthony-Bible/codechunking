@@ -84,7 +84,7 @@ func TestHealthServiceAdapter_GetHealth_WithNATSHealthIntegration(t *testing.T) 
 	}{
 		{
 			name: "healthy_nats_connection_includes_detailed_metrics",
-			setupMocks: func(nats *MockMessagePublisherWithHealth, repo *mockRepositoryRepo, jobs *mockIndexingJobRepo) {
+			setupMocks: func(nats *MockMessagePublisherWithHealth, repo *mockRepositoryRepo, _ *mockIndexingJobRepo) {
 				// Database is healthy
 				repo.findAllResult = nil
 				// NATS is healthy with good metrics
@@ -129,7 +129,7 @@ func TestHealthServiceAdapter_GetHealth_WithNATSHealthIntegration(t *testing.T) 
 		},
 		{
 			name: "disconnected_nats_returns_degraded_status",
-			setupMocks: func(nats *MockMessagePublisherWithHealth, repo *mockRepositoryRepo, jobs *mockIndexingJobRepo) {
+			setupMocks: func(nats *MockMessagePublisherWithHealth, repo *mockRepositoryRepo, _ *mockIndexingJobRepo) {
 				// Database is healthy
 				repo.findAllResult = nil
 				// NATS is disconnected
@@ -161,7 +161,7 @@ func TestHealthServiceAdapter_GetHealth_WithNATSHealthIntegration(t *testing.T) 
 		},
 		{
 			name: "nats_circuit_breaker_open_shows_degraded_health",
-			setupMocks: func(nats *MockMessagePublisherWithHealth, repo *mockRepositoryRepo, jobs *mockIndexingJobRepo) {
+			setupMocks: func(nats *MockMessagePublisherWithHealth, repo *mockRepositoryRepo, _ *mockIndexingJobRepo) {
 				repo.findAllResult = nil
 				nats.SetHealthStatus(outbound.MessagePublisherHealthStatus{
 					Connected:        true,
@@ -190,7 +190,7 @@ func TestHealthServiceAdapter_GetHealth_WithNATSHealthIntegration(t *testing.T) 
 		},
 		{
 			name: "high_reconnection_count_indicates_unstable_connection",
-			setupMocks: func(nats *MockMessagePublisherWithHealth, repo *mockRepositoryRepo, jobs *mockIndexingJobRepo) {
+			setupMocks: func(nats *MockMessagePublisherWithHealth, repo *mockRepositoryRepo, _ *mockIndexingJobRepo) {
 				repo.findAllResult = nil
 				nats.SetHealthStatus(outbound.MessagePublisherHealthStatus{
 					Connected:        true,
@@ -212,7 +212,7 @@ func TestHealthServiceAdapter_GetHealth_WithNATSHealthIntegration(t *testing.T) 
 		},
 		{
 			name: "jetstream_disabled_affects_health_status",
-			setupMocks: func(nats *MockMessagePublisherWithHealth, repo *mockRepositoryRepo, jobs *mockIndexingJobRepo) {
+			setupMocks: func(nats *MockMessagePublisherWithHealth, repo *mockRepositoryRepo, _ *mockIndexingJobRepo) {
 				repo.findAllResult = nil
 				nats.SetHealthStatus(outbound.MessagePublisherHealthStatus{
 					Connected:        true,
@@ -231,7 +231,7 @@ func TestHealthServiceAdapter_GetHealth_WithNATSHealthIntegration(t *testing.T) 
 		},
 		{
 			name: "both_database_and_nats_unhealthy_returns_unhealthy_status",
-			setupMocks: func(nats *MockMessagePublisherWithHealth, repo *mockRepositoryRepo, jobs *mockIndexingJobRepo) {
+			setupMocks: func(nats *MockMessagePublisherWithHealth, repo *mockRepositoryRepo, _ *mockIndexingJobRepo) {
 				// Database is unhealthy
 				repo.findAllResult = errors.New("database connection failed")
 				// NATS is also unhealthy
@@ -380,21 +380,21 @@ type mockRepositoryRepo struct {
 	findAllResult error
 }
 
-func (m *mockRepositoryRepo) Save(ctx context.Context, repository *entity.Repository) error {
+func (m *mockRepositoryRepo) Save(_ context.Context, _ *entity.Repository) error {
 	return nil
 }
 
-func (m *mockRepositoryRepo) FindByID(ctx context.Context, id uuid.UUID) (*entity.Repository, error) {
-	return nil, nil
+func (m *mockRepositoryRepo) FindByID(_ context.Context, _ uuid.UUID) (*entity.Repository, error) {
+	return nil, nil //nolint:nilnil // Not found is not an error condition for mock Find methods
 }
 
-func (m *mockRepositoryRepo) FindByURL(ctx context.Context, url valueobject.RepositoryURL) (*entity.Repository, error) {
-	return nil, nil
+func (m *mockRepositoryRepo) FindByURL(_ context.Context, _ valueobject.RepositoryURL) (*entity.Repository, error) {
+	return nil, nil //nolint:nilnil // Not found is not an error condition for mock Find methods
 }
 
 func (m *mockRepositoryRepo) FindAll(
-	ctx context.Context,
-	filters outbound.RepositoryFilters,
+	_ context.Context,
+	_ outbound.RepositoryFilters,
 ) ([]*entity.Repository, int, error) {
 	if m.findAllResult != nil {
 		return nil, 0, m.findAllResult
@@ -402,51 +402,51 @@ func (m *mockRepositoryRepo) FindAll(
 	return []*entity.Repository{}, 0, nil
 }
 
-func (m *mockRepositoryRepo) Update(ctx context.Context, repository *entity.Repository) error {
+func (m *mockRepositoryRepo) Update(_ context.Context, _ *entity.Repository) error {
 	return nil
 }
 
-func (m *mockRepositoryRepo) Delete(ctx context.Context, id uuid.UUID) error {
+func (m *mockRepositoryRepo) Delete(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
-func (m *mockRepositoryRepo) Exists(ctx context.Context, url valueobject.RepositoryURL) (bool, error) {
+func (m *mockRepositoryRepo) Exists(_ context.Context, _ valueobject.RepositoryURL) (bool, error) {
 	return false, nil
 }
 
-func (m *mockRepositoryRepo) ExistsByNormalizedURL(ctx context.Context, url valueobject.RepositoryURL) (bool, error) {
+func (m *mockRepositoryRepo) ExistsByNormalizedURL(_ context.Context, _ valueobject.RepositoryURL) (bool, error) {
 	return false, nil
 }
 
 func (m *mockRepositoryRepo) FindByNormalizedURL(
-	ctx context.Context,
-	url valueobject.RepositoryURL,
+	_ context.Context,
+	_ valueobject.RepositoryURL,
 ) (*entity.Repository, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil // Not found is not an error condition for mock Find methods
 }
 
 type mockIndexingJobRepo struct{}
 
-func (m *mockIndexingJobRepo) Save(ctx context.Context, job *entity.IndexingJob) error {
+func (m *mockIndexingJobRepo) Save(_ context.Context, _ *entity.IndexingJob) error {
 	return nil
 }
 
-func (m *mockIndexingJobRepo) FindByID(ctx context.Context, id uuid.UUID) (*entity.IndexingJob, error) {
-	return nil, nil
+func (m *mockIndexingJobRepo) FindByID(_ context.Context, _ uuid.UUID) (*entity.IndexingJob, error) {
+	return nil, nil //nolint:nilnil // Not found is not an error condition for mock Find methods
 }
 
 func (m *mockIndexingJobRepo) FindByRepositoryID(
-	ctx context.Context,
-	repositoryID uuid.UUID,
-	filters outbound.IndexingJobFilters,
+	_ context.Context,
+	_ uuid.UUID,
+	_ outbound.IndexingJobFilters,
 ) ([]*entity.IndexingJob, int, error) {
 	return []*entity.IndexingJob{}, 0, nil
 }
 
-func (m *mockIndexingJobRepo) Update(ctx context.Context, job *entity.IndexingJob) error {
+func (m *mockIndexingJobRepo) Update(_ context.Context, _ *entity.IndexingJob) error {
 	return nil
 }
 
-func (m *mockIndexingJobRepo) Delete(ctx context.Context, id uuid.UUID) error {
+func (m *mockIndexingJobRepo) Delete(_ context.Context, _ uuid.UUID) error {
 	return nil
 }

@@ -1,7 +1,7 @@
 package api
 
 import (
-	"codechunking/internal/adapter/inbound/api/util"
+	"codechunking/internal/adapter/inbound/api/netutil"
 	"context"
 	"fmt"
 	"io"
@@ -172,7 +172,7 @@ func SetRequestID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, requestIDKey{}, id)
 }
 
-// LoggingMiddleware wraps handlers with request logging and request ID tracking.
+// NewLoggingMiddleware creates a logging middleware that wraps handlers with request logging and request ID tracking.
 func NewLoggingMiddleware(logger Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -206,7 +206,7 @@ func NewLoggingMiddleware(logger Logger) func(http.Handler) http.Handler {
 				"status":     wrapped.statusCode,
 				"duration":   duration,
 				"user_agent": r.Header.Get("User-Agent"),
-				"remote_ip":  util.ClientIP(r),
+				"remote_ip":  netutil.ClientIP(r),
 			})
 
 			if r.URL.RawQuery != "" {
@@ -218,7 +218,7 @@ func NewLoggingMiddleware(logger Logger) func(http.Handler) http.Handler {
 	}
 }
 
-// ErrorHandlingMiddleware provides centralized error handling with better logging.
+// NewErrorHandlingMiddleware creates an error handling middleware that provides centralized error handling with better logging.
 func NewErrorHandlingMiddleware() func(http.Handler) http.Handler {
 	logger := NewDefaultLogger()
 
@@ -416,7 +416,7 @@ func buildHSTSValue(cfg *SecurityHeadersConfig) string {
 	return strings.Join(parts, "; ")
 }
 
-// SecurityMiddleware adds basic security headers (backward compatibility).
+// NewSecurityMiddleware creates a security middleware that adds basic security headers (backward compatibility).
 func NewSecurityMiddleware() func(http.Handler) http.Handler {
 	// Delegate to unified implementation with default config
 	return NewUnifiedSecurityMiddleware(nil)

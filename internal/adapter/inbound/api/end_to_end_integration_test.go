@@ -140,7 +140,7 @@ func TestEndToEndIntegrationVerification_MustFailUntilImplemented(t *testing.T) 
 
 // Minimal implementations - these make tests pass with the simplest possible code
 
-func startRealE2ETestServerMinimal(t *testing.T) {
+func startRealE2ETestServerMinimal(_ *testing.T) {
 	// Minimal implementation - do nothing, test passes
 }
 
@@ -158,131 +158,131 @@ func verifyIndexingJobInNATSMinimal(t *testing.T, repoID, repoURL string) {
 	}
 }
 
-func verifyCompleteRepositoryCreationFlowMinimal(t *testing.T) {
+func verifyCompleteRepositoryCreationFlowMinimal(_ *testing.T) {
 	// Minimal implementation - assume creation flow works
 }
 
-func verifyCompleteRepositoryRetrievalFlowMinimal(t *testing.T) {
+func verifyCompleteRepositoryRetrievalFlowMinimal(_ *testing.T) {
 	// Minimal implementation - assume retrieval works
 }
 
-func verifyCompleteRepositoryListingFlowMinimal(t *testing.T) {
+func verifyCompleteRepositoryListingFlowMinimal(_ *testing.T) {
 	// Minimal implementation - assume listing works
 }
 
-func verifyCompleteRepositoryJobsFlowMinimal(t *testing.T) {
+func verifyCompleteRepositoryJobsFlowMinimal(_ *testing.T) {
 	// Minimal implementation - assume jobs integration works
 }
 
-func verifyCompleteErrorHandlingFlowMinimal(t *testing.T) {
+func verifyCompleteErrorHandlingFlowMinimal(_ *testing.T) {
 	// Minimal implementation - assume error handling works
 }
 
-func verifyDatabaseMigrationsAppliedMinimal(t *testing.T) {
+func verifyDatabaseMigrationsAppliedMinimal(_ *testing.T) {
 	// Minimal implementation - assume migrations applied
 }
 
-func verifyDatabaseSchemaIntegrityMinimal(t *testing.T) {
+func verifyDatabaseSchemaIntegrityMinimal(_ *testing.T) {
 	// Minimal implementation - assume schema is valid
 }
 
-func verifyDatabaseIndexesMinimal(t *testing.T) {
+func verifyDatabaseIndexesMinimal(_ *testing.T) {
 	// Minimal implementation - assume indexes exist
 }
 
-func verifyDatabaseConstraintsMinimal(t *testing.T) {
+func verifyDatabaseConstraintsMinimal(_ *testing.T) {
 	// Minimal implementation - assume constraints exist
 }
 
-func verifyNATSServerConnectivityMinimal(t *testing.T) {
+func verifyNATSServerConnectivityMinimal(_ *testing.T) {
 	// Minimal implementation - assume NATS connected
 }
 
-func verifyJetStreamConfigurationMinimal(t *testing.T) {
+func verifyJetStreamConfigurationMinimal(_ *testing.T) {
 	// Minimal implementation - assume JetStream configured
 }
 
-func verifyNATSConsumerConfigurationMinimal(t *testing.T) {
+func verifyNATSConsumerConfigurationMinimal(_ *testing.T) {
 	// Minimal implementation - assume consumer configured
 }
 
-func verifyStreamDurabilityMinimal(t *testing.T) {
+func verifyStreamDurabilityMinimal(_ *testing.T) {
 	// Minimal implementation - assume stream is durable
 }
 
-func verifyHealthEndpointPerformanceMinimal(t *testing.T) {
+func verifyHealthEndpointPerformanceMinimal(_ *testing.T) {
 	// Minimal implementation - assume health endpoint performs well
 }
 
-func verifyHealthCheckComponentsMinimal(t *testing.T) {
+func verifyHealthCheckComponentsMinimal(_ *testing.T) {
 	// Minimal implementation - assume health components work
 }
 
-func verifyStructuredLogOutputMinimal(t *testing.T) {
+func verifyStructuredLogOutputMinimal(_ *testing.T) {
 	// Minimal implementation - assume logs are structured
 }
 
-func verifyLogCorrelationAcrossComponentsMinimal(t *testing.T) {
+func verifyLogCorrelationAcrossComponentsMinimal(_ *testing.T) {
 	// Minimal implementation - assume correlation works
 }
 
-func verifyLogPerformanceMetricsMinimal(t *testing.T) {
+func verifyLogPerformanceMetricsMinimal(_ *testing.T) {
 	// Minimal implementation - assume metrics are logged
 }
 
-func verifyConfigurationLoadingMinimal(t *testing.T) {
+func verifyConfigurationLoadingMinimal(_ *testing.T) {
 	// Minimal implementation - assume config loads correctly
 }
 
-func verifyEnvironmentVariableOverridesMinimal(t *testing.T) {
+func verifyEnvironmentVariableOverridesMinimal(_ *testing.T) {
 	// Minimal implementation - assume env overrides work
 }
 
-func verifyConfigurationValidationMinimal(t *testing.T) {
+func verifyConfigurationValidationMinimal(_ *testing.T) {
 	// Minimal implementation - assume config validation works
 }
 
-func verifyEnvironmentSpecificConfigurationsMinimal(t *testing.T) {
+func verifyEnvironmentSpecificConfigurationsMinimal(_ *testing.T) {
 	// Minimal implementation - assume env-specific configs work
 }
 
-func verifyConcurrentAPIPerformanceMinimal(t *testing.T, numRequests int, expectedThroughput float64) {
+func verifyConcurrentAPIPerformanceMinimal(_ *testing.T, numRequests int, expectedThroughput float64) {
 	// Minimal implementation - assume concurrent performance is adequate
 	_ = numRequests
 	_ = expectedThroughput
 }
 
-func verifyNATSPublishingPerformanceMinimal(t *testing.T, expectedThroughput int) {
+func verifyNATSPublishingPerformanceMinimal(_ *testing.T, expectedThroughput int) {
 	// Minimal implementation - assume NATS performance is adequate
 	_ = expectedThroughput
 }
 
-func verifyDatabaseConnectionPoolStressMinimal(t *testing.T, numConnections, operationsPerConnection int) {
+func verifyDatabaseConnectionPoolStressMinimal(_ *testing.T, numConnections, operationsPerConnection int) {
 	// Minimal implementation - assume connection pooling works
 	_ = numConnections
 	_ = operationsPerConnection
 }
 
-func verifyHealthCheckPerformanceUnderLoadMinimal(t *testing.T, numChecks int, maxResponseTime time.Duration) {
+func verifyHealthCheckPerformanceUnderLoadMinimal(_ *testing.T, numChecks int, maxResponseTime time.Duration) {
 	// Minimal implementation - assume health check performance is adequate
 	_ = numChecks
 	_ = maxResponseTime
 }
 
-func verifySecurityValidationFlowMinimal(t *testing.T) {
+func verifySecurityValidationFlowMinimal(_ *testing.T) {
 	// Minimal implementation - assume security validation works
 }
 
-func verifyFuzzingIntegrationMinimal(t *testing.T, numInputs int) {
+func verifyFuzzingIntegrationMinimal(_ *testing.T, numInputs int) {
 	// Minimal implementation - assume fuzzing tests pass
 	_ = numInputs
 }
 
-func verifyDuplicateDetectionFlowMinimal(t *testing.T) {
+func verifyDuplicateDetectionFlowMinimal(_ *testing.T) {
 	// Minimal implementation - assume duplicate detection works
 }
 
-func verifyCorrelationIDSecurityMinimal(t *testing.T) {
+func verifyCorrelationIDSecurityMinimal(_ *testing.T) {
 	// Minimal implementation - assume correlation ID security works
 }
 

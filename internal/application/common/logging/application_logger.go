@@ -19,20 +19,24 @@ import (
 )
 
 const (
-	// Sampling constants.
+	// SamplingBase defines the base value for log sampling calculations.
 	SamplingBase = 100
 
-	// Log level constants.
+	// DebugLevel represents the debug log level (0).
 	DebugLevel = 0
-	InfoLevel  = 1
-	WarnLevel  = 2
+	// InfoLevel represents the info log level (1).
+	InfoLevel = 1
+	// WarnLevel represents the warn log level (2).
+	WarnLevel = 2
+	// ErrorLevel represents the error log level (3).
 	ErrorLevel = 3
 
-	// Memory monitoring constants.
+	// MemoryMonitorInterval defines the interval for memory monitoring in seconds.
 	MemoryMonitorInterval = 30 // seconds
-	BytesToMB             = 1024
+	// BytesToMB conversion factor from bytes to megabytes.
+	BytesToMB = 1024
 
-	// Performance calculation constants.
+	// LatencyAverageDiv defines the divisor for calculating average latency.
 	LatencyAverageDiv = 2
 )
 
@@ -509,7 +513,7 @@ func (l *applicationLoggerImpl) createBufferLogEntry(
 	}
 
 	l.addFieldsToEntry(entry, fields)
-	l.addContextToEntry(entry, ctx)
+	l.addContextToEntry(ctx, entry)
 	return entry
 }
 
@@ -524,7 +528,7 @@ func (l *applicationLoggerImpl) addFieldsToEntry(entry *LogEntry, fields Fields)
 	}
 }
 
-func (l *applicationLoggerImpl) addContextToEntry(entry *LogEntry, ctx context.Context) {
+func (l *applicationLoggerImpl) addContextToEntry(ctx context.Context, entry *LogEntry) {
 	if requestID := getRequestIDFromContext(ctx); requestID != "" {
 		entry.Context["request_id"] = requestID
 	}
@@ -561,7 +565,7 @@ func (l *applicationLoggerImpl) logEntry(ctx context.Context, level, message, er
 		return
 	}
 
-	// Get log entry from pool if object pooling is enabled
+	// Get log entry from the pool if object pooling is enabled
 	var entry *LogEntry
 	if l.config.EnableObjectPooling {
 		entry = globalLogEntryPool.getLogEntry()
@@ -645,7 +649,7 @@ func getOrGenerateCorrelationID(ctx context.Context) string {
 	return uuid.New().String()
 }
 
-// Context management functions.
+// WithCorrelationID adds a correlation ID to the context.
 func WithCorrelationID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, CorrelationIDKey, id)
 }

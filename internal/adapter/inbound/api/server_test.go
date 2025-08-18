@@ -155,7 +155,7 @@ func TestServer_Start(t *testing.T) {
 					WriteTimeout: 5 * time.Second,
 				},
 			},
-			setupFunc: func(t *testing.T) context.Context {
+			setupFunc: func(_ *testing.T) context.Context {
 				return context.Background()
 			},
 			expectedError: "failed to start server",
@@ -170,7 +170,7 @@ func TestServer_Start(t *testing.T) {
 					WriteTimeout: 5 * time.Second,
 				},
 			},
-			setupFunc: func(t *testing.T) context.Context {
+			setupFunc: func(_ *testing.T) context.Context {
 				ctx, cancel := context.WithCancel(context.Background())
 				// Cancel immediately to test cancellation handling
 				cancel()

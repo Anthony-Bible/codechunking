@@ -94,10 +94,7 @@ func (b *ServerBuilder) Build() (*Server, error) {
 	}
 
 	// Build the server
-	server, err := b.buildServer()
-	if err != nil {
-		return nil, fmt.Errorf("failed to build server: %w", err)
-	}
+	server := b.buildServer()
 
 	return server, nil
 }
@@ -120,7 +117,7 @@ func (b *ServerBuilder) validate() error {
 }
 
 // buildServer creates the Server with all configured components.
-func (b *ServerBuilder) buildServer() (*Server, error) {
+func (b *ServerBuilder) buildServer() *Server {
 	// Create route registry and register routes
 	registry := NewRouteRegistry()
 
@@ -164,7 +161,7 @@ func (b *ServerBuilder) buildServer() (*Server, error) {
 		errorHandler:    b.errorHandler,
 		middleware:      middlewareMap,
 		middlewareCount: middlewareCount,
-	}, nil
+	}
 }
 
 // createHTTPServer creates the underlying HTTP server.

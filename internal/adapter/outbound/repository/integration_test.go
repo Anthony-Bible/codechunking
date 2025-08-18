@@ -807,7 +807,7 @@ func TestConcurrentAccess(t *testing.T) {
 
 		for i := range numReaders {
 			wg.Add(1)
-			go func(readerID int) {
+			go func(_ int) {
 				defer wg.Done()
 
 				// Perform various read operations

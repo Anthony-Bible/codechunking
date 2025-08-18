@@ -500,14 +500,14 @@ func TestRepositoryRepository_UpdateName_ValidNames(t *testing.T) {
 
 	for _, newName := range testCases {
 		t.Run("Update to: "+newName, func(t *testing.T) {
-			testRepo := createAndSaveTestRepo(t, repo, ctx)
+			testRepo := createAndSaveTestRepo(ctx, t, repo)
 			originalUpdatedAt := testRepo.UpdatedAt()
 
 			testRepo.UpdateName(newName)
 			err := repo.Update(ctx, testRepo)
 			assertNoError(t, err, "update repository name")
 
-			updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+			updatedRepo := verifyBasicUpdate(ctx, t, repo, testRepo.ID(), originalUpdatedAt)
 
 			if updatedRepo.Name() != newName {
 				t.Errorf("Expected updated name %s, got %s", newName, updatedRepo.Name())
@@ -527,14 +527,14 @@ func TestRepositoryRepository_UpdateName_LongNames(t *testing.T) {
 
 	longName := "This is a very long repository name that exceeds normal expectations but should still be handled properly by the system"
 
-	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	testRepo := createAndSaveTestRepo(ctx, t, repo)
 	originalUpdatedAt := testRepo.UpdatedAt()
 
 	testRepo.UpdateName(longName)
 	err := repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update repository with long name")
 
-	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+	updatedRepo := verifyBasicUpdate(ctx, t, repo, testRepo.ID(), originalUpdatedAt)
 
 	if updatedRepo.Name() != longName {
 		t.Errorf("Expected updated name %s, got %s", longName, updatedRepo.Name())
@@ -552,14 +552,14 @@ func TestRepositoryRepository_UpdateName_UnicodeNames(t *testing.T) {
 
 	unicodeName := "Repository with 中文 and émojis 🚀"
 
-	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	testRepo := createAndSaveTestRepo(ctx, t, repo)
 	originalUpdatedAt := testRepo.UpdatedAt()
 
 	testRepo.UpdateName(unicodeName)
 	err := repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update repository with unicode name")
 
-	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+	updatedRepo := verifyBasicUpdate(ctx, t, repo, testRepo.ID(), originalUpdatedAt)
 
 	if updatedRepo.Name() != unicodeName {
 		t.Errorf("Expected updated name %s, got %s", unicodeName, updatedRepo.Name())
@@ -577,14 +577,14 @@ func TestRepositoryRepository_UpdateDescription_ValidDescriptions(t *testing.T) 
 
 	validDesc := "Updated repository description"
 
-	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	testRepo := createAndSaveTestRepo(ctx, t, repo)
 	originalUpdatedAt := testRepo.UpdatedAt()
 
 	testRepo.UpdateDescription(&validDesc)
 	err := repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update repository description")
 
-	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+	updatedRepo := verifyBasicUpdate(ctx, t, repo, testRepo.ID(), originalUpdatedAt)
 
 	if updatedRepo.Description() == nil || *updatedRepo.Description() != validDesc {
 		t.Errorf("Expected updated description %s, got %v", validDesc, updatedRepo.Description())
@@ -600,14 +600,14 @@ func TestRepositoryRepository_UpdateDescription_NilDescription(t *testing.T) {
 	repo := NewPostgreSQLRepositoryRepository(pool)
 	ctx := context.Background()
 
-	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	testRepo := createAndSaveTestRepo(ctx, t, repo)
 	originalUpdatedAt := testRepo.UpdatedAt()
 
 	testRepo.UpdateDescription(nil)
 	err := repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update repository description to nil")
 
-	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+	updatedRepo := verifyBasicUpdate(ctx, t, repo, testRepo.ID(), originalUpdatedAt)
 
 	if updatedRepo.Description() != nil {
 		t.Error("Expected description to be nil")
@@ -625,14 +625,14 @@ func TestRepositoryRepository_UpdateDescription_EmptyDescription(t *testing.T) {
 
 	emptyDesc := ""
 
-	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	testRepo := createAndSaveTestRepo(ctx, t, repo)
 	originalUpdatedAt := testRepo.UpdatedAt()
 
 	testRepo.UpdateDescription(&emptyDesc)
 	err := repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update repository description to empty")
 
-	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+	updatedRepo := verifyBasicUpdate(ctx, t, repo, testRepo.ID(), originalUpdatedAt)
 
 	if updatedRepo.Description() == nil || *updatedRepo.Description() != emptyDesc {
 		t.Errorf("Expected empty description, got %v", updatedRepo.Description())
@@ -650,14 +650,14 @@ func TestRepositoryRepository_UpdateDescription_LongDescription(t *testing.T) {
 
 	longDesc := "This is a very long description that contains multiple sentences and should test the system's ability to handle larger text content. It includes various punctuation marks, numbers like 123, and should be properly stored and retrieved from the database without any issues."
 
-	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	testRepo := createAndSaveTestRepo(ctx, t, repo)
 	originalUpdatedAt := testRepo.UpdatedAt()
 
 	testRepo.UpdateDescription(&longDesc)
 	err := repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update repository with long description")
 
-	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+	updatedRepo := verifyBasicUpdate(ctx, t, repo, testRepo.ID(), originalUpdatedAt)
 
 	if updatedRepo.Description() == nil || *updatedRepo.Description() != longDesc {
 		t.Errorf("Expected long description to be preserved")
@@ -675,14 +675,14 @@ func TestRepositoryRepository_UpdateDescription_SpecialCharacters(t *testing.T) 
 
 	specialDesc := "Description with special chars: @#$%^&*()_+-=[]{}|;':\",./<>?"
 
-	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	testRepo := createAndSaveTestRepo(ctx, t, repo)
 	originalUpdatedAt := testRepo.UpdatedAt()
 
 	testRepo.UpdateDescription(&specialDesc)
 	err := repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update repository with special character description")
 
-	updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+	updatedRepo := verifyBasicUpdate(ctx, t, repo, testRepo.ID(), originalUpdatedAt)
 
 	if updatedRepo.Description() == nil || *updatedRepo.Description() != specialDesc {
 		t.Errorf("Expected special character description to be preserved")
@@ -710,7 +710,7 @@ func TestRepositoryRepository_UpdateStatus_SuccessfulTransitions(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testRepo := createAndSaveTestRepo(t, repo, ctx)
+			testRepo := createAndSaveTestRepo(ctx, t, repo)
 
 			// Set initial status if not pending, following proper state machine
 			if tc.from != valueobject.RepositoryStatusPending {
@@ -734,7 +734,7 @@ func TestRepositoryRepository_UpdateStatus_SuccessfulTransitions(t *testing.T) {
 			err = repo.Update(ctx, testRepo)
 			assertNoError(t, err, "update repository status")
 
-			updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+			updatedRepo := verifyBasicUpdate(ctx, t, repo, testRepo.ID(), originalUpdatedAt)
 
 			if updatedRepo.Status() != tc.to {
 				t.Errorf("Expected status %s, got %s", tc.to, updatedRepo.Status())
@@ -762,7 +762,7 @@ func TestRepositoryRepository_UpdateStatus_FailureTransitions(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			testRepo := createAndSaveTestRepo(t, repo, ctx)
+			testRepo := createAndSaveTestRepo(ctx, t, repo)
 
 			// Set initial status if not pending
 			if tc.from != valueobject.RepositoryStatusPending {
@@ -778,7 +778,7 @@ func TestRepositoryRepository_UpdateStatus_FailureTransitions(t *testing.T) {
 			err = repo.Update(ctx, testRepo)
 			assertNoError(t, err, "update repository status to failed")
 
-			updatedRepo := verifyBasicUpdate(t, repo, ctx, testRepo.ID(), originalUpdatedAt)
+			updatedRepo := verifyBasicUpdate(ctx, t, repo, testRepo.ID(), originalUpdatedAt)
 
 			if updatedRepo.Status() != valueobject.RepositoryStatusFailed {
 				t.Errorf("Expected status failed, got %s", updatedRepo.Status())
@@ -789,9 +789,9 @@ func TestRepositoryRepository_UpdateStatus_FailureTransitions(t *testing.T) {
 
 // setupRepositoryForIndexing prepares a repository in processing state for indexing completion tests.
 func setupRepositoryForIndexing(
+	ctx context.Context,
 	t *testing.T,
 	repo outbound.RepositoryRepository,
-	ctx context.Context,
 ) *entity.Repository {
 	testRepo := createTestRepository(t)
 
@@ -809,15 +809,15 @@ func setupRepositoryForIndexing(
 
 // verifyIndexingCompletion verifies that indexing completion was properly persisted.
 func verifyIndexingCompletion(
+	ctx context.Context,
 	t *testing.T,
 	repo outbound.RepositoryRepository,
-	ctx context.Context,
 	repoID uuid.UUID,
 	originalUpdatedAt interface{},
 	expectedCommitHash string,
 	expectedChunkCount, expectedTokenCount int,
 ) {
-	updatedRepo := verifyBasicUpdate(t, repo, ctx, repoID, originalUpdatedAt)
+	updatedRepo := verifyBasicUpdate(ctx, t, repo, repoID, originalUpdatedAt)
 
 	// Verify status is completed
 	if updatedRepo.Status() != valueobject.RepositoryStatusCompleted {
@@ -847,7 +847,7 @@ func TestRepositoryRepository_MarkIndexingCompleted_ValidData(t *testing.T) {
 	repo := NewPostgreSQLRepositoryRepository(pool)
 	ctx := context.Background()
 
-	testRepo := setupRepositoryForIndexing(t, repo, ctx)
+	testRepo := setupRepositoryForIndexing(ctx, t, repo)
 	originalUpdatedAt := testRepo.UpdatedAt()
 
 	commitHash := "abc123def456"
@@ -860,7 +860,7 @@ func TestRepositoryRepository_MarkIndexingCompleted_ValidData(t *testing.T) {
 	err = repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update repository with indexing completion")
 
-	verifyIndexingCompletion(t, repo, ctx, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
+	verifyIndexingCompletion(ctx, t, repo, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
 }
 
 // TestRepositoryRepository_MarkIndexingCompleted_EmptyCommitHash tests completion with empty commit hash.
@@ -872,7 +872,7 @@ func TestRepositoryRepository_MarkIndexingCompleted_EmptyCommitHash(t *testing.T
 	repo := NewPostgreSQLRepositoryRepository(pool)
 	ctx := context.Background()
 
-	testRepo := setupRepositoryForIndexing(t, repo, ctx)
+	testRepo := setupRepositoryForIndexing(ctx, t, repo)
 	originalUpdatedAt := testRepo.UpdatedAt()
 
 	commitHash := ""
@@ -885,7 +885,7 @@ func TestRepositoryRepository_MarkIndexingCompleted_EmptyCommitHash(t *testing.T
 	err = repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update repository with empty commit hash completion")
 
-	verifyIndexingCompletion(t, repo, ctx, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
+	verifyIndexingCompletion(ctx, t, repo, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
 }
 
 // TestRepositoryRepository_MarkIndexingCompleted_ZeroCounts tests completion with zero counts.
@@ -897,7 +897,7 @@ func TestRepositoryRepository_MarkIndexingCompleted_ZeroCounts(t *testing.T) {
 	repo := NewPostgreSQLRepositoryRepository(pool)
 	ctx := context.Background()
 
-	testRepo := setupRepositoryForIndexing(t, repo, ctx)
+	testRepo := setupRepositoryForIndexing(ctx, t, repo)
 	originalUpdatedAt := testRepo.UpdatedAt()
 
 	commitHash := "def789abc012"
@@ -910,7 +910,7 @@ func TestRepositoryRepository_MarkIndexingCompleted_ZeroCounts(t *testing.T) {
 	err = repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update repository with zero counts completion")
 
-	verifyIndexingCompletion(t, repo, ctx, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
+	verifyIndexingCompletion(ctx, t, repo, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
 }
 
 // TestRepositoryRepository_MarkIndexingCompleted_LargeCounts tests completion with large counts.
@@ -922,7 +922,7 @@ func TestRepositoryRepository_MarkIndexingCompleted_LargeCounts(t *testing.T) {
 	repo := NewPostgreSQLRepositoryRepository(pool)
 	ctx := context.Background()
 
-	testRepo := setupRepositoryForIndexing(t, repo, ctx)
+	testRepo := setupRepositoryForIndexing(ctx, t, repo)
 	originalUpdatedAt := testRepo.UpdatedAt()
 
 	commitHash := "fedcba987654"
@@ -935,7 +935,7 @@ func TestRepositoryRepository_MarkIndexingCompleted_LargeCounts(t *testing.T) {
 	err = repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update repository with large counts completion")
 
-	verifyIndexingCompletion(t, repo, ctx, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
+	verifyIndexingCompletion(ctx, t, repo, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
 }
 
 // TestRepositoryRepository_MarkIndexingCompleted_LongCommitHash tests completion with long commit hash.
@@ -947,7 +947,7 @@ func TestRepositoryRepository_MarkIndexingCompleted_LongCommitHash(t *testing.T)
 	repo := NewPostgreSQLRepositoryRepository(pool)
 	ctx := context.Background()
 
-	testRepo := setupRepositoryForIndexing(t, repo, ctx)
+	testRepo := setupRepositoryForIndexing(ctx, t, repo)
 	originalUpdatedAt := testRepo.UpdatedAt()
 
 	commitHash := "abcdef1234567890abcdef1234567890abcdef12"
@@ -960,7 +960,7 @@ func TestRepositoryRepository_MarkIndexingCompleted_LongCommitHash(t *testing.T)
 	err = repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update repository with long commit hash completion")
 
-	verifyIndexingCompletion(t, repo, ctx, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
+	verifyIndexingCompletion(ctx, t, repo, testRepo.ID(), originalUpdatedAt, commitHash, chunkCount, tokenCount)
 }
 
 // Helper functions to reduce cognitive complexity
@@ -980,7 +980,7 @@ func assertError(t *testing.T, err error, operation string) {
 }
 
 // createAndSaveTestRepo creates a fresh test repository and saves it.
-func createAndSaveTestRepo(t *testing.T, repo outbound.RepositoryRepository, ctx context.Context) *entity.Repository {
+func createAndSaveTestRepo(ctx context.Context, t *testing.T, repo outbound.RepositoryRepository) *entity.Repository {
 	testRepo := createTestRepository(t)
 	err := repo.Save(ctx, testRepo)
 	assertNoError(t, err, "save test repository")
@@ -989,9 +989,9 @@ func createAndSaveTestRepo(t *testing.T, repo outbound.RepositoryRepository, ctx
 
 // verifyBasicUpdate verifies that a repository was updated successfully.
 func verifyBasicUpdate(
+	ctx context.Context,
 	t *testing.T,
 	repo outbound.RepositoryRepository,
-	ctx context.Context,
 	repoID uuid.UUID,
 	originalUpdatedAt interface{},
 ) *entity.Repository {
@@ -1033,7 +1033,7 @@ func verifyRepositoryFound(t *testing.T, foundRepo, expectedRepo *entity.Reposit
 }
 
 // verifyArchivedRepository verifies that a repository has been properly archived.
-func verifyArchivedRepository(t *testing.T, repo outbound.RepositoryRepository, ctx context.Context, repoID uuid.UUID) {
+func verifyArchivedRepository(ctx context.Context, t *testing.T, repo outbound.RepositoryRepository, repoID uuid.UUID) {
 	// Archived repositories should not be found by FindByID
 	archivedRepo, err := repo.FindByID(ctx, repoID)
 	assertNoError(t, err, "look for archived repository")
@@ -1073,7 +1073,7 @@ func TestRepositoryRepository_Archive_CompletedRepository(t *testing.T) {
 	err = repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update archived repository")
 
-	verifyArchivedRepository(t, repo, ctx, testRepo.ID())
+	verifyArchivedRepository(ctx, t, repo, testRepo.ID())
 }
 
 // TestRepositoryRepository_Archive_FailedRepository tests archiving failed repositories.
@@ -1099,7 +1099,7 @@ func TestRepositoryRepository_Archive_FailedRepository(t *testing.T) {
 	err = repo.Update(ctx, testRepo)
 	assertNoError(t, err, "update archived repository")
 
-	verifyArchivedRepository(t, repo, ctx, testRepo.ID())
+	verifyArchivedRepository(ctx, t, repo, testRepo.ID())
 }
 
 // TestRepositoryRepository_Archive_PendingRepository tests that archiving pending repositories fails.
@@ -1111,7 +1111,7 @@ func TestRepositoryRepository_Archive_PendingRepository(t *testing.T) {
 	repo := NewPostgreSQLRepositoryRepository(pool)
 	ctx := context.Background()
 
-	testRepo := createAndSaveTestRepo(t, repo, ctx)
+	testRepo := createAndSaveTestRepo(ctx, t, repo)
 
 	err := testRepo.Archive()
 	assertError(t, err, "archive pending repository")

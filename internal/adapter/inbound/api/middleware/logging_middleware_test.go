@@ -98,7 +98,7 @@ func TestStructuredLoggingMiddleware_RequestLogging(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create test handler that returns expected response
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tt.responseStatus)
 				if _, err := w.Write([]byte(tt.responseBody)); err != nil {
@@ -268,7 +268,7 @@ func TestStructuredLoggingMiddleware_ErrorHandling(t *testing.T) {
 	}{
 		{
 			name: "handler panic recovery",
-			handlerBehavior: func(w http.ResponseWriter, r *http.Request) {
+			handlerBehavior: func(_ http.ResponseWriter, _ *http.Request) {
 				panic("test panic")
 			},
 			expectPanic:    true,
@@ -294,7 +294,7 @@ func TestStructuredLoggingMiddleware_ErrorHandling(t *testing.T) {
 		},
 		{
 			name: "application error",
-			handlerBehavior: func(w http.ResponseWriter, r *http.Request) {
+			handlerBehavior: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusBadRequest)
 				if _, err := w.Write([]byte(`{"error": "Invalid input"}`)); err != nil {
 					t.Logf("Failed to write response: %v", err)
@@ -306,7 +306,7 @@ func TestStructuredLoggingMiddleware_ErrorHandling(t *testing.T) {
 		},
 		{
 			name: "server error",
-			handlerBehavior: func(w http.ResponseWriter, r *http.Request) {
+			handlerBehavior: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusInternalServerError)
 				if _, err := w.Write([]byte(`{"error": "Database connection failed"}`)); err != nil {
 					t.Logf("Failed to write response: %v", err)
@@ -404,7 +404,7 @@ func TestStructuredLoggingMiddleware_PerformanceLogging(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				// Simulate processing delay
 				time.Sleep(tt.simulateDelay)
 
@@ -477,7 +477,7 @@ func TestStructuredLoggingMiddleware_PerformanceLogging(t *testing.T) {
 
 // setupSecurityTestHandler creates a basic HTTP handler for security tests.
 func setupSecurityTestHandler(t *testing.T) http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte(`{"status": "ok"}`)); err != nil {
 			t.Logf("Failed to write response: %v", err)
@@ -648,7 +648,7 @@ func TestStructuredLoggingMiddleware_FilteringAndSampling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				if _, err := w.Write([]byte(`{"status": "ok"}`)); err != nil {
 					t.Logf("Failed to write response: %v", err)

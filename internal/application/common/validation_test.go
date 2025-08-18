@@ -1,3 +1,5 @@
+// Package common contains tests for the common package.
+// revive:disable:var-naming - allow package name "common" in tests
 package common
 
 import (
@@ -480,7 +482,7 @@ func containsSQLInjectionPattern(input string) bool {
 }
 
 // assertDomainAppValidationMatch verifies that domain and application validation have consistent behavior.
-func assertDomainAppValidationMatch(t *testing.T, status string, domainErr, appErr error) {
+func assertDomainAppValidationMatch(t *testing.T, _ string, domainErr, appErr error) {
 	t.Helper()
 
 	domainAccepts := (domainErr == nil)
@@ -519,7 +521,7 @@ func validateDomainIntegrationConsistency(t *testing.T, status string, domainErr
 }
 
 // assertValidationErrorConversion verifies that app errors are properly converted to ValidationError type.
-func assertValidationErrorConversion(t *testing.T, status string, appErr error) {
+func assertValidationErrorConversion(t *testing.T, _ string, appErr error) {
 	t.Helper()
 
 	// Must be ValidationError type with proper field and message

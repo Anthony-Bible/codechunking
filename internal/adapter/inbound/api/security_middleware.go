@@ -2,7 +2,7 @@ package api
 
 import (
 	"bytes"
-	"codechunking/internal/adapter/inbound/api/util"
+	"codechunking/internal/adapter/inbound/api/netutil"
 	"codechunking/internal/application/common"
 	"encoding/json"
 	"errors"
@@ -202,7 +202,7 @@ func NewRateLimitingMiddleware(config RateLimitConfig) func(http.Handler) http.H
 func (sm *SecurityMiddleware) RateLimit(config RateLimitConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			clientIP := util.ClientIP(r)
+			clientIP := netutil.ClientIP(r)
 
 			sm.mutex.Lock()
 			client, exists := sm.clients[clientIP]

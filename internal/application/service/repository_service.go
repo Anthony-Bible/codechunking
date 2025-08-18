@@ -2,6 +2,7 @@ package service
 
 import (
 	"codechunking/internal/application/common"
+	"codechunking/internal/application/defaults"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/valueobject"
@@ -263,7 +264,7 @@ func (s *ListRepositoriesService) ListRepositories(
 	query dto.RepositoryListQuery,
 ) (*dto.RepositoryListResponse, error) {
 	// Apply defaults
-	common.ApplyRepositoryListDefaults(&query)
+	defaults.ApplyRepositoryListDefaults(&query)
 
 	// Convert query to filters
 	filters := outbound.RepositoryFilters{

@@ -2,7 +2,6 @@ package logging
 
 import (
 	"bytes"
-	"codechunking/internal/adapter/inbound/api/middleware"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +14,27 @@ import (
 	"sync/atomic"
 	"time"
 
+	"codechunking/internal/adapter/inbound/api/middleware"
+
 	"github.com/google/uuid"
+)
+
+const (
+	// Sampling constants.
+	SamplingBase = 100
+
+	// Log level constants.
+	DebugLevel = 0
+	InfoLevel  = 1
+	WarnLevel  = 2
+	ErrorLevel = 3
+
+	// Memory monitoring constants.
+	MemoryMonitorInterval = 30 // seconds
+	BytesToMB             = 1024
+
+	// Performance calculation constants.
+	LatencyAverageDiv = 2
 )
 
 // ApplicationLogger defines the interface for structured application logging.
@@ -101,6 +120,12 @@ var (
 		},
 	}
 	globalPerformanceMetrics performanceMetrics //nolint:gochecknoglobals // Performance-critical metrics for logging infrastructure
+)
+
+// Constants for repeated strings.
+const (
+	logOutputBuffer = "buffer"
+	logFormatJSON   = "json"
 )
 
 // applicationLoggerImpl implements ApplicationLogger and extended interfaces.
@@ -191,7 +216,7 @@ func (s *logSampler) shouldSample() bool {
 	// Sample based on rate
 	atomic.AddInt64(&s.counter, 1)
 	if s.rate < 1.0 {
-		if float64(s.counter%100)/100.0 > s.rate {
+		if float64(s.counter%SamplingBase)/float64(SamplingBase) > s.rate {
 			atomic.AddInt64(&globalPerformanceMetrics.droppedEntries, 1)
 			return false
 		}
@@ -232,7 +257,7 @@ func NewApplicationLogger(config Config) (ApplicationLogger, error) {
 
 	// Set up output destination
 	switch config.Output {
-	case "buffer":
+	case logOutputBuffer:
 		logger.buffer = &bytes.Buffer{}
 		logger.logger = slog.New(slog.NewTextHandler(logger.buffer, &slog.HandlerOptions{}))
 	case "stderr":
@@ -244,7 +269,7 @@ func NewApplicationLogger(config Config) (ApplicationLogger, error) {
 	}
 
 	// Initialize async logging if enabled, but not for buffer output (testing)
-	if config.EnableAsyncLogging && config.Output != "buffer" {
+	if config.EnableAsyncLogging && config.Output != logOutputBuffer {
 		logger.asyncChannel = make(chan asyncLogEvent, config.AsyncBufferSize)
 		logger.startAsyncProcessor()
 	}
@@ -271,7 +296,7 @@ func validateConfig(config Config) error {
 		return fmt.Errorf("invalid log level: %s", config.Level)
 	}
 
-	validFormats := []string{"json", "text"}
+	validFormats := []string{logFormatJSON, "text"}
 	formatValid := false
 	for _, format := range validFormats {
 		if config.Format == format {
@@ -283,7 +308,7 @@ func validateConfig(config Config) error {
 		return fmt.Errorf("invalid log format: %s", config.Format)
 	}
 
-	validOutputs := []string{"stdout", "stderr", "file", "buffer"}
+	validOutputs := []string{"stdout", "stderr", "file", logOutputBuffer}
 	outputValid := false
 	for _, output := range validOutputs {
 		if config.Output == output {
@@ -301,10 +326,10 @@ func validateConfig(config Config) error {
 // shouldLog determines if a message should be logged based on level.
 func (l *applicationLoggerImpl) shouldLog(level string) bool {
 	levels := map[string]int{
-		"DEBUG": 0,
-		"INFO":  1,
-		"WARN":  2,
-		"ERROR": 3,
+		"DEBUG": DebugLevel,
+		"INFO":  InfoLevel,
+		"WARN":  WarnLevel,
+		"ERROR": ErrorLevel,
 	}
 
 	configLevel := levels[strings.ToUpper(l.config.Level)]
@@ -394,7 +419,7 @@ func (l *applicationLoggerImpl) startMemoryMonitor() {
 	l.wg.Add(1)
 	go func() {
 		defer l.wg.Done()
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(MemoryMonitorInterval * time.Second)
 		defer ticker.Stop()
 
 		for {
@@ -402,7 +427,7 @@ func (l *applicationLoggerImpl) startMemoryMonitor() {
 			case <-ticker.C:
 				var m runtime.MemStats
 				runtime.ReadMemStats(&m)
-				currentMB := int64(m.Alloc / 1024 / 1024)
+				currentMB := int64(m.Alloc / BytesToMB / BytesToMB)
 				atomic.StoreInt64(&globalPerformanceMetrics.memoryUsage, currentMB)
 
 				// Log warning if memory usage is high
@@ -411,9 +436,9 @@ func (l *applicationLoggerImpl) startMemoryMonitor() {
 						"current_mb": currentMB,
 						"max_mb":     l.config.MaxMemoryMB,
 						"memory_stats": map[string]interface{}{
-							"alloc_mb":       m.Alloc / 1024 / 1024,
-							"total_alloc_mb": m.TotalAlloc / 1024 / 1024,
-							"sys_mb":         m.Sys / 1024 / 1024,
+							"alloc_mb":       m.Alloc / BytesToMB / BytesToMB,
+							"total_alloc_mb": m.TotalAlloc / BytesToMB / BytesToMB,
+							"sys_mb":         m.Sys / BytesToMB / BytesToMB,
 							"num_gc":         m.NumGC,
 						},
 					})
@@ -525,7 +550,7 @@ func (l *applicationLoggerImpl) logEntry(ctx context.Context, level, message, er
 
 	correlationID := getOrGenerateCorrelationID(ctx)
 
-	if l.config.Output == "buffer" {
+	if l.config.Output == logOutputBuffer {
 		entry := l.createBufferLogEntry(ctx, level, message, errorStr, correlationID, fields)
 		l.writeLogEntry(entry)
 		return
@@ -597,39 +622,10 @@ func (l *applicationLoggerImpl) writeLogEntry(entry *LogEntry) {
 	var bytesWritten int
 
 	// Special handling for buffer output (testing) - write directly to buffer
-	if l.config.Output == "buffer" && l.buffer != nil {
-		if l.config.Format == "json" {
-			jsonData, err := json.Marshal(entry)
-			if err != nil {
-				atomic.AddInt64(&globalPerformanceMetrics.errorsCount, 1)
-				return
-			}
-			bytesWritten = len(jsonData)
-			l.buffer.Write(jsonData)
-			l.buffer.WriteString("\n")
-		} else {
-			logLine := fmt.Sprintf("[%s] %s %s: %s", entry.Timestamp, entry.Level, entry.Component, entry.Message)
-			bytesWritten = len(logLine)
-			l.buffer.WriteString(logLine)
-			l.buffer.WriteString("\n")
-		}
+	if l.config.Output == logOutputBuffer && l.buffer != nil {
+		bytesWritten = l.writeToBuffer(entry)
 	} else {
-		// Use slog for non-buffer output
-		if l.config.Format == "json" {
-			// Use faster JSON encoding for performance
-			jsonData, err := json.Marshal(entry)
-			if err != nil {
-				atomic.AddInt64(&globalPerformanceMetrics.errorsCount, 1)
-				return
-			}
-			bytesWritten = len(jsonData)
-			l.logger.Info(string(jsonData))
-		} else {
-			// Simple text format for non-JSON
-			logLine := fmt.Sprintf("[%s] %s %s: %s", entry.Timestamp, entry.Level, entry.Component, entry.Message)
-			bytesWritten = len(logLine)
-			l.logger.Info(logLine)
-		}
+		bytesWritten = l.writeToSlog(entry)
 	}
 
 	// Update metrics
@@ -778,7 +774,7 @@ func recordLogPerformance(duration time.Duration, bytesWritten int) {
 	atomic.AddInt64(&globalPerformanceMetrics.totalBytesWritten, int64(bytesWritten))
 	// Simple moving average for latency
 	currentLatency := atomic.LoadInt64(&globalPerformanceMetrics.averageLatency)
-	newLatency := (currentLatency + duration.Nanoseconds()) / 2
+	newLatency := (currentLatency + duration.Nanoseconds()) / LatencyAverageDiv
 	atomic.StoreInt64(&globalPerformanceMetrics.averageLatency, newLatency)
 }
 
@@ -863,4 +859,40 @@ func GetLoggerPerformanceMetrics() map[string]interface{} {
 		"dropped_entries":     atomic.LoadInt64(&globalPerformanceMetrics.droppedEntries),
 		"memory_usage_mb":     atomic.LoadInt64(&globalPerformanceMetrics.memoryUsage),
 	}
+}
+
+// writeToBuffer writes log entry to buffer for testing purposes.
+func (l *applicationLoggerImpl) writeToBuffer(entry *LogEntry) int {
+	if l.config.Format == logFormatJSON {
+		jsonData, err := json.Marshal(entry)
+		if err != nil {
+			atomic.AddInt64(&globalPerformanceMetrics.errorsCount, 1)
+			return 0
+		}
+		l.buffer.Write(jsonData)
+		l.buffer.WriteString("\n")
+		return len(jsonData)
+	}
+
+	logLine := fmt.Sprintf("[%s] %s %s: %s", entry.Timestamp, entry.Level, entry.Component, entry.Message)
+	l.buffer.WriteString(logLine)
+	l.buffer.WriteString("\n")
+	return len(logLine)
+}
+
+// writeToSlog writes log entry using slog for production output.
+func (l *applicationLoggerImpl) writeToSlog(entry *LogEntry) int {
+	if l.config.Format == logFormatJSON {
+		jsonData, err := json.Marshal(entry)
+		if err != nil {
+			atomic.AddInt64(&globalPerformanceMetrics.errorsCount, 1)
+			return 0
+		}
+		l.logger.Info(string(jsonData))
+		return len(jsonData)
+	}
+
+	logLine := fmt.Sprintf("[%s] %s %s: %s", entry.Timestamp, entry.Level, entry.Component, entry.Message)
+	l.logger.Info(logLine)
+	return len(logLine)
 }

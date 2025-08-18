@@ -6,6 +6,11 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	// DefaultRepositoryLimit is the default number of repositories to return in a list query.
+	DefaultRepositoryLimit = 20
+)
+
 // CreateRepositoryRequest represents the request to create a new repository.
 type CreateRepositoryRequest struct {
 	URL           string  `json:"url"                      validate:"required,url"`
@@ -47,7 +52,7 @@ type RepositoryListQuery struct {
 // DefaultRepositoryListQuery returns default values for repository list query.
 func DefaultRepositoryListQuery() RepositoryListQuery {
 	return RepositoryListQuery{
-		Limit:  20,
+		Limit:  DefaultRepositoryLimit,
 		Offset: 0,
 		Sort:   "created_at:desc",
 	}

@@ -1,23 +1,29 @@
 package service
 
 import (
-	"codechunking/internal/application/dto"
-	"codechunking/internal/port/inbound"
-	"codechunking/internal/port/outbound"
 	"context"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"codechunking/internal/application/dto"
+	"codechunking/internal/port/inbound"
+	"codechunking/internal/port/outbound"
 )
 
 // Configuration constants for production-ready health monitoring.
 const (
-	healthCacheTTL       = 5 * time.Second  // Cache TTL as specified in requirements
-	natsHealthTimeout    = 1 * time.Second  // NATS health check timeout
-	maxConcurrentChecks  = 100              // Maximum concurrent health checks
-	cacheCleanupInterval = 30 * time.Second // Periodic cache cleanup
+	healthCacheTTL        = 5 * time.Second  // Cache TTL as specified in requirements
+	natsHealthTimeout     = 1 * time.Second  // NATS health check timeout
+	maxConcurrentChecks   = 100              // Maximum concurrent health checks
+	cacheCleanupInterval  = 30 * time.Second // Periodic cache cleanup
+	reconnectThreshold    = 10               // Maximum acceptable reconnects
+	failureCountThreshold = 100              // Maximum acceptable failure count
+
+	// Error messages.
+	invalidMetricsDetectedMsg = "invalid metrics detected"
 )
 
 // cacheEntry represents a cached health check result.
@@ -96,26 +102,7 @@ func (h *HealthServiceAdapter) GetHealth(ctx context.Context) (*dto.HealthRespon
 
 	// Check NATS message publisher health with caching and timeout handling
 	if h.messagePublisher != nil {
-		// Try to get cached NATS health first (fast path)
-		if cachedStatus, found := h.getCachedNATSHealth(); found {
-			response.Dependencies["nats"] = cachedStatus
-		} else {
-			// Cache miss - perform actual health check with timeout
-			natsStatus := h.checkNATSHealthWithTimeout(ctx)
-			// Cache the result for future requests
-			h.cacheNATSHealth(natsStatus)
-			response.Dependencies["nats"] = natsStatus
-		}
-
-		// Update overall status based on NATS health
-		natsStatus := response.Dependencies["nats"]
-		if natsStatus.Status == string(dto.DependencyStatusUnhealthy) {
-			if response.Status == string(dto.HealthStatusHealthy) {
-				response.Status = string(dto.HealthStatusDegraded)
-			} else {
-				response.Status = string(dto.HealthStatusUnhealthy)
-			}
-		}
+		h.checkAndUpdateNATSHealth(ctx, response)
 	}
 
 	return response, nil
@@ -157,7 +144,7 @@ func (h *HealthServiceAdapter) validateNATSHealthDetails(status *dto.DependencyS
 			status.Message = "Invalid circuit breaker state"
 			break
 		}
-		time.Sleep(50 * time.Microsecond)
+		time.Sleep(50 * time.Microsecond) //nolint:mnd // small validation delay
 	}
 }
 
@@ -177,7 +164,10 @@ func (h *HealthServiceAdapter) processHealthCheckResponse(
 	status dto.DependencyStatus,
 	elapsed time.Duration,
 ) dto.DependencyStatus {
-	responseTime := fmt.Sprintf("%.1fms", float64(elapsed.Nanoseconds())/1e6)
+	responseTime := fmt.Sprintf(
+		"%.1fms",
+		float64(elapsed.Nanoseconds())/1e6, //nolint:mnd // nanoseconds to milliseconds conversion
+	)
 	status.ResponseTime = responseTime
 
 	if elapsed > 50*time.Millisecond && status.Status == string(dto.DependencyStatusHealthy) {
@@ -449,7 +439,7 @@ func (h *HealthServiceAdapter) buildHalfOpenMessage(
 	healthStatus outbound.MessagePublisherHealthStatus,
 	metrics outbound.MessagePublisherMetrics,
 ) string {
-	if healthStatus.Reconnects > 10 {
+	if healthStatus.Reconnects > reconnectThreshold {
 		return "NATS circuit breaker half-open: unstable connection"
 	}
 
@@ -497,7 +487,7 @@ func (h *HealthServiceAdapter) checkJetStreamAvailability(
 func (h *HealthServiceAdapter) checkConnectionStability(
 	healthStatus outbound.MessagePublisherHealthStatus,
 ) (dto.DependencyStatusValue, string, bool) {
-	if healthStatus.Reconnects > 10 {
+	if healthStatus.Reconnects > reconnectThreshold {
 		return dto.DependencyStatusUnhealthy, "NATS unstable connection: too many reconnects", true
 	}
 	return dto.DependencyStatusHealthy, "", false
@@ -549,12 +539,12 @@ func (h *HealthServiceAdapter) checkMetricsValidation(
 ) (dto.DependencyStatusValue, string, bool) {
 	// Check for negative values which indicate data corruption or invalid state
 	if metrics.PublishedCount < 0 || metrics.FailedCount < 0 {
-		return dto.DependencyStatusUnhealthy, "invalid metrics detected", true
+		return dto.DependencyStatusUnhealthy, invalidMetricsDetectedMsg, true
 	}
 
 	// Check for invalid latency format - empty string is also considered invalid
 	if metrics.AverageLatency == "" {
-		return dto.DependencyStatusUnhealthy, "invalid metrics detected", true
+		return dto.DependencyStatusUnhealthy, invalidMetricsDetectedMsg, true
 	}
 
 	if metrics.AverageLatency != "0s" {
@@ -562,7 +552,7 @@ func (h *HealthServiceAdapter) checkMetricsValidation(
 		latencyStr := strings.TrimSuffix(metrics.AverageLatency, "ms")
 		latencyStr = strings.TrimSuffix(latencyStr, "s")
 		if _, err := strconv.ParseFloat(latencyStr, 64); err != nil {
-			return dto.DependencyStatusUnhealthy, "invalid metrics detected", true
+			return dto.DependencyStatusUnhealthy, invalidMetricsDetectedMsg, true
 		}
 	}
 
@@ -577,8 +567,8 @@ func (h *HealthServiceAdapter) adjustMetricsForVersionIncompatibility(
 	lastErrLower := strings.ToLower(healthStatus.LastError)
 	if strings.Contains(lastErrLower, "protocol version") || strings.Contains(lastErrLower, "version mismatch") {
 		// Incompatibility typically means publish attempts fail; reflect that in metrics
-		if metrics.FailedCount < 100 {
-			metrics.FailedCount = 100
+		if metrics.FailedCount < failureCountThreshold {
+			metrics.FailedCount = failureCountThreshold
 		}
 		metrics.PublishedCount = 0
 	}
@@ -626,5 +616,36 @@ func (h *HealthServiceAdapter) buildNATSHealthDetails(
 			FailedCount:    sanitizedFailedCount,
 			AverageLatency: sanitizedLatency,
 		},
+	}
+}
+
+// checkAndUpdateNATSHealth checks NATS health and updates the response accordingly.
+func (h *HealthServiceAdapter) checkAndUpdateNATSHealth(ctx context.Context, response *dto.HealthResponse) {
+	// Try to get cached NATS health first (fast path)
+	if cachedStatus, found := h.getCachedNATSHealth(); found {
+		response.Dependencies["nats"] = cachedStatus
+	} else {
+		// Cache miss - perform actual health check with timeout
+		natsStatus := h.checkNATSHealthWithTimeout(ctx)
+		// Cache the result for future requests
+		h.cacheNATSHealth(natsStatus)
+		response.Dependencies["nats"] = natsStatus
+	}
+
+	// Update overall status based on NATS health
+	h.updateOverallStatusBasedOnNATS(response)
+}
+
+// updateOverallStatusBasedOnNATS updates the overall health status based on NATS health.
+func (h *HealthServiceAdapter) updateOverallStatusBasedOnNATS(response *dto.HealthResponse) {
+	natsStatus := response.Dependencies["nats"]
+	if natsStatus.Status != string(dto.DependencyStatusUnhealthy) {
+		return
+	}
+
+	if response.Status == string(dto.HealthStatusHealthy) {
+		response.Status = string(dto.HealthStatusDegraded)
+	} else {
+		response.Status = string(dto.HealthStatusUnhealthy)
 	}
 }

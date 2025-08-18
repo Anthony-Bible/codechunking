@@ -1,14 +1,24 @@
 package cmd
 
 import (
-	"codechunking/internal/config"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
+	"codechunking/internal/config"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+)
+
+const (
+	// Default configuration values.
+	defaultWorkerConcurrency      = 5
+	defaultDatabasePort           = 5432
+	defaultDatabaseMaxConnections = 25
+	defaultDatabaseMaxIdleConns   = 5
+	defaultNATSMaxReconnects      = 5
 )
 
 // CmdConfig holds the command configuration.
@@ -48,7 +58,7 @@ func Execute() {
 	}
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for root command initialization
 	cobra.OnInitialize(initConfig)
 
 	// Global flags
@@ -152,21 +162,21 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("api.write_timeout", "10s")
 
 	// Worker defaults
-	v.SetDefault("worker.concurrency", 5)
+	v.SetDefault("worker.concurrency", defaultWorkerConcurrency)
 	v.SetDefault("worker.queue_group", "workers")
 	v.SetDefault("worker.job_timeout", "30m")
 
 	// Database defaults
 	v.SetDefault("database.host", "localhost")
-	v.SetDefault("database.port", 5432)
+	v.SetDefault("database.port", defaultDatabasePort)
 	v.SetDefault("database.name", "codechunking")
 	v.SetDefault("database.sslmode", "disable")
-	v.SetDefault("database.max_connections", 25)
-	v.SetDefault("database.max_idle_connections", 5)
+	v.SetDefault("database.max_connections", defaultDatabaseMaxConnections)
+	v.SetDefault("database.max_idle_connections", defaultDatabaseMaxIdleConns)
 
 	// NATS defaults
 	v.SetDefault("nats.url", "nats://localhost:4222")
-	v.SetDefault("nats.max_reconnects", 5)
+	v.SetDefault("nats.max_reconnects", defaultNATSMaxReconnects)
 	v.SetDefault("nats.reconnect_wait", "2s")
 
 	// Logging defaults

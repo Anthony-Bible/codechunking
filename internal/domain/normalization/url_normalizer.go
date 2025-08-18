@@ -1,12 +1,22 @@
 package normalization
 
 import (
-	"codechunking/internal/application/common/security"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 	"sync"
+
+	"codechunking/internal/application/common/security"
+)
+
+const (
+	// DefaultMaxURLLength is the default maximum URL length.
+	DefaultMaxURLLength = 2048
+	// DefaultMaxCacheSize is the default maximum cache size for URL normalization.
+	DefaultMaxCacheSize = 1000
+	// MinPathPartsForRepository is the minimum number of path parts required for a repository URL.
+	MinPathPartsForRepository = 2
 )
 
 // URLNormalizer provides comprehensive URL normalization capabilities for repository URLs.
@@ -68,7 +78,7 @@ func DefaultConfig() *Config {
 		StripQueryParams:    true,
 		StripFragment:       true,
 		CaseSensitiveHosts:  false,
-		MaxURLLength:        2048,
+		MaxURLLength:        DefaultMaxURLLength,
 		NormalizePathCase:   true, // Default to lowercase for backward compatibility
 	}
 }
@@ -86,7 +96,7 @@ func NewURLNormalizer(config *Config, securityConfig *security.Config) *URLNorma
 		config:          config,
 		securityConfig:  securityConfig,
 		normalizedCache: make(map[string]string),
-		maxCacheSize:    1000,
+		maxCacheSize:    DefaultMaxCacheSize,
 		cacheEnabled:    true,
 	}
 }
@@ -283,7 +293,7 @@ func (n *URLNormalizer) validateNormalizedURL(normalizedURL string) error {
 
 	// Validate path structure
 	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
-	if len(pathParts) < 2 {
+	if len(pathParts) < MinPathPartsForRepository {
 		return errors.New("repository URL must include owner and repository name")
 	}
 

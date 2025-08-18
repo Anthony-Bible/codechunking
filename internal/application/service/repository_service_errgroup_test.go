@@ -1,14 +1,15 @@
 package service
 
 import (
-	"codechunking/internal/domain/entity"
-	"codechunking/internal/domain/valueobject"
-	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"codechunking/internal/domain/entity"
+	"codechunking/internal/domain/valueobject"
+	"codechunking/internal/port/outbound"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

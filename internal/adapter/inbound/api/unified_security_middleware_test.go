@@ -1,11 +1,12 @@
 package api
 
 import (
-	"codechunking/internal/adapter/inbound/api/testutil"
 	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"codechunking/internal/adapter/inbound/api/testutil"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

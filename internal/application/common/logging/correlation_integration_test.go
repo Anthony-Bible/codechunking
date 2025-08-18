@@ -1,7 +1,6 @@
 package logging
 
 import (
-	"codechunking/internal/adapter/inbound/api/middleware"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -9,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"codechunking/internal/adapter/inbound/api/middleware"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

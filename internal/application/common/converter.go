@@ -1,9 +1,15 @@
 package common
 
 import (
+	"strings"
+
 	"codechunking/internal/application/dto"
 	"codechunking/internal/domain/entity"
-	"strings"
+)
+
+const (
+	// MinURLPartsForOwnerRepo is the minimum number of URL parts needed to extract owner/repo format.
+	MinURLPartsForOwnerRepo = 2
 )
 
 // EntityToRepositoryResponse converts a repository entity to response DTO.
@@ -57,7 +63,7 @@ func ExtractRepositoryNameFromURL(url string) string {
 	url = strings.TrimSuffix(url, ".git")
 
 	parts := strings.Split(url, "/")
-	if len(parts) >= 2 {
+	if len(parts) >= MinURLPartsForOwnerRepo {
 		return parts[len(parts)-2] + "/" + parts[len(parts)-1]
 	}
 

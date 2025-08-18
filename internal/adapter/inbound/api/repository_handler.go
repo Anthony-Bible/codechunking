@@ -1,15 +1,25 @@
 package api
 
 import (
-	"codechunking/internal/application/common"
-	"codechunking/internal/application/dto"
-	"codechunking/internal/port/inbound"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 
+	"codechunking/internal/application/common"
+	"codechunking/internal/application/dto"
+	"codechunking/internal/port/inbound"
+
 	"github.com/google/uuid"
+)
+
+const (
+	// URL validation constants.
+	maxRepositoryURLLength = 2048
+
+	// Pagination limits.
+	maxRepositoryListLimit  = 100
+	maxIndexingJobListLimit = 50
 )
 
 // RepositoryHandler handles HTTP requests for repository operations.
@@ -169,7 +179,7 @@ func (h *RepositoryHandler) validateCreateRepositoryRequest(request dto.CreateRe
 	}
 
 	// Basic URL format validation (additional validation will be done by the domain layer)
-	if len(request.URL) > 2048 {
+	if len(request.URL) > maxRepositoryURLLength {
 		return common.NewValidationError("url", "Repository URL is too long (maximum 2048 characters)")
 	}
 
@@ -178,12 +188,12 @@ func (h *RepositoryHandler) validateCreateRepositoryRequest(request dto.CreateRe
 
 // validateRepositoryListQuery validates the repository list query parameters.
 func (h *RepositoryHandler) validateRepositoryListQuery(query dto.RepositoryListQuery) error {
-	return h.validatePaginationParams(query.Limit, query.Offset, 100)
+	return h.validatePaginationParams(query.Limit, query.Offset, maxRepositoryListLimit)
 }
 
 // validateIndexingJobListQuery validates the indexing job list query parameters.
 func (h *RepositoryHandler) validateIndexingJobListQuery(query dto.IndexingJobListQuery) error {
-	return h.validatePaginationParams(query.Limit, query.Offset, 50)
+	return h.validatePaginationParams(query.Limit, query.Offset, maxIndexingJobListLimit)
 }
 
 // jsonResponseWriter encapsulates JSON response writing with improved error handling

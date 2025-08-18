@@ -4,6 +4,23 @@ import (
 	"time"
 )
 
+const (
+	logLevelDEBUG  = "DEBUG"
+	severityHigh   = "HIGH"
+	severityMedium = "MEDIUM"
+
+	// Default security config values.
+	defaultMaxURLLength      = 2048
+	defaultMaxBodySizeKB     = 64
+	defaultRequestsPerMinute = 60
+	defaultBurstSize         = 10
+	defaultCacheSize         = 1000
+	defaultCacheTTLMinutes   = 5
+
+	// Constants for calculations.
+	bytesPerKB = 1024
+)
+
 // Config holds all configurable security parameters.
 type Config struct {
 	// URL validation settings
@@ -52,12 +69,12 @@ type ValidationLimits struct {
 // DefaultConfig returns a production-ready security configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		MaxURLLength: 2048,
-		MaxBodySize:  64 * 1024, // 64KB
+		MaxURLLength: defaultMaxURLLength,
+		MaxBodySize:  defaultMaxBodySizeKB * bytesPerKB, // 64KB
 
 		RateLimit: RateLimitConfig{
-			RequestsPerMinute: 60,
-			BurstSize:         10,
+			RequestsPerMinute: defaultRequestsPerMinute,
+			BurstSize:         defaultBurstSize,
 			WindowSize:        time.Minute,
 			Enabled:           true,
 		},
@@ -72,8 +89,8 @@ func DefaultConfig() *Config {
 		LogLevel:              "INFO",
 
 		EnableValidationCache: true,
-		CacheSize:             1000,
-		CacheTTL:              5 * time.Minute,
+		CacheSize:             defaultCacheSize,
+		CacheTTL:              defaultCacheTTLMinutes * time.Minute,
 	}
 }
 
@@ -82,7 +99,7 @@ func DevelopmentConfig() *Config {
 	config := DefaultConfig()
 	config.RateLimit.RequestsPerMinute = 300
 	config.RateLimit.BurstSize = 50
-	config.LogLevel = "DEBUG"
+	config.LogLevel = logLevelDEBUG
 	return config
 }
 
@@ -102,7 +119,7 @@ func (c *Config) Validate() error {
 	}
 
 	if c.MaxBodySize <= 0 {
-		c.MaxBodySize = 64 * 1024
+		c.MaxBodySize = defaultMaxBodySizeKB * bytesPerKB
 	}
 
 	if c.RateLimit.RequestsPerMinute <= 0 {
@@ -122,7 +139,7 @@ func (c *Config) Validate() error {
 	}
 
 	if c.CacheTTL <= 0 {
-		c.CacheTTL = 5 * time.Minute
+		c.CacheTTL = defaultCacheTTLMinutes * time.Minute
 	}
 
 	return nil

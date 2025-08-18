@@ -1,13 +1,14 @@
 package api
 
 import (
-	"codechunking/internal/adapter/inbound/api/testutil"
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"codechunking/internal/adapter/inbound/api/testutil"
 
 	"github.com/stretchr/testify/assert"
 )

@@ -1,8 +1,9 @@
 package valueobject
 
 import (
-	"codechunking/internal/domain/normalization"
 	"testing"
+
+	"codechunking/internal/domain/normalization"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

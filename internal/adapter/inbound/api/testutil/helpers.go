@@ -2,13 +2,14 @@ package testutil
 
 import (
 	"bytes"
-	"codechunking/internal/application/dto"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"time"
+
+	"codechunking/internal/application/dto"
 
 	"github.com/google/uuid"
 )
@@ -345,7 +346,7 @@ func NewRepositoryListResponseBuilder() *RepositoryListResponseBuilder {
 		response: dto.RepositoryListResponse{
 			Repositories: []dto.RepositoryResponse{},
 			Pagination: dto.PaginationResponse{
-				Limit:   20,
+				Limit:   20, //nolint:mnd // test data default limit
 				Offset:  0,
 				Total:   0,
 				HasMore: false,
@@ -375,7 +376,7 @@ func NewIndexingJobListResponseBuilder() *IndexingJobListResponseBuilder {
 		response: dto.IndexingJobListResponse{
 			Jobs: []dto.IndexingJobResponse{},
 			Pagination: dto.PaginationResponse{
-				Limit:   10,
+				Limit:   10, //nolint:mnd // test data default limit
 				Offset:  0,
 				Total:   0,
 				HasMore: false,

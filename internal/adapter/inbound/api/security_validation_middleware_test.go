@@ -2,13 +2,14 @@ package api
 
 import (
 	"bytes"
-	"codechunking/internal/adapter/inbound/api/testutil"
-	"codechunking/internal/application/dto"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"codechunking/internal/adapter/inbound/api/testutil"
+	"codechunking/internal/application/dto"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

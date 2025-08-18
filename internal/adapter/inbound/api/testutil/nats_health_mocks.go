@@ -1,13 +1,28 @@
 package testutil
 
 import (
-	"codechunking/internal/application/dto"
-	"codechunking/internal/port/outbound"
 	"context"
 	"sync"
 	"time"
 
+	"codechunking/internal/application/dto"
+	"codechunking/internal/port/outbound"
+
 	"github.com/google/uuid"
+)
+
+const (
+	// Test data constants for NATS health monitoring.
+	testPublishedCount    = 1000
+	testMessageCount      = 5000
+	testMessagesFailed    = 10
+	testClusterNodes      = 150
+	testReconnects        = 15
+	testReconnectsAlt     = 8
+	testMessageCountAlt   = 1000
+	testMessagesFailedAlt = 250
+	testMessageCountLarge = 2500
+	testMessagesFailedLow = 125
 )
 
 // MockMessagePublisherWithHealthMonitoring provides complete NATS health monitoring capabilities for testing.
@@ -229,7 +244,7 @@ func NewNATSHealthResponseBuilder() *NATSHealthResponseBuilder {
 			JetStreamEnabled: true,
 			CircuitBreaker:   "closed",
 			MessageMetrics: dto.NATSMessageMetrics{
-				PublishedCount: 1000,
+				PublishedCount: testPublishedCount,
 				FailedCount:    0,
 				AverageLatency: "2ms",
 			},
@@ -377,9 +392,9 @@ func CreateHealthyNATSScenario() dto.HealthResponse {
 		WithReconnects(1).
 		WithJetStream(true).
 		WithCircuitBreaker("closed").
-		WithMessageMetrics(5000, 10, "1.8ms").
+		WithMessageMetrics(testMessageCount, testMessagesFailed, "1.8ms").
 		WithServerVersion("2.9.0").
-		WithClusterInfo("production", 150).
+		WithClusterInfo("production", testClusterNodes).
 		Build()
 
 	return NewEnhancedHealthResponseBuilder().
@@ -394,11 +409,11 @@ func CreateUnhealthyNATSScenario() dto.HealthResponse {
 	natsHealth := NewNATSHealthResponseBuilder().
 		WithConnection(false).
 		WithUptime("0s").
-		WithReconnects(15).
+		WithReconnects(testReconnects).
 		WithLastError("connection timeout").
 		WithJetStream(false).
 		WithCircuitBreaker("open").
-		WithMessageMetrics(1000, 250, "0ms").
+		WithMessageMetrics(testMessageCountAlt, testMessagesFailedAlt, "0ms").
 		Build()
 
 	return NewEnhancedHealthResponseBuilder().
@@ -413,11 +428,11 @@ func CreateDegradedNATSScenario() dto.HealthResponse {
 	natsHealth := NewNATSHealthResponseBuilder().
 		WithConnection(true).
 		WithUptime("45m").
-		WithReconnects(8).
+		WithReconnects(testReconnectsAlt).
 		WithLastError("temporary network issue").
 		WithJetStream(true).
 		WithCircuitBreaker("half-open").
-		WithMessageMetrics(2500, 125, "12ms").
+		WithMessageMetrics(testMessageCountLarge, testMessagesFailedLow, "12ms").
 		WithServerVersion("2.9.0").
 		Build()
 

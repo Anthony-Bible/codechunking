@@ -1,11 +1,12 @@
 package service
 
 import (
+	"context"
+	"testing"
+
 	"codechunking/internal/adapter/inbound/api/testutil"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/port/outbound"
-	"context"
-	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

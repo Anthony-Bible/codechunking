@@ -1,14 +1,15 @@
 package repository
 
 import (
-	"codechunking/internal/domain/entity"
-	"codechunking/internal/domain/valueobject"
-	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"codechunking/internal/domain/entity"
+	"codechunking/internal/domain/valueobject"
+	"codechunking/internal/port/outbound"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -197,8 +198,13 @@ func (r *PostgreSQLRepositoryRepository) buildWhereClause(filters outbound.Repos
 }
 
 func (r *PostgreSQLRepositoryRepository) buildOrderByClause(sort string) string {
+	const (
+		orderByCreatedAtDesc = "ORDER BY created_at DESC"
+		sortDirectionDesc    = "desc"
+	)
+
 	if sort == "" {
-		return "ORDER BY created_at DESC"
+		return orderByCreatedAtDesc
 	}
 
 	parts := strings.Split(sort, ":")
@@ -210,22 +216,22 @@ func (r *PostgreSQLRepositoryRepository) buildOrderByClause(sort string) string 
 
 	switch field {
 	case "name":
-		if direction == "desc" {
+		if direction == sortDirectionDesc {
 			return "ORDER BY name DESC"
 		}
 		return "ORDER BY name ASC"
 	case "created_at":
-		if direction == "desc" {
-			return "ORDER BY created_at DESC"
+		if direction == sortDirectionDesc {
+			return orderByCreatedAtDesc
 		}
 		return "ORDER BY created_at ASC"
 	case "updated_at":
-		if direction == "desc" {
+		if direction == sortDirectionDesc {
 			return "ORDER BY updated_at DESC"
 		}
 		return "ORDER BY updated_at ASC"
 	default:
-		return "ORDER BY created_at DESC"
+		return orderByCreatedAtDesc
 	}
 }
 
@@ -602,7 +608,7 @@ func (r *PostgreSQLRepositoryRepository) checkExistenceByNormalizedURL(
 // validateSortParameter validates the sort parameter format and fields.
 func (r *PostgreSQLRepositoryRepository) validateSortParameter(sort string) error {
 	parts := strings.Split(sort, ":")
-	if len(parts) != 2 {
+	if len(parts) != 2 { //nolint:mnd // sort parameter format: "field:direction"
 		// If no colon, assume it's just the field name with default direction
 		parts = []string{sort, "asc"}
 	}

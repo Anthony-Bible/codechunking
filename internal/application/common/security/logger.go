@@ -1,11 +1,12 @@
 package security
 
 import (
-	"codechunking/internal/application/common/slogger"
 	"context"
 	"fmt"
 	"sync"
 	"time"
+
+	"codechunking/internal/application/common/slogger"
 )
 
 // SecurityLogger provides structured logging for security events.
@@ -98,7 +99,7 @@ func (dsl *DefaultSecurityLogger) LogViolation(ctx context.Context, event Securi
 
 	// Log based on severity and configuration
 	switch event.Severity {
-	case "CRITICAL", "HIGH":
+	case "CRITICAL", severityHigh:
 		slogger.Error(ctx, "Security violation",
 			slogger.Fields{
 				"severity":   "CRITICAL",
@@ -109,7 +110,7 @@ func (dsl *DefaultSecurityLogger) LogViolation(ctx context.Context, event Securi
 				"field":      event.ViolationDetails.Field,
 				"request_id": event.RequestID,
 			})
-	case "MEDIUM":
+	case severityMedium:
 		slogger.Warn(ctx, "Security violation",
 			slogger.Fields{
 				"severity":   "MEDIUM",
@@ -121,7 +122,7 @@ func (dsl *DefaultSecurityLogger) LogViolation(ctx context.Context, event Securi
 				"request_id": event.RequestID,
 			})
 	case "LOW":
-		if dsl.config.LogLevel == "DEBUG" {
+		if dsl.config.LogLevel == logLevelDEBUG {
 			slogger.Info(ctx, "Security violation",
 				slogger.Fields{
 					"severity":   "LOW",
@@ -159,7 +160,7 @@ func (dsl *DefaultSecurityLogger) LogMetric(ctx context.Context, metric Security
 	dsl.metrics.RecordMetric(metric.Name, metric.Value, metric.Labels)
 
 	// Log if debug mode
-	if dsl.config.LogLevel == "DEBUG" {
+	if dsl.config.LogLevel == logLevelDEBUG {
 		slogger.Debug(ctx, "Security metric",
 			slogger.Fields3(
 				"name", metric.Name,
@@ -198,7 +199,7 @@ func (dsl *DefaultSecurityLogger) LogAccess(ctx context.Context, access AccessEv
 				"client_ip":   access.ClientIP,
 			})
 	case "SUCCESS":
-		if dsl.config.LogLevel == "DEBUG" {
+		if dsl.config.LogLevel == logLevelDEBUG {
 			slogger.Debug(ctx, "Access successful",
 				slogger.Fields{
 					"type":        access.Type,

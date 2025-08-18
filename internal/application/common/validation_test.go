@@ -1,10 +1,11 @@
 package common
 
 import (
-	"codechunking/internal/domain/valueobject"
 	"errors"
 	"strings"
 	"testing"
+
+	"codechunking/internal/domain/valueobject"
 )
 
 // TestValidateRepositoryStatus tests the ValidateRepositoryStatus function
@@ -122,38 +123,7 @@ func TestValidateRepositoryStatus(t *testing.T) {
 			err := ValidateRepositoryStatus(tt.status)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Errorf("ValidateRepositoryStatus(%q) expected error but got nil", tt.status)
-					return
-				}
-
-				// Verify it returns ValidationError type (not domain error type)
-				var validationErr ValidationError
-				ok := errors.As(err, &validationErr)
-				if !ok {
-					t.Errorf("ValidateRepositoryStatus(%q) expected ValidationError but got %T", tt.status, err)
-					return
-				}
-
-				// Verify error field is "status"
-				if validationErr.Field != "status" {
-					t.Errorf(
-						"ValidateRepositoryStatus(%q) error field = %q, want %q",
-						tt.status,
-						validationErr.Field,
-						"status",
-					)
-				}
-
-				// Verify error message
-				if validationErr.Message != tt.wantMsg {
-					t.Errorf(
-						"ValidateRepositoryStatus(%q) error message = %q, want %q",
-						tt.status,
-						validationErr.Message,
-						tt.wantMsg,
-					)
-				}
+				validateExpectedError(t, tt.status, err, tt.wantMsg)
 			} else if err != nil {
 				t.Errorf("ValidateRepositoryStatus(%q) expected no error but got: %v", tt.status, err)
 			}
@@ -894,5 +864,41 @@ func TestValidateRepositoryStatus_RedPhaseRefactoring_FunctionSignatureUnchanged
 		if !errors.As(err, &validationError) {
 			t.Errorf("RED PHASE FAILURE: Invalid input %q should return ValidationError, got %T", invalidInput, err)
 		}
+	}
+}
+
+// validateExpectedError validates that an expected error case returns the correct ValidationError.
+func validateExpectedError(t *testing.T, status string, err error, wantMsg string) {
+	if err == nil {
+		t.Errorf("ValidateRepositoryStatus(%q) expected error but got nil", status)
+		return
+	}
+
+	// Verify it returns ValidationError type (not domain error type)
+	var validationErr ValidationError
+	ok := errors.As(err, &validationErr)
+	if !ok {
+		t.Errorf("ValidateRepositoryStatus(%q) expected ValidationError but got %T", status, err)
+		return
+	}
+
+	// Verify error field is "status"
+	if validationErr.Field != "status" {
+		t.Errorf(
+			"ValidateRepositoryStatus(%q) error field = %q, want %q",
+			status,
+			validationErr.Field,
+			"status",
+		)
+	}
+
+	// Verify error message
+	if validationErr.Message != wantMsg {
+		t.Errorf(
+			"ValidateRepositoryStatus(%q) error message = %q, want %q",
+			status,
+			validationErr.Message,
+			wantMsg,
+		)
 	}
 }

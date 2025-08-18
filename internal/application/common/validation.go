@@ -1,14 +1,22 @@
 package common
 
 import (
-	"codechunking/internal/application/common/security"
-	"codechunking/internal/domain/valueobject"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
+	"codechunking/internal/application/common/security"
+	"codechunking/internal/domain/valueobject"
+
 	"github.com/google/uuid"
+)
+
+const (
+	// MaxNameLength is the maximum allowed length for name fields.
+	MaxNameLength = 255
+	// MaxASCIICharacter is the maximum ASCII character value.
+	MaxASCIICharacter = 127
 )
 
 // validJobStatuses returns all valid job statuses.
@@ -37,7 +45,7 @@ func ValidateRepositoryName(name *string) error {
 	}
 
 	// Length validation
-	if len(*name) > 255 {
+	if len(*name) > MaxNameLength {
 		return NewValidationError("name", "exceeds maximum length")
 	}
 
@@ -319,7 +327,7 @@ func (ev *EnhancedValidator) ValidateWithCustomRules(fieldName, value string, ru
 			}
 		case "ascii_only":
 			for _, r := range value {
-				if r > 127 {
+				if r > MaxASCIICharacter {
 					return NewValidationError(fieldName, "contains non-ASCII characters")
 				}
 			}

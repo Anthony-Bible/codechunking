@@ -1,9 +1,10 @@
 package slogger
 
 import (
-	"codechunking/internal/application/common/logging"
 	"context"
 	"sync"
+
+	"codechunking/internal/application/common/logging"
 )
 
 // Fields is an alias for logging.Fields for convenience.

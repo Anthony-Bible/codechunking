@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"bytes"
-	"codechunking/internal/adapter/inbound/api/util"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,7 +14,29 @@ import (
 	"sync/atomic"
 	"time"
 
+	"codechunking/internal/adapter/inbound/api/util"
+
 	"github.com/google/uuid"
+)
+
+const (
+	// Memory monitoring constants.
+	memoryMonitoringIntervalSeconds = 30
+	bytesToMB                       = 1024 * 1024
+
+	// Latency calculation constants.
+	latencyAverageDivisor = 2
+
+	// Duration conversion constants.
+	nanosecondsToMilliseconds = 1e6
+
+	// HTTP status code thresholds.
+	httpClientErrorThreshold = 400
+	httpServerErrorThreshold = 500
+
+	// Log level numeric values.
+	logLevelWarn  = 2
+	logLevelError = 3
 )
 
 // HTTP logging structures.
@@ -338,13 +359,13 @@ func checkRateLimit(maxPerSec int) bool {
 // Memory monitoring for middleware.
 func startHTTPMemoryMonitor(config LoggingConfig) {
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(memoryMonitoringIntervalSeconds * time.Second)
 		defer ticker.Stop()
 
 		for range ticker.C {
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
-			currentMB := int64(m.Alloc / 1024 / 1024)
+			currentMB := int64(m.Alloc / bytesToMB)
 			atomic.StoreInt64(&globalMiddlewareMetrics.memoryUsage, currentMB)
 			globalMiddlewareMetrics.lastMemoryCheck = time.Now()
 
@@ -361,7 +382,7 @@ func startHTTPMemoryMonitor(config LoggingConfig) {
 // Performance metrics updates.
 func updateMiddlewareLatency(duration time.Duration) {
 	currentLatency := atomic.LoadInt64(&globalMiddlewareMetrics.averageLatency)
-	newLatency := (currentLatency + duration.Nanoseconds()) / 2
+	newLatency := (currentLatency + duration.Nanoseconds()) / latencyAverageDivisor
 	atomic.StoreInt64(&globalMiddlewareMetrics.averageLatency, newLatency)
 }
 
@@ -450,7 +471,9 @@ func buildHTTPLogEntry(
 	request["method"] = r.Method
 	request["path"] = r.URL.Path
 	request["status"] = rw.statusCode
-	request["duration"] = float64(duration.Nanoseconds()) / 1e6 // Convert to milliseconds as float
+	request["duration"] = float64(
+		duration.Nanoseconds(),
+	) / nanosecondsToMilliseconds // Convert to milliseconds as float
 	request["request_size"] = getRequestSize(r)
 	request["response_size"] = rw.size
 	request["correlation_id"] = correlationID
@@ -510,11 +533,11 @@ func buildHTTPLogEntry(
 	entry.Duration = float64(duration.Milliseconds())
 
 	// Add error information for error responses
-	if rw.statusCode >= 400 {
+	if rw.statusCode >= httpClientErrorThreshold {
 		entry.Request["error_response"] = true
 		if rw.body.Len() > 0 {
 			entry.Error = strings.TrimSpace(rw.body.String())
-		} else if rw.statusCode >= 500 {
+		} else if rw.statusCode >= httpServerErrorThreshold {
 			// Ensure error field is present for server errors even without a response body
 			entry.Error = http.StatusText(rw.statusCode)
 		}
@@ -564,7 +587,7 @@ func logPanicRecovery(config LoggingConfig, correlationID string, r *http.Reques
 
 // Helper functions.
 func determineLogLevel(config LoggingConfig, statusCode int, duration time.Duration) string {
-	if statusCode >= 500 {
+	if statusCode >= httpServerErrorThreshold {
 		return "ERROR"
 	}
 	// Treat request timeout as WARN to reflect degraded conditions
@@ -584,8 +607,8 @@ func shouldLog(configLevel, messageLevel string) bool {
 	levels := map[string]int{
 		"DEBUG": 0,
 		"INFO":  1,
-		"WARN":  2,
-		"ERROR": 3,
+		"WARN":  logLevelWarn,
+		"ERROR": logLevelError,
 	}
 
 	configLevelInt := levels[strings.ToUpper(configLevel)]

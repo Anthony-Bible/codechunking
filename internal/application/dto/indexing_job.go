@@ -6,6 +6,11 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	// Default pagination settings for indexing jobs.
+	defaultIndexingJobListLimit = 10
+)
+
 // IndexingJobResponse represents the response containing indexing job information.
 type IndexingJobResponse struct {
 	ID             uuid.UUID  `json:"id"`
@@ -36,7 +41,7 @@ type IndexingJobListQuery struct {
 // DefaultIndexingJobListQuery returns default values for indexing job list query.
 func DefaultIndexingJobListQuery() IndexingJobListQuery {
 	return IndexingJobListQuery{
-		Limit:  10,
+		Limit:  defaultIndexingJobListLimit,
 		Offset: 0,
 	}
 }

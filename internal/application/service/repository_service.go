@@ -1,20 +1,28 @@
 package service
 
 import (
-	"codechunking/internal/application/common"
-	"codechunking/internal/application/dto"
-	"codechunking/internal/domain/entity"
-	"codechunking/internal/domain/valueobject"
-	"codechunking/internal/port/outbound"
 	"context"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"codechunking/internal/application/common"
+	"codechunking/internal/application/dto"
+	"codechunking/internal/domain/entity"
+	"codechunking/internal/domain/valueobject"
+	"codechunking/internal/port/outbound"
+
 	domain_errors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
+)
+
+const (
+	// DuplicateDetectionCacheTTL is the time-to-live for duplicate detection cache entries.
+	DuplicateDetectionCacheTTL = 5 // minutes
+	// MaxDuplicateDetectionCacheSize is the maximum number of entries in the duplicate detection cache.
+	MaxDuplicateDetectionCacheSize = 1000
 )
 
 // generateOperationID creates a unique identifier for batch operations.
@@ -387,8 +395,8 @@ func NewPerformantDuplicateDetectionService(
 		logger:         slog.Default().With("service", "duplicate_detection"),
 		metrics:        &DuplicateDetectionMetrics{},
 		duplicateCache: make(map[string]*DuplicateCheckCacheEntry),
-		cacheTTL:       5 * time.Minute, // Cache results for 5 minutes
-		maxCacheSize:   1000,            // Maximum cache entries
+		cacheTTL:       DuplicateDetectionCacheTTL * time.Minute, // Cache results for 5 minutes
+		maxCacheSize:   MaxDuplicateDetectionCacheSize,           // Maximum cache entries
 	}
 }
 

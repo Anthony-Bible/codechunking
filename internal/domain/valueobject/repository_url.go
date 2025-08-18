@@ -1,12 +1,18 @@
 package valueobject
 
 import (
-	"codechunking/internal/application/common/security"
-	"codechunking/internal/domain/normalization"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
+
+	"codechunking/internal/application/common/security"
+	"codechunking/internal/domain/normalization"
+)
+
+const (
+	// MinPathPartsForRepoURL is the minimum number of path parts required for a repository URL.
+	MinPathPartsForRepoURL = 2
 )
 
 // RepositoryURL represents a validated Git repository URL with dual storage.
@@ -245,7 +251,7 @@ func (uv *URLValidator) validateURLStructure(rawURL string, parsedURL *url.URL) 
 
 	// Validate path structure
 	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
-	if len(pathParts) < 2 {
+	if len(pathParts) < MinPathPartsForRepoURL {
 		return errors.New("repository URL must include owner and repository name")
 	}
 
@@ -324,7 +330,7 @@ func (r RepositoryURL) Name() string {
 	// Safe to ignore error as URL was validated during creation
 	parsedURL, _ := url.Parse(r.normalized)
 	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
-	if len(pathParts) >= 2 {
+	if len(pathParts) >= MinPathPartsForRepoURL {
 		return pathParts[1]
 	}
 	return ""

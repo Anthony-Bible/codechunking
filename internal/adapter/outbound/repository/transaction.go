@@ -106,7 +106,7 @@ func (tm *TransactionManager) WithTransactionRetry(
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(time.Millisecond * time.Duration((attempt+1)*10)):
+			case <-time.After(time.Millisecond * time.Duration((attempt+1)*10)): //nolint:mnd // retry backoff multiplier
 				continue
 			}
 		}

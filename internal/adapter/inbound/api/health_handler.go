@@ -1,11 +1,17 @@
 package api
 
 import (
-	"codechunking/internal/application/dto"
-	"codechunking/internal/port/inbound"
 	"fmt"
 	"net/http"
 	"time"
+
+	"codechunking/internal/application/dto"
+	"codechunking/internal/port/inbound"
+)
+
+const (
+	// Unit conversion constants.
+	nanosecondsToMilliseconds = 1e6
 )
 
 // HealthHandler handles HTTP requests for health check operations.
@@ -55,26 +61,41 @@ func (h *HealthHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 // addHealthHeaders adds performance and NATS-specific headers to the response.
 func (h *HealthHandler) addHealthHeaders(w http.ResponseWriter, response *dto.HealthResponse, duration time.Duration) {
 	// Add health check duration header
-	w.Header().Set("X-Health-Check-Duration", fmt.Sprintf("%.2fms", float64(duration.Nanoseconds())/1e6))
+	w.Header().
+		Set("X-Health-Check-Duration", fmt.Sprintf("%.2fms", float64(duration.Nanoseconds())/nanosecondsToMilliseconds))
 
 	// Add NATS-specific headers if NATS dependency exists
-	if natsStatus, exists := response.Dependencies["nats"]; exists {
-		if natsDetails, ok := natsStatus.Details["nats_health"]; ok {
-			if natsHealth, detailsOk := natsDetails.(dto.NATSHealthDetails); detailsOk {
-				// Add NATS connection status header
-				connectionStatus := "disconnected"
-				if natsHealth.Connected {
-					connectionStatus = "connected"
-				}
-				w.Header().Set("X-Nats-Connection-Status", connectionStatus)
+	h.addNATSHeaders(w, response)
+}
 
-				// Add JetStream enabled header
-				jetStreamStatus := "disabled"
-				if natsHealth.JetStreamEnabled {
-					jetStreamStatus = "enabled"
-				}
-				w.Header().Set("X-Jetstream-Enabled", jetStreamStatus)
-			}
-		}
+// addNATSHeaders adds NATS-specific headers to the response.
+func (h *HealthHandler) addNATSHeaders(w http.ResponseWriter, response *dto.HealthResponse) {
+	natsStatus, exists := response.Dependencies["nats"]
+	if !exists {
+		return
 	}
+
+	natsDetails, ok := natsStatus.Details["nats_health"]
+	if !ok {
+		return
+	}
+
+	natsHealth, detailsOk := natsDetails.(dto.NATSHealthDetails)
+	if !detailsOk {
+		return
+	}
+
+	// Add NATS connection status header
+	connectionStatus := "disconnected"
+	if natsHealth.Connected {
+		connectionStatus = "connected"
+	}
+	w.Header().Set("X-Nats-Connection-Status", connectionStatus)
+
+	// Add JetStream enabled header
+	jetStreamStatus := "disabled"
+	if natsHealth.JetStreamEnabled {
+		jetStreamStatus = "enabled"
+	}
+	w.Header().Set("X-Jetstream-Enabled", jetStreamStatus)
 }

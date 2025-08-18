@@ -1,10 +1,11 @@
 package common
 
 import (
-	"codechunking/internal/domain/valueobject"
 	"errors"
 	"strings"
 	"testing"
+
+	"codechunking/internal/domain/valueobject"
 )
 
 // TestValidateRepositoryStatus_DomainIntegrationRequired tests that FAIL with current map-based implementation
@@ -57,24 +58,7 @@ func TestValidateRepositoryStatus_DomainIntegrationRequired(t *testing.T) {
 
 				// If both return errors, verify error type conversion is correct
 				if domainErr != nil && appErr != nil {
-					// Application must return ValidationError, not domain error
-					var validationErr ValidationError
-					ok := errors.As(appErr, &validationErr)
-					if !ok {
-						t.Errorf(
-							"REFACTORING REQUIRED: Status %q - Application must return ValidationError when domain returns error, got %T",
-							status,
-							appErr,
-						)
-					} else {
-						// Must have correct field and standard message
-						if validationErr.Field != "status" {
-							t.Errorf("REFACTORING REQUIRED: Status %q - ValidationError must have field 'status', got %q", status, validationErr.Field)
-						}
-						if validationErr.Message != "invalid status" {
-							t.Errorf("REFACTORING REQUIRED: Status %q - ValidationError must have message 'invalid status', got %q", status, validationErr.Message)
-						}
-					}
+					validateErrorTypeConversion(t, status, appErr)
 				}
 			})
 		}
@@ -336,4 +320,35 @@ func containsSQLInjectionPatterns(input string) bool {
 		}
 	}
 	return false
+}
+
+// validateErrorTypeConversion validates that application layer properly converts domain errors to ValidationError.
+func validateErrorTypeConversion(t *testing.T, status string, appErr error) {
+	// Application must return ValidationError, not domain error
+	var validationErr ValidationError
+	ok := errors.As(appErr, &validationErr)
+	if !ok {
+		t.Errorf(
+			"REFACTORING REQUIRED: Status %q - Application must return ValidationError when domain returns error, got %T",
+			status,
+			appErr,
+		)
+		return
+	}
+
+	// Must have correct field and standard message
+	if validationErr.Field != "status" {
+		t.Errorf(
+			"REFACTORING REQUIRED: Status %q - ValidationError must have field 'status', got %q",
+			status,
+			validationErr.Field,
+		)
+	}
+	if validationErr.Message != "invalid status" {
+		t.Errorf(
+			"REFACTORING REQUIRED: Status %q - ValidationError must have message 'invalid status', got %q",
+			status,
+			validationErr.Message,
+		)
+	}
 }

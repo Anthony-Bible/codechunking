@@ -1,8 +1,6 @@
 package messaging
 
 import (
-	"codechunking/internal/config"
-	"codechunking/internal/port/outbound"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,8 +10,19 @@ import (
 	"sync"
 	"time"
 
+	"codechunking/internal/config"
+	"codechunking/internal/port/outbound"
+
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
+)
+
+const (
+	// NATS connection timeout.
+	natsConnectionTimeoutSeconds = 5
+
+	// Stream configuration.
+	streamMaxAgeHours = 24
 )
 
 // ConnectionHealthStatus represents the health status of NATS connection.
@@ -228,7 +237,7 @@ func (n *NATSMessagePublisher) Connect() error {
 	opts := []nats.Option{
 		nats.MaxReconnects(n.config.MaxReconnects),
 		nats.ReconnectWait(n.config.ReconnectWait),
-		nats.Timeout(5 * time.Second),
+		nats.Timeout(natsConnectionTimeoutSeconds * time.Second),
 		nats.ReconnectHandler(func(_ *nats.Conn) {
 			n.mutex.Lock()
 			n.reconnectCount++
@@ -330,7 +339,7 @@ func (n *NATSMessagePublisher) EnsureStream() error {
 		Subjects:  []string{"indexing.>"},
 		Storage:   nats.FileStorage,
 		Retention: nats.WorkQueuePolicy,
-		MaxAge:    24 * time.Hour, // Jobs expire after 1 day
+		MaxAge:    streamMaxAgeHours * time.Hour, // Jobs expire after 1 day
 		Replicas:  1,
 	}
 

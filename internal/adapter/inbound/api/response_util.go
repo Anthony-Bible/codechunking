@@ -8,6 +8,11 @@ import (
 	"sync"
 )
 
+const (
+	// initialBufferCapacity is the initial capacity for JSON encoding buffers.
+	initialBufferCapacity = 512
+)
+
 // Pool both encoders and their underlying buffers for maximum efficiency.
 type pooledEncoder struct {
 	buf     *bytes.Buffer
@@ -28,7 +33,7 @@ func NewJSONEncoder() *JSONEncoder {
 	return &JSONEncoder{
 		pool: sync.Pool{
 			New: func() interface{} {
-				buf := bytes.NewBuffer(make([]byte, 0, 512))
+				buf := bytes.NewBuffer(make([]byte, 0, initialBufferCapacity))
 				return &pooledEncoder{
 					buf:     buf,
 					encoder: json.NewEncoder(buf),
@@ -40,7 +45,7 @@ func NewJSONEncoder() *JSONEncoder {
 
 // getPooledEncoder retrieves a pooled encoder instance.
 func (j *JSONEncoder) getPooledEncoder() *pooledEncoder {
-	return j.pool.Get().(*pooledEncoder)
+	return j.pool.Get().(*pooledEncoder) //nolint:errcheck // sync.Pool type assertion is safe
 }
 
 // putPooledEncoder returns a pooled encoder instance after resetting it.

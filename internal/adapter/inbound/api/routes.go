@@ -1,10 +1,11 @@
 package api
 
 import (
-	"codechunking/internal/adapter/inbound/api/testutil"
 	"fmt"
 	"net/http"
 	"strings"
+
+	"codechunking/internal/adapter/inbound/api/testutil"
 )
 
 // Route validation error message constants for consistent error handling.
@@ -306,7 +307,7 @@ func (r *RouteRegistry) validateParameterSyntax(path, pattern string) error {
 
 			// Lazy allocation: only allocate slice when first parameter is found
 			if paramNames == nil {
-				paramNames = make([]string, 0, 4) // Pre-allocate for up to 4 params (typical case)
+				paramNames = make([]string, 0, 4) //nolint:mnd // typical API path parameter count
 			}
 			paramNames = append(paramNames, paramName)
 

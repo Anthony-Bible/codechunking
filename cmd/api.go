@@ -4,6 +4,13 @@ Copyright © 2025 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"context"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
+
 	"codechunking/internal/adapter/inbound/api"
 	"codechunking/internal/adapter/inbound/service"
 	"codechunking/internal/adapter/outbound/mock"
@@ -13,12 +20,6 @@ import (
 	"codechunking/internal/config"
 	"codechunking/internal/port/inbound"
 	"codechunking/internal/port/outbound"
-	"context"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
@@ -28,6 +29,10 @@ import (
 const (
 	// serviceVersion defines the version string used for all services created by this factory.
 	serviceVersion = "1.0.0"
+
+	// Server timeout constants.
+	serverStartTimeoutSeconds    = 10
+	serverShutdownTimeoutSeconds = 30
 )
 
 // ServiceFactory creates and manages service instances with memoized database connection pooling.
@@ -415,7 +420,7 @@ func runAPIServer(cmd *cobra.Command, args []string) {
 	}
 
 	// Start server with timeout
-	startCtx, startCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	startCtx, startCancel := context.WithTimeout(context.Background(), serverStartTimeoutSeconds*time.Second)
 	defer startCancel()
 
 	if startErr := server.Start(startCtx); startErr != nil {
@@ -444,7 +449,7 @@ func gracefulShutdown(server *api.Server) {
 	slogger.InfoNoCtx("Received signal. Initiating graceful shutdown", slogger.Field("signal", sig))
 
 	// Create a context with timeout for shutdown
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), serverShutdownTimeoutSeconds*time.Second)
 	defer shutdownCancel()
 
 	// Attempt graceful shutdown
@@ -456,6 +461,6 @@ func gracefulShutdown(server *api.Server) {
 	slogger.InfoNoCtx("API server shut down gracefully", nil)
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for command registration
 	rootCmd.AddCommand(newAPICmd())
 }

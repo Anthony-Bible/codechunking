@@ -2,8 +2,6 @@ package api
 
 import (
 	"bytes"
-	"codechunking/internal/adapter/inbound/api/util"
-	"codechunking/internal/application/common"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +10,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"codechunking/internal/adapter/inbound/api/util"
+	"codechunking/internal/application/common"
 )
 
 // SecurityMiddleware provides comprehensive security validation.
@@ -312,8 +313,8 @@ func CreateSecurityMiddlewareStack() func(http.Handler) http.Handler {
 		// Rate limiting
 		// Prevents abuse by limiting requests per client IP address
 		config := RateLimitConfig{
-			RequestsPerMinute: 10,
-			BurstSize:         5,
+			RequestsPerMinute: 10, //nolint:mnd // reasonable default rate limit
+			BurstSize:         5,  //nolint:mnd // reasonable default burst size
 			WindowSize:        "1m",
 		}
 		handler = NewRateLimitingMiddleware(config)(handler)

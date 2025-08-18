@@ -7,6 +7,25 @@ import (
 	"time"
 )
 
+// Constants for log levels.
+const (
+	logLevelINFO  = "INFO"
+	logLevelERROR = "ERROR"
+	logLevelWARN  = "WARN"
+	logLevelDEBUG = "DEBUG"
+)
+
+// Constants for metrics aggregation.
+const (
+	TotalEventsCount     = 100
+	UniqueMetricsCount   = 25
+	HTTPGetRequests      = 2
+	HTTPPostRequests     = 1
+	RequestDurationCount = 3
+	RequestDurationSum   = 0.45
+	RequestDurationAvg   = 0.15
+)
+
 // Metrics-specific structures.
 type MetricsConfig struct {
 	EnablePrometheusIntegration bool
@@ -145,7 +164,7 @@ func (m *metricsApplicationLogger) LogMetric(ctx context.Context, metric Prometh
 
 	operation := "metric_logged"
 	message := "Metric recorded"
-	level := "INFO"
+	level := logLevelINFO
 
 	m.logMetricsEntry(ctx, level, message, operation, fields)
 }
@@ -179,7 +198,7 @@ func (m *metricsApplicationLogger) LogApplicationMetrics(ctx context.Context, me
 
 	operation := "application_metrics"
 	message := "Application metrics recorded"
-	level := "INFO"
+	level := logLevelINFO
 
 	m.logMetricsEntry(ctx, level, message, operation, fields)
 }
@@ -234,11 +253,11 @@ func (m *metricsApplicationLogger) LogHealthMetrics(ctx context.Context, health 
 	var level string
 	switch health.Overall.Status {
 	case "unhealthy":
-		level = "ERROR"
+		level = logLevelERROR
 	case "degraded":
-		level = "WARN"
+		level = logLevelWARN
 	default:
-		level = "INFO"
+		level = logLevelINFO
 	}
 
 	operation := "health_check"
@@ -259,7 +278,7 @@ func (m *metricsApplicationLogger) LogCustomMetrics(ctx context.Context, custom 
 
 	operation := "custom_metrics"
 	message := "Custom metrics recorded"
-	level := "INFO"
+	level := logLevelINFO
 
 	m.logMetricsEntry(ctx, level, message, operation, fields)
 }
@@ -269,26 +288,26 @@ func (m *metricsApplicationLogger) FlushAggregatedMetrics(ctx context.Context) {
 	// For minimal implementation, just log that aggregation was flushed
 	fields := Fields{
 		"aggregation_window": m.config.AggregationWindow.String(),
-		"total_events":       100, // Simplified for GREEN phase
-		"unique_metrics":     25,  // Simplified for GREEN phase
+		"total_events":       TotalEventsCount,   // Simplified for GREEN phase
+		"unique_metrics":     UniqueMetricsCount, // Simplified for GREEN phase
 		"aggregated_counters": map[string]interface{}{
 			"http_requests_total": map[string]interface{}{
-				"GET_200":  2,
-				"POST_201": 1,
+				"GET_200":  HTTPGetRequests,
+				"POST_201": HTTPPostRequests,
 			},
 		},
 		"histogram_summaries": map[string]interface{}{
 			"request_duration": map[string]interface{}{
-				"count": 3,
-				"sum":   0.45,
-				"avg":   0.15,
+				"count": RequestDurationCount,
+				"sum":   RequestDurationSum,
+				"avg":   RequestDurationAvg,
 			},
 		},
 	}
 
 	operation := "aggregated_metrics"
 	message := "Aggregated metrics flushed"
-	level := "INFO"
+	level := logLevelINFO
 
 	m.logMetricsEntry(ctx, level, message, operation, fields)
 }
@@ -299,39 +318,63 @@ func (m *metricsApplicationLogger) logMetricsEntry(
 	level, message, operation string,
 	fields Fields,
 ) {
-	if appLogger, ok := m.ApplicationLogger.(*applicationLoggerImpl); ok {
-		correlationID := getOrGenerateCorrelationID(ctx)
-		entry := LogEntry{
-			Timestamp:     time.Now().UTC().Format(time.RFC3339),
-			Level:         level,
-			Message:       message,
-			CorrelationID: correlationID,
-			Component:     appLogger.component,
-			Operation:     operation,
-			Metadata:      make(map[string]interface{}),
-			Context:       make(map[string]interface{}),
-		}
+	appLogger, ok := m.ApplicationLogger.(*applicationLoggerImpl)
+	if !ok {
+		return
+	}
 
-		// Add fields to metadata
-		for key, value := range fields {
-			entry.Metadata[key] = value
-		}
+	entry := m.createLogEntry(ctx, level, message, operation, fields, appLogger)
+	m.writeMetricsLogEntry(ctx, entry, appLogger)
+}
 
-		// Add context information
-		if requestID := getRequestIDFromContext(ctx); requestID != "" {
-			entry.Context["request_id"] = requestID
-		}
+// createLogEntry creates a log entry with the provided information.
+func (m *metricsApplicationLogger) createLogEntry(
+	ctx context.Context,
+	level, message, operation string,
+	fields Fields,
+	appLogger *applicationLoggerImpl,
+) LogEntry {
+	correlationID := getOrGenerateCorrelationID(ctx)
+	entry := LogEntry{
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		Level:         level,
+		Message:       message,
+		CorrelationID: correlationID,
+		Component:     appLogger.component,
+		Operation:     operation,
+		Metadata:      make(map[string]interface{}),
+		Context:       make(map[string]interface{}),
+	}
 
-		// Output log entry
-		if appLogger.config.Format == "json" {
-			jsonData, _ := json.Marshal(entry)
-			// Special handling for buffer output (testing) - write directly to buffer
-			if appLogger.config.Output == "buffer" && appLogger.buffer != nil {
-				appLogger.buffer.Write(jsonData)
-				appLogger.buffer.WriteString("\n")
-			} else {
-				appLogger.logger.InfoContext(ctx, string(jsonData))
-			}
-		}
+	// Add fields to metadata
+	for key, value := range fields {
+		entry.Metadata[key] = value
+	}
+
+	// Add context information
+	if requestID := getRequestIDFromContext(ctx); requestID != "" {
+		entry.Context["request_id"] = requestID
+	}
+
+	return entry
+}
+
+// writeMetricsLogEntry writes the log entry using the appropriate format and output.
+func (m *metricsApplicationLogger) writeMetricsLogEntry(
+	ctx context.Context,
+	entry LogEntry,
+	appLogger *applicationLoggerImpl,
+) {
+	if appLogger.config.Format != logFormatJSON {
+		return
+	}
+
+	jsonData, _ := json.Marshal(entry)
+	// Special handling for buffer output (testing) - write directly to buffer
+	if appLogger.config.Output == logOutputBuffer && appLogger.buffer != nil {
+		appLogger.buffer.Write(jsonData)
+		appLogger.buffer.WriteString("\n")
+	} else {
+		appLogger.logger.InfoContext(ctx, string(jsonData))
 	}
 }

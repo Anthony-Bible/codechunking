@@ -1,7 +1,6 @@
 package api
 
 import (
-	"codechunking/internal/adapter/inbound/api/util"
 	"context"
 	"fmt"
 	"io"
@@ -10,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"codechunking/internal/adapter/inbound/api/util"
 
 	"github.com/google/uuid"
 )

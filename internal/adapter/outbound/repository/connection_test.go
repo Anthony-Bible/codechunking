@@ -84,31 +84,10 @@ func TestDatabaseConnection_NewConnection(t *testing.T) {
 			conn, err := NewDatabaseConnection(tt.config)
 
 			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error but got none")
-				}
-				if conn != nil {
-					t.Error("Expected nil connection on error")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error but got: %v", err)
-				}
-				if conn == nil {
-					t.Error("Expected valid connection but got nil")
-				}
-
-				// Test connection is actually usable
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-
-				if err := conn.Ping(ctx); err != nil {
-					t.Errorf("Connection ping failed: %v", err)
-				}
-
-				// Clean up
-				conn.Close()
+				validateConnectionErrorCase(t, conn, err)
+				return
 			}
+			validateConnectionSuccessCase(t, conn, err)
 		})
 	}
 }
@@ -867,4 +846,39 @@ func TestDatabaseHealthChecker_CacheMetricsFreshness(t *testing.T) {
 	if freshMetrics.ResponseTime < 0 {
 		t.Error("Expected valid ResponseTime in fresh metrics")
 	}
+}
+
+// Helper functions for TestNewDatabaseConnection to reduce nesting complexity
+
+// validateConnectionErrorCase validates that an error case returns expected error state.
+func validateConnectionErrorCase(t *testing.T, conn *pgxpool.Pool, err error) {
+	if err == nil {
+		t.Error("Expected error but got none")
+	}
+	if conn != nil {
+		t.Error("Expected nil connection on error")
+	}
+}
+
+// validateConnectionSuccessCase validates that a success case returns a working connection.
+func validateConnectionSuccessCase(t *testing.T, conn *pgxpool.Pool, err error) {
+	if err != nil {
+		t.Errorf("Expected no error but got: %v", err)
+		return
+	}
+	if conn == nil {
+		t.Error("Expected valid connection but got nil")
+		return
+	}
+
+	// Test connection is actually usable
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := conn.Ping(ctx); err != nil {
+		t.Errorf("Connection ping failed: %v", err)
+	}
+
+	// Clean up
+	conn.Close()
 }

@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"codechunking/internal/config"
 	"testing"
+
+	"codechunking/internal/config"
 
 	"github.com/stretchr/testify/assert"
 )

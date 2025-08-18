@@ -1,11 +1,12 @@
 package api
 
 import (
+	"errors"
+	"net/http"
+
 	"codechunking/internal/application/common"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/domain/errors/domain"
-	"errors"
-	"net/http"
 )
 
 // ErrorHandler defines methods for handling HTTP errors.

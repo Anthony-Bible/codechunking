@@ -149,14 +149,14 @@ func (n *natsApplicationLogger) LogNATSConnectionEvent(ctx context.Context, even
 		var errorStr string
 		switch {
 		case !event.Success && event.Error != nil:
-			level = "ERROR"
+			level = logLevelERROR
 			errorStr = event.Error.Error()
 			message = fmt.Sprintf("NATS connection failed: %s", event.Type)
 		case event.Type == "RECONNECTING":
-			level = "WARN"
+			level = logLevelWARN
 			message = fmt.Sprintf("NATS reconnecting: %s", event.Type)
 		default:
-			level = "INFO"
+			level = logLevelINFO
 		}
 
 		entry.Level = level
@@ -197,15 +197,15 @@ func (n *natsApplicationLogger) LogNATSPublishEvent(ctx context.Context, event N
 
 	operation := "nats_publish"
 	message := "NATS message published"
-	level := "DEBUG"
+	level := logLevelDEBUG
 
 	if event.MessageSize > 1024*512 { // Large message threshold
-		level = "INFO"
+		level = logLevelINFO
 		message = "NATS large message published"
 	}
 
 	if !event.Success {
-		level = "ERROR"
+		level = logLevelERROR
 		message = "NATS message publish failed"
 	}
 
@@ -239,13 +239,13 @@ func (n *natsApplicationLogger) LogNATSConsumeEvent(ctx context.Context, event N
 
 	operation := "nats_consume"
 	message := "NATS message consumed"
-	level := "DEBUG"
+	level := logLevelDEBUG
 
 	if event.Rejected {
 		level = "WARN"
 		message = "NATS message rejected"
 	} else if !event.Success {
-		level = "ERROR"
+		level = logLevelERROR
 		message = "NATS message processing failed"
 	}
 
@@ -281,12 +281,12 @@ func (n *natsApplicationLogger) LogJetStreamEvent(ctx context.Context, event Jet
 
 	operation := "jetstream_operation"
 	message := fmt.Sprintf("JetStream operation: %s", event.Operation)
-	level := "INFO"
+	level := logLevelINFO
 
 	if event.Operation == "stream_info" {
 		level = "DEBUG"
 	} else if !event.Success {
-		level = "ERROR"
+		level = logLevelERROR
 		message = fmt.Sprintf("JetStream operation failed: %s", event.Operation)
 	}
 
@@ -312,7 +312,7 @@ func (n *natsApplicationLogger) LogNATSPerformanceMetrics(ctx context.Context, m
 
 	operation := "nats_performance"
 	message := "NATS performance metrics recorded"
-	level := "INFO"
+	level := logLevelINFO
 
 	n.logNATSEntry(ctx, level, message, operation, fields, nil)
 }
@@ -324,44 +324,69 @@ func (n *natsApplicationLogger) logNATSEntry(
 	fields Fields,
 	err error,
 ) {
-	if appLogger, ok := n.ApplicationLogger.(*applicationLoggerImpl); ok {
-		correlationID := getOrGenerateCorrelationID(ctx)
-		entry := LogEntry{
-			Timestamp:     time.Now().UTC().Format(time.RFC3339),
-			Level:         level,
-			Message:       message,
-			CorrelationID: correlationID,
-			Component:     appLogger.component,
-			Operation:     operation,
-			Metadata:      make(map[string]interface{}),
-			Context:       make(map[string]interface{}),
-		}
+	appLogger, ok := n.ApplicationLogger.(*applicationLoggerImpl)
+	if !ok {
+		return
+	}
 
-		// Add fields to metadata
-		for key, value := range fields {
-			entry.Metadata[key] = value
-		}
+	entry := n.createNATSLogEntry(ctx, level, message, operation, fields, err, appLogger)
+	n.writeNATSLogEntry(ctx, entry, appLogger)
+}
 
-		// Add error if present
-		if err != nil {
-			entry.Error = err.Error()
-		}
+// createNATSLogEntry creates a log entry with NATS-specific information.
+func (n *natsApplicationLogger) createNATSLogEntry(
+	ctx context.Context,
+	level, message, operation string,
+	fields Fields,
+	err error,
+	appLogger *applicationLoggerImpl,
+) LogEntry {
+	correlationID := getOrGenerateCorrelationID(ctx)
+	entry := LogEntry{
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		Level:         level,
+		Message:       message,
+		CorrelationID: correlationID,
+		Component:     appLogger.component,
+		Operation:     operation,
+		Metadata:      make(map[string]interface{}),
+		Context:       make(map[string]interface{}),
+	}
 
-		// Add context information
-		if requestID := getRequestIDFromContext(ctx); requestID != "" {
-			entry.Context["request_id"] = requestID
-		}
+	// Add fields to metadata
+	for key, value := range fields {
+		entry.Metadata[key] = value
+	}
 
-		// Output log entry
-		if appLogger.config.Format == "json" {
-			jsonData, _ := json.Marshal(entry)
-			// Special handling for buffer output (testing) - write directly to buffer
-			if appLogger.config.Output == "buffer" && appLogger.buffer != nil {
-				appLogger.buffer.Write(jsonData)
-				appLogger.buffer.WriteString("\n")
-			} else {
-				appLogger.logger.InfoContext(ctx, string(jsonData))
-			}
-		}
+	// Add error if present
+	if err != nil {
+		entry.Error = err.Error()
+	}
+
+	// Add context information
+	if requestID := getRequestIDFromContext(ctx); requestID != "" {
+		entry.Context["request_id"] = requestID
+	}
+
+	return entry
+}
+
+// writeNATSLogEntry writes the log entry using the appropriate format and output.
+func (n *natsApplicationLogger) writeNATSLogEntry(
+	ctx context.Context,
+	entry LogEntry,
+	appLogger *applicationLoggerImpl,
+) {
+	if appLogger.config.Format != "json" {
+		return
+	}
+
+	jsonData, _ := json.Marshal(entry)
+	// Special handling for buffer output (testing) - write directly to buffer
+	if appLogger.config.Output == "buffer" && appLogger.buffer != nil {
+		appLogger.buffer.Write(jsonData)
+		appLogger.buffer.WriteString("\n")
+	} else {
+		appLogger.logger.InfoContext(ctx, string(jsonData))
 	}
 }

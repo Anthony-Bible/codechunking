@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+const (
+	componentService = "service"
+	// MockAsyncJobDuration represents the mock duration for async job processing.
+	MockAsyncJobDuration = 2 // seconds
+)
+
 // Mock service implementations for correlation testing
 
 // RepositoryRequest represents a repository creation request.
@@ -272,7 +278,7 @@ func (s *mockAsyncProcessingService) ProcessJobAsync(ctx context.Context, jobID 
 		JobID:        jobID,
 		Status:       "completed",
 		RepositoryID: "repo-123",
-		Duration:     time.Second * 2,
+		Duration:     time.Second * MockAsyncJobDuration,
 	}
 
 	s.logger.Info(ctx, "Async job processing", Fields{
@@ -309,7 +315,7 @@ func NewMockErrorService(logger ApplicationLogger, scenario ErrorScenario) MockI
 }
 
 func (s *mockErrorService) ProcessRepository(ctx context.Context, req RepositoryProcessingRequest) error {
-	if s.scenario.Component == "service" {
+	if s.scenario.Component == componentService {
 		s.logger.Error(ctx, "Repository processing failed", Fields{
 			"error_type": s.scenario.ErrorType,
 			"operation":  "repository_processing",
@@ -385,7 +391,7 @@ func getAllErrorLogOutputs(component string) []string {
 	// This is a placeholder that returns mock error logs for now
 	// In a full implementation, this would collect actual error logs from the logger buffer
 	switch component {
-	case "service":
+	case componentService:
 		return []string{
 			`{"timestamp":"2025-01-01T12:00:00Z","level":"ERROR","message":"Repository processing failed","correlation_id":"error-propagation-789","component":"error-service","error":"Invalid repository URL format"}`,
 			`{"timestamp":"2025-01-01T12:00:00Z","level":"ERROR","message":"HTTP error response","correlation_id":"error-propagation-789","component":"http-middleware","error":"Invalid repository URL format"}`,

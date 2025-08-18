@@ -1,8 +1,6 @@
 package api
 
 import (
-	"codechunking/internal/config"
-	"codechunking/internal/port/inbound"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +9,9 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"codechunking/internal/config"
+	"codechunking/internal/port/inbound"
 )
 
 // Server represents the HTTP API server.

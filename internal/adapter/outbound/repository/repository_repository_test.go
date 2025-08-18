@@ -1,11 +1,12 @@
 package repository
 
 import (
+	"context"
+	"testing"
+
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
-	"context"
-	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -232,7 +233,7 @@ func TestRepositoryRepository_FindByURL_NonExistingRepository(t *testing.T) {
 
 // TestRepositoryRepository_FindAll tests finding repositories with filters and pagination.
 //
-//nolint:gocognit // Comprehensive test for FindAll with many edge cases and scenarios
+
 func TestRepositoryRepository_FindAll(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -396,55 +397,90 @@ func TestRepositoryRepository_FindAll(t *testing.T) {
 			repos, total, err := repo.FindAll(ctx, tt.filters)
 
 			if tt.expectError {
-				if err == nil {
-					t.Error("Expected error but got none")
-				}
-				if repos != nil {
-					t.Error("Expected nil repositories on error")
-				}
-				if total != 0 {
-					t.Errorf("Expected total count 0 on error, got %d", total)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error but got: %v", err)
-				}
-				if len(repos) != tt.expectedCount {
-					t.Errorf("Expected %d repositories, got %d", tt.expectedCount, len(repos))
-				}
-				if total != tt.expectedTotal {
-					t.Errorf("Expected total count %d, got %d", tt.expectedTotal, total)
-				}
-
-				// Verify repositories are valid entities
-				for i, r := range repos {
-					if r == nil {
-						t.Errorf("Repository at index %d is nil", i)
-					}
-					if r.ID() == uuid.Nil {
-						t.Errorf("Repository at index %d has nil ID", i)
-					}
-
-					// Check status filter if applied
-					if tt.filters.Status != nil {
-						if r.Status() != *tt.filters.Status {
-							t.Errorf("Repository at index %d has status %s, expected %s",
-								i, r.Status(), *tt.filters.Status)
-						}
-					}
-				}
-
-				// Check sort order for name ascending
-				if tt.filters.Sort == "name:asc" && len(repos) > 1 {
-					for i := 1; i < len(repos); i++ {
-						if repos[i-1].Name() > repos[i].Name() {
-							t.Error("Repositories not sorted by name ascending")
-							break
-						}
-					}
-				}
+				validateErrorCase(t, repos, total, err)
+				return
 			}
+
+			validateSuccessCase(t, repos, total, err, tt.expectedCount, tt.expectedTotal)
+			validateStatusFilter(t, repos, tt.filters.Status)
+			validateSortOrder(t, repos, tt.filters.Sort)
 		})
+	}
+}
+
+// Helper functions for TestRepositoryRepository_FindAll to reduce nesting complexity
+
+// validateErrorCase validates that an error case returns expected error state.
+func validateErrorCase(t *testing.T, repos []*entity.Repository, total int, err error) {
+	if err == nil {
+		t.Error("Expected error but got none")
+	}
+	if repos != nil {
+		t.Error("Expected nil repositories on error")
+	}
+	if total != 0 {
+		t.Errorf("Expected total count 0 on error, got %d", total)
+	}
+}
+
+// validateSuccessCase validates that a success case returns expected results.
+func validateSuccessCase(
+	t *testing.T,
+	repos []*entity.Repository,
+	total int,
+	err error,
+	expectedCount, expectedTotal int,
+) {
+	if err != nil {
+		t.Errorf("Expected no error but got: %v", err)
+		return
+	}
+	if len(repos) != expectedCount {
+		t.Errorf("Expected %d repositories, got %d", expectedCount, len(repos))
+	}
+	if total != expectedTotal {
+		t.Errorf("Expected total count %d, got %d", expectedTotal, total)
+	}
+
+	validateRepositoryEntities(t, repos)
+}
+
+// validateRepositoryEntities validates that repositories are valid entities.
+func validateRepositoryEntities(t *testing.T, repos []*entity.Repository) {
+	for i, r := range repos {
+		if r == nil {
+			t.Errorf("Repository at index %d is nil", i)
+			continue
+		}
+		if r.ID() == uuid.Nil {
+			t.Errorf("Repository at index %d has nil ID", i)
+		}
+	}
+}
+
+// validateStatusFilter checks if repositories match the status filter.
+func validateStatusFilter(t *testing.T, repos []*entity.Repository, expectedStatus *valueobject.RepositoryStatus) {
+	if expectedStatus == nil {
+		return
+	}
+
+	for i, r := range repos {
+		if r.Status() != *expectedStatus {
+			t.Errorf("Repository at index %d has status %s, expected %s",
+				i, r.Status(), *expectedStatus)
+		}
+	}
+}
+
+// validateSortOrder checks if repositories are sorted correctly.
+func validateSortOrder(t *testing.T, repos []*entity.Repository, sortBy string) {
+	if sortBy == "name:asc" && len(repos) > 1 {
+		for i := 1; i < len(repos); i++ {
+			if repos[i-1].Name() > repos[i].Name() {
+				t.Error("Repositories not sorted by name ascending")
+				break
+			}
+		}
 	}
 }
 

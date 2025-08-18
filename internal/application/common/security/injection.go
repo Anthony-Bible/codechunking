@@ -357,13 +357,13 @@ func (iv *InjectionValidator) GetInjectionRisk(input string) InjectionRisk {
 
 	// Check each type of injection
 	if err := iv.ValidateXSSAttacks(input); err != nil {
-		risk.RiskLevel = "HIGH"
+		risk.RiskLevel = severityHigh
 		risk.Violations = append(risk.Violations, "XSS: "+err.Error())
 		risk.Suggestions = append(risk.Suggestions, "Remove or escape HTML/JavaScript content")
 	}
 
 	if err := iv.ValidateSQLInjection(input); err != nil {
-		risk.RiskLevel = "HIGH"
+		risk.RiskLevel = severityHigh
 		risk.Violations = append(risk.Violations, "SQL: "+err.Error())
 		risk.Suggestions = append(risk.Suggestions, "Use parameterized queries and escape SQL characters")
 	}

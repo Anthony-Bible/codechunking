@@ -1,13 +1,12 @@
 package common
 
 import (
+	"codechunking/internal/application/common/security"
+	"codechunking/internal/domain/valueobject"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
-
-	"codechunking/internal/application/common/security"
-	"codechunking/internal/domain/valueobject"
 
 	"github.com/google/uuid"
 )

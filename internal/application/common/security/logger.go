@@ -1,12 +1,11 @@
 package security
 
 import (
+	"codechunking/internal/application/common/slogger"
 	"context"
 	"fmt"
 	"sync"
 	"time"
-
-	"codechunking/internal/application/common/slogger"
 )
 
 // SecurityLogger provides structured logging for security events.

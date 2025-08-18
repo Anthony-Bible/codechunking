@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bytes"
+	"codechunking/internal/adapter/inbound/api/middleware"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,8 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"codechunking/internal/adapter/inbound/api/middleware"
 
 	"github.com/google/uuid"
 )
@@ -427,7 +426,13 @@ func (l *applicationLoggerImpl) startMemoryMonitor() {
 			case <-ticker.C:
 				var m runtime.MemStats
 				runtime.ReadMemStats(&m)
-				currentMB := int64(m.Alloc / BytesToMB / BytesToMB)
+				allocMB := m.Alloc / BytesToMB / BytesToMB
+				var currentMB int64
+				if allocMB > 9223372036854775807 { // max int64
+					currentMB = 9223372036854775807
+				} else {
+					currentMB = int64(allocMB) // #nosec G115 -- checked bounds above
+				}
 				atomic.StoreInt64(&globalPerformanceMetrics.memoryUsage, currentMB)
 
 				// Log warning if memory usage is high

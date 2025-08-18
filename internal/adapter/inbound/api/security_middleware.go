@@ -2,6 +2,8 @@ package api
 
 import (
 	"bytes"
+	"codechunking/internal/adapter/inbound/api/util"
+	"codechunking/internal/application/common"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,9 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"codechunking/internal/adapter/inbound/api/util"
-	"codechunking/internal/application/common"
 )
 
 // SecurityMiddleware provides comprehensive security validation.

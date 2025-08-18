@@ -1,16 +1,15 @@
 package service
 
 import (
+	"codechunking/internal/application/dto"
+	"codechunking/internal/port/inbound"
+	"codechunking/internal/port/outbound"
 	"context"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"codechunking/internal/application/dto"
-	"codechunking/internal/port/inbound"
-	"codechunking/internal/port/outbound"
 )
 
 // Configuration constants for production-ready health monitoring.

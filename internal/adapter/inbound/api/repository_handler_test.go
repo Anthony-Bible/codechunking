@@ -1,16 +1,15 @@
 package api
 
 import (
+	"codechunking/internal/adapter/inbound/api/testutil"
+	"codechunking/internal/application/dto"
+	"codechunking/internal/domain/errors/domain"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"codechunking/internal/adapter/inbound/api/testutil"
-	"codechunking/internal/application/dto"
-	"codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

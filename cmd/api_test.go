@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"codechunking/internal/config"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,8 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"codechunking/internal/config"
 
 	"github.com/google/uuid"
 	"github.com/spf13/viper"

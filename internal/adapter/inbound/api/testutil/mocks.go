@@ -1,14 +1,13 @@
 package testutil
 
 import (
+	"codechunking/internal/application/dto"
+	"codechunking/internal/domain/errors/domain"
+	"codechunking/internal/port/inbound"
 	"context"
 	"errors"
 	"net/http"
 	"sync"
-
-	"codechunking/internal/application/dto"
-	"codechunking/internal/domain/errors/domain"
-	"codechunking/internal/port/inbound"
 
 	"github.com/google/uuid"
 )

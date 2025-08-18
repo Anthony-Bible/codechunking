@@ -2,14 +2,13 @@ package testutil
 
 import (
 	"bytes"
+	"codechunking/internal/application/dto"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"time"
-
-	"codechunking/internal/application/dto"
 
 	"github.com/google/uuid"
 )

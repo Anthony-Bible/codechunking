@@ -4,13 +4,6 @@ Copyright © 2025 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"context"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"time"
-
 	"codechunking/internal/adapter/inbound/api"
 	"codechunking/internal/adapter/inbound/service"
 	"codechunking/internal/adapter/outbound/mock"
@@ -20,6 +13,12 @@ import (
 	"codechunking/internal/config"
 	"codechunking/internal/port/inbound"
 	"codechunking/internal/port/outbound"
+	"context"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"

@@ -1,11 +1,10 @@
 package entity
 
 import (
+	"codechunking/internal/domain/valueobject"
 	"errors"
 	"testing"
 	"time"
-
-	"codechunking/internal/domain/valueobject"
 
 	"github.com/google/uuid"
 )

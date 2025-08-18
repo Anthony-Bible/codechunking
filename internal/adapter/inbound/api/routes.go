@@ -1,11 +1,10 @@
 package api
 
 import (
+	"codechunking/internal/adapter/inbound/api/testutil"
 	"fmt"
 	"net/http"
 	"strings"
-
-	"codechunking/internal/adapter/inbound/api/testutil"
 )
 
 // Route validation error message constants for consistent error handling.

@@ -1,10 +1,9 @@
 package outbound
 
 import (
-	"context"
-
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/valueobject"
+	"context"
 
 	"github.com/google/uuid"
 )

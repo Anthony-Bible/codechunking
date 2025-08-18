@@ -1,12 +1,11 @@
 package valueobject
 
 import (
+	"codechunking/internal/domain/normalization"
 	"strings"
 	"testing"
 	"time"
 	"unicode"
-
-	"codechunking/internal/domain/normalization"
 )
 
 // FuzzNormalizeRepositoryURL tests URL normalization with random inputs

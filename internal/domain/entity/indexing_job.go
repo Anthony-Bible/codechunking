@@ -1,9 +1,8 @@
 package entity
 
 import (
-	"time"
-
 	"codechunking/internal/domain/valueobject"
+	"time"
 
 	"github.com/google/uuid"
 )

@@ -1,12 +1,11 @@
 package messaging
 
 import (
+	"codechunking/internal/config"
 	"context"
 	"fmt"
 	"testing"
 	"time"
-
-	"codechunking/internal/config"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

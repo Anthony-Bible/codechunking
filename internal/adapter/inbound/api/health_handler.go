@@ -1,12 +1,11 @@
 package api
 
 import (
+	"codechunking/internal/application/dto"
+	"codechunking/internal/port/inbound"
 	"fmt"
 	"net/http"
 	"time"
-
-	"codechunking/internal/application/dto"
-	"codechunking/internal/port/inbound"
 )
 
 const (

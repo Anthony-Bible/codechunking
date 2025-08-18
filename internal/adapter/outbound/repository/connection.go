@@ -70,13 +70,21 @@ func NewDatabaseConnection(config DatabaseConfig) (*pgxpool.Pool, error) {
 
 	// Configure connection pool
 	if config.MaxConnections > 0 {
-		poolConfig.MaxConns = int32(config.MaxConnections)
+		if config.MaxConnections > 2147483647 { // max int32
+			poolConfig.MaxConns = 2147483647
+		} else {
+			poolConfig.MaxConns = int32(config.MaxConnections) // #nosec G115 -- checked bounds above
+		}
 	} else {
 		poolConfig.MaxConns = 10 // default
 	}
 
 	if config.MinConnections >= 0 {
-		poolConfig.MinConns = int32(config.MinConnections)
+		if config.MinConnections > 2147483647 { // max int32
+			poolConfig.MinConns = 2147483647
+		} else {
+			poolConfig.MinConns = int32(config.MinConnections) // #nosec G115 -- checked bounds above
+		}
 	} else {
 		poolConfig.MinConns = 0 // default
 	}

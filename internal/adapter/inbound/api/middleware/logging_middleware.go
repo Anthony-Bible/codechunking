@@ -2,19 +2,19 @@ package middleware
 
 import (
 	"bytes"
+	"codechunking/internal/adapter/inbound/api/util"
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"net/http"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"codechunking/internal/adapter/inbound/api/util"
 
 	"github.com/google/uuid"
 )
@@ -242,9 +242,17 @@ func shouldExcludePath(path string, excludePaths []string) bool {
 
 func shouldDropForSampling(sampleRate float64) bool {
 	if sampleRate > 0 && sampleRate < 1 {
-		return rand.Float64() > sampleRate
+		return cryptoRandFloat64() > sampleRate
 	}
 	return false
+}
+
+func cryptoRandFloat64() float64 {
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return 0.5 // fallback to middle value on error
+	}
+	return float64(binary.BigEndian.Uint64(buf[:])) / float64(1<<64)
 }
 
 func checkAndHandleRateLimit(maxRequestsPerSecond int, w http.ResponseWriter) bool {
@@ -365,7 +373,13 @@ func startHTTPMemoryMonitor(config LoggingConfig) {
 		for range ticker.C {
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
-			currentMB := int64(m.Alloc / bytesToMB)
+			allocMB := m.Alloc / bytesToMB
+			var currentMB int64
+			if allocMB > 9223372036854775807 { // max int64
+				currentMB = 9223372036854775807
+			} else {
+				currentMB = int64(allocMB) // #nosec G115 -- checked bounds above
+			}
 			atomic.StoreInt64(&globalMiddlewareMetrics.memoryUsage, currentMB)
 			globalMiddlewareMetrics.lastMemoryCheck = time.Now()
 

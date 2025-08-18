@@ -1,6 +1,7 @@
 package api
 
 import (
+	"codechunking/internal/application/dto"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,8 +11,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"codechunking/internal/application/dto"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"

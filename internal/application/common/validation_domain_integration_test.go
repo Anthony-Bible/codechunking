@@ -1,11 +1,10 @@
 package common
 
 import (
+	"codechunking/internal/domain/valueobject"
 	"errors"
 	"strings"
 	"testing"
-
-	"codechunking/internal/domain/valueobject"
 )
 
 // TestValidateRepositoryStatus_DomainIntegrationRequired tests that FAIL with current map-based implementation

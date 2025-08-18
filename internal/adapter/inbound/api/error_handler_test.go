@@ -1,15 +1,14 @@
 package api
 
 import (
+	"codechunking/internal/application/common"
+	"codechunking/internal/application/dto"
+	"codechunking/internal/domain/errors/domain"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"codechunking/internal/application/common"
-	"codechunking/internal/application/dto"
-	"codechunking/internal/domain/errors/domain"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

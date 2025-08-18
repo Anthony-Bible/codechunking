@@ -1,13 +1,12 @@
 package valueobject
 
 import (
+	"codechunking/internal/application/common/security"
+	"codechunking/internal/domain/normalization"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
-
-	"codechunking/internal/application/common/security"
-	"codechunking/internal/domain/normalization"
 )
 
 const (

@@ -1,13 +1,12 @@
 package normalization
 
 import (
+	"codechunking/internal/application/common/security"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 	"sync"
-
-	"codechunking/internal/application/common/security"
 )
 
 const (

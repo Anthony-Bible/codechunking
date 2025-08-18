@@ -1,11 +1,10 @@
 package cmd
 
 import (
+	"codechunking/internal/config"
 	"fmt"
 	"strings"
 	"testing"
-
-	"codechunking/internal/config"
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"

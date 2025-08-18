@@ -1,11 +1,10 @@
 package common
 
 import (
+	"codechunking/internal/application/dto"
 	"errors"
 	"strings"
 	"testing"
-
-	"codechunking/internal/application/dto"
 )
 
 // TestNewValidationError tests the basic constructor function.

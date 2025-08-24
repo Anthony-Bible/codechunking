@@ -5,9 +5,16 @@ Copyright © 2025 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"codechunking/internal/adapter/inbound/messaging"
 	"codechunking/internal/application/common/slogger"
+	"codechunking/internal/application/service"
+	"codechunking/internal/application/worker"
+	"codechunking/internal/config"
+	"context"
+	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 // newWorkerCmd creates and returns the worker command.
@@ -22,7 +29,76 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 		Run: func(_ *cobra.Command, _ []string) {
-			slogger.InfoNoCtx("worker called", nil)
+			// Load configuration
+			cfg := config.New(viper.GetViper())
+
+			slogger.InfoNoCtx("Starting worker service", slogger.Fields{
+				"concurrency": cfg.Worker.Concurrency,
+				"queue_group": cfg.Worker.QueueGroup,
+			})
+
+			// Create job processor (simplified for GREEN phase)
+			jobProcessorConfig := worker.JobProcessorConfig{
+				WorkspaceDir:      "/tmp/codechunking-workspace",
+				MaxConcurrentJobs: cfg.Worker.Concurrency,
+				JobTimeout:        cfg.Worker.JobTimeout,
+			}
+
+			jobProcessor := worker.NewDefaultJobProcessor(
+				jobProcessorConfig,
+				nil, // Repository will be injected in BLUE phase
+				nil, // Repository will be injected in BLUE phase
+				nil, // GitClient will be injected in BLUE phase
+				nil, // CodeParser will be injected in BLUE phase
+				nil, // EmbeddingGenerator will be injected in BLUE phase
+			)
+
+			// Create consumer configuration
+			consumerConfig := messaging.ConsumerConfig{
+				Subject:     "indexing.job",
+				QueueGroup:  cfg.Worker.QueueGroup,
+				DurableName: "indexing-consumer",
+				AckWait:     30 * time.Second,
+				MaxDeliver:  3,
+			}
+
+			// Create consumer (simplified for GREEN phase)
+			consumer, err := messaging.NewNATSConsumer(consumerConfig, cfg.NATS, jobProcessor)
+			if err != nil {
+				slogger.ErrorNoCtx("Failed to create consumer", slogger.Fields{"error": err.Error()})
+				return
+			}
+
+			// Create worker service
+			workerServiceConfig := service.WorkerServiceConfig{
+				Concurrency:         cfg.Worker.Concurrency,
+				QueueGroup:          cfg.Worker.QueueGroup,
+				JobTimeout:          cfg.Worker.JobTimeout,
+				HealthCheckInterval: 30 * time.Second,
+				RestartDelay:        5 * time.Second,
+				MaxRestartAttempts:  3,
+				ShutdownTimeout:     30 * time.Second,
+			}
+
+			workerService := service.NewDefaultWorkerService(workerServiceConfig, cfg.NATS, jobProcessor)
+
+			// Add consumer to service
+			if err := workerService.AddConsumer(consumer); err != nil {
+				slogger.ErrorNoCtx("Failed to add consumer", slogger.Fields{"error": err.Error()})
+				return
+			}
+
+			// Start worker service
+			ctx := context.Background()
+			if err := workerService.Start(ctx); err != nil {
+				slogger.ErrorNoCtx("Failed to start worker service", slogger.Fields{"error": err.Error()})
+				return
+			}
+
+			slogger.InfoNoCtx("Worker service started successfully", nil)
+
+			// Keep running (simplified for GREEN phase)
+			select {}
 		},
 	}
 }

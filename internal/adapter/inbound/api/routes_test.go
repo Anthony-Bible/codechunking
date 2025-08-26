@@ -49,7 +49,7 @@ func TestRouteRegistry_RegisterRoutes(t *testing.T) {
 				}
 
 				// Verify total route count
-				assert.Equal(t, len(expectedRoutes), registry.RouteCount())
+				assert.Len(t, expectedRoutes, registry.RouteCount())
 			},
 		},
 		{

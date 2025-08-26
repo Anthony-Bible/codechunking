@@ -281,3 +281,61 @@ func (n *NATSConsumer) updateStats(success bool, processTime time.Duration) {
 		n.stats.MessageRate = float64(n.stats.MessagesReceived) / elapsed.Seconds()
 	}
 }
+
+// AckAlertThresholds defines thresholds for acknowledgment health alerts.
+type AckAlertThresholds struct {
+	ErrorRateThreshold   float64
+	LatencyThresholdP99  time.Duration
+	TimeoutRateThreshold float64
+}
+
+// AckConsumerConfig holds acknowledgment configuration for the enhanced consumer.
+type AckConsumerConfig struct {
+	EnableAcknowledgment       bool
+	AckTimeout                 time.Duration
+	EnableCorrelationTracking  bool
+	EnableDuplicateDetection   bool
+	DuplicateDetectionWindow   time.Duration
+	EnableStatisticsCollection bool
+	StatisticsInterval         time.Duration
+	BackoffStrategy            string
+	InitialBackoffDelay        time.Duration
+	MaxBackoffDelay            time.Duration
+	AckRetryAttempts           int
+	AckRetryDelay              time.Duration
+	TimeoutRecoveryMode        string
+	TimeoutBackoffDelay        time.Duration
+	PermanentFailureRecovery   string
+	EnableFailureNotification  bool
+	EnablePerformanceMetrics   bool
+	MetricsWindowSize          int
+	EnableHealthChecks         bool
+	HealthCheckInterval        time.Duration
+	AlertThresholds            AckAlertThresholds
+	GracefulShutdownTimeout    time.Duration
+	PreserveStateOnRestart     bool
+	StatePreservationTimeout   time.Duration
+}
+
+// NewEnhancedNATSConsumer creates a new enhanced NATS consumer with acknowledgment capabilities.
+func NewEnhancedNATSConsumer(
+	_ ConsumerConfig,
+	ackConfig AckConsumerConfig,
+	_ config.NATSConfig,
+	_ inbound.JobProcessor,
+	ackHandler interface{},
+	_ interface{},
+) (inbound.Consumer, error) {
+	// GREEN phase: Add basic validation to make tests pass
+
+	if ackConfig.EnableAcknowledgment && ackConfig.AckTimeout <= 0 {
+		return nil, errors.New("ack_timeout must be positive")
+	}
+
+	if ackConfig.EnableAcknowledgment && ackHandler == nil {
+		return nil, errors.New("ack handler is required when acknowledgment is enabled")
+	}
+
+	// RED phase consistency - should return "not implemented yet" error
+	return nil, errors.New("not implemented yet")
+}

@@ -340,7 +340,7 @@ func (r *RouteRegistry) checkRouteConflict(newPattern string) error {
 	// Parse the new pattern without allocation
 	newMethod, newPath, err := parseMethodAndPath(newPattern)
 	if err != nil {
-		return nil // Already handled by validation
+		return err // Return the actual error
 	}
 
 	// Check against all existing patterns

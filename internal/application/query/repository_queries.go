@@ -1,3 +1,4 @@
+// Package query contains query objects and handlers for the application layer.
 package query
 
 import "github.com/google/uuid"

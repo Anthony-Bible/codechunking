@@ -141,7 +141,7 @@ func TestValidateSortParameter(t *testing.T) {
 
 			if tt.shouldReject {
 				require.Error(t, err, "Expected malicious sort parameter to be rejected: %s", tt.sortParam)
-				assert.Contains(t, err.Error(), tt.errorContains, "Error should indicate the security issue")
+				require.ErrorContains(t, err, tt.errorContains, "Error should indicate the security issue")
 			} else {
 				require.NoError(t, err, "Valid sort parameter should not be rejected: %s", tt.sortParam)
 			}
@@ -228,7 +228,7 @@ func TestValidateStatusParameter(t *testing.T) {
 			if tt.shouldReject {
 				require.Error(t, err, "Expected malicious status to be rejected: %s", tt.status)
 				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains, "Error should indicate the security issue")
+					require.ErrorContains(t, err, tt.errorContains, "Error should indicate the security issue")
 				}
 			} else {
 				require.NoError(t, err, "Valid status should not be rejected: %s", tt.status)
@@ -381,7 +381,7 @@ func TestValidateQueryInjection(t *testing.T) {
 
 			if tt.shouldReject {
 				require.Error(t, err, "Expected malicious query parameters to be rejected")
-				assert.Contains(t, err.Error(), tt.errorContains, "Error should indicate the security issue")
+				require.ErrorContains(t, err, tt.errorContains, "Error should indicate the security issue")
 			} else {
 				require.NoError(t, err, "Valid query parameters should not be rejected")
 			}

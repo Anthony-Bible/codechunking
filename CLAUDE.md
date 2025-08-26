@@ -141,3 +141,4 @@ slogger.Error(ctx, "Database error", slogger.Fields{"error": err})
 - try keeping files to 500 lines and not above 1000 lines to help with reaadability and parsability
 - When running go test ./... AlWAYS use a timeout like go test ./... -timeout 10s
 - When commiting use conventional commits
+- For metrics use OTEL

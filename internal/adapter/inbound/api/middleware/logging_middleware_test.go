@@ -460,14 +460,14 @@ func TestStructuredLoggingMiddleware_PerformanceLogging(t *testing.T) {
 			// Verify slow request handling
 			if tt.expectSlowLog {
 				assert.Contains(t, logEntry.Request, "slow_request")
-				assert.Equal(t, true, logEntry.Request["slow_request"])
+				assert.True(t, logEntry.Request["slow_request"].(bool))
 				assert.Contains(t, logEntry.Message, "slow", "Slow requests should be marked in log message")
 			}
 
 			// Verify large request handling
 			if tt.requestSize > 1024*512 { // 512KB threshold
 				assert.Contains(t, logEntry.Request, "large_request")
-				assert.Equal(t, true, logEntry.Request["large_request"])
+				assert.True(t, logEntry.Request["large_request"].(bool))
 			}
 		})
 	}

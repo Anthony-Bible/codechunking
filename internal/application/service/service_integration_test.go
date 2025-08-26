@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	domain_errors "codechunking/internal/domain/errors/domain"
+	domainerrors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -191,7 +191,7 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 			response, err := service.UpdateRepository(context.Background(), repositoryID, request)
 			require.Error(t, err)
 			assert.Nil(t, response)
-			require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+			require.ErrorIs(t, err, domainerrors.ErrRepositoryProcessing)
 		})
 
 		// Test case: Partial updates
@@ -263,7 +263,7 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 
 			err := service.DeleteRepository(context.Background(), repositoryID)
 			require.Error(t, err)
-			require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+			require.ErrorIs(t, err, domainerrors.ErrRepositoryProcessing)
 		})
 
 		// Test case: Soft delete behavior
@@ -396,7 +396,7 @@ func TestIndexingJobServiceBehaviorSpecification(t *testing.T) {
 				response, err := service.CreateIndexingJob(context.Background(), request)
 				require.Error(t, err, "Should not allow job creation for status %s", status)
 				assert.Nil(t, response)
-				require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+				require.ErrorIs(t, err, domainerrors.ErrRepositoryProcessing)
 			}
 		})
 	})
@@ -528,7 +528,7 @@ func TestIndexingJobServiceBehaviorSpecification(t *testing.T) {
 			response, err := service.GetIndexingJob(context.Background(), repositoryID, jobID)
 			require.Error(t, err)
 			assert.Nil(t, response)
-			require.ErrorIs(t, err, domain_errors.ErrJobNotFound)
+			require.ErrorIs(t, err, domainerrors.ErrJobNotFound)
 		})
 
 		// Test case: Duration calculation
@@ -608,11 +608,11 @@ func TestServiceErrorHandlingSpecification(t *testing.T) {
 		service := NewGetRepositoryService(mockRepo)
 
 		repositoryID := uuid.New()
-		mockRepo.On("FindByID", context.Background(), repositoryID).Return(nil, domain_errors.ErrRepositoryNotFound)
+		mockRepo.On("FindByID", context.Background(), repositoryID).Return(nil, domainerrors.ErrRepositoryNotFound)
 
 		response, err := service.GetRepository(context.Background(), repositoryID)
 		require.Error(t, err)
 		assert.Nil(t, response)
-		require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound) // Domain error preserved for API layer
+		require.ErrorIs(t, err, domainerrors.ErrRepositoryNotFound) // Domain error preserved for API layer
 	})
 }

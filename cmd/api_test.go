@@ -165,7 +165,7 @@ func TestAPICommand_GracefulShutdown(t *testing.T) {
 				err := server.Shutdown(shutdownCtx)
 				// Should either succeed quickly or timeout
 				if err != nil {
-					assert.Contains(t, err.Error(), "deadline exceeded")
+					assert.ErrorContains(t, err, "deadline exceeded")
 				}
 			},
 		},
@@ -343,7 +343,7 @@ func TestAPICommand_ErrorScenarios(t *testing.T) {
 			// Should fail to start
 			require.Error(t, err)
 			if err != nil {
-				assert.Contains(t, err.Error(), tt.expectedError)
+				require.ErrorContains(t, err, tt.expectedError)
 			}
 			assert.Nil(t, server)
 			assert.Empty(t, baseURL)

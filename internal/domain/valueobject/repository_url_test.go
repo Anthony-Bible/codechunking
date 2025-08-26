@@ -182,7 +182,7 @@ func TestNewRepositoryURL(t *testing.T) {
 			// These tests should FAIL because security validation is not implemented yet
 			if tt.wantError {
 				require.Error(t, err, "Expected security validation to reject malicious URL: %s", tt.input)
-				assert.Contains(t, err.Error(), tt.errorContains, "Error message should indicate the security issue")
+				assert.ErrorContains(t, err, tt.errorContains, "Error message should indicate the security issue")
 			} else {
 				require.NoError(t, err, "Valid URL should not be rejected")
 			}

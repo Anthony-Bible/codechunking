@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	domain_errors "codechunking/internal/domain/errors/domain"
+	domainerrors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -131,7 +131,7 @@ func TestCreateIndexingJobCommandHandler_Handle_RepositoryNotFound(t *testing.T)
 		RepositoryID: repositoryID,
 	}
 
-	mockService.On("CreateIndexingJob", mock.Anything, expectedRequest).Return(nil, domain_errors.ErrRepositoryNotFound)
+	mockService.On("CreateIndexingJob", mock.Anything, expectedRequest).Return(nil, domainerrors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -141,7 +141,7 @@ func TestCreateIndexingJobCommandHandler_Handle_RepositoryNotFound(t *testing.T)
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -161,7 +161,7 @@ func TestCreateIndexingJobCommandHandler_Handle_RepositoryProcessing(t *testing.
 	}
 
 	mockService.On("CreateIndexingJob", mock.Anything, expectedRequest).
-		Return(nil, domain_errors.ErrRepositoryProcessing)
+		Return(nil, domainerrors.ErrRepositoryProcessing)
 
 	ctx := context.Background()
 
@@ -171,7 +171,7 @@ func TestCreateIndexingJobCommandHandler_Handle_RepositoryProcessing(t *testing.
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryProcessing)
 
 	mockService.AssertExpectations(t)
 }
@@ -193,7 +193,7 @@ func TestCreateIndexingJobCommandHandler_Handle_ValidationError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "validation failed")
+	require.ErrorContains(t, err, "validation failed")
 
 	mockService.AssertNotCalled(t, "CreateIndexingJob")
 }
@@ -256,7 +256,7 @@ func TestGetIndexingJobQueryHandler_Handle_JobNotFound(t *testing.T) {
 		JobID:        jobID,
 	}
 
-	mockService.On("GetIndexingJob", mock.Anything, repositoryID, jobID).Return(nil, domain_errors.ErrJobNotFound)
+	mockService.On("GetIndexingJob", mock.Anything, repositoryID, jobID).Return(nil, domainerrors.ErrJobNotFound)
 
 	ctx := context.Background()
 
@@ -266,7 +266,7 @@ func TestGetIndexingJobQueryHandler_Handle_JobNotFound(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	require.ErrorIs(t, err, domain_errors.ErrJobNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrJobNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -284,7 +284,7 @@ func TestGetIndexingJobQueryHandler_Handle_RepositoryNotFound(t *testing.T) {
 	}
 
 	mockService.On("GetIndexingJob", mock.Anything, repositoryID, jobID).
-		Return(nil, domain_errors.ErrRepositoryNotFound)
+		Return(nil, domainerrors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -294,7 +294,7 @@ func TestGetIndexingJobQueryHandler_Handle_RepositoryNotFound(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -448,7 +448,7 @@ func TestUpdateIndexingJobCommandHandler_Handle_ValidationError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "validation failed")
+	require.ErrorContains(t, err, "validation failed")
 
 	mockService.AssertNotCalled(t, "UpdateIndexingJob")
 }
@@ -468,7 +468,7 @@ func TestUpdateIndexingJobCommandHandler_Handle_JobNotFound(t *testing.T) {
 		Status: "running",
 	}
 
-	mockService.On("UpdateIndexingJob", mock.Anything, jobID, expectedRequest).Return(nil, domain_errors.ErrJobNotFound)
+	mockService.On("UpdateIndexingJob", mock.Anything, jobID, expectedRequest).Return(nil, domainerrors.ErrJobNotFound)
 
 	ctx := context.Background()
 
@@ -478,7 +478,7 @@ func TestUpdateIndexingJobCommandHandler_Handle_JobNotFound(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	require.ErrorIs(t, err, domain_errors.ErrJobNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrJobNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -562,7 +562,7 @@ func TestListIndexingJobsQueryHandler_Handle_RepositoryNotFound(t *testing.T) {
 	}
 
 	mockService.On("ListIndexingJobs", mock.Anything, repositoryID, expectedRequest).
-		Return(nil, domain_errors.ErrRepositoryNotFound)
+		Return(nil, domainerrors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -572,7 +572,7 @@ func TestListIndexingJobsQueryHandler_Handle_RepositoryNotFound(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -684,7 +684,7 @@ func TestListIndexingJobsQueryHandler_Handle_ValidationError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "validation failed")
+	require.ErrorContains(t, err, "validation failed")
 
 	mockService.AssertNotCalled(t, "ListIndexingJobs")
 }

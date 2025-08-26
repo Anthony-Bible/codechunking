@@ -1662,8 +1662,8 @@ func testCreateTestRepositoryWithJobsHelper(t *testing.T) {
 
 		// Reduced complexity by delegating verification to helper functions
 		verifyCreateTestRepositoryWithJobsBasicChecks(t, repo, jobs, 5)
-		verifyRepositoryExists(t, ctx, repoRepo, repo)
-		verifyJobsBelongToRepository(t, ctx, jobRepo, repo, jobs)
+		verifyRepositoryExists(ctx, t, repoRepo, repo)
+		verifyJobsBelongToRepository(ctx, t, jobRepo, repo, jobs)
 		verifyRepositoryStatusForIndex1(t, repo)
 	})
 }
@@ -1686,8 +1686,8 @@ func verifyCreateTestRepositoryWithJobsBasicChecks(
 
 // verifyRepositoryExists checks that the repository can be found in the database.
 func verifyRepositoryExists(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	repoRepo outbound.RepositoryRepository,
 	repo *entity.Repository,
 ) {
@@ -1700,8 +1700,8 @@ func verifyRepositoryExists(
 
 // verifyJobsBelongToRepository checks that all jobs belong to the repository and exist in the database.
 func verifyJobsBelongToRepository(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	jobRepo outbound.IndexingJobRepository,
 	repo *entity.Repository,
 	jobs []*entity.IndexingJob,

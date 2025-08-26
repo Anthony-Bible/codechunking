@@ -119,6 +119,7 @@ type CustomMetrics struct {
 // MetricsApplicationLogger extends ApplicationLogger with metrics integration.
 type MetricsApplicationLogger interface {
 	ApplicationLogger
+	// Metrics-specific methods
 	LogMetric(ctx context.Context, metric PrometheusMetric)
 	LogApplicationMetrics(ctx context.Context, metrics ApplicationMetrics)
 	LogHealthMetrics(ctx context.Context, health HealthMetrics)

@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"strings"
 
-	domain_errors "codechunking/internal/domain/errors/domain"
+	domainerrors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 )
@@ -458,7 +458,7 @@ func (rec *repositoryEligibilityChecker) checkEligibility(repository *entity.Rep
 	// Check for ineligible states and return appropriate domain errors
 	switch currentStatus {
 	case valueobject.RepositoryStatusProcessing, valueobject.RepositoryStatusCloning:
-		return domain_errors.ErrRepositoryProcessing
+		return domainerrors.ErrRepositoryProcessing
 	}
 
 	return nil
@@ -517,7 +517,7 @@ func (s *GetIndexingJobService) retrieveIndexingJob(ctx context.Context, jobID u
 // validateJobOwnership ensures an indexing job belongs to the specified repository with detailed error context.
 func (s *GetIndexingJobService) validateJobOwnership(job *entity.IndexingJob, repositoryID uuid.UUID) error {
 	if job.RepositoryID() != repositoryID {
-		return domain_errors.ErrJobNotFound
+		return domainerrors.ErrJobNotFound
 	}
 	return nil
 }

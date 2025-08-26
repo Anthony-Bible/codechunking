@@ -33,7 +33,7 @@ func (iv *InjectionValidator) ValidateXSSAttacks(input string) error {
 
 	// Check for script tags and JavaScript
 	if iv.patterns.XSSScript.MatchString(normalized) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "xss_script",
 			Message: "Script injection detected",
 		}
@@ -41,7 +41,7 @@ func (iv *InjectionValidator) ValidateXSSAttacks(input string) error {
 
 	// Check for event handlers
 	if iv.patterns.XSSEvent.MatchString(normalized) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "xss_event",
 			Message: "Event handler injection detected",
 		}
@@ -49,7 +49,7 @@ func (iv *InjectionValidator) ValidateXSSAttacks(input string) error {
 
 	// Check for malicious protocols
 	if iv.patterns.XSSProtocol.MatchString(input) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "xss_protocol",
 			Message: "Malicious protocol detected",
 		}
@@ -57,7 +57,7 @@ func (iv *InjectionValidator) ValidateXSSAttacks(input string) error {
 
 	// Check for HTML entities that could be XSS
 	if iv.patterns.XSSEntity.MatchString(normalized) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "xss_entity",
 			Message: "Suspicious HTML entity detected",
 		}
@@ -66,7 +66,7 @@ func (iv *InjectionValidator) ValidateXSSAttacks(input string) error {
 	// Check string patterns for performance
 	for _, pattern := range iv.stringPatterns.XSSPatterns {
 		if strings.Contains(normalized, pattern) {
-			return &Violation{
+			return &ViolationError{
 				Type:    "xss_pattern",
 				Message: "XSS pattern detected",
 			}
@@ -77,7 +77,7 @@ func (iv *InjectionValidator) ValidateXSSAttacks(input string) error {
 	if strings.Contains(input, "%") {
 		if decoded, err := url.QueryUnescape(input); err == nil && decoded != input {
 			if nestedErr := iv.ValidateXSSAttacks(decoded); nestedErr != nil {
-				return &Violation{
+				return &ViolationError{
 					Type:    "xss_encoded",
 					Message: "URL-encoded XSS detected",
 				}
@@ -87,7 +87,7 @@ func (iv *InjectionValidator) ValidateXSSAttacks(input string) error {
 
 	// Check for hex-encoded XSS patterns
 	if iv.containsHexEncodedXSS(input) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "xss_hex_encoded",
 			Message: "Hex-encoded XSS detected",
 		}
@@ -107,7 +107,7 @@ func (iv *InjectionValidator) ValidateSQLInjection(input string) error {
 
 	// Check for SQL keywords
 	if iv.patterns.SQLKeywords.MatchString(normalized) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "sql_keywords",
 			Message: "SQL keywords detected",
 		}
@@ -115,7 +115,7 @@ func (iv *InjectionValidator) ValidateSQLInjection(input string) error {
 
 	// Check for SQL comments
 	if iv.patterns.SQLComment.MatchString(input) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "sql_comment",
 			Message: "SQL comment detected",
 		}
@@ -123,7 +123,7 @@ func (iv *InjectionValidator) ValidateSQLInjection(input string) error {
 
 	// Check for SQL quotes
 	if iv.patterns.SQLQuotes.MatchString(input) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "sql_quotes",
 			Message: "SQL quote pattern detected",
 		}
@@ -131,7 +131,7 @@ func (iv *InjectionValidator) ValidateSQLInjection(input string) error {
 
 	// Check for UNION attacks
 	if iv.patterns.SQLUnion.MatchString(normalized) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "sql_union",
 			Message: "SQL UNION attack detected",
 		}
@@ -140,7 +140,7 @@ func (iv *InjectionValidator) ValidateSQLInjection(input string) error {
 	// Check string patterns for performance
 	for _, pattern := range iv.stringPatterns.SQLPatterns {
 		if strings.Contains(normalized, pattern) {
-			return &Violation{
+			return &ViolationError{
 				Type:    "sql_pattern",
 				Message: "SQL injection pattern detected",
 			}
@@ -151,7 +151,7 @@ func (iv *InjectionValidator) ValidateSQLInjection(input string) error {
 	if strings.Contains(input, "%27") || strings.Contains(input, "%3B") || strings.Contains(input, "%20") {
 		if decoded, err := url.QueryUnescape(input); err == nil && decoded != input {
 			if nestedErr := iv.ValidateSQLInjection(decoded); nestedErr != nil {
-				return &Violation{
+				return &ViolationError{
 					Type:    "sql_encoded",
 					Message: "URL-encoded SQL injection detected",
 				}
@@ -170,14 +170,14 @@ func (iv *InjectionValidator) ValidatePathTraversal(input string) error {
 
 	// Check regex patterns
 	if iv.patterns.PathTraversal.MatchString(input) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "path_traversal",
 			Message: "Path traversal detected",
 		}
 	}
 
 	if iv.patterns.PathEncoded.MatchString(strings.ToLower(input)) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "path_encoded",
 			Message: "Encoded path traversal detected",
 		}
@@ -187,7 +187,7 @@ func (iv *InjectionValidator) ValidatePathTraversal(input string) error {
 	normalized := strings.ToLower(input)
 	for _, pattern := range iv.stringPatterns.PathPatterns {
 		if strings.Contains(normalized, strings.ToLower(pattern)) {
-			return &Violation{
+			return &ViolationError{
 				Type:    "path_pattern",
 				Message: "Path traversal pattern detected",
 			}
@@ -198,7 +198,7 @@ func (iv *InjectionValidator) ValidatePathTraversal(input string) error {
 	if strings.Contains(input, "%") {
 		if decoded, err := url.QueryUnescape(input); err == nil && decoded != input {
 			if nestedErr := iv.ValidatePathTraversal(decoded); nestedErr != nil {
-				return &Violation{
+				return &ViolationError{
 					Type:    "path_traversal_encoded",
 					Message: "URL-encoded path traversal detected",
 				}
@@ -217,7 +217,7 @@ func (iv *InjectionValidator) ValidateControlCharacters(input string) error {
 
 	// Check with regex for performance
 	if iv.patterns.ControlChars.MatchString(input) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "control_chars",
 			Message: "Control characters detected",
 		}
@@ -227,7 +227,7 @@ func (iv *InjectionValidator) ValidateControlCharacters(input string) error {
 	normalized := strings.ToLower(input)
 	for _, encoding := range iv.stringPatterns.ControlEncodings {
 		if strings.Contains(normalized, encoding) {
-			return &Violation{
+			return &ViolationError{
 				Type:    "control_chars_encoded",
 				Message: "URL-encoded control characters detected",
 			}
@@ -237,7 +237,7 @@ func (iv *InjectionValidator) ValidateControlCharacters(input string) error {
 	// Additional check for Unicode control characters
 	for _, r := range input {
 		if unicode.IsControl(r) && r != '\t' {
-			return &Violation{
+			return &ViolationError{
 				Type:    "control_chars_unicode",
 				Message: "Unicode control characters detected",
 			}
@@ -263,7 +263,7 @@ func (iv *InjectionValidator) ValidateProtocolAttacks(input string) error {
 
 	for _, protocol := range dangerousProtocols {
 		if strings.HasPrefix(normalized, protocol) {
-			return &Violation{
+			return &ViolationError{
 				Type:    "protocol_attack",
 				Message: "Malicious protocol detected: " + protocol,
 			}
@@ -274,7 +274,7 @@ func (iv *InjectionValidator) ValidateProtocolAttacks(input string) error {
 	if strings.Contains(input, "%") {
 		if decoded, err := url.QueryUnescape(input); err == nil && decoded != input {
 			if nestedErr := iv.ValidateProtocolAttacks(decoded); nestedErr != nil {
-				return &Violation{
+				return &ViolationError{
 					Type:    "protocol_attack_encoded",
 					Message: "URL-encoded protocol attack detected",
 				}

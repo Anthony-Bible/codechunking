@@ -40,7 +40,7 @@ const (
 	LatencyAverageDiv = 2
 )
 
-// ApplicationLogger defines the interface for structured application logging.
+// ApplicationLogger defines the core interface for structured application logging.
 type ApplicationLogger interface {
 	Debug(ctx context.Context, message string, fields Fields)
 	Info(ctx context.Context, message string, fields Fields)
@@ -49,20 +49,6 @@ type ApplicationLogger interface {
 	ErrorWithError(ctx context.Context, err error, message string, fields Fields)
 	LogPerformance(ctx context.Context, operation string, duration time.Duration, fields Fields)
 	WithComponent(component string) ApplicationLogger
-
-	// Extended NATS operations
-	LogNATSConnectionEvent(ctx context.Context, event NATSConnectionEvent)
-	LogNATSPublishEvent(ctx context.Context, event NATSPublishEvent)
-	LogNATSConsumeEvent(ctx context.Context, event NATSConsumeEvent)
-	LogJetStreamEvent(ctx context.Context, event JetStreamEvent)
-	LogNATSPerformanceMetrics(ctx context.Context, metrics NATSPerformanceMetrics)
-
-	// Extended metrics operations
-	LogMetric(ctx context.Context, metric PrometheusMetric)
-	LogApplicationMetrics(ctx context.Context, metrics ApplicationMetrics)
-	LogHealthMetrics(ctx context.Context, health HealthMetrics)
-	LogCustomMetrics(ctx context.Context, custom CustomMetrics)
-	FlushAggregatedMetrics(ctx context.Context)
 }
 
 // Fields represents structured logging fields.
@@ -431,9 +417,10 @@ func (l *applicationLoggerImpl) startMemoryMonitor() {
 				var m runtime.MemStats
 				runtime.ReadMemStats(&m)
 				allocMB := m.Alloc / BytesToMB / BytesToMB
+				const maxInt64 = 9223372036854775807
 				var currentMB int64
-				if allocMB > 9223372036854775807 { // max int64
-					currentMB = 9223372036854775807
+				if allocMB > maxInt64 { // max int64
+					currentMB = maxInt64
 				} else {
 					currentMB = int64(allocMB) // #nosec G115 -- checked bounds above
 				}
@@ -537,16 +524,6 @@ func (l *applicationLoggerImpl) addContextToEntry(ctx context.Context, entry *Lo
 		entry.Context["user_id"] = userCtx.UserID
 		entry.Context["client_ip"] = userCtx.ClientIP
 		entry.Context["user_agent"] = userCtx.UserAgent
-	}
-}
-
-func (l *applicationLoggerImpl) getLogEntryFromPool() *LogEntry {
-	if l.config.EnableObjectPooling {
-		return globalLogEntryPool.getLogEntry()
-	}
-	return &LogEntry{
-		Metadata: make(map[string]interface{}),
-		Context:  make(map[string]interface{}),
 	}
 }
 
@@ -698,7 +675,7 @@ func getUserContextFromContext(ctx context.Context) *UserContext {
 	return nil
 }
 
-// Extended interface implementations for NATS logging.
+// LogNATSConnectionEvent Extended interface implementations for NATS logging.
 func (l *applicationLoggerImpl) LogNATSConnectionEvent(ctx context.Context, event NATSConnectionEvent) {
 	natsLogger := NewNATSApplicationLogger(l)
 	natsLogger.LogNATSConnectionEvent(ctx, event)
@@ -753,7 +730,13 @@ func (l *applicationLoggerImpl) FlushAggregatedMetrics(ctx context.Context) {
 // Test helper function for buffer output
 // Object pool functions for performance optimization.
 func (p *logEntryPool) getLogEntry() *LogEntry {
-	entry := p.pool.Get().(*LogEntry)
+	entry, ok := p.pool.Get().(*LogEntry)
+	if !ok {
+		return &LogEntry{
+			Metadata: make(map[string]interface{}),
+			Context:  make(map[string]interface{}),
+		}
+	}
 	// Reset fields
 	entry.Timestamp = ""
 	entry.Level = ""
@@ -788,6 +771,16 @@ func recordLogPerformance(duration time.Duration, bytesWritten int) {
 }
 
 func getLoggerOutput(logger interface{}) string {
+	// Handle NATSApplicationLogger wrapper
+	if natsLogger, ok := logger.(*natsApplicationLogger); ok {
+		logger = natsLogger.ApplicationLogger
+	}
+
+	// Handle MetricsApplicationLogger wrapper
+	if metricsLogger, ok := logger.(*metricsApplicationLogger); ok {
+		logger = metricsLogger.ApplicationLogger
+	}
+
 	if appLogger, ok := logger.(*applicationLoggerImpl); ok && appLogger.buffer != nil {
 		output := strings.TrimSpace(appLogger.buffer.String())
 

@@ -104,7 +104,7 @@ func TestNewServer(t *testing.T) {
 			// Assert
 			if tt.expectedError != "" {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.expectedError)
+				require.ErrorContains(t, err, tt.expectedError)
 				assert.Nil(t, server)
 			} else {
 				require.NoError(t, err)
@@ -197,7 +197,7 @@ func TestServer_Start(t *testing.T) {
 			// Assert
 			if tt.expectedError != "" {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.expectedError)
+				assert.ErrorContains(t, err, tt.expectedError)
 			} else {
 				require.NoError(t, err)
 				if tt.validateFunc != nil {
@@ -326,7 +326,7 @@ func TestServer_Shutdown(t *testing.T) {
 			// Assert
 			if tt.expectedError != "" {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.expectedError)
+				assert.ErrorContains(t, err, tt.expectedError)
 			} else {
 				require.NoError(t, err)
 				if tt.validateFunc != nil {
@@ -461,6 +461,6 @@ func TestServer_RouteIntegration(t *testing.T) {
 
 		// Verify total route count
 		routeCount := server.RouteCount()
-		assert.Equal(t, len(expectedRoutes), routeCount, "Should register exact number of expected routes")
+		assert.Len(t, expectedRoutes, routeCount, "Should register exact number of expected routes")
 	})
 }

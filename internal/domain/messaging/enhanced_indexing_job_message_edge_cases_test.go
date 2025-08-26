@@ -117,9 +117,9 @@ func TestEnhancedIndexingJobMessage_EdgeCases(t *testing.T) {
 			err := msg.Validate()
 
 			if tt.expectError {
-				assert.Error(t, err, "Should return validation error for edge case")
+				require.Error(t, err, "Should return validation error for edge case")
 			} else {
-				assert.NoError(t, err, "Should not return validation error for valid edge case")
+				require.NoError(t, err, "Should not return validation error for valid edge case")
 			}
 
 			t.Logf("Test description: %s", tt.description)
@@ -173,9 +173,9 @@ func TestJobPriority_EdgeCases(t *testing.T) {
 			_, err := NewJobPriority(tt.priority)
 
 			if tt.expectError {
-				assert.Error(t, err, "Should return error for invalid priority edge case")
+				require.Error(t, err, "Should return error for invalid priority edge case")
 			} else {
-				assert.NoError(t, err, "Should not return error for valid priority")
+				require.NoError(t, err, "Should not return error for valid priority")
 			}
 
 			t.Logf("Test description: %s", tt.description)
@@ -252,9 +252,9 @@ func TestRetryTracking_EdgeCases(t *testing.T) {
 			err := msg.Validate()
 
 			if tt.expectValid {
-				assert.NoError(t, err, "Should be valid for retry configuration")
+				require.NoError(t, err, "Should be valid for retry configuration")
 			} else {
-				assert.Error(t, err, "Should be invalid for retry configuration")
+				require.Error(t, err, "Should be invalid for retry configuration")
 			}
 
 			t.Logf("Test description: %s", tt.description)
@@ -339,9 +339,9 @@ func TestProcessingMetadata_EdgeCases(t *testing.T) {
 			err := tt.metadata.Validate()
 
 			if tt.expectError {
-				assert.Error(t, err, "Should return validation error for metadata edge case")
+				require.Error(t, err, "Should return validation error for metadata edge case")
 			} else {
-				assert.NoError(t, err, "Should not return validation error for valid metadata")
+				require.NoError(t, err, "Should not return validation error for valid metadata")
 			}
 
 			t.Logf("Test description: %s", tt.description)
@@ -449,9 +449,9 @@ func TestProcessingContext_EdgeCases(t *testing.T) {
 			err := tt.context.Validate()
 
 			if tt.expectError {
-				assert.Error(t, err, "Should return validation error for context edge case")
+				require.Error(t, err, "Should return validation error for context edge case")
 			} else {
-				assert.NoError(t, err, "Should not return validation error for valid context")
+				require.NoError(t, err, "Should not return validation error for valid context")
 			}
 
 			t.Logf("Test description: %s", tt.description)

@@ -24,7 +24,7 @@ func (uv *UnicodeValidator) ValidateUnicodeAttacks(input string) error {
 	}
 
 	if uv.containsDirectionalOverride(input) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "unicode_directional_override",
 			Message: "Directional override attack detected",
 			Field:   "",
@@ -32,7 +32,7 @@ func (uv *UnicodeValidator) ValidateUnicodeAttacks(input string) error {
 	}
 
 	if uv.containsCombiningMarks(input) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "unicode_combining_marks",
 			Message: "Combining marks attack detected",
 			Field:   "",
@@ -40,7 +40,7 @@ func (uv *UnicodeValidator) ValidateUnicodeAttacks(input string) error {
 	}
 
 	if uv.containsHomographAttack(input) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "unicode_homograph",
 			Message: "Homograph attack detected",
 			Field:   "",
@@ -48,7 +48,7 @@ func (uv *UnicodeValidator) ValidateUnicodeAttacks(input string) error {
 	}
 
 	if uv.containsZeroWidthAttack(input) {
-		return &Violation{
+		return &ViolationError{
 			Type:    "unicode_zero_width",
 			Message: "Zero-width character attack detected",
 			Field:   "",
@@ -229,15 +229,15 @@ func ContainsSuspiciousUnicode(input string) bool {
 	return validator.ValidateUnicodeAttacks(input) != nil
 }
 
-// Violation represents a security violation.
-type Violation struct {
+// ViolationError represents a security violation.
+type ViolationError struct {
 	Type    string
 	Message string
 	Field   string
 	Value   string
 }
 
-func (sv *Violation) Error() string {
+func (sv *ViolationError) Error() string {
 	if sv.Field != "" {
 		return sv.Message + " in field: " + sv.Field
 	}

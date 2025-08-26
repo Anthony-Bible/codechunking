@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	domain_errors "codechunking/internal/domain/errors/domain"
+	domainerrors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -117,7 +117,7 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "https://github.com/owner/repo.git",
 			shouldDetectDuplicate: true,
-			expectedError:         domain_errors.ErrRepositoryAlreadyExists,
+			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate when new URL has .git suffix but existing doesn't",
 		},
 		{
@@ -125,7 +125,7 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "https://GitHub.com/owner/repo",
 			shouldDetectDuplicate: true,
-			expectedError:         domain_errors.ErrRepositoryAlreadyExists,
+			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate when hostname case differs",
 		},
 		{
@@ -133,7 +133,7 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "http://github.com/owner/repo",
 			shouldDetectDuplicate: true,
-			expectedError:         domain_errors.ErrRepositoryAlreadyExists,
+			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate when protocol differs (http vs https)",
 		},
 		{
@@ -141,7 +141,7 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "https://github.com/owner/repo/",
 			shouldDetectDuplicate: true,
-			expectedError:         domain_errors.ErrRepositoryAlreadyExists,
+			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate when new URL has trailing slash",
 		},
 		{
@@ -149,7 +149,7 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "https://github.com/owner/repo?branch=main",
 			shouldDetectDuplicate: true,
-			expectedError:         domain_errors.ErrRepositoryAlreadyExists,
+			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate when new URL has query parameters",
 		},
 		{
@@ -157,7 +157,7 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "https://github.com/owner/repo#readme",
 			shouldDetectDuplicate: true,
-			expectedError:         domain_errors.ErrRepositoryAlreadyExists,
+			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate when new URL has fragment identifier",
 		},
 		{
@@ -165,7 +165,7 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "HTTP://GitHub.COM/owner/repo.git/?branch=main#readme///",
 			shouldDetectDuplicate: true,
-			expectedError:         domain_errors.ErrRepositoryAlreadyExists,
+			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate with complex URL variations",
 		},
 		{

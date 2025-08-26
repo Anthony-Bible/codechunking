@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	domain_errors "codechunking/internal/domain/errors/domain"
+	domainerrors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -129,7 +129,7 @@ func TestCreateIndexingJobService_CreateIndexingJob_RepositoryNotFound(t *testin
 		RepositoryID: repositoryID,
 	}
 
-	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(nil, domain_errors.ErrRepositoryNotFound)
+	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(nil, domainerrors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -139,7 +139,7 @@ func TestCreateIndexingJobService_CreateIndexingJob_RepositoryNotFound(t *testin
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, response)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertNotCalled(t, "Save")
@@ -187,7 +187,7 @@ func TestCreateIndexingJobService_CreateIndexingJob_RepositoryNotEligible(t *tes
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, response)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryProcessing)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertNotCalled(t, "Save")
@@ -374,7 +374,7 @@ func TestGetIndexingJobService_GetIndexingJob_RepositoryNotFound(t *testing.T) {
 	repositoryID := uuid.New()
 	jobID := uuid.New()
 
-	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(nil, domain_errors.ErrRepositoryNotFound)
+	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(nil, domainerrors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -384,7 +384,7 @@ func TestGetIndexingJobService_GetIndexingJob_RepositoryNotFound(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, response)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertNotCalled(t, "FindByID")
@@ -417,7 +417,7 @@ func TestGetIndexingJobService_GetIndexingJob_JobNotFound(t *testing.T) {
 	)
 
 	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(repository, nil)
-	mockJobRepo.On("FindByID", mock.Anything, jobID).Return(nil, domain_errors.ErrJobNotFound)
+	mockJobRepo.On("FindByID", mock.Anything, jobID).Return(nil, domainerrors.ErrJobNotFound)
 
 	ctx := context.Background()
 
@@ -427,7 +427,7 @@ func TestGetIndexingJobService_GetIndexingJob_JobNotFound(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, response)
-	require.ErrorIs(t, err, domain_errors.ErrJobNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrJobNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertExpectations(t)
@@ -486,7 +486,7 @@ func TestGetIndexingJobService_GetIndexingJob_JobBelongsToDifferentRepository(t 
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, response)
-	require.ErrorIs(t, err, domain_errors.ErrJobNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrJobNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertExpectations(t)
@@ -646,7 +646,7 @@ func TestUpdateIndexingJobService_UpdateIndexingJob_JobNotFound(t *testing.T) {
 		Status: "running",
 	}
 
-	mockJobRepo.On("FindByID", mock.Anything, jobID).Return(nil, domain_errors.ErrJobNotFound)
+	mockJobRepo.On("FindByID", mock.Anything, jobID).Return(nil, domainerrors.ErrJobNotFound)
 
 	ctx := context.Background()
 
@@ -656,7 +656,7 @@ func TestUpdateIndexingJobService_UpdateIndexingJob_JobNotFound(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, response)
-	require.ErrorIs(t, err, domain_errors.ErrJobNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrJobNotFound)
 
 	mockJobRepo.AssertExpectations(t)
 	mockJobRepo.AssertNotCalled(t, "Update")
@@ -806,7 +806,7 @@ func TestListIndexingJobsService_ListIndexingJobs_RepositoryNotFound(t *testing.
 		Offset: 0,
 	}
 
-	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(nil, domain_errors.ErrRepositoryNotFound)
+	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(nil, domainerrors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -816,7 +816,7 @@ func TestListIndexingJobsService_ListIndexingJobs_RepositoryNotFound(t *testing.
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, response)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockJobRepo.AssertNotCalled(t, "FindByRepositoryID")

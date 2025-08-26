@@ -246,7 +246,7 @@ func TestApplicationLogger_StructuredFields(t *testing.T) {
 	assert.Equal(t, "create_repository", logEntry.Metadata["operation"])
 	assert.Equal(t, "https://github.com/user/repo", logEntry.Metadata["repository_url"])
 	assert.Contains(t, logEntry.Metadata, "duration")
-	assert.Equal(t, true, logEntry.Metadata["success"])
+	assert.True(t, logEntry.Metadata["success"].(bool))
 	assert.InDelta(t, float64(0), logEntry.Metadata["error_count"], 0) // JSON unmarshals numbers as float64
 }
 

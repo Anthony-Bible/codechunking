@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	domain_errors "codechunking/internal/domain/errors/domain"
+	domainerrors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -31,7 +31,7 @@ func TestRepositoryHandler_CreateRepository_DuplicateDetection(t *testing.T) {
 		{
 			name:                 "returns_409_for_exact_duplicate",
 			requestURL:           "https://github.com/owner/repo",
-			serviceError:         domain_errors.ErrRepositoryAlreadyExists,
+			serviceError:         domainerrors.ErrRepositoryAlreadyExists,
 			expectedStatusCode:   http.StatusConflict,
 			expectedErrorCode:    "REPOSITORY_ALREADY_EXISTS",
 			expectedErrorMessage: "Repository already exists",
@@ -40,7 +40,7 @@ func TestRepositoryHandler_CreateRepository_DuplicateDetection(t *testing.T) {
 		{
 			name:                 "returns_409_for_normalized_duplicate_with_git_suffix",
 			requestURL:           "https://github.com/owner/repo.git",
-			serviceError:         domain_errors.ErrRepositoryAlreadyExists,
+			serviceError:         domainerrors.ErrRepositoryAlreadyExists,
 			expectedStatusCode:   http.StatusConflict,
 			expectedErrorCode:    "REPOSITORY_ALREADY_EXISTS",
 			expectedErrorMessage: "Repository already exists",
@@ -49,7 +49,7 @@ func TestRepositoryHandler_CreateRepository_DuplicateDetection(t *testing.T) {
 		{
 			name:                 "returns_409_for_normalized_duplicate_with_case_difference",
 			requestURL:           "https://GitHub.com/owner/repo",
-			serviceError:         domain_errors.ErrRepositoryAlreadyExists,
+			serviceError:         domainerrors.ErrRepositoryAlreadyExists,
 			expectedStatusCode:   http.StatusConflict,
 			expectedErrorCode:    "REPOSITORY_ALREADY_EXISTS",
 			expectedErrorMessage: "Repository already exists",

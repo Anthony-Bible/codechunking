@@ -1,3 +1,4 @@
+// Package registry provides service registration and dependency injection for the application.
 package registry
 
 import (

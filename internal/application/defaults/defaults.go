@@ -1,3 +1,4 @@
+// Package defaults provides default configurations and values for the application.
 package defaults
 
 import "codechunking/internal/application/dto"

@@ -139,10 +139,10 @@ func TestJobPriority_ValueObject(t *testing.T) {
 			priority, err := NewJobPriority(tt.priority)
 
 			if tt.expectError {
-				assert.Error(t, err, "Should return error for invalid priority")
+				require.Error(t, err, "Should return error for invalid priority")
 				assert.Empty(t, priority, "Should return empty priority on error")
 			} else {
-				assert.NoError(t, err, "Should not return error for valid priority")
+				require.NoError(t, err, "Should not return error for valid priority")
 				assert.Equal(t, JobPriority(tt.priority), priority, "Should return correct priority")
 			}
 
@@ -313,14 +313,14 @@ func TestEnhancedIndexingJobMessage_Validation(t *testing.T) {
 			err := msg.Validate()
 
 			if tt.expectError {
-				assert.Error(t, err, "Should return validation error")
+				require.Error(t, err, "Should return validation error")
 
 				// Check specific error messages if provided
 				for _, expectedError := range tt.expectedErrors {
-					assert.Contains(t, err.Error(), expectedError, "Error should contain expected message")
+					require.ErrorContains(t, err, expectedError, "Error should contain expected message")
 				}
 			} else {
-				assert.NoError(t, err, "Should not return validation error for valid message")
+				require.NoError(t, err, "Should not return validation error for valid message")
 			}
 
 			t.Logf("Test description: %s", tt.description)
@@ -582,9 +582,9 @@ func TestProcessingMetadata_Validation(t *testing.T) {
 			err := tt.metadata.Validate()
 
 			if tt.expectError {
-				assert.Error(t, err, "Should return validation error")
+				require.Error(t, err, "Should return validation error")
 			} else {
-				assert.NoError(t, err, "Should not return validation error")
+				require.NoError(t, err, "Should not return validation error")
 			}
 
 			t.Logf("Test description: %s", tt.description)

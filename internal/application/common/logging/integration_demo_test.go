@@ -65,7 +65,7 @@ func TestNATSLoggingDemo(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := WithCorrelationID(context.Background(), "nats-demo-456")
-	natsLogger := logger.WithComponent("nats-demo")
+	natsLogger := NewNATSApplicationLogger(logger.WithComponent("nats-demo"))
 
 	// Test NATS connection event logging
 	connectionEvent := NATSConnectionEvent{
@@ -107,7 +107,7 @@ func TestMetricsLoggingDemo(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := WithCorrelationID(context.Background(), "metrics-demo-789")
-	metricsLogger := logger.WithComponent("metrics-demo")
+	metricsLogger := NewMetricsApplicationLogger(logger.WithComponent("metrics-demo"), config.MetricsConfig)
 
 	// Test Prometheus metric logging
 	metric := PrometheusMetric{

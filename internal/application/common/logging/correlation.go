@@ -414,7 +414,7 @@ func getAllErrorLogOutputs(component string) []string {
 func getAllConcurrentLogOutputs() []string {
 	// Return mock log entries for 10 concurrent requests
 	// Each correlation ID should appear twice: once from HTTP middleware, once from service
-	logOutputs := []string{}
+	var logOutputs []string
 
 	// Generate logs for correlation IDs A through J (10 concurrent requests)
 	for i := 'A'; i <= 'J'; i++ {

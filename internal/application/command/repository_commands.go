@@ -1,3 +1,4 @@
+// Package command contains command objects and handlers for the application layer.
 package command
 
 import "github.com/google/uuid"

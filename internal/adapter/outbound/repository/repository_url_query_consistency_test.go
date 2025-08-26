@@ -390,8 +390,419 @@ func TestRawVsNormalizedURLDemonstration(t *testing.T) {
 	})
 }
 
+// Test data for URL consistency testing.
+type urlConsistencyTestData struct {
+	TestURLs    []string
+	SavedRepos  []*entity.Repository
+	RepoService *PostgreSQLRepositoryRepository
+	Context     context.Context
+}
+
+// TestSetupURLConsistencyTestData_ShouldCreateTestDataStructure tests that the helper
+// function creates proper test data for URL consistency testing.
+// This test will fail initially because setupURLConsistencyTestData() doesn't exist.
+func TestSetupURLConsistencyTestData_ShouldCreateTestDataStructure(t *testing.T) {
+	t.Skip("Integration test - requires database setup")
+
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	// This should call the helper function that doesn't exist yet
+	testData := setupURLConsistencyTestData(ctx, repo)
+
+	// Verify the test data structure
+	if testData == nil {
+		t.Fatal("Expected setupURLConsistencyTestData to return non-nil test data")
+	}
+
+	if len(testData.TestURLs) == 0 {
+		t.Error("Expected setupURLConsistencyTestData to provide test URLs")
+	}
+
+	if testData.RepoService == nil {
+		t.Error("Expected setupURLConsistencyTestData to set RepoService")
+	}
+
+	if testData.Context == nil {
+		t.Error("Expected setupURLConsistencyTestData to set Context")
+	}
+
+	// Verify test URLs have different raw vs normalized forms
+	for i, urlStr := range testData.TestURLs {
+		url, err := valueobject.NewRepositoryURL(urlStr)
+		if err != nil {
+			t.Fatalf("URL %d should be valid: %v", i, err)
+		}
+		if url.Raw() == url.String() {
+			t.Errorf("URL %d should have different raw and normalized forms: %s", i, urlStr)
+		}
+	}
+}
+
+// TestCreateAndSaveRepositories_ShouldCreateRepositoriesFromURLs tests that the helper
+// function properly creates and saves repositories from the test URLs.
+// This test will fail initially because createAndSaveRepositories() doesn't exist.
+func TestCreateAndSaveRepositories_ShouldCreateRepositoriesFromURLs(t *testing.T) {
+	t.Skip("Integration test - requires database setup")
+
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	testURLs := []string{
+		"https://GitHub.com/test1/repo1.git",
+		"https://GITHUB.COM/test2/repo2",
+	}
+
+	// This should call the helper function that doesn't exist yet
+	savedRepos, err := createAndSaveRepositories(ctx, repo, testURLs)
+	if err != nil {
+		t.Fatalf("Expected createAndSaveRepositories to succeed, got error: %v", err)
+	}
+
+	if len(savedRepos) != len(testURLs) {
+		t.Errorf("Expected %d saved repositories, got %d", len(testURLs), len(savedRepos))
+	}
+
+	// Verify each repository was created properly
+	for i, savedRepo := range savedRepos {
+		if savedRepo == nil {
+			t.Errorf("Repository %d should not be nil", i)
+			continue
+		}
+
+		expectedURL, _ := valueobject.NewRepositoryURL(testURLs[i])
+		if !savedRepo.URL().Equal(expectedURL) {
+			t.Errorf("Repository %d URL mismatch: got %s, want %s",
+				i, savedRepo.URL().String(), expectedURL.String())
+		}
+
+		if savedRepo.Name() == "" {
+			t.Errorf("Repository %d should have a name", i)
+		}
+	}
+}
+
+// TestValidateRepositoryFindability_ShouldTestFindByURLForAllRepos tests that the helper
+// function properly validates that all repositories can be found by their URLs.
+// This test will fail initially because validateRepositoryFindability() doesn't exist.
+func TestValidateRepositoryFindability_ShouldTestFindByURLForAllRepos(t *testing.T) {
+	t.Skip("Integration test - requires database setup")
+
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	// Create some test repositories manually for this test
+	testURL1, _ := valueobject.NewRepositoryURL("https://GitHub.com/find1/repo1.git")
+	testURL2, _ := valueobject.NewRepositoryURL("https://GITHUB.COM/find2/repo2")
+
+	testRepo1 := entity.NewRepository(testURL1, "Test Repo 1", nil, nil)
+	testRepo2 := entity.NewRepository(testURL2, "Test Repo 2", nil, nil)
+
+	repo.Save(ctx, testRepo1)
+	repo.Save(ctx, testRepo2)
+
+	savedRepos := []*entity.Repository{testRepo1, testRepo2}
+
+	// This should call the helper function that doesn't exist yet
+	result := validateRepositoryFindability(ctx, repo, savedRepos)
+
+	// Verify the validation result structure
+	if result == nil {
+		t.Fatal("Expected validateRepositoryFindability to return a result")
+	}
+
+	if result.TestName == "" {
+		t.Error("Expected validation result to have a test name")
+	}
+
+	if len(result.Errors) == 0 && len(result.Successes) == 0 {
+		t.Error("Expected validation result to have either errors or successes")
+	}
+
+	// The result should indicate whether repositories were found or not
+	totalResults := len(result.Errors) + len(result.Successes)
+	if totalResults != len(savedRepos) {
+		t.Errorf("Expected validation result for %d repositories, got %d total results",
+			len(savedRepos), totalResults)
+	}
+}
+
+// TestValidateRepositoryExistence_ShouldTestExistsForAllRepos tests that the helper
+// function properly validates that all repositories exist when checked by their URLs.
+// This test will fail initially because validateRepositoryExistence() doesn't exist.
+func TestValidateRepositoryExistence_ShouldTestExistsForAllRepos(t *testing.T) {
+	t.Skip("Integration test - requires database setup")
+
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	// Create some test repositories manually for this test
+	testURL1, _ := valueobject.NewRepositoryURL("https://GitHub.com/exist1/repo1.git")
+	testURL2, _ := valueobject.NewRepositoryURL("https://GITHUB.COM/exist2/repo2")
+
+	testRepo1 := entity.NewRepository(testURL1, "Test Repo 1", nil, nil)
+	testRepo2 := entity.NewRepository(testURL2, "Test Repo 2", nil, nil)
+
+	repo.Save(ctx, testRepo1)
+	repo.Save(ctx, testRepo2)
+
+	savedRepos := []*entity.Repository{testRepo1, testRepo2}
+
+	// This should call the helper function that doesn't exist yet
+	result := validateRepositoryExistence(ctx, repo, savedRepos)
+
+	// Verify the validation result structure
+	if result == nil {
+		t.Fatal("Expected validateRepositoryExistence to return a result")
+	}
+
+	if result.TestName == "" {
+		t.Error("Expected validation result to have a test name")
+	}
+
+	if len(result.Errors) == 0 && len(result.Successes) == 0 {
+		t.Error("Expected validation result to have either errors or successes")
+	}
+
+	// The result should indicate whether repositories exist or not
+	totalResults := len(result.Errors) + len(result.Successes)
+	if totalResults != len(savedRepos) {
+		t.Errorf("Expected validation result for %d repositories, got %d total results",
+			len(savedRepos), totalResults)
+	}
+}
+
+// TestAssertRepositoryQueryResult_ShouldFormatAndReportResults tests that the helper
+// function properly formats and reports query validation results.
+// This test will fail initially because assertRepositoryQueryResult() doesn't exist.
+func TestAssertRepositoryQueryResult_ShouldFormatAndReportResults(t *testing.T) {
+	// This is a unit test for the assertion helper, so no database needed
+
+	// Create mock validation result
+	mockResult := &repositoryQueryValidationResult{
+		TestName: "Mock Test",
+		Errors: []repositoryQueryError{
+			{RepositoryIndex: 0, Message: "Repository 0 not found", URL: "https://example.com/repo1"},
+			{RepositoryIndex: 1, Message: "Repository 1 existence check failed", URL: "https://example.com/repo2"},
+		},
+		Successes: []repositoryQuerySuccess{
+			{RepositoryIndex: 2, Message: "Repository 2 found successfully", URL: "https://example.com/repo3"},
+		},
+	}
+
+	// Create a test recorder to capture test failures
+	mockT := &testing.T{}
+
+	// This should call the helper function that doesn't exist yet
+	assertRepositoryQueryResult(mockT, mockResult)
+
+	// We can't easily verify the exact test failure messages without more complex mocking,
+	// but we can verify the function was called without panicking
+	t.Log("assertRepositoryQueryResult should process the validation result without panicking")
+}
+
+// repositoryQueryValidationResult represents the result of validating repository queries.
+// This struct will be used by the helper functions that don't exist yet.
+type repositoryQueryValidationResult struct {
+	TestName  string
+	Errors    []repositoryQueryError
+	Successes []repositoryQuerySuccess
+}
+
+type repositoryQueryError struct {
+	RepositoryIndex int
+	Message         string
+	URL             string
+}
+
+type repositoryQuerySuccess struct {
+	RepositoryIndex int
+	Message         string
+	URL             string
+}
+
+// TestURLStorageMethodsConsistency_RefactoredVersion tests the refactored version
+// that uses helper functions to reduce cognitive complexity.
+// This test will fail initially because the helper functions don't exist.
+func TestURLStorageMethodsConsistency_RefactoredVersion(t *testing.T) {
+	t.Skip("Integration test - requires database setup")
+
+	// This test verifies the specific lines that need to be fixed:
+	// - Line 116 in FindByURL: should use url.Raw() instead of url.String()
+	// - Line 345 in Exists: should use url.Raw() instead of url.String()
+
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLRepositoryRepository(pool)
+	ctx := context.Background()
+
+	// Step 1: Setup test data using helper function
+	testData := setupURLConsistencyTestData(ctx, repo)
+
+	// Step 2: Create and save repositories using helper function
+	savedRepos, err := createAndSaveRepositories(ctx, repo, testData.TestURLs)
+	if err != nil {
+		t.Fatalf("Failed to create and save repositories: %v", err)
+	}
+
+	// Step 3: Validate FindByURL functionality using helper function
+	t.Run("All saved repositories should be findable by their raw URLs after fix", func(t *testing.T) {
+		result := validateRepositoryFindability(ctx, repo, savedRepos)
+		assertRepositoryQueryResult(t, result)
+	})
+
+	// Step 4: Validate Exists functionality using helper function
+	t.Run("All saved repositories should exist when checked by their raw URLs after fix", func(t *testing.T) {
+		result := validateRepositoryExistence(ctx, repo, savedRepos)
+		assertRepositoryQueryResult(t, result)
+	})
+}
+
+// setupURLConsistencyTestData creates test data for URL consistency testing.
+func setupURLConsistencyTestData(ctx context.Context, repo *PostgreSQLRepositoryRepository) *urlConsistencyTestData {
+	testURLs := []string{
+		"https://GitHub.com/user1/repo1.git",
+		"https://GITHUB.COM/user2/repo2",
+		"https://Github.Com/User3/Repo3.git",
+	}
+
+	return &urlConsistencyTestData{
+		TestURLs:    testURLs,
+		SavedRepos:  []*entity.Repository{},
+		RepoService: repo,
+		Context:     ctx,
+	}
+}
+
+// createAndSaveRepositories creates and saves repositories from the provided URLs.
+func createAndSaveRepositories(
+	ctx context.Context,
+	repo *PostgreSQLRepositoryRepository,
+	testURLs []string,
+) ([]*entity.Repository, error) {
+	var savedRepos []*entity.Repository
+	for i, urlStr := range testURLs {
+		url, err := valueobject.NewRepositoryURL(urlStr)
+		if err != nil {
+			return nil, err
+		}
+
+		testRepo := entity.NewRepository(url, "Test Repo "+string(rune('A'+i)), nil, nil)
+		err = repo.Save(ctx, testRepo)
+		if err != nil {
+			return nil, err
+		}
+		savedRepos = append(savedRepos, testRepo)
+	}
+	return savedRepos, nil
+}
+
+// validateRepositoryFindability validates that all repositories can be found by their URLs.
+func validateRepositoryFindability(
+	ctx context.Context,
+	repo *PostgreSQLRepositoryRepository,
+	savedRepos []*entity.Repository,
+) *repositoryQueryValidationResult {
+	result := &repositoryQueryValidationResult{
+		TestName:  "FindByURL validation",
+		Errors:    []repositoryQueryError{},
+		Successes: []repositoryQuerySuccess{},
+	}
+
+	for i, savedRepo := range savedRepos {
+		foundRepo, err := repo.FindByURL(ctx, savedRepo.URL())
+		switch {
+		case err != nil:
+			result.Errors = append(result.Errors, repositoryQueryError{
+				RepositoryIndex: i,
+				Message:         "Expected no error, got: " + err.Error(),
+				URL:             savedRepo.URL().String(),
+			})
+		case foundRepo == nil:
+			result.Errors = append(result.Errors, repositoryQueryError{
+				RepositoryIndex: i,
+				Message:         "Expected to find repository by raw URL after fix",
+				URL:             savedRepo.URL().String(),
+			})
+		default:
+			result.Successes = append(result.Successes, repositoryQuerySuccess{
+				RepositoryIndex: i,
+				Message:         "Repository found successfully",
+				URL:             savedRepo.URL().String(),
+			})
+		}
+	}
+
+	return result
+}
+
+// validateRepositoryExistence validates that all repositories exist when checked by their URLs.
+func validateRepositoryExistence(
+	ctx context.Context,
+	repo *PostgreSQLRepositoryRepository,
+	savedRepos []*entity.Repository,
+) *repositoryQueryValidationResult {
+	result := &repositoryQueryValidationResult{
+		TestName:  "Exists validation",
+		Errors:    []repositoryQueryError{},
+		Successes: []repositoryQuerySuccess{},
+	}
+
+	for i, savedRepo := range savedRepos {
+		exists, err := repo.Exists(ctx, savedRepo.URL())
+		switch {
+		case err != nil:
+			result.Errors = append(result.Errors, repositoryQueryError{
+				RepositoryIndex: i,
+				Message:         "Expected no error, got: " + err.Error(),
+				URL:             savedRepo.URL().String(),
+			})
+		case !exists:
+			result.Errors = append(result.Errors, repositoryQueryError{
+				RepositoryIndex: i,
+				Message:         "Expected repository to exist when checked by raw URL after fix",
+				URL:             savedRepo.URL().String(),
+			})
+		default:
+			result.Successes = append(result.Successes, repositoryQuerySuccess{
+				RepositoryIndex: i,
+				Message:         "Repository existence confirmed",
+				URL:             savedRepo.URL().String(),
+			})
+		}
+	}
+
+	return result
+}
+
+// assertRepositoryQueryResult formats and reports query validation results.
+func assertRepositoryQueryResult(t *testing.T, result *repositoryQueryValidationResult) {
+	for _, errorResult := range result.Errors {
+		t.Errorf("Repository %d: %s", errorResult.RepositoryIndex, errorResult.Message)
+		t.Logf("Raw URL: %s", errorResult.URL)
+	}
+
+	for _, successResult := range result.Successes {
+		t.Logf("Repository %d: %s", successResult.RepositoryIndex, successResult.Message)
+	}
+}
+
 // TestURLStorageMethodsConsistency ensures that after the fix, the URL field queries
 // are consistent with how URLs are stored in the url column.
+// This is the refactored version with reduced cognitive complexity using helper functions.
 func TestURLStorageMethodsConsistency(t *testing.T) {
 	t.Skip("Integration test - requires database setup")
 
@@ -405,53 +816,24 @@ func TestURLStorageMethodsConsistency(t *testing.T) {
 	repo := NewPostgreSQLRepositoryRepository(pool)
 	ctx := context.Background()
 
-	// Create test data with URLs that have different raw vs normalized forms
-	testURLs := []string{
-		"https://GitHub.com/user1/repo1.git",
-		"https://GITHUB.COM/user2/repo2",
-		"https://Github.Com/User3/Repo3.git",
+	// Step 1: Setup test data using helper function
+	testData := setupURLConsistencyTestData(ctx, repo)
+
+	// Step 2: Create and save repositories using helper function
+	savedRepos, err := createAndSaveRepositories(ctx, repo, testData.TestURLs)
+	if err != nil {
+		t.Fatalf("Failed to create and save repositories: %v", err)
 	}
 
-	var savedRepos []*entity.Repository
-	for i, urlStr := range testURLs {
-		url, err := valueobject.NewRepositoryURL(urlStr)
-		if err != nil {
-			t.Fatalf("Failed to create URL %s: %v", urlStr, err)
-		}
-
-		testRepo := entity.NewRepository(url, "Test Repo "+string(rune('A'+i)), nil, nil)
-		err = repo.Save(ctx, testRepo)
-		if err != nil {
-			t.Fatalf("Failed to save repository %d: %v", i, err)
-		}
-		savedRepos = append(savedRepos, testRepo)
-	}
-
+	// Step 3: Validate FindByURL functionality using helper function
 	t.Run("All saved repositories should be findable by their raw URLs after fix", func(t *testing.T) {
-		for i, savedRepo := range savedRepos {
-			foundRepo, err := repo.FindByURL(ctx, savedRepo.URL())
-			if err != nil {
-				t.Errorf("Repository %d: Expected no error, got: %v", i, err)
-			}
-			if foundRepo == nil {
-				t.Errorf("Repository %d: Expected to find repository by raw URL after fix", i)
-				t.Logf("Raw URL: %s", savedRepo.URL().Raw())
-				t.Logf("Current query uses: %s", savedRepo.URL().String())
-			}
-		}
+		result := validateRepositoryFindability(ctx, repo, savedRepos)
+		assertRepositoryQueryResult(t, result)
 	})
 
+	// Step 4: Validate Exists functionality using helper function
 	t.Run("All saved repositories should exist when checked by their raw URLs after fix", func(t *testing.T) {
-		for i, savedRepo := range savedRepos {
-			exists, err := repo.Exists(ctx, savedRepo.URL())
-			if err != nil {
-				t.Errorf("Repository %d: Expected no error, got: %v", i, err)
-			}
-			if !exists {
-				t.Errorf("Repository %d: Expected repository to exist when checked by raw URL after fix", i)
-				t.Logf("Raw URL: %s", savedRepo.URL().Raw())
-				t.Logf("Current query uses: %s", savedRepo.URL().String())
-			}
-		}
+		result := validateRepositoryExistence(ctx, repo, savedRepos)
+		assertRepositoryQueryResult(t, result)
 	})
 }

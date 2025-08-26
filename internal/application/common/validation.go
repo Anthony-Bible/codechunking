@@ -292,7 +292,7 @@ func NewEnhancedValidator(config *security.Config) *EnhancedValidator {
 func (ev *EnhancedValidator) ValidateAllSecurityThreats(fieldName, value string) error {
 	// Run all security validations using shared utilities
 	if err := ev.injectionValidator.ValidateAllInjections(value); err != nil {
-		secViol := &security.Violation{}
+		secViol := &security.ViolationError{}
 		if errors.As(err, &secViol) {
 			return NewValidationError(fieldName, secViol.Message)
 		}
@@ -300,7 +300,7 @@ func (ev *EnhancedValidator) ValidateAllSecurityThreats(fieldName, value string)
 	}
 
 	if err := ev.unicodeValidator.ValidateUnicodeAttacks(value); err != nil {
-		secViol := &security.Violation{}
+		secViol := &security.ViolationError{}
 		if errors.As(err, &secViol) {
 			return NewValidationError(fieldName, secViol.Message)
 		}

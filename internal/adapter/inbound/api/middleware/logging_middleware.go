@@ -402,7 +402,10 @@ func updateMiddlewareLatency(duration time.Duration) {
 
 // Get HTTP log entry from pool.
 func (p *httpLogEntryPool) getHTTPLogEntry() *HTTPLogEntry {
-	entry := p.pool.Get().(*HTTPLogEntry)
+	entry, ok := p.pool.Get().(*HTTPLogEntry)
+	if !ok {
+		return &HTTPLogEntry{}
+	}
 	// Reset fields
 	entry.Timestamp = ""
 	entry.Level = ""

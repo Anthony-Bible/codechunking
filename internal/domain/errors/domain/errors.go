@@ -1,3 +1,4 @@
+// Package domain provides domain-specific error definitions and utilities.
 package domain
 
 import "errors"

@@ -532,7 +532,7 @@ func TestWriteJSON_ResponseWriterFailures(t *testing.T) {
 
 		// We expect WriteJSON to return the write error
 		require.Error(t, err, "WriteJSON should return error when Write fails")
-		assert.Contains(t, err.Error(), "simulated write failure", "Error should indicate write failure")
+		assert.ErrorContains(t, err, "simulated write failure", "Error should indicate write failure")
 	})
 }
 

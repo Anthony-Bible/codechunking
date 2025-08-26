@@ -23,9 +23,10 @@ func TestMetricsIntegration_PrometheusStyleMetrics(t *testing.T) {
 		},
 	}
 
-	logger, err := NewApplicationLogger(config)
+	baseLogger, err := NewApplicationLogger(config)
 	require.NoError(t, err)
 
+	logger := NewMetricsApplicationLogger(baseLogger, config.MetricsConfig)
 	ctx := WithCorrelationID(context.Background(), "metrics-test-123")
 
 	tests := []struct {
@@ -142,9 +143,10 @@ func TestMetricsIntegration_ApplicationMetrics(t *testing.T) {
 		},
 	}
 
-	logger, err := NewApplicationLogger(config)
+	baseLogger, err := NewApplicationLogger(config)
 	require.NoError(t, err)
 
+	logger := NewMetricsApplicationLogger(baseLogger, config.MetricsConfig)
 	ctx := WithCorrelationID(context.Background(), "app-metrics-456")
 
 	tests := []struct {
@@ -326,9 +328,10 @@ func TestMetricsIntegration_HealthMetrics(t *testing.T) {
 		},
 	}
 
-	logger, err := NewApplicationLogger(config)
+	baseLogger, err := NewApplicationLogger(config)
 	require.NoError(t, err)
 
+	logger := NewMetricsApplicationLogger(baseLogger, config.MetricsConfig)
 	ctx := WithCorrelationID(context.Background(), "health-metrics-789")
 
 	tests := []struct {
@@ -520,9 +523,10 @@ func TestMetricsIntegration_CustomMetrics(t *testing.T) {
 		},
 	}
 
-	logger, err := NewApplicationLogger(config)
+	baseLogger, err := NewApplicationLogger(config)
 	require.NoError(t, err)
 
+	logger := NewMetricsApplicationLogger(baseLogger, config.MetricsConfig)
 	ctx := WithCorrelationID(context.Background(), "custom-metrics-101")
 
 	tests := []struct {
@@ -655,9 +659,10 @@ func TestMetricsIntegration_MetricsAggregation(t *testing.T) {
 		},
 	}
 
-	logger, err := NewApplicationLogger(config)
+	baseLogger, err := NewApplicationLogger(config)
 	require.NoError(t, err)
 
+	logger := NewMetricsApplicationLogger(baseLogger, config.MetricsConfig)
 	ctx := WithCorrelationID(context.Background(), "aggregation-test-202")
 
 	// Simulate multiple metric events that should be aggregated

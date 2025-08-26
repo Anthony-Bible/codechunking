@@ -45,7 +45,7 @@ func TestServiceFactory_BuildDependencies_Success(t *testing.T) {
 	_, ok = indexingJobRepo.(*repository.PostgreSQLIndexingJobRepository)
 	assert.True(t, ok, "indexingJobRepo should be PostgreSQLIndexingJobRepository")
 
-	_, ok = messagePublisher.(*mock.MockMessagePublisher)
+	_, ok = messagePublisher.(*mock.MessagePublisher)
 	assert.True(t, ok, "messagePublisher should be MockMessagePublisher")
 }
 
@@ -76,7 +76,7 @@ func TestServiceFactory_BuildDependencies_DatabaseError(t *testing.T) {
 	assert.NotNil(t, messagePublisher, "messagePublisher should always be returned, even on database error")
 
 	// Verify message publisher type is correct
-	_, ok := messagePublisher.(*mock.MockMessagePublisher)
+	_, ok := messagePublisher.(*mock.MessagePublisher)
 	assert.True(t, ok, "messagePublisher should be MockMessagePublisher even when database fails")
 }
 
@@ -386,7 +386,7 @@ func TestServiceFactory_BuildDependencies_ConfigDefaults(t *testing.T) {
 	// The method should handle missing configuration gracefully
 	// by setting defaults (similar to current createDatabasePool implementation)
 	if err != nil {
-		assert.IsType(t, &mock.MockMessagePublisher{}, messagePublisher,
+		assert.IsType(t, &mock.MessagePublisher{}, messagePublisher,
 			"Should return mock message publisher on database error")
 	}
 }

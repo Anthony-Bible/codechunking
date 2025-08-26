@@ -22,7 +22,7 @@ func TestNATSLogger_ConnectionEvents(t *testing.T) {
 	logger, err := NewApplicationLogger(config)
 	require.NoError(t, err)
 
-	natsLogger := logger.WithComponent("nats-client")
+	natsLogger := NewNATSApplicationLogger(logger.WithComponent("nats-client"))
 	ctx := WithCorrelationID(context.Background(), "nats-connection-123")
 
 	tests := []struct {
@@ -134,7 +134,7 @@ func TestNATSLogger_MessagePublishing(t *testing.T) {
 	logger, err := NewApplicationLogger(config)
 	require.NoError(t, err)
 
-	natsLogger := logger.WithComponent("nats-publisher")
+	natsLogger := NewNATSApplicationLogger(logger.WithComponent("nats-publisher"))
 	ctx := WithCorrelationID(context.Background(), "publish-correlation-456")
 
 	tests := []struct {
@@ -236,7 +236,7 @@ func TestNATSLogger_MessageConsumption(t *testing.T) {
 	logger, err := NewApplicationLogger(config)
 	require.NoError(t, err)
 
-	natsLogger := logger.WithComponent("nats-consumer")
+	natsLogger := NewNATSApplicationLogger(logger.WithComponent("nats-consumer"))
 	ctx := WithCorrelationID(context.Background(), "consume-correlation-789")
 
 	tests := []struct {
@@ -331,12 +331,12 @@ func TestNATSLogger_MessageConsumption(t *testing.T) {
 			}
 
 			if tt.event.WillRetry {
-				assert.Equal(t, true, logEntry.Metadata["will_retry"])
+				assert.True(t, logEntry.Metadata["will_retry"].(bool))
 				assert.Contains(t, logEntry.Metadata, "next_retry_at")
 			}
 
 			if tt.event.Rejected {
-				assert.Equal(t, true, logEntry.Metadata["rejected"])
+				assert.True(t, logEntry.Metadata["rejected"].(bool))
 			}
 		})
 	}
@@ -353,7 +353,7 @@ func TestNATSLogger_JetStreamOperations(t *testing.T) {
 	logger, err := NewApplicationLogger(config)
 	require.NoError(t, err)
 
-	natsLogger := logger.WithComponent("jetstream-client")
+	natsLogger := NewNATSApplicationLogger(logger.WithComponent("jetstream-client"))
 	ctx := WithCorrelationID(context.Background(), "jetstream-correlation-101")
 
 	tests := []struct {
@@ -484,7 +484,7 @@ func TestNATSLogger_PerformanceMetrics(t *testing.T) {
 	logger, err := NewApplicationLogger(config)
 	require.NoError(t, err)
 
-	natsLogger := logger.WithComponent("nats-metrics")
+	natsLogger := NewNATSApplicationLogger(logger.WithComponent("nats-metrics"))
 	ctx := WithCorrelationID(context.Background(), "metrics-correlation-202")
 
 	performanceMetrics := NATSPerformanceMetrics{
@@ -548,8 +548,8 @@ func TestNATSLogger_ErrorCorrelation(t *testing.T) {
 	ctx := WithCorrelationID(context.Background(), correlationID)
 
 	// Test cascading errors across NATS operations
-	publishLogger := logger.WithComponent("nats-publisher")
-	consumerLogger := logger.WithComponent("nats-consumer")
+	publishLogger := NewNATSApplicationLogger(logger.WithComponent("nats-publisher"))
+	consumerLogger := NewNATSApplicationLogger(logger.WithComponent("nats-consumer"))
 
 	// Simulate publish failure
 	publishEvent := NATSPublishEvent{

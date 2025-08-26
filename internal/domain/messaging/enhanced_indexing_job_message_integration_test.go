@@ -63,7 +63,7 @@ func TestEnhancedIndexingJobMessage_BackwardCompatibility(t *testing.T) {
 			err := json.Unmarshal([]byte(tt.legacyJSONData), &msg)
 
 			if tt.expectParseSuccess {
-				assert.NoError(t, err, "Should parse legacy message without error")
+				require.NoError(t, err, "Should parse legacy message without error")
 
 				// This will fail until ParseLegacyMessage or similar function exists
 				enhanced, parseErr := ParseLegacyMessage(tt.legacyJSONData)
@@ -73,7 +73,7 @@ func TestEnhancedIndexingJobMessage_BackwardCompatibility(t *testing.T) {
 				assert.NotEmpty(t, enhanced.CorrelationID, "CorrelationID should be generated if missing")
 				assert.Equal(t, tt.expectedVersion, enhanced.SchemaVersion, "SchemaVersion should match expected")
 			} else {
-				assert.Error(t, err, "Should fail to parse malformed message")
+				require.Error(t, err, "Should fail to parse malformed message")
 			}
 
 			t.Logf("Test description: %s", tt.description)
@@ -188,7 +188,7 @@ func TestEnhancedIndexingJobMessage_RetryScenarios(t *testing.T) {
 			retryMsg, err := CreateRetryMessage(tt.originalMessage, tt.retryAttempt)
 
 			if tt.expectSuccess {
-				assert.NoError(t, err, "Should create retry message successfully")
+				require.NoError(t, err, "Should create retry message successfully")
 				assert.Equal(t, tt.retryAttempt, retryMsg.RetryAttempt, "RetryAttempt should be updated")
 				assert.Equal(
 					t,
@@ -203,7 +203,7 @@ func TestEnhancedIndexingJobMessage_RetryScenarios(t *testing.T) {
 					"MessageID should be new for retry",
 				)
 			} else {
-				assert.Error(t, err, "Should fail to create retry message when exceeding limits")
+				require.Error(t, err, "Should fail to create retry message when exceeding limits")
 			}
 
 			t.Logf("Test description: %s", tt.description)
@@ -382,13 +382,13 @@ func TestEnhancedIndexingJobMessage_MessageSizeConstraints(t *testing.T) {
 
 				// This will fail until ValidateMessageSize function exists
 				err := ValidateMessageSize(msg, tt.maxSizeBytes)
-				assert.Error(t, err, "Should return error for oversized message")
+				require.Error(t, err, "Should return error for oversized message")
 			} else {
 				assert.LessOrEqual(t, sizeBytes, tt.maxSizeBytes, "Message should fit within size limit")
 
 				// This will fail until ValidateMessageSize function exists
 				err := ValidateMessageSize(msg, tt.maxSizeBytes)
-				assert.NoError(t, err, "Should not return error for normal-sized message")
+				require.NoError(t, err, "Should not return error for normal-sized message")
 			}
 
 			t.Logf("Test description: %s", tt.description)

@@ -412,7 +412,6 @@ curl -X POST http://localhost:8080/api/v1/repositories \
     "description": "The Go programming language"
   }'
 ```
-
 2. **Check Status:**
 ```bash
 curl http://localhost:8080/api/v1/repositories/123e4567-e89b-12d3-a456-426614174000

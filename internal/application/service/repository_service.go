@@ -12,7 +12,7 @@ import (
 	"log/slog"
 	"time"
 
-	domain_errors "codechunking/internal/domain/errors/domain"
+	domainerrors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
@@ -85,7 +85,7 @@ func (s *CreateRepositoryService) CreateRepository(
 		return nil, common.WrapServiceError(common.OpCheckRepositoryExists, err)
 	}
 	if exists {
-		return nil, domain_errors.ErrRepositoryAlreadyExists
+		return nil, domainerrors.ErrRepositoryAlreadyExists
 	}
 
 	// Auto-generate name from URL if not provided
@@ -172,7 +172,7 @@ func (s *UpdateRepositoryService) UpdateRepository(
 
 	// Check if repository can be updated (not processing)
 	if repository.Status() == valueobject.RepositoryStatusProcessing {
-		return nil, domain_errors.ErrRepositoryProcessing
+		return nil, domainerrors.ErrRepositoryProcessing
 	}
 
 	// Update fields
@@ -223,7 +223,7 @@ func (s *DeleteRepositoryService) DeleteRepository(ctx context.Context, id uuid.
 
 	// Check if repository can be deleted (not processing)
 	if repository.Status() == valueobject.RepositoryStatusProcessing {
-		return domain_errors.ErrRepositoryProcessing
+		return domainerrors.ErrRepositoryProcessing
 	}
 
 	// Archive repository

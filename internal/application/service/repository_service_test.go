@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	domain_errors "codechunking/internal/domain/errors/domain"
+	domainerrors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -197,7 +197,7 @@ func TestCreateRepositoryService_CreateRepository_RepositoryAlreadyExists(t *tes
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, response)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryAlreadyExists)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryAlreadyExists)
 
 	mockRepo.AssertExpectations(t)
 	mockRepo.AssertNotCalled(t, "Save")
@@ -380,7 +380,7 @@ func TestGetRepositoryService_GetRepository_NotFound(t *testing.T) {
 	service := NewGetRepositoryService(mockRepo)
 
 	repositoryID := uuid.New()
-	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(nil, domain_errors.ErrRepositoryNotFound)
+	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(nil, domainerrors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -390,7 +390,7 @@ func TestGetRepositoryService_GetRepository_NotFound(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, response)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryNotFound)
 
 	mockRepo.AssertExpectations(t)
 }
@@ -477,7 +477,7 @@ func TestUpdateRepositoryService_UpdateRepository_NotFound(t *testing.T) {
 		Name: stringPtr("Updated Name"),
 	}
 
-	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(nil, domain_errors.ErrRepositoryNotFound)
+	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(nil, domainerrors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -487,7 +487,7 @@ func TestUpdateRepositoryService_UpdateRepository_NotFound(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, response)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockRepo.AssertNotCalled(t, "Update")
@@ -532,7 +532,7 @@ func TestUpdateRepositoryService_UpdateRepository_CannotUpdateProcessingReposito
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, response)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryProcessing)
 
 	mockRepo.AssertExpectations(t)
 	mockRepo.AssertNotCalled(t, "Update")
@@ -582,7 +582,7 @@ func TestDeleteRepositoryService_DeleteRepository_NotFound(t *testing.T) {
 	service := NewDeleteRepositoryService(mockRepo)
 
 	repositoryID := uuid.New()
-	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(nil, domain_errors.ErrRepositoryNotFound)
+	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(nil, domainerrors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -591,7 +591,7 @@ func TestDeleteRepositoryService_DeleteRepository_NotFound(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryNotFound)
 
 	mockRepo.AssertExpectations(t)
 	mockRepo.AssertNotCalled(t, "Update")
@@ -630,7 +630,7 @@ func TestDeleteRepositoryService_DeleteRepository_CannotDeleteProcessingReposito
 
 	// Assert
 	require.Error(t, err)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryProcessing)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryProcessing)
 
 	mockRepo.AssertExpectations(t)
 	mockRepo.AssertNotCalled(t, "Update")

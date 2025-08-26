@@ -708,7 +708,7 @@ func TestResourceCleanup(t *testing.T) {
 		// Should return empty resource usage in RED phase
 		health := processor.GetHealthStatus()
 		assert.Equal(t, 0, health.ResourceUsage.MemoryMB)
-		assert.Equal(t, float64(0), health.ResourceUsage.CPUPercent)
+		assert.InDelta(t, float64(0), health.ResourceUsage.CPUPercent, 1e-9)
 		assert.Equal(t, int64(0), health.ResourceUsage.DiskUsageMB)
 	})
 }

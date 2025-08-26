@@ -289,7 +289,7 @@ func (s *IntegrationWorkerSystem) GetAcknowledgmentResults() []MessageAcknowledg
 // TestEndToEndMessageFlow tests complete message flow from NATS to job processing.
 func TestEndToEndMessageFlow(t *testing.T) {
 	t.Run("should process message from NATS to repository update", func(t *testing.T) {
-		config := IntegrationConfig{
+		nats_config := IntegrationConfig{
 			WorkerConfig: WorkerServiceConfig{
 				Concurrency:         3,
 				QueueGroup:          "indexing-workers",
@@ -308,11 +308,11 @@ func TestEndToEndMessageFlow(t *testing.T) {
 			},
 		}
 
-		system, err := NewIntegrationWorkerSystem(config)
+		system, err := NewIntegrationWorkerSystem(nats_config)
 
 		// Should fail in RED phase
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not implemented yet")
+		require.ErrorContains(t, err, "not implemented yet")
 		require.NotNil(t, system) // System should still be created for further testing
 
 		ctx := context.Background()
@@ -320,7 +320,7 @@ func TestEndToEndMessageFlow(t *testing.T) {
 
 		// Should fail in RED phase
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not implemented yet")
+		require.ErrorContains(t, err, "not implemented yet")
 	})
 
 	t.Run("should handle multiple message types", func(t *testing.T) {
@@ -363,7 +363,7 @@ func TestEndToEndMessageFlow(t *testing.T) {
 			err := system.PublishTestMessage(msg)
 			// Should fail in RED phase
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "not implemented yet")
+			require.ErrorContains(t, err, "not implemented yet")
 		}
 	})
 

@@ -243,7 +243,7 @@ func (n *NATSMessagePublisher) Connect() error {
 			n.mutex.Unlock()
 			n.updateConnectionHealth(true, nil)
 		}),
-		nats.DisconnectHandler(func(_ *nats.Conn) {
+		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
 			n.updateConnectionHealth(false, errors.New("connection lost"))
 		}),
 	}

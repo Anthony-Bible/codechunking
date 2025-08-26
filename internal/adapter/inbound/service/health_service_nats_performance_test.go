@@ -719,8 +719,8 @@ func TestHealthServiceAdapter_StressTest_MetricsCalculation(t *testing.T) {
 
 		errorRate, throughput := calculateStressTestMetrics(results)
 
-		assert.Equal(t, 0.05, errorRate)  // 5/100 = 0.05
-		assert.Equal(t, 50.0, throughput) // 100/2 = 50 RPS
+		assert.InEpsilon(t, 0.05, errorRate, 1e-9)  // 5/100 = 0.05
+		assert.InEpsilon(t, 50.0, throughput, 1e-9) // 100/2 = 50 RPS
 	})
 
 	t.Run("handles_zero_errors_correctly", func(t *testing.T) {
@@ -732,7 +732,7 @@ func TestHealthServiceAdapter_StressTest_MetricsCalculation(t *testing.T) {
 
 		errorRate, throughput := calculateStressTestMetrics(results)
 
-		assert.Equal(t, 0.0, errorRate)
-		assert.Equal(t, 50.0, throughput)
+		assert.InDelta(t, 0.0, errorRate, 1e-9)
+		assert.InEpsilon(t, 50.0, throughput, 1e-9)
 	})
 }

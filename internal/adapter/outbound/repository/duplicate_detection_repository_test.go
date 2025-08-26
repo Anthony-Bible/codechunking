@@ -111,7 +111,7 @@ func TestPostgreSQLRepositoryRepository_NormalizedURLConstraints(t *testing.T) {
 			if tt.expectConstraint {
 				// Should fail due to normalized URL constraint - this will PASS initially as constraint doesn't exist yet
 				require.Error(t, err, tt.description)
-				assert.Contains(t, err.Error(), "duplicate", tt.description+" - error should mention duplicate")
+				require.ErrorContains(t, err, "duplicate", tt.description+" - error should mention duplicate")
 			} else {
 				// Should succeed - different repositories should be allowed
 				require.NoError(t, err, tt.description)
@@ -481,7 +481,7 @@ func TestPostgreSQLRepositoryRepository_ConcurrentDuplicateDetection(t *testing.
 
 	// All errors should be related to duplicates/constraints
 	for _, err := range errors {
-		assert.Contains(t, err.Error(), "duplicate", "Error should indicate duplicate detection: %v", err)
+		assert.ErrorContains(t, err, "duplicate", "Error should indicate duplicate detection: %v", err)
 	}
 }
 

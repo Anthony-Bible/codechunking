@@ -84,6 +84,7 @@ type NATSPerformanceMetrics struct {
 // NATSApplicationLogger extends ApplicationLogger with NATS operations.
 type NATSApplicationLogger interface {
 	ApplicationLogger
+	// NATS-specific methods
 	LogNATSConnectionEvent(ctx context.Context, event NATSConnectionEvent)
 	LogNATSPublishEvent(ctx context.Context, event NATSPublishEvent)
 	LogNATSConsumeEvent(ctx context.Context, event NATSConsumeEvent)

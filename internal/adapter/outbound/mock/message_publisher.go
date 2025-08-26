@@ -11,7 +11,7 @@ import (
 // MockMessagePublisher provides a mock implementation of MessagePublisher for development.
 //
 //nolint:revive // Mock prefix is intentional for clarity in test contexts
-type MockMessagePublisher struct {
+type MessagePublisher struct {
 	// Published jobs for testing/verification
 	publishedJobs []PublishedJob
 }
@@ -24,13 +24,13 @@ type PublishedJob struct {
 
 // NewMockMessagePublisher creates a new mock message publisher.
 func NewMockMessagePublisher() outbound.MessagePublisher {
-	return &MockMessagePublisher{
+	return &MessagePublisher{
 		publishedJobs: make([]PublishedJob, 0),
 	}
 }
 
 // PublishIndexingJob publishes an indexing job message (mock implementation).
-func (m *MockMessagePublisher) PublishIndexingJob(
+func (m *MessagePublisher) PublishIndexingJob(
 	ctx context.Context,
 	repositoryID uuid.UUID,
 	repositoryURL string,
@@ -52,11 +52,11 @@ func (m *MockMessagePublisher) PublishIndexingJob(
 }
 
 // GetPublishedJobs returns all published jobs (for testing).
-func (m *MockMessagePublisher) GetPublishedJobs() []PublishedJob {
+func (m *MessagePublisher) GetPublishedJobs() []PublishedJob {
 	return m.publishedJobs
 }
 
 // Reset clears all published jobs.
-func (m *MockMessagePublisher) Reset() {
+func (m *MessagePublisher) Reset() {
 	m.publishedJobs = make([]PublishedJob, 0)
 }

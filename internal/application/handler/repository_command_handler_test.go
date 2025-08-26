@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	domain_errors "codechunking/internal/domain/errors/domain"
+	domainerrors "codechunking/internal/domain/errors/domain"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -144,7 +144,7 @@ func TestCreateRepositoryCommandHandler_Handle_ValidationError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "validation failed")
+	require.ErrorContains(t, err, "validation failed")
 
 	mockService.AssertNotCalled(t, "CreateRepository")
 }
@@ -164,7 +164,7 @@ func TestCreateRepositoryCommandHandler_Handle_ServiceError(t *testing.T) {
 		Name: "golang/go",
 	}
 
-	serviceError := domain_errors.ErrRepositoryAlreadyExists
+	serviceError := domainerrors.ErrRepositoryAlreadyExists
 	mockService.On("CreateRepository", mock.Anything, expectedRequest).Return(nil, serviceError)
 
 	ctx := context.Background()
@@ -225,7 +225,7 @@ func TestGetRepositoryQueryHandler_Handle_NotFound(t *testing.T) {
 		ID: repositoryID,
 	}
 
-	mockService.On("GetRepository", mock.Anything, repositoryID).Return(nil, domain_errors.ErrRepositoryNotFound)
+	mockService.On("GetRepository", mock.Anything, repositoryID).Return(nil, domainerrors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -235,7 +235,7 @@ func TestGetRepositoryQueryHandler_Handle_NotFound(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -305,7 +305,7 @@ func TestUpdateRepositoryCommandHandler_Handle_ValidationError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "validation failed")
+	require.ErrorContains(t, err, "validation failed")
 
 	mockService.AssertNotCalled(t, "UpdateRepository")
 }
@@ -343,7 +343,7 @@ func TestDeleteRepositoryCommandHandler_Handle_NotFound(t *testing.T) {
 		ID: repositoryID,
 	}
 
-	mockService.On("DeleteRepository", mock.Anything, repositoryID).Return(domain_errors.ErrRepositoryNotFound)
+	mockService.On("DeleteRepository", mock.Anything, repositoryID).Return(domainerrors.ErrRepositoryNotFound)
 
 	ctx := context.Background()
 
@@ -352,7 +352,7 @@ func TestDeleteRepositoryCommandHandler_Handle_NotFound(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
-	require.ErrorIs(t, err, domain_errors.ErrRepositoryNotFound)
+	require.ErrorIs(t, err, domainerrors.ErrRepositoryNotFound)
 
 	mockService.AssertExpectations(t)
 }
@@ -431,7 +431,7 @@ func TestListRepositoriesQueryHandler_Handle_ValidationError(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "validation failed")
+	require.ErrorContains(t, err, "validation failed")
 
 	mockService.AssertNotCalled(t, "ListRepositories")
 }

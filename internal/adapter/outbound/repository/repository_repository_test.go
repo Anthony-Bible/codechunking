@@ -723,6 +723,29 @@ func TestRepositoryRepository_UpdateStatus_SuccessfulTransitions(t *testing.T) {
 					assertNoError(t, err, "transition to cloning first")
 					err = testRepo.UpdateStatus(valueobject.RepositoryStatusProcessing)
 					assertNoError(t, err, "transition to processing")
+				case valueobject.RepositoryStatusCompleted:
+					err := testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
+					assertNoError(t, err, "transition to cloning first")
+					err = testRepo.UpdateStatus(valueobject.RepositoryStatusProcessing)
+					assertNoError(t, err, "transition to processing")
+					err = testRepo.UpdateStatus(valueobject.RepositoryStatusCompleted)
+					assertNoError(t, err, "transition to completed")
+				case valueobject.RepositoryStatusFailed:
+					err := testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
+					assertNoError(t, err, "transition to cloning first")
+					err = testRepo.UpdateStatus(valueobject.RepositoryStatusFailed)
+					assertNoError(t, err, "transition to failed")
+				case valueobject.RepositoryStatusArchived:
+					err := testRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
+					assertNoError(t, err, "transition to cloning first")
+					err = testRepo.UpdateStatus(valueobject.RepositoryStatusProcessing)
+					assertNoError(t, err, "transition to processing")
+					err = testRepo.UpdateStatus(valueobject.RepositoryStatusCompleted)
+					assertNoError(t, err, "transition to completed")
+					err = testRepo.UpdateStatus(valueobject.RepositoryStatusArchived)
+					assertNoError(t, err, "transition to archived")
+				case valueobject.RepositoryStatusPending:
+					// This case is already handled by the outer if condition, but included for exhaustiveness
 				}
 			}
 

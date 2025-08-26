@@ -476,12 +476,8 @@ func TestAuthenticationErrorDistinction(t *testing.T) {
 			targetPath := "/tmp/error-distinction-test-" + sanitizeName(tt.name)
 			cloneOptions := valueobject.NewShallowCloneOptions(1, "main")
 
-			var provider string
-			if tt.scenario == "mismatch_vs_unsupported" {
-				provider = "github" // Intentionally mismatch with GitLab URL
-			} else {
-				provider = "github"
-			}
+			// For mismatch scenario, intentionally use github provider with GitLab URL
+			provider := "github"
 
 			authConfig := &outbound.TokenAuthConfig{
 				Token:     tt.token,

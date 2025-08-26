@@ -292,6 +292,10 @@ func (h *jobStatusTransitionHandler) handleTransition(
 ) error {
 	// Define transition handlers for each supported status
 	transitionHandlers := map[valueobject.JobStatus]func() error{
+		valueobject.JobStatusPending: func() error {
+			// Pending status doesn't require special transition logic
+			return nil
+		},
 		valueobject.JobStatusRunning: func() error {
 			return h.service.transitionJobToRunning(job)
 		},
@@ -459,9 +463,22 @@ func (rec *repositoryEligibilityChecker) checkEligibility(repository *entity.Rep
 	switch currentStatus {
 	case valueobject.RepositoryStatusProcessing, valueobject.RepositoryStatusCloning:
 		return domainerrors.ErrRepositoryProcessing
+	case valueobject.RepositoryStatusPending:
+		// Pending repositories are eligible for indexing job creation
+		return nil
+	case valueobject.RepositoryStatusCompleted:
+		// Completed repositories are eligible for re-indexing
+		return nil
+	case valueobject.RepositoryStatusFailed:
+		// Failed repositories are eligible for retry indexing
+		return nil
+	case valueobject.RepositoryStatusArchived:
+		// Archived repositories are not eligible for indexing
+		return domainerrors.ErrRepositoryProcessing
+	default:
+		// Unknown status - allow for forward compatibility
+		return nil
 	}
-
-	return nil
 }
 
 // validateRepositoryEligibilityForIndexing checks if a repository can have an indexing job created.

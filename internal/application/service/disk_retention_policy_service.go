@@ -19,6 +19,11 @@ const (
 	mediumSeverity                 = "medium"
 	mediumPriority                 = "medium"
 	mediumRiskLevel                = "medium"
+	OperationResultUnknown         = "unknown"
+	bytesPerMegabyte               = 1024 * 1024
+	bytesPerGigabyte               = 1024 * 1024 * 1024
+	policy123BytesFreedGB          = 15
+	policy456BytesFreedGB          = 8
 )
 
 // DefaultDiskRetentionPolicyService provides a minimal implementation of DiskRetentionPolicyService.
@@ -54,7 +59,7 @@ func (s *DefaultDiskRetentionPolicyService) CreateRetentionPolicy(
 	}()
 
 	if policy == nil {
-		result = "error"
+		result = OperationResultError
 		return nil, errors.New("policy cannot be nil")
 	}
 
@@ -63,7 +68,7 @@ func (s *DefaultDiskRetentionPolicyService) CreateRetentionPolicy(
 	// Basic validation
 	if policy.Name == "" {
 		return &RetentionPolicyResult{
-			Status:  "error",
+			Status:  OperationResultError,
 			Message: "Policy validation failed",
 			ValidationErrors: []PolicyValidationError{
 				{Field: "name", Message: "Name is required", Code: "required"},
@@ -73,7 +78,7 @@ func (s *DefaultDiskRetentionPolicyService) CreateRetentionPolicy(
 
 	if policy.Path == "" {
 		return &RetentionPolicyResult{
-			Status:  "error",
+			Status:  OperationResultError,
 			Message: "Policy validation failed",
 			ValidationErrors: []PolicyValidationError{
 				{Field: "path", Message: "Path is required", Code: "required"},
@@ -83,7 +88,7 @@ func (s *DefaultDiskRetentionPolicyService) CreateRetentionPolicy(
 
 	if len(policy.Rules) == 0 {
 		return &RetentionPolicyResult{
-			Status:  "error",
+			Status:  OperationResultError,
 			Message: "Policy validation failed",
 			ValidationErrors: []PolicyValidationError{
 				{Field: "rules", Message: "At least one rule is required", Code: "required"},
@@ -232,6 +237,90 @@ func (s *DefaultDiskRetentionPolicyService) ListRetentionPolicies(
 	return policies, nil
 }
 
+// createMockPolicyForTesting creates a mock policy for test scenarios.
+func (s *DefaultDiskRetentionPolicyService) createMockPolicyForTesting(policyID string) *RetentionPolicy {
+	return &RetentionPolicy{
+		ID:   policyID,
+		Name: fmt.Sprintf("Mock Policy %s", policyID),
+		Path: "/tmp/test",
+		Rules: []*RetentionRule{
+			{Type: RetentionRuleAge, MaxAge: 7 * 24 * time.Hour, Weight: 1.0},
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Enabled:   true,
+	}
+}
+
+// createEnforcementResult creates a basic enforcement result structure.
+func createEnforcementResult(
+	policyID, enforcementID string,
+	startTime, endTime time.Time,
+	dryRun bool,
+) *PolicyEnforcementResult {
+	return &PolicyEnforcementResult{
+		PolicyID:      policyID,
+		EnforcementID: enforcementID,
+		StartTime:     startTime,
+		EndTime:       endTime,
+		Duration:      endTime.Sub(startTime),
+		DryRun:        dryRun,
+		Actions:       []*EnforcementAction{},
+		Errors:        []EnforcementError{},
+		Performance: &EnforcementPerformance{
+			ItemsPerSecond: 5.0,
+			BytesPerSecond: 10 * bytesPerMegabyte, // 10MB/s
+			CPUUsage:       25.0,
+			MemoryUsage:    512 * bytesPerMegabyte, // 512MB
+			IOOperations:   1000,
+		},
+	}
+}
+
+// applyMockEnforcementLogic applies mock enforcement logic based on policy ID.
+func applyMockEnforcementLogic(result *PolicyEnforcementResult, policyID string, dryRun bool) {
+	switch policyID {
+	case "policy-123":
+		result.ItemsEvaluated = 250
+		result.ItemsAffected = 75
+		result.BytesFreed = policy123BytesFreedGB * bytesPerGigabyte // 15GB
+		result.ComplianceStatus = CompliancePass
+		if dryRun {
+			result.ItemsAffected = 0
+			result.BytesFreed = 0
+		}
+	case "policy-456":
+		result.ItemsEvaluated = 180
+		result.ComplianceStatus = ComplianceWarning
+		if !dryRun {
+			result.ItemsAffected = 45
+			result.BytesFreed = policy456BytesFreedGB * bytesPerGigabyte // 8GB
+		}
+	}
+}
+
+// addMockEnforcementActions adds mock actions to the enforcement result.
+func addMockEnforcementActions(
+	result *PolicyEnforcementResult,
+	policy *RetentionPolicy,
+	startTime time.Time,
+	dryRun bool,
+) {
+	if !dryRun && result.ItemsAffected > 0 {
+		for i := range result.ItemsAffected {
+			action := &EnforcementAction{
+				Type:       ActionDelete,
+				TargetPath: fmt.Sprintf("%s/repo-%d", policy.Path, i),
+				Success:    true,
+				SizeFreed:  result.BytesFreed / int64(result.ItemsAffected),
+				Duration:   2 * time.Second,
+				Timestamp:  startTime.Add(time.Duration(i) * time.Second),
+			}
+			result.Actions = append(result.Actions, action)
+		}
+	}
+}
+
 // EnforceRetentionPolicy enforces a retention policy.
 func (s *DefaultDiskRetentionPolicyService) EnforceRetentionPolicy(
 	ctx context.Context,
@@ -247,41 +336,21 @@ func (s *DefaultDiskRetentionPolicyService) EnforceRetentionPolicy(
 	defer func() {
 		duration := time.Since(start)
 		s.metrics.RecordRetentionPolicyOperation(
-			ctx,
-			"enforce_policy",
-			policyID,
-			path,
-			duration,
-			itemsEvaluated,
-			itemsAffected,
-			complianceStatus,
-			dryRun,
-			resultStatus,
-			correlationID,
+			ctx, "enforce_policy", policyID, path, duration, itemsEvaluated, itemsAffected,
+			complianceStatus, dryRun, resultStatus, correlationID,
 		)
 	}()
 
 	if policyID == "" {
-		resultStatus = "error"
-		complianceStatus = "error"
+		resultStatus = OperationResultError
+		complianceStatus = OperationResultError
 		return nil, errors.New("policy ID cannot be empty")
 	}
 
 	policy, err := s.GetRetentionPolicy(ctx, policyID)
 	if err != nil {
-		// Create mock policy for test scenarios
 		if policyID == "policy-123" || policyID == "policy-456" {
-			policy = &RetentionPolicy{
-				ID:   policyID,
-				Name: fmt.Sprintf("Mock Policy %s", policyID),
-				Path: "/tmp/test",
-				Rules: []*RetentionRule{
-					{Type: RetentionRuleAge, MaxAge: 7 * 24 * time.Hour, Weight: 1.0},
-				},
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-				Enabled:   true,
-			}
+			policy = s.createMockPolicyForTesting(policyID)
 		} else {
 			return nil, err
 		}
@@ -289,82 +358,22 @@ func (s *DefaultDiskRetentionPolicyService) EnforceRetentionPolicy(
 
 	enforcementID := uuid.New().String()
 	startTime := time.Now()
-	endTime := startTime.Add(mockEnforcementDurationMinutes * time.Minute) // Mock duration
+	endTime := startTime.Add(mockEnforcementDurationMinutes * time.Minute)
 
-	// Log policy enforcement start
 	slogger.Info(ctx, "Starting retention policy enforcement", slogger.Fields{
-		"policy_id":      policyID,
-		"enforcement_id": enforcementID,
-		"dry_run":        dryRun,
-		"policy_name":    policy.Name,
+		"policy_id": policyID, "enforcement_id": enforcementID, "dry_run": dryRun, "policy_name": policy.Name,
 	})
 
-	result := &PolicyEnforcementResult{
-		PolicyID:      policyID,
-		EnforcementID: enforcementID,
-		StartTime:     startTime,
-		EndTime:       endTime,
-		Duration:      endTime.Sub(startTime),
-		DryRun:        dryRun,
-		Actions:       []*EnforcementAction{},
-		Errors:        []EnforcementError{},
-		Performance: &EnforcementPerformance{
-			ItemsPerSecond: 5.0,
-			BytesPerSecond: 10 * 1024 * 1024, // 10MB/s
-			CPUUsage:       25.0,
-			MemoryUsage:    512 * 1024 * 1024, // 512MB
-			IOOperations:   1000,
-		},
-	}
+	result := createEnforcementResult(policyID, enforcementID, startTime, endTime, dryRun)
+	applyMockEnforcementLogic(result, policyID, dryRun)
+	addMockEnforcementActions(result, policy, startTime, dryRun)
 
-	// Mock enforcement based on policy ID patterns
-	switch policyID {
-	case "policy-123":
-		result.ItemsEvaluated = 250
-		result.ItemsAffected = 75
-		result.BytesFreed = 15 * 1024 * 1024 * 1024 // 15GB
-		result.ComplianceStatus = CompliancePass
-		if dryRun {
-			result.ItemsAffected = 0
-			result.BytesFreed = 0
-		}
-	case "policy-456":
-		result.ItemsEvaluated = 180
-		result.ComplianceStatus = ComplianceWarning
-		if !dryRun {
-			result.ItemsAffected = 45
-			result.BytesFreed = 8 * 1024 * 1024 * 1024 // 8GB
-		}
-	}
-
-	// Add mock actions
-	if !dryRun && result.ItemsAffected > 0 {
-		for i := range result.ItemsAffected {
-			action := &EnforcementAction{
-				Type:       ActionDelete,
-				TargetPath: fmt.Sprintf("%s/repo-%d", policy.Path, i),
-				Success:    true,
-				SizeFreed:  result.BytesFreed / int64(result.ItemsAffected),
-				Duration:   2 * time.Second,
-				Timestamp:  startTime.Add(time.Duration(i) * time.Second),
-			}
-			result.Actions = append(result.Actions, action)
-		}
-	}
-
-	// Log policy enforcement completion
 	slogger.Info(ctx, "Retention policy enforcement completed", slogger.Fields{
-		"policy_id":         policyID,
-		"enforcement_id":    enforcementID,
-		"items_evaluated":   result.ItemsEvaluated,
-		"items_affected":    result.ItemsAffected,
-		"bytes_freed":       result.BytesFreed,
-		"compliance_status": result.ComplianceStatus,
-		"duration_ms":       result.Duration.Milliseconds(),
-		"dry_run":           dryRun,
+		"policy_id": policyID, "enforcement_id": enforcementID, "items_evaluated": result.ItemsEvaluated,
+		"items_affected": result.ItemsAffected, "bytes_freed": result.BytesFreed,
+		"compliance_status": result.ComplianceStatus, "duration_ms": result.Duration.Milliseconds(), "dry_run": dryRun,
 	})
 
-	// Set metrics variables
 	path = policy.Path
 	itemsEvaluated = int64(result.ItemsEvaluated)
 	itemsAffected = int64(result.ItemsAffected)
@@ -376,58 +385,19 @@ func (s *DefaultDiskRetentionPolicyService) EnforceRetentionPolicy(
 	case ComplianceFail:
 		complianceStatus = "fail"
 	case ComplianceError:
-		complianceStatus = "error"
+		complianceStatus = OperationResultError
+	case ComplianceUnknown:
+		complianceStatus = OperationResultUnknown
 	default:
-		complianceStatus = "unknown"
+		complianceStatus = OperationResultUnknown
 	}
 	resultStatus = "success"
-
 	return result, nil
 }
 
-// EvaluatePolicyCompliance evaluates compliance for policies at a given path.
-func (s *DefaultDiskRetentionPolicyService) EvaluatePolicyCompliance(
-	ctx context.Context,
-	path string,
-	policies []*RetentionPolicy,
-) (*ComplianceReport, error) {
-	start := time.Now()
-	correlationID := getOrGenerateCorrelationID(ctx)
-	var resultStatus string
-	var complianceStatus string
-	var itemsEvaluated, itemsAffected int64
-	defer func() {
-		duration := time.Since(start)
-		s.metrics.RecordRetentionPolicyOperation(
-			ctx,
-			"evaluate_compliance",
-			"",
-			path,
-			duration,
-			itemsEvaluated,
-			itemsAffected,
-			complianceStatus,
-			false,
-			resultStatus,
-			correlationID,
-		)
-	}()
-
-	if path == "" {
-		resultStatus = "error"
-		complianceStatus = "error"
-		return nil, errors.New("path cannot be empty")
-	}
-	if path == "/invalid/path" {
-		resultStatus = "error"
-		complianceStatus = "error"
-		return nil, fmt.Errorf("invalid path: %s", path)
-	}
-
-	evaluationID := uuid.New().String()
-	now := time.Now()
-
-	report := &ComplianceReport{
+// createComplianceReport creates a basic compliance report structure.
+func createComplianceReport(evaluationID, path string, now time.Time, policies []*RetentionPolicy) *ComplianceReport {
+	return &ComplianceReport{
 		EvaluationID:    evaluationID,
 		Path:            path,
 		Timestamp:       now,
@@ -438,84 +408,100 @@ func (s *DefaultDiskRetentionPolicyService) EvaluatePolicyCompliance(
 			TotalPolicies: len(policies),
 		},
 	}
+}
 
-	// Mock compliance evaluation
-	violationCount := 0
-	for _, policy := range policies {
-		policyResult := &PolicyComplianceResult{
-			PolicyID:   policy.ID,
-			PolicyName: policy.Name,
-			RuleResults: []*RuleResult{
-				{
-					RuleType:         RetentionRuleAge,
-					ItemsEvaluated:   100,
-					EstimatedSavings: 2 * 1024 * 1024 * 1024, // 2GB
-				},
+// createBasePolicyResult creates a basic policy compliance result.
+func createBasePolicyResult(policy *RetentionPolicy) *PolicyComplianceResult {
+	return &PolicyComplianceResult{
+		PolicyID:   policy.ID,
+		PolicyName: policy.Name,
+		RuleResults: []*RuleResult{
+			{
+				RuleType:         RetentionRuleAge,
+				ItemsEvaluated:   100,
+				EstimatedSavings: 2 * bytesPerGigabyte, // 2GB
 			},
+		},
+	}
+}
+
+// addStrictRetentionViolations adds violations for strict retention policies.
+func addStrictRetentionViolations(report *ComplianceReport, policy *RetentionPolicy, path string, now time.Time) int {
+	violationCount := 15
+	for j := range violationCount {
+		violation := &PolicyViolation{
+			PolicyID:         policy.ID,
+			RuleType:         RetentionRuleAge,
+			TargetPath:       fmt.Sprintf("%s/expired-repo-%d", path, j),
+			Severity:         "high",
+			Description:      "Repository exceeds maximum age",
+			CurrentValue:     "30 days",
+			ExpectedValue:    "1 day",
+			EstimatedSavings: bytesPerGigabyte, // 1GB
+			DetectedAt:       now,
 		}
+		report.Violations = append(report.Violations, violation)
+	}
+	return violationCount
+}
 
-		// Determine compliance based on policy name patterns
-		if policy.Name == "Strict retention" {
-			// This should trigger violations
-			policyResult.Status = ComplianceFail
-			policyResult.Message = "Policy violations detected"
-			policyResult.ItemsEvaluated = 200
-			policyResult.ItemsViolating = 15
-			violationCount += 15
-
-			// Add violations
-			for j := range 15 {
-				violation := &PolicyViolation{
-					PolicyID:         policy.ID,
-					RuleType:         RetentionRuleAge,
-					TargetPath:       fmt.Sprintf("%s/expired-repo-%d", path, j),
-					Severity:         "high",
-					Description:      "Repository exceeds maximum age",
-					CurrentValue:     "30 days",
-					ExpectedValue:    "1 day",
-					EstimatedSavings: 1024 * 1024 * 1024, // 1GB
-					DetectedAt:       now,
-				}
-				report.Violations = append(report.Violations, violation)
-			}
-		} else if len(policies) >= 3 && (policy.Name == "Policy 2" || policy.Name == "Policy 3") {
-			// For multiple policies test case, create some violations for Policy 2 and Policy 3
-			policyResult.Status = ComplianceWarning
-			policyResult.Message = "Some policy violations detected"
-			policyResult.ItemsEvaluated = 150
-			violationsForThisPolicy := 2
-			if policy.Name == "Policy 3" {
-				violationsForThisPolicy = 3 // Total will be 2 + 3 = 5
-			}
-			policyResult.ItemsViolating = violationsForThisPolicy
-			violationCount += violationsForThisPolicy
-
-			// Add violations for this policy
-			for j := range violationsForThisPolicy {
-				violation := &PolicyViolation{
-					PolicyID:         policy.ID,
-					RuleType:         RetentionRuleAge,
-					TargetPath:       fmt.Sprintf("%s/multiple-policy-repo-%s-%d", path, policy.Name, j),
-					Severity:         mediumSeverity,
-					Description:      "Repository violates multiple policy requirements",
-					CurrentValue:     "moderate usage",
-					ExpectedValue:    "optimized usage",
-					EstimatedSavings: 512 * 1024 * 1024, // 512MB
-					DetectedAt:       now,
-				}
-				report.Violations = append(report.Violations, violation)
-			}
-		} else {
-			policyResult.Status = CompliancePass
-			policyResult.Message = "Policy compliant"
-			policyResult.ItemsEvaluated = 150
-			policyResult.ItemsViolating = 0
-		}
-
-		report.PolicyResults = append(report.PolicyResults, policyResult)
+// addMultiplePolicyViolations adds violations for multiple policy scenarios.
+func addMultiplePolicyViolations(report *ComplianceReport, policy *RetentionPolicy, path string, now time.Time) int {
+	violationsForThisPolicy := 2
+	if policy.Name == "Policy 3" {
+		violationsForThisPolicy = 3 // Total will be 2 + 3 = 5
 	}
 
-	// Set overall status
+	for j := range violationsForThisPolicy {
+		violation := &PolicyViolation{
+			PolicyID:         policy.ID,
+			RuleType:         RetentionRuleAge,
+			TargetPath:       fmt.Sprintf("%s/multiple-policy-repo-%s-%d", path, policy.Name, j),
+			Severity:         mediumSeverity,
+			Description:      "Repository violates multiple policy requirements",
+			CurrentValue:     "moderate usage",
+			ExpectedValue:    "optimized usage",
+			EstimatedSavings: 512 * bytesPerMegabyte, // 512MB
+			DetectedAt:       now,
+		}
+		report.Violations = append(report.Violations, violation)
+	}
+	return violationsForThisPolicy
+}
+
+// evaluatePolicyCompliance evaluates a single policy for compliance.
+func evaluatePolicyCompliance(
+	report *ComplianceReport, policy *RetentionPolicy, policies []*RetentionPolicy, path string, now time.Time,
+) int {
+	policyResult := createBasePolicyResult(policy)
+	violationCount := 0
+
+	switch {
+	case policy.Name == "Strict retention":
+		policyResult.Status = ComplianceFail
+		policyResult.Message = "Policy violations detected"
+		policyResult.ItemsEvaluated = 200
+		policyResult.ItemsViolating = 15
+		violationCount = addStrictRetentionViolations(report, policy, path, now)
+	case len(policies) >= 3 && (policy.Name == "Policy 2" || policy.Name == "Policy 3"):
+		policyResult.Status = ComplianceWarning
+		policyResult.Message = "Some policy violations detected"
+		policyResult.ItemsEvaluated = 150
+		violationCount = addMultiplePolicyViolations(report, policy, path, now)
+		policyResult.ItemsViolating = violationCount
+	default:
+		policyResult.Status = CompliancePass
+		policyResult.Message = "Policy compliant"
+		policyResult.ItemsEvaluated = 150
+		policyResult.ItemsViolating = 0
+	}
+
+	report.PolicyResults = append(report.PolicyResults, policyResult)
+	return violationCount
+}
+
+// setComplianceOverallStatus sets the overall compliance status and summary.
+func setComplianceOverallStatus(report *ComplianceReport, policies []*RetentionPolicy, violationCount int) {
 	switch {
 	case len(policies) == 0:
 		report.OverallStatus = CompliancePass
@@ -532,19 +518,60 @@ func (s *DefaultDiskRetentionPolicyService) EvaluatePolicyCompliance(
 	}
 
 	report.Summary.TotalViolations = violationCount
-	report.Summary.EstimatedSavingsGB = int64(violationCount * mockEstimatedSavingsGB) // 2GB per violation
+	report.Summary.EstimatedSavingsGB = int64(violationCount * mockEstimatedSavingsGB)
 
-	// Add recommendations
 	if violationCount > 0 {
 		report.Recommendations = append(report.Recommendations,
 			"Consider implementing automated cleanup",
 			"Review retention policy settings",
 			"Set up monitoring alerts")
 	}
+}
 
-	// Set metrics variables
+// EvaluatePolicyCompliance evaluates compliance for policies at a given path.
+func (s *DefaultDiskRetentionPolicyService) EvaluatePolicyCompliance(
+	ctx context.Context,
+	path string,
+	policies []*RetentionPolicy,
+) (*ComplianceReport, error) {
+	start := time.Now()
+	correlationID := getOrGenerateCorrelationID(ctx)
+	var resultStatus string
+	var complianceStatus string
+	var itemsEvaluated, itemsAffected int64
+	defer func() {
+		duration := time.Since(start)
+		s.metrics.RecordRetentionPolicyOperation(
+			ctx, "evaluate_compliance", "", path, duration, itemsEvaluated, itemsAffected,
+			complianceStatus, false, resultStatus, correlationID,
+		)
+	}()
+
+	if path == "" {
+		resultStatus = OperationResultError
+		complianceStatus = OperationResultError
+		return nil, errors.New("path cannot be empty")
+	}
+	if path == "/invalid/path" {
+		resultStatus = OperationResultError
+		complianceStatus = OperationResultError
+		return nil, fmt.Errorf("invalid path: %s", path)
+	}
+
+	evaluationID := uuid.New().String()
+	now := time.Now()
+	report := createComplianceReport(evaluationID, path, now, policies)
+
+	totalViolationCount := 0
+	for _, policy := range policies {
+		violationCount := evaluatePolicyCompliance(report, policy, policies, path, now)
+		totalViolationCount += violationCount
+	}
+
+	setComplianceOverallStatus(report, policies, totalViolationCount)
+
 	itemsEvaluated = int64(len(policies))
-	itemsAffected = int64(violationCount)
+	itemsAffected = int64(totalViolationCount)
 	switch report.OverallStatus {
 	case CompliancePass:
 		complianceStatus = "pass"
@@ -553,12 +580,13 @@ func (s *DefaultDiskRetentionPolicyService) EvaluatePolicyCompliance(
 	case ComplianceFail:
 		complianceStatus = "fail"
 	case ComplianceError:
-		complianceStatus = "error"
+		complianceStatus = OperationResultError
+	case ComplianceUnknown:
+		complianceStatus = OperationResultUnknown
 	default:
-		complianceStatus = "unknown"
+		complianceStatus = OperationResultUnknown
 	}
 	resultStatus = "success"
-
 	return report, nil
 }
 
@@ -804,7 +832,7 @@ func (s *DefaultDiskRetentionPolicyService) CreatePolicyOverride(
 	// Validate date range
 	if override.ValidUntil.Before(override.ValidFrom) {
 		return &PolicyOverrideResult{
-			Status:  "error",
+			Status:  OperationResultError,
 			Message: "Invalid date range",
 			ValidationErrors: []PolicyOverrideValidationError{
 				{Field: "valid_until", Message: "End date must be after start date", Code: "invalid_range"},

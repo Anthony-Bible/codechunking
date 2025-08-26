@@ -498,18 +498,19 @@ func (s *DefaultDiskSpaceMonitoringService) PredictDiskUsage(
 	}
 
 	// Calculate predictions based on queue size
-	if queueSize == 0 {
+	switch {
+	case queueSize == 0:
 		prediction.PredictedUsage = currentUsage.UsedSpaceBytes
 		prediction.TimeToFull = 0
 		prediction.RecommendedCleanupGB = 0
 		prediction.ConfidenceLevel = 0.90
-	} else if queueSize >= 1000 {
+	case queueSize >= 1000:
 		// Large queue - aggressive predictions
 		prediction.PredictedUsage = currentUsage.UsedSpaceBytes + int64(queueSize)*avgRepoSize
 		prediction.TimeToFull = 12 * time.Hour
 		prediction.RecommendedCleanupGB = 20
 		prediction.ConfidenceLevel = 0.95
-	} else {
+	default:
 		// Moderate queue - standard predictions
 		prediction.PredictedUsage = 30 * 1024 * 1024 * 1024 // 30GB
 		prediction.TimeToFull = 72 * time.Hour

@@ -539,6 +539,8 @@ func TestRepository_CanBeDeleted(t *testing.T) {
 
 			// Set the desired status (may need multiple transitions)
 			switch tc.status {
+			case valueobject.RepositoryStatusPending:
+				// No transition needed - repository starts in pending state
 			case valueobject.RepositoryStatusCloning:
 				_ = repo.UpdateStatus(valueobject.RepositoryStatusCloning)
 			case valueobject.RepositoryStatusProcessing:

@@ -405,10 +405,14 @@ func TestDLQStatistics(t *testing.T) {
 			RetryableMessages: 60,
 			PermanentFailures: 40,
 			MessagesByFailureType: map[FailureType]int{
-				FailureTypeNetworkError:    30,
-				FailureTypeValidationError: 25,
-				FailureTypeTimeoutError:    20,
-				FailureTypeSystemError:     25,
+				FailureTypeNetworkError:       30,
+				FailureTypeValidationError:    25,
+				FailureTypeTimeoutError:       20,
+				FailureTypeSystemError:        25,
+				FailureTypeResourceExhausted:  0,
+				FailureTypeProcessingError:    0,
+				FailureTypePermissionDenied:   0,
+				FailureTypeRepositoryNotFound: 0,
 			},
 			AverageTimeInDLQ: 2 * time.Hour,
 			OldestMessageAge: 24 * time.Hour,
@@ -422,7 +426,7 @@ func TestDLQStatistics(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 100, stats.TotalMessages)
 		assert.Equal(t, 60, stats.RetryableMessages)
-		assert.Len(t, stats.MessagesByFailureType, 4)
+		assert.Len(t, stats.MessagesByFailureType, 8)
 		assert.InEpsilon(t, 0.75, stats.RetrySuccessRate, 0.001)
 	})
 

@@ -9,6 +9,26 @@ import (
 	"github.com/google/uuid"
 )
 
+// Constants for cleanup operations.
+const (
+	// Risk level strings.
+	RiskLevelLow    = "low"
+	RiskLevelMedium = "medium"
+	RiskLevelHigh   = "high"
+
+	// Size constants.
+	BytesPerMB = 1024
+	BytesPerGB = 1024 * 1024 * 1024
+
+	// Default values for mock data.
+	DefaultCandidateCount = 150
+	DefaultBatchSize      = 50
+	DefaultAccessWeight   = 100
+	DefaultAgeOffset      = 30
+	DefaultSizeBase       = 500
+	DefaultSizeIncrement  = 10
+)
+
 // getOrGenerateCorrelationID gets correlation ID from context or generates a new one.
 func getOrGenerateCorrelationID(_ context.Context) string {
 	// Simple implementation for GREEN phase - just generate a UUID
@@ -445,6 +465,14 @@ func (s *DefaultDiskCleanupStrategyService) RecommendCleanupStrategy(
 		recommendation.Confidence = 0.8
 		recommendation.Reasoning = []string{"low pressure allows gentle cleanup", "TTL strategy is safe and effective"}
 		recommendation.EstimatedFreed = 15 * 1024 * 1024 * 1024 // 15GB
+	case PressureMedium:
+		recommendation.RecommendedStrategy = CleanupStrategyLRU
+		recommendation.Confidence = 0.85
+		recommendation.Reasoning = []string{
+			"medium pressure requires balanced approach",
+			"LRU strategy balances safety and effectiveness",
+		}
+		recommendation.EstimatedFreed = 25 * 1024 * 1024 * 1024 // 25GB
 	case PressureHigh:
 		recommendation.RecommendedStrategy = CleanupStrategySizeBased
 		recommendation.Confidence = 0.95
@@ -453,7 +481,7 @@ func (s *DefaultDiskCleanupStrategyService) RecommendCleanupStrategy(
 			"size-based strategy maximizes space recovery",
 		}
 		recommendation.EstimatedFreed = 45 * 1024 * 1024 * 1024 // 45GB
-		recommendation.RiskLevel = "medium"
+		recommendation.RiskLevel = RiskLevelMedium
 	case PressureCritical:
 		recommendation.RecommendedStrategy = CleanupStrategySmart
 		recommendation.Confidence = 0.98
@@ -462,7 +490,7 @@ func (s *DefaultDiskCleanupStrategyService) RecommendCleanupStrategy(
 			"AI strategy balances effectiveness and safety",
 		}
 		recommendation.EstimatedFreed = 60 * 1024 * 1024 * 1024 // 60GB
-		recommendation.RiskLevel = "high"
+		recommendation.RiskLevel = RiskLevelHigh
 		recommendation.EstimatedDuration = 45 * time.Minute
 	default:
 		recommendation.RecommendedStrategy = CleanupStrategyLRU
@@ -504,14 +532,29 @@ func (s *DefaultDiskCleanupStrategyService) CompareStrategies(
 
 		// Adjust based on strategy type
 		switch strategy {
+		case CleanupStrategyLRU:
+			result.Score = 0.75
+			result.EstimatedFreedMB = 20 * 1024
+			result.RiskAssessment = RiskLevelLow
+			result.Effectiveness = 0.75
+		case CleanupStrategyTTL:
+			result.Score = 0.8
+			result.EstimatedFreedMB = 25 * 1024
+			result.RiskAssessment = RiskLevelLow
+			result.Effectiveness = 0.8
 		case CleanupStrategySizeBased:
 			result.Score = 0.9
 			result.EstimatedFreedMB = 50 * 1024
-			result.RiskAssessment = "medium"
+			result.RiskAssessment = RiskLevelMedium
+		case CleanupStrategyHybrid:
+			result.Score = 0.92
+			result.EstimatedFreedMB = 55 * 1024
+			result.RiskAssessment = RiskLevelMedium
+			result.Effectiveness = 0.9
 		case CleanupStrategySmart:
 			result.Score = 0.95
 			result.EstimatedFreedMB = 60 * 1024
-			result.RiskAssessment = "low"
+			result.RiskAssessment = RiskLevelLow
 			result.Effectiveness = 0.95
 		}
 

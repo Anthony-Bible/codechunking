@@ -1031,11 +1031,9 @@ func TestDefaultCacheDirectoryConstantConsistency(t *testing.T) {
 				if usage != nil && usage.UsedSpaceBytes != 25*1024*1024*1024 {
 					t.Errorf("Expected consistent cache directory usage, got %d bytes", usage.UsedSpaceBytes)
 				}
-			} else {
+			} else if usage != nil && usage.UsedSpaceBytes == 25*1024*1024*1024 {
 				// For non-cache paths, should get different behavior
-				if usage != nil && usage.UsedSpaceBytes == 25*1024*1024*1024 {
-					t.Error("Non-cache directory should not have cache-specific usage values")
-				}
+				t.Error("Non-cache directory should not have cache-specific usage values")
 			}
 		})
 	}

@@ -48,11 +48,10 @@ const (
 	AttrComplianceStatus = "compliance_status"
 )
 
-// Histogram bucket boundaries for different types of disk operations.
-var (
-	// DiskOperationLatencyBuckets defines bucket boundaries for disk operation latencies.
-	// Optimized for fast disk operations (1ms to 10s range).
-	DiskOperationLatencyBuckets = []float64{
+// getDiskOperationLatencyBuckets returns bucket boundaries for disk operation latencies.
+// Optimized for fast disk operations (1ms to 10s range).
+func getDiskOperationLatencyBuckets() []float64 {
+	return []float64{
 		0.001, // 1ms
 		0.005, // 5ms
 		0.01,  // 10ms
@@ -66,10 +65,12 @@ var (
 		5.0,   // 5s
 		10.0,  // 10s
 	}
+}
 
-	// CleanupDurationBuckets defines bucket boundaries for cleanup operation latencies.
-	// Optimized for long-running cleanup operations (1s to 2hr range).
-	CleanupDurationBuckets = []float64{
+// getCleanupDurationBuckets returns bucket boundaries for cleanup operation latencies.
+// Optimized for long-running cleanup operations (1s to 2hr range).
+func getCleanupDurationBuckets() []float64 {
+	return []float64{
 		1.0,    // 1s
 		5.0,    // 5s
 		10.0,   // 10s
@@ -79,10 +80,12 @@ var (
 		3600.0, // 1hr
 		7200.0, // 2hr
 	}
+}
 
-	// HealthCheckLatencyBuckets defines bucket boundaries for health check latencies.
-	// Optimized for moderate health check operations (10ms to 30s range).
-	HealthCheckLatencyBuckets = []float64{
+// getHealthCheckLatencyBuckets returns bucket boundaries for health check latencies.
+// Optimized for moderate health check operations (10ms to 30s range).
+func getHealthCheckLatencyBuckets() []float64 {
+	return []float64{
 		0.01, // 10ms
 		0.05, // 50ms
 		0.1,  // 100ms
@@ -92,10 +95,12 @@ var (
 		10.0, // 10s
 		30.0, // 30s
 	}
+}
 
-	// PolicyOperationDurationBuckets defines bucket boundaries for policy operation latencies.
-	// Optimized for policy operations (30s to 1hr range).
-	PolicyOperationDurationBuckets = []float64{
+// getPolicyOperationDurationBuckets returns bucket boundaries for policy operation latencies.
+// Optimized for policy operations (30s to 1hr range).
+func getPolicyOperationDurationBuckets() []float64 {
+	return []float64{
 		30.0,   // 30s
 		60.0,   // 1min
 		120.0,  // 2min
@@ -105,7 +110,7 @@ var (
 		1800.0, // 30min
 		3600.0, // 1hr
 	}
-)
+}
 
 // DiskMetrics provides OpenTelemetry-based metrics collection for disk operations.
 type DiskMetrics struct {
@@ -177,6 +182,131 @@ func (ic *instrumentCreator) createInt64Counter(name, description, unit string) 
 	return ic.meter.Int64Counter(name, metric.WithDescription(description), metric.WithUnit(unit))
 }
 
+// createGauges creates all gauge instruments in a single batch operation.
+// Returns both Float64Gauge and Int64Gauge or the first error encountered.
+func (ic *instrumentCreator) createGauges() (metric.Float64Gauge, metric.Int64Gauge, error) {
+	diskUsageGauge, err := ic.createFloat64Gauge(
+		DiskUsageGaugeName,
+		"Current disk usage percentage",
+		"%",
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	diskHealthStatusGauge, err := ic.createInt64Gauge(
+		DiskHealthStatusGaugeName,
+		"Current disk health status (0=good, 1=warning, 2=critical, 3=failed)",
+		"1",
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return diskUsageGauge, diskHealthStatusGauge, nil
+}
+
+// createHistograms creates all histogram instruments in a single batch operation.
+// Returns all 4 Float64Histogram instruments or the first error encountered.
+func (ic *instrumentCreator) createHistograms() (
+	metric.Float64Histogram, metric.Float64Histogram, metric.Float64Histogram, metric.Float64Histogram, error,
+) {
+	diskOperationDuration, err := ic.createFloat64Histogram(
+		DiskOperationDurationHistogramName,
+		"Duration of disk operations in seconds",
+		"s",
+		getDiskOperationLatencyBuckets(),
+	)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	diskHealthCheckDuration, err := ic.createFloat64Histogram(
+		DiskHealthCheckDurationHistogramName,
+		"Duration of disk health check operations in seconds",
+		"s",
+		getHealthCheckLatencyBuckets(),
+	)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	cleanupOperationDuration, err := ic.createFloat64Histogram(
+		CleanupOperationDurationHistogramName,
+		"Duration of disk cleanup operations in seconds",
+		"s",
+		getCleanupDurationBuckets(),
+	)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	retentionPolicyDuration, err := ic.createFloat64Histogram(
+		RetentionPolicyDurationHistogramName,
+		"Duration of retention policy operations in seconds",
+		"s",
+		getPolicyOperationDurationBuckets(),
+	)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	return diskOperationDuration, diskHealthCheckDuration, cleanupOperationDuration, retentionPolicyDuration, nil
+}
+
+// createCounters creates all counter instruments in a single batch operation.
+// Returns all 5 Int64Counter instruments or the first error encountered.
+func (ic *instrumentCreator) createCounters() (
+	metric.Int64Counter, metric.Int64Counter, metric.Int64Counter, metric.Int64Counter, metric.Int64Counter, error,
+) {
+	diskOperationCounter, err := ic.createInt64Counter(
+		DiskOperationCounterName,
+		"Total number of disk operations",
+		"1",
+	)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+
+	diskAlertCounter, err := ic.createInt64Counter(
+		DiskAlertCounterName,
+		"Total number of disk alerts",
+		"1",
+	)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+
+	cleanupItemsCounter, err := ic.createInt64Counter(
+		CleanupItemsCounterName,
+		"Total number of items cleaned up",
+		"1",
+	)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+
+	cleanupBytesFreedCounter, err := ic.createInt64Counter(
+		CleanupBytesFreedCounterName,
+		"Total bytes freed by cleanup operations",
+		"By",
+	)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+
+	retentionPolicyCounter, err := ic.createInt64Counter(
+		RetentionPolicyCounterName,
+		"Total number of retention policy operations",
+		"1",
+	)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+
+	return diskOperationCounter, diskAlertCounter, cleanupItemsCounter, cleanupBytesFreedCounter, retentionPolicyCounter, nil
+}
+
 // NewDiskMetrics creates a new OpenTelemetry metrics collector for disk operations
 // using the default global meter provider.
 func NewDiskMetrics(instanceID string) (*DiskMetrics, error) {
@@ -196,108 +326,18 @@ func NewDiskMetricsWithProvider(instanceID string, provider metric.MeterProvider
 	meter := provider.Meter("codechunking/service", metric.WithInstrumentationVersion("1.0.0"))
 	creator := newInstrumentCreator(meter)
 
-	// Create gauges
-	diskUsageGauge, err := creator.createFloat64Gauge(
-		DiskUsageGaugeName,
-		"Current disk usage percentage",
-		"%",
-	)
+	// Create all instruments in batches
+	diskUsageGauge, diskHealthStatusGauge, err := creator.createGauges()
 	if err != nil {
 		return nil, err
 	}
 
-	diskHealthStatusGauge, err := creator.createInt64Gauge(
-		DiskHealthStatusGaugeName,
-		"Current disk health status (0=good, 1=warning, 2=critical, 3=failed)",
-		"1",
-	)
+	diskOperationDuration, diskHealthCheckDuration, cleanupOperationDuration, retentionPolicyDuration, err := creator.createHistograms()
 	if err != nil {
 		return nil, err
 	}
 
-	// Create histograms with appropriate buckets
-	diskOperationDuration, err := creator.createFloat64Histogram(
-		DiskOperationDurationHistogramName,
-		"Duration of disk operations in seconds",
-		"s",
-		DiskOperationLatencyBuckets,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	diskHealthCheckDuration, err := creator.createFloat64Histogram(
-		DiskHealthCheckDurationHistogramName,
-		"Duration of disk health check operations in seconds",
-		"s",
-		HealthCheckLatencyBuckets,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	cleanupOperationDuration, err := creator.createFloat64Histogram(
-		CleanupOperationDurationHistogramName,
-		"Duration of disk cleanup operations in seconds",
-		"s",
-		CleanupDurationBuckets,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	retentionPolicyDuration, err := creator.createFloat64Histogram(
-		RetentionPolicyDurationHistogramName,
-		"Duration of retention policy operations in seconds",
-		"s",
-		PolicyOperationDurationBuckets,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create counters
-	diskOperationCounter, err := creator.createInt64Counter(
-		DiskOperationCounterName,
-		"Total number of disk operations",
-		"1",
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	diskAlertCounter, err := creator.createInt64Counter(
-		DiskAlertCounterName,
-		"Total number of disk alerts",
-		"1",
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	cleanupItemsCounter, err := creator.createInt64Counter(
-		CleanupItemsCounterName,
-		"Total number of items cleaned up",
-		"1",
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	cleanupBytesFreedCounter, err := creator.createInt64Counter(
-		CleanupBytesFreedCounterName,
-		"Total bytes freed by cleanup operations",
-		"By",
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	retentionPolicyCounter, err := creator.createInt64Counter(
-		RetentionPolicyCounterName,
-		"Total number of retention policy operations",
-		"1",
-	)
+	diskOperationCounter, diskAlertCounter, cleanupItemsCounter, cleanupBytesFreedCounter, retentionPolicyCounter, err := creator.createCounters()
 	if err != nil {
 		return nil, err
 	}

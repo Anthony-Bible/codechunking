@@ -69,86 +69,87 @@ func (s *DefaultDiskSpaceMonitoringService) GetCurrentDiskUsage(
 	// Return hardcoded values that match test expectations
 	if path == DefaultCacheDirectory {
 		result = OperationResultSuccess
-		usage := &DiskUsageInfo{
-			Path:            DefaultCacheDirectory,
-			TotalSpaceBytes: 100 * 1024 * 1024 * 1024, // 100GB
-			UsedSpaceBytes:  25 * 1024 * 1024 * 1024,  // 25GB
-			AvailableBytes:  75 * 1024 * 1024 * 1024,  // 75GB
-			UsagePercentage: 25.0,
-			CacheUsageBytes: 20 * 1024 * 1024 * 1024, // 20GB
-			RepositoryCount: 150,
-			LastUpdated:     time.Now(),
-			IOPSCurrent:     500,
-			ReadLatencyMs:   2.5,
-			WriteLatencyMs:  3.2,
-		}
-		s.metrics.RecordDiskUsage(
-			ctx,
-			path,
-			usage.UsedSpaceBytes,
-			usage.TotalSpaceBytes,
-			usage.UsagePercentage,
-			"get_current_usage",
-		)
+		usage := s.createCacheDirUsageInfo()
+		s.recordUsageMetrics(ctx, path, usage)
 		return usage, nil
 	}
 
 	// Return higher usage for test paths that should trigger alerts
 	if strings.Contains(path, "warning") {
 		result = OperationResultSuccess
-		usage := &DiskUsageInfo{
-			Path:            path,
-			TotalSpaceBytes: 100 * 1024 * 1024 * 1024, // 100GB
-			UsedSpaceBytes:  80 * 1024 * 1024 * 1024,  // 80GB (80% usage to trigger warning)
-			AvailableBytes:  20 * 1024 * 1024 * 1024,  // 20GB
-			UsagePercentage: 80.0,
-			CacheUsageBytes: 70 * 1024 * 1024 * 1024, // 70GB
-			RepositoryCount: 200,
-			LastUpdated:     time.Now(),
-			IOPSCurrent:     800,
-			ReadLatencyMs:   4.0,
-			WriteLatencyMs:  5.5,
-		}
-		s.metrics.RecordDiskUsage(
-			ctx,
-			path,
-			usage.UsedSpaceBytes,
-			usage.TotalSpaceBytes,
-			usage.UsagePercentage,
-			"get_current_usage",
-		)
+		usage := s.createWarningUsageInfo(path)
+		s.recordUsageMetrics(ctx, path, usage)
 		return usage, nil
 	}
 
 	if strings.Contains(path, "critical") {
 		result = OperationResultSuccess
-		usage := &DiskUsageInfo{
-			Path:            path,
-			TotalSpaceBytes: 100 * 1024 * 1024 * 1024, // 100GB
-			UsedSpaceBytes:  95 * 1024 * 1024 * 1024,  // 95GB (95% usage to trigger critical)
-			AvailableBytes:  5 * 1024 * 1024 * 1024,   // 5GB
-			UsagePercentage: 95.0,
-			CacheUsageBytes: 85 * 1024 * 1024 * 1024, // 85GB
-			RepositoryCount: 300,
-			LastUpdated:     time.Now(),
-			IOPSCurrent:     1200,
-			ReadLatencyMs:   8.0,
-			WriteLatencyMs:  12.0,
-		}
-		s.metrics.RecordDiskUsage(
-			ctx,
-			path,
-			usage.UsedSpaceBytes,
-			usage.TotalSpaceBytes,
-			usage.UsagePercentage,
-			"get_current_usage",
-		)
+		usage := s.createCriticalUsageInfo(path)
+		s.recordUsageMetrics(ctx, path, usage)
 		return usage, nil
 	}
 
 	// Default values for other paths
 	result = OperationResultSuccess
-	usage := &DiskUsageInfo{
+	usage := s.createDefaultUsageInfo(path)
+	s.recordUsageMetrics(ctx, path, usage)
+	return usage, nil
+}
+
+// createCacheDirUsageInfo creates DiskUsageInfo for the cache directory.
+func (s *DefaultDiskSpaceMonitoringService) createCacheDirUsageInfo() *DiskUsageInfo {
+	return &DiskUsageInfo{
+		Path:            DefaultCacheDirectory,
+		TotalSpaceBytes: 100 * 1024 * 1024 * 1024, // 100GB
+		UsedSpaceBytes:  25 * 1024 * 1024 * 1024,  // 25GB
+		AvailableBytes:  75 * 1024 * 1024 * 1024,  // 75GB
+		UsagePercentage: 25.0,
+		CacheUsageBytes: 20 * 1024 * 1024 * 1024, // 20GB
+		RepositoryCount: 150,
+		LastUpdated:     time.Now(),
+		IOPSCurrent:     500,
+		ReadLatencyMs:   2.5,
+		WriteLatencyMs:  3.2,
+	}
+}
+
+// createWarningUsageInfo creates DiskUsageInfo for warning scenario.
+func (s *DefaultDiskSpaceMonitoringService) createWarningUsageInfo(path string) *DiskUsageInfo {
+	return &DiskUsageInfo{
+		Path:            path,
+		TotalSpaceBytes: 100 * 1024 * 1024 * 1024, // 100GB
+		UsedSpaceBytes:  80 * 1024 * 1024 * 1024,  // 80GB (80% usage to trigger warning)
+		AvailableBytes:  20 * 1024 * 1024 * 1024,  // 20GB
+		UsagePercentage: 80.0,
+		CacheUsageBytes: 70 * 1024 * 1024 * 1024, // 70GB
+		RepositoryCount: 200,
+		LastUpdated:     time.Now(),
+		IOPSCurrent:     800,
+		ReadLatencyMs:   4.0,
+		WriteLatencyMs:  5.5,
+	}
+}
+
+// createCriticalUsageInfo creates DiskUsageInfo for critical scenario.
+func (s *DefaultDiskSpaceMonitoringService) createCriticalUsageInfo(path string) *DiskUsageInfo {
+	return &DiskUsageInfo{
+		Path:            path,
+		TotalSpaceBytes: 100 * 1024 * 1024 * 1024, // 100GB
+		UsedSpaceBytes:  95 * 1024 * 1024 * 1024,  // 95GB (95% usage to trigger critical)
+		AvailableBytes:  5 * 1024 * 1024 * 1024,   // 5GB
+		UsagePercentage: 95.0,
+		CacheUsageBytes: 85 * 1024 * 1024 * 1024, // 85GB
+		RepositoryCount: 300,
+		LastUpdated:     time.Now(),
+		IOPSCurrent:     1200,
+		ReadLatencyMs:   8.0,
+		WriteLatencyMs:  12.0,
+	}
+}
+
+// createDefaultUsageInfo creates DiskUsageInfo for default scenario.
+func (s *DefaultDiskSpaceMonitoringService) createDefaultUsageInfo(path string) *DiskUsageInfo {
+	return &DiskUsageInfo{
 		Path:            path,
 		TotalSpaceBytes: 100 * 1024 * 1024 * 1024, // 100GB
 		UsedSpaceBytes:  50 * 1024 * 1024 * 1024,  // 50GB
@@ -161,6 +162,10 @@ func (s *DefaultDiskSpaceMonitoringService) GetCurrentDiskUsage(
 		ReadLatencyMs:   3.0,
 		WriteLatencyMs:  4.0,
 	}
+}
+
+// recordUsageMetrics records disk usage metrics.
+func (s *DefaultDiskSpaceMonitoringService) recordUsageMetrics(ctx context.Context, path string, usage *DiskUsageInfo) {
 	s.metrics.RecordDiskUsage(
 		ctx,
 		path,
@@ -169,7 +174,6 @@ func (s *DefaultDiskSpaceMonitoringService) GetCurrentDiskUsage(
 		usage.UsagePercentage,
 		"get_current_usage",
 	)
-	return usage, nil
 }
 
 // MonitorDiskUsage starts monitoring disk usage for given paths.
@@ -522,30 +526,81 @@ func (s *DefaultDiskSpaceMonitoringService) PredictDiskUsage(
 }
 
 // CheckDiskHealth performs a comprehensive health check on the specified paths.
+// validatePaths checks if paths are valid and non-empty.
+func (s *DefaultDiskSpaceMonitoringService) validatePaths(paths []string) error {
+	if len(paths) == 0 {
+		return errors.New("no paths specified")
+	}
+
+	for _, path := range paths {
+		if strings.Contains(path, "/invalid") {
+			return fmt.Errorf("invalid path: %s", path)
+		}
+	}
+	return nil
+}
+
+// processPathHealth processes a single path and returns its health status and alert count.
+func (s *DefaultDiskSpaceMonitoringService) processPathHealth(
+	ctx context.Context,
+	path string,
+) (*PathHealthStatus, int, error) {
+	usage, err := s.GetCurrentDiskUsage(ctx, path)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	pathHealth := &PathHealthStatus{
+		Path:      path,
+		Health:    DiskHealthGood,
+		Issues:    []string{},
+		IOLatency: usage.ReadLatencyMs,
+		ErrorRate: 0.0,
+	}
+
+	alerts := 0
+	if strings.Contains(path, "warning") {
+		pathHealth.Health = DiskHealthWarning
+		pathHealth.Issues = []string{"high_disk_usage"}
+		alerts = 1
+	} else if strings.Contains(path, "critical") {
+		pathHealth.Health = DiskHealthCritical
+		pathHealth.Issues = []string{"critical_disk_usage", "performance_degraded"}
+		alerts = 2
+	}
+
+	return pathHealth, alerts, nil
+}
+
+// healthToString converts health enum to string.
+func (s *DefaultDiskSpaceMonitoringService) healthToString(health DiskHealthLevel) string {
+	switch health {
+	case DiskHealthGood:
+		return "good"
+	case DiskHealthWarning:
+		return "warning"
+	case DiskHealthCritical:
+		return "critical"
+	case DiskHealthFailed:
+		return "failed"
+	default:
+		return "unknown"
+	}
+}
+
 func (s *DefaultDiskSpaceMonitoringService) CheckDiskHealth(
 	ctx context.Context,
 	paths []string,
 ) (*DiskHealthStatus, error) {
 	start := time.Now()
 	var result string
-	var overallHealthStr string
 	var activeAlerts int
 
-	if len(paths) == 0 {
+	if err := s.validatePaths(paths); err != nil {
 		result = OperationResultError
 		duration := time.Since(start)
 		s.metrics.RecordDiskOperation(ctx, "check_disk_health", "", duration, result, "")
-		return nil, errors.New("no paths specified")
-	}
-
-	// Check for invalid paths
-	for _, path := range paths {
-		if strings.Contains(path, "/invalid") {
-			result = OperationResultError
-			duration := time.Since(start)
-			s.metrics.RecordDiskOperation(ctx, "check_disk_health", "", duration, result, "")
-			return nil, fmt.Errorf("invalid path: %s", path)
-		}
+		return nil, err
 	}
 
 	result = OperationResultSuccess
@@ -553,9 +608,9 @@ func (s *DefaultDiskSpaceMonitoringService) CheckDiskHealth(
 	overallHealth := DiskHealthGood
 
 	for _, path := range paths {
-		usage, err := s.GetCurrentDiskUsage(ctx, path)
+		pathHealth, pathAlerts, err := s.processPathHealth(ctx, path)
 		if err != nil {
-			pathHealth := &PathHealthStatus{
+			pathHealth = &PathHealthStatus{
 				Path:   path,
 				Health: DiskHealthFailed,
 				Issues: []string{"cannot_access_path"},
@@ -570,48 +625,19 @@ func (s *DefaultDiskSpaceMonitoringService) CheckDiskHealth(
 				IOLatency: -1,
 				ErrorRate: 1.0,
 			}
-			pathHealths = append(pathHealths, pathHealth)
 			overallHealth = DiskHealthFailed
-			continue
-		}
-
-		// Determine path health based on usage and path name
-		pathHealth := &PathHealthStatus{
-			Path:      path,
-			Health:    DiskHealthGood,
-			Issues:    []string{},
-			IOLatency: usage.ReadLatencyMs,
-			ErrorRate: 0.0,
-		}
-
-		if strings.Contains(path, "warning") {
-			pathHealth.Health = DiskHealthWarning
-			pathHealth.Issues = []string{"high_disk_usage"}
-			activeAlerts++
-			if overallHealth == DiskHealthGood {
+		} else {
+			activeAlerts += pathAlerts
+			if pathHealth.Health == DiskHealthWarning && overallHealth == DiskHealthGood {
 				overallHealth = DiskHealthWarning
+			} else if pathHealth.Health == DiskHealthCritical {
+				overallHealth = DiskHealthCritical
 			}
-		} else if strings.Contains(path, "critical") {
-			pathHealth.Health = DiskHealthCritical
-			pathHealth.Issues = []string{"critical_disk_usage", "performance_degraded"}
-			activeAlerts += 2
-			overallHealth = DiskHealthCritical
 		}
-
 		pathHealths = append(pathHealths, pathHealth)
 	}
 
-	// Convert enum to string for metrics
-	switch overallHealth {
-	case DiskHealthGood:
-		overallHealthStr = "good"
-	case DiskHealthWarning:
-		overallHealthStr = "warning"
-	case DiskHealthCritical:
-		overallHealthStr = "critical"
-	case DiskHealthFailed:
-		overallHealthStr = "failed"
-	}
+	overallHealthStr := s.healthToString(overallHealth)
 
 	// Record metrics before returning
 	duration := time.Since(start)

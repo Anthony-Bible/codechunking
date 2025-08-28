@@ -883,28 +883,28 @@ func TestDiskMetrics_HistogramBuckets(t *testing.T) {
 		{
 			name:              "disk operation duration buckets for fast operations",
 			histogramName:     DiskOperationDurationHistogramName,
-			expectedBuckets:   DiskOperationLatencyBuckets,
+			expectedBuckets:   getDiskOperationLatencyBuckets(),
 			testDuration:      25 * time.Millisecond,
 			expectedBucketHit: 3, // Should hit the 0.025 (25ms) bucket
 		},
 		{
 			name:              "cleanup operation duration buckets for long operations",
 			histogramName:     CleanupOperationDurationHistogramName,
-			expectedBuckets:   CleanupDurationBuckets,
+			expectedBuckets:   getCleanupDurationBuckets(),
 			testDuration:      15 * time.Minute,
 			expectedBucketHit: 4, // Should hit the 20 minutes bucket
 		},
 		{
 			name:              "health check duration buckets for moderate operations",
 			histogramName:     DiskHealthCheckDurationHistogramName,
-			expectedBuckets:   HealthCheckLatencyBuckets,
+			expectedBuckets:   getHealthCheckLatencyBuckets(),
 			testDuration:      500 * time.Millisecond,
 			expectedBucketHit: 3, // Should hit the 1.0 second bucket
 		},
 		{
 			name:              "retention policy duration buckets for policy operations",
 			histogramName:     RetentionPolicyDurationHistogramName,
-			expectedBuckets:   PolicyOperationDurationBuckets,
+			expectedBuckets:   getPolicyOperationDurationBuckets(),
 			testDuration:      5 * time.Minute,
 			expectedBucketHit: 3, // Should hit the 10 minutes bucket
 		},

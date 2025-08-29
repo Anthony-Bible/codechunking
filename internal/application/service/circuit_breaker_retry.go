@@ -39,6 +39,9 @@ type CircuitBreaker interface {
 	// Execute executes a function with circuit breaker protection.
 	Execute(ctx context.Context, operation func() error) error
 
+	// IsOpen returns true if the circuit breaker is open.
+	IsOpen() bool
+
 	// GetState returns the current circuit breaker state.
 	GetState() CircuitBreakerState
 
@@ -249,6 +252,12 @@ func (cb *DefaultCircuitBreaker) Reset() {
 	if cb.config.OnStateChange != nil && oldState != cb.state {
 		cb.config.OnStateChange(cb.config.Name, oldState, cb.state)
 	}
+}
+
+func (cb *DefaultCircuitBreaker) IsOpen() bool {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+	return cb.state == CircuitBreakerStateOpen
 }
 
 func (cb *DefaultCircuitBreaker) GetName() string {

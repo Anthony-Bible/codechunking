@@ -406,11 +406,41 @@ For issues and questions:
 
 ## Documentation
 
-For detailed documentation, see the `/docs` directory:
+For detailed documentation, see the `/docs` directory and the project wiki:
 
+- **[Project Wiki](wiki/)**: Comprehensive configuration reference and guides
+  - [Configuration Overview](wiki/configuration/Configuration.md)
+  - [API Configuration](wiki/configuration/API-Configuration.md)
+  - [Database Configuration](wiki/configuration/Database-Configuration.md)
+  - [NATS Configuration](wiki/configuration/NATS-Configuration.md)
+  - [Worker Configuration](wiki/configuration/Worker-Configuration.md)
+  - [Gemini Configuration](wiki/configuration/Gemini-Configuration.md)
+  - [Logging Configuration](wiki/configuration/Logging-Configuration.md)
+  - [Git Configuration](wiki/configuration/Git-Configuration.md)
 - **[API Documentation](docs/api.md)**: Complete REST API reference
 - **[Development Guide](docs/development.md)**: Enhanced setup and development workflow
 - **[Deployment Guide](docs/deployment.md)**: Production deployment and scaling
+
+### Working with the Wiki
+
+The wiki is included as a Git submodule. To clone the repository with the wiki:
+
+```bash
+git clone --recurse-submodules https://github.com/yourusername/codechunking.git
+```
+
+If you've already cloned the repository, initialize and update the submodule:
+
+```bash
+git submodule init
+git submodule update
+```
+
+To update the wiki to the latest version:
+
+```bash
+git submodule update --remote wiki
+```
 
 ## Current Status
 

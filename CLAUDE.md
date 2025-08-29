@@ -19,11 +19,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `make test-integration` - Integration tests (starts Docker services)
 - `make test-coverage` - Generate coverage report
 - `make test-all` - Run all tests with coverage
+- `go test ./internal/path/to/package -v` - Run tests for specific package
+- `go test ./internal/path/to/package -run TestFunctionName -v` - Run specific test function
+- `go test ./... -timeout 10s` - Run all tests with timeout (always use timeout)
 
 ### Development Tools
 - `make install-tools` - Install goreman, migrate CLI, cobra-cli
 - `make psql` - Connect to development PostgreSQL database
 - `make nats-stream-info` - Show NATS JetStream information
+- `make nats-consumer-info` - Show NATS consumer information
+- `make logs-api` - Show API logs with JSON formatting
+- `make logs-worker` - Show worker logs with JSON formatting
 - `ast-grep` - Search for AST nodes in Go source code, favor this over regex for code parsing tasks
 
 ## Architecture Overview
@@ -45,9 +51,11 @@ This is a production-grade code chunking and semantic search system using hexago
 - **Code Parsing**: Tree-sitter for semantic code chunking
 
 ### Domain Entities
-- `Repository`: Git repository with indexing status and metadata
-- `IndexingJob`: Async job for processing repositories
-- Value Objects: `RepositoryURL`, `RepositoryStatus`, `JobStatus`
+- `Repository`: Git repository with indexing status, metadata, and file/chunk counts
+- `IndexingJob`: Async job for processing repositories with retry and error handling
+- `Alert`: Error monitoring and alerting system entities
+- `ClassifiedError`: Error classification and aggregation for monitoring
+- Value Objects: `RepositoryURL`, `RepositoryStatus`, `JobStatus`, `AlertType`, `ErrorSeverity`, `Language`, `CloneOptions`
 
 ### Configuration
 - Configuration hierarchy: CLI flags > Environment variables > Config files > Defaults
@@ -135,6 +143,7 @@ slogger.Error(ctx, "Database error", slogger.Fields{"error": err})
 - Use structured fields (`slogger.Fields{}`) instead of key-value pairs
 - The slogger package automatically handles ApplicationLogger initialization
 - All logging output maintains JSON format for production observability
+- **IMPORTANT** You are free to add important information or pages to the wiki, this serves as a place for other users to view information related to the repo
 
 ## TDD Requirements
 - **IMPORTANT** you MUST Use tdd, the @agent-red-phase-tester for writing failing tests, @agent-green-phase-implementer for getting tests passing, and finally @agent-tdd-refactor-specialist for the refactor phase of tdd, this will ensure a well written and clean program and code

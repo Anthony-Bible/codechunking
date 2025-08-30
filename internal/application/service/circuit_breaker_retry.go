@@ -137,8 +137,8 @@ func (cb *DefaultCircuitBreaker) Execute(ctx context.Context, operation func() e
 }
 
 func (cb *DefaultCircuitBreaker) canExecute() bool {
-	cb.mu.RLock()
-	defer cb.mu.RUnlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 
 	switch cb.state {
 	case CircuitBreakerStateClosed:
@@ -146,10 +146,13 @@ func (cb *DefaultCircuitBreaker) canExecute() bool {
 	case CircuitBreakerStateOpen:
 		// Check if we should transition to half-open
 		if time.Since(cb.lastFailure) > cb.config.OpenTimeout {
-			cb.mu.RUnlock()
-			cb.mu.Lock()
-			defer cb.mu.Unlock()
+			oldState := cb.state
 			cb.state = CircuitBreakerStateHalfOpen
+			// Reset success count when transitioning to half-open to count successes from this point
+			cb.successCount = 0
+			if cb.config.OnStateChange != nil {
+				cb.config.OnStateChange(cb.config.Name, oldState, cb.state)
+			}
 			return true
 		}
 		return false
@@ -174,30 +177,32 @@ func (cb *DefaultCircuitBreaker) recordResult(err error) {
 
 func (cb *DefaultCircuitBreaker) recordFailure() {
 	cb.failureCount++
-	cb.lastFailure = time.Now()
 
 	// Handle state transitions on failure
 	switch cb.state {
 	case CircuitBreakerStateClosed:
+		cb.lastFailure = time.Now() // Update failure time in closed state
 		if cb.failureCount >= cb.config.FailureThreshold {
 			cb.transitionToOpen()
 		}
 	case CircuitBreakerStateHalfOpen:
+		cb.lastFailure = time.Now() // Update failure time when failing in half-open
 		// Go back to open on failure in half-open state
 		cb.transitionToOpen()
 	case CircuitBreakerStateOpen:
-		// Already open, no state transition needed
+		// Already open, don't update lastFailure to allow timeout to work
 	}
 }
 
 func (cb *DefaultCircuitBreaker) recordSuccess() {
-	cb.successCount++
-
-	// Reset failure count on success
+	// Handle state-specific success logic
 	switch cb.state {
 	case CircuitBreakerStateClosed:
 		cb.failureCount = 0
+		cb.successCount = 0 // Reset success count in closed state
 	case CircuitBreakerStateHalfOpen:
+		// Count consecutive successes in half-open state
+		cb.successCount++
 		// Check if we have enough successes to close
 		if cb.successCount >= cb.config.SuccessThreshold {
 			cb.transitionToClosed()
@@ -210,6 +215,10 @@ func (cb *DefaultCircuitBreaker) recordSuccess() {
 func (cb *DefaultCircuitBreaker) transitionToOpen() {
 	oldState := cb.state
 	cb.state = CircuitBreakerStateOpen
+	// Reset success count when opening (failures will accumulate until threshold)
+	cb.successCount = 0
+	// Set the lastFailure to now so timeout is calculated from when circuit opens
+	cb.lastFailure = time.Now()
 	if cb.config.OnStateChange != nil {
 		cb.config.OnStateChange(cb.config.Name, oldState, cb.state)
 	}
@@ -226,8 +235,19 @@ func (cb *DefaultCircuitBreaker) transitionToClosed() {
 }
 
 func (cb *DefaultCircuitBreaker) GetState() CircuitBreakerState {
-	cb.mu.RLock()
-	defer cb.mu.RUnlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	// Check if we should transition from open to half-open
+	if cb.state == CircuitBreakerStateOpen && time.Since(cb.lastFailure) > cb.config.OpenTimeout {
+		oldState := cb.state
+		cb.state = CircuitBreakerStateHalfOpen
+		cb.successCount = 0
+		if cb.config.OnStateChange != nil {
+			cb.config.OnStateChange(cb.config.Name, oldState, cb.state)
+		}
+	}
+
 	return cb.state
 }
 
@@ -269,6 +289,13 @@ func (cb *DefaultCircuitBreaker) GetName() string {
 	return cb.config.Name
 }
 
+// getLastFailureTime returns the time of the last failure for timing calculations.
+func (cb *DefaultCircuitBreaker) getLastFailureTime() time.Time {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+	return cb.lastFailure
+}
+
 // DefaultRetryWithCircuitBreaker combines retry policy with circuit breaker.
 type DefaultRetryWithCircuitBreaker struct {
 	retryPolicy    RetryPolicy
@@ -278,13 +305,103 @@ type DefaultRetryWithCircuitBreaker struct {
 	mu             sync.RWMutex
 }
 
+// ReliableCircuitBreakerAdapter adapts ReliableCircuitBreaker to CircuitBreaker interface.
+type ReliableCircuitBreakerAdapter struct {
+	reliable ReliableCircuitBreaker
+}
+
+func (r *ReliableCircuitBreakerAdapter) Execute(ctx context.Context, operation func() error) error {
+	// Check context cancellation
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return r.reliable.Execute(operation)
+}
+
+func (r *ReliableCircuitBreakerAdapter) IsOpen() bool {
+	return r.reliable.IsOpen()
+}
+
+func (r *ReliableCircuitBreakerAdapter) GetState() CircuitBreakerState {
+	stateStr := r.reliable.GetState()
+	switch stateStr {
+	case CircuitBreakerStateClosedStr:
+		return CircuitBreakerStateClosed
+	case CircuitBreakerStateOpenStr:
+		return CircuitBreakerStateOpen
+	case CircuitBreakerStateHalfOpenStr:
+		return CircuitBreakerStateHalfOpen
+	default:
+		return CircuitBreakerStateClosed
+	}
+}
+
+func (r *ReliableCircuitBreakerAdapter) GetFailureCount() int {
+	if statsProvider, ok := r.reliable.(interface {
+		GetStatistics() CircuitBreakerStatistics
+	}); ok {
+		stats := statsProvider.GetStatistics()
+		return int(stats.ConsecutiveFailures)
+	}
+	return 0
+}
+
+func (r *ReliableCircuitBreakerAdapter) GetSuccessCount() int {
+	if statsProvider, ok := r.reliable.(interface {
+		GetStatistics() CircuitBreakerStatistics
+	}); ok {
+		stats := statsProvider.GetStatistics()
+		return int(stats.ConsecutiveSuccesses)
+	}
+	return 0
+}
+
+func (r *ReliableCircuitBreakerAdapter) Reset() {
+	if resetter, ok := r.reliable.(interface{ Reset() }); ok {
+		resetter.Reset()
+	}
+}
+
+func (r *ReliableCircuitBreakerAdapter) GetName() string {
+	return "reliable_circuit_breaker"
+}
+
 // NewRetryWithCircuitBreaker creates a new retry with circuit breaker instance.
 func NewRetryWithCircuitBreaker(config RetryCircuitBreakerConfig) (RetryWithCircuitBreaker, error) {
 	// Create circuit breaker
 	circuitBreaker := NewCircuitBreaker(config.CircuitBreakerConfig)
 
-	// Create retry policy
-	retryPolicy := NewExponentialBackoffPolicy(config.RetryPolicyConfig)
+	// Create retry policy - use failure-type-specific if adaptive behavior is enabled
+	var retryPolicy RetryPolicy
+	if config.AdaptiveBehavior {
+		// Create failure-type-specific policies
+		policyMap := map[FailureType]RetryPolicyConfig{
+			FailureTypeNetwork:        config.RetryPolicyConfig, // Full retry for network errors
+			FailureTypeAuthentication: config.RetryPolicyConfig, // Full retry for auth errors
+			FailureTypeDiskSpace: {
+				MaxAttempts:       1, // No retry for disk space errors
+				BaseDelay:         0,
+				MaxDelay:          0,
+				BackoffMultiplier: 0,
+				JitterEnabled:     false,
+			},
+			FailureTypeRepositoryAccess: config.RetryPolicyConfig, // Full retry for repo access errors
+			FailureTypeNATSMessaging:    config.RetryPolicyConfig, // Full retry for NATS errors
+			FailureTypeCircuitBreaker: {
+				MaxAttempts:       5,                                       // Allow enough retries for circuit breaker recovery scenarios
+				BaseDelay:         config.CircuitBreakerConfig.OpenTimeout, // Use circuit breaker timeout as delay
+				MaxDelay:          config.CircuitBreakerConfig.OpenTimeout,
+				BackoffMultiplier: 1, // No exponential backoff for circuit breaker
+				JitterEnabled:     false,
+			},
+			FailureTypeTimeout:   config.RetryPolicyConfig, // Full retry for timeout errors
+			FailureTypeRateLimit: config.RetryPolicyConfig, // Full retry for rate limit errors
+			FailureTypeUnknown:   config.RetryPolicyConfig, // Full retry for unknown errors
+		}
+		retryPolicy = NewFailureTypeSpecificPolicy(policyMap)
+	} else {
+		retryPolicy = NewExponentialBackoffPolicy(config.RetryPolicyConfig)
+	}
 
 	// Create metrics
 	metrics, err := NewRetryMetrics(config.MetricsConfig)
@@ -309,15 +426,7 @@ func (r *DefaultRetryWithCircuitBreaker) ExecuteWithRetry(ctx context.Context, o
 	startTime := time.Now()
 
 	for {
-		// Check circuit breaker state first
-		cbState := r.circuitBreaker.GetState()
-		if cbState == CircuitBreakerStateOpen {
-			// Record circuit breaker event
-			r.metrics.RecordCircuitBreakerEvent(ctx, CircuitBreakerStateOpenStr, "retry_operation")
-			return errors.New("circuit breaker open")
-		}
-
-		// Execute through circuit breaker
+		// Execute through circuit breaker (let it handle state transitions)
 		err := r.circuitBreaker.Execute(ctx, operation)
 
 		if err == nil {
@@ -331,6 +440,7 @@ func (r *DefaultRetryWithCircuitBreaker) ExecuteWithRetry(ctx context.Context, o
 
 		// Check if we should retry
 		shouldRetry, delay := r.retryPolicy.ShouldRetry(ctx, err, attempt)
+
 		if !shouldRetry {
 			// Exhausted - record metrics and return error
 			totalDuration := time.Since(startTime)
@@ -351,11 +461,29 @@ func (r *DefaultRetryWithCircuitBreaker) ExecuteWithRetry(ctx context.Context, o
 		r.metrics.RecordRetryFailure(ctx, attempt, failureType, err, "retry_operation")
 		r.metrics.RecordRetryDelay(ctx, delay, attempt, r.retryPolicy.GetPolicyName())
 
+		// For circuit breaker open errors, ensure we wait long enough for the circuit to potentially recover
+		actualDelay := delay
+		if err.Error() == "circuit breaker open" {
+			if cb, ok := r.circuitBreaker.(*DefaultCircuitBreaker); ok {
+				// Calculate how much time is left until circuit can transition to half-open
+				timeElapsed := time.Since(cb.getLastFailureTime())
+				timeRemaining := cb.config.OpenTimeout - timeElapsed
+
+				// If there's still time remaining, wait for it plus a buffer
+				if timeRemaining > 0 {
+					actualDelay = timeRemaining + 100*time.Millisecond // Increased buffer for reliability
+				} else {
+					// Circuit should already be able to transition, use a minimal delay
+					actualDelay = 10 * time.Millisecond
+				}
+			}
+		}
+
 		// Wait for delay (respecting context cancellation)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(delay):
+		case <-time.After(actualDelay):
 			// Continue to next attempt
 		}
 

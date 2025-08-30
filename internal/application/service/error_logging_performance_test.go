@@ -2,7 +2,6 @@ package service
 
 import (
 	"codechunking/internal/application/common/logging"
-	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/valueobject"
 	"context"
@@ -21,8 +20,8 @@ import (
 func TestErrorLoggingService_NonBlockingProcessing(t *testing.T) {
 	t.Run("should process errors asynchronously without blocking caller", func(t *testing.T) {
 		mockLogger := new(MockApplicationLogger)
-		mockLogger.On("Error", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("string"),
-			mock.AnythingOfType("slogger.Fields")).Return()
+		mockLogger.On("Error", mock.Anything, mock.AnythingOfType("string"),
+			mock.AnythingOfType("logging.Fields")).Return()
 
 		// Create async error logging service
 		asyncService := NewAsyncErrorLoggingService(mockLogger, 100) // buffer size 100
@@ -50,10 +49,10 @@ func TestErrorLoggingService_NonBlockingProcessing(t *testing.T) {
 
 	t.Run("should handle buffer overflow gracefully", func(t *testing.T) {
 		mockLogger := new(MockApplicationLogger)
-		mockLogger.On("Error", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("string"),
-			mock.AnythingOfType("slogger.Fields")).Return().Maybe()
-		mockLogger.On("Warn", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("string"),
-			mock.MatchedBy(func(fields slogger.Fields) bool {
+		mockLogger.On("Error", mock.Anything, mock.AnythingOfType("string"),
+			mock.AnythingOfType("logging.Fields")).Return().Maybe()
+		mockLogger.On("Warn", mock.Anything, mock.AnythingOfType("string"),
+			mock.MatchedBy(func(fields logging.Fields) bool {
 				return fields["dropped_errors"] != nil
 			})).Return()
 
@@ -86,8 +85,8 @@ func TestErrorLoggingService_NonBlockingProcessing(t *testing.T) {
 
 		mockLogger := new(MockApplicationLogger)
 		// Use Maybe() since we can't predict exact call count due to async nature
-		mockLogger.On("Error", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("string"),
-			mock.AnythingOfType("slogger.Fields")).Return().Maybe()
+		mockLogger.On("Error", mock.Anything, mock.AnythingOfType("string"),
+			mock.AnythingOfType("logging.Fields")).Return().Maybe()
 
 		asyncService := NewAsyncErrorLoggingService(mockLogger, 1000)
 
@@ -431,8 +430,8 @@ func TestErrorLoggingService_GracefulShutdown(t *testing.T) {
 		mockLogger := new(MockApplicationLogger)
 
 		// Expect all errors to be processed
-		mockLogger.On("Error", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("string"),
-			mock.AnythingOfType("slogger.Fields")).Return().Times(10)
+		mockLogger.On("Error", mock.Anything, mock.AnythingOfType("string"),
+			mock.AnythingOfType("logging.Fields")).Return().Times(10)
 
 		asyncService := NewAsyncErrorLoggingService(mockLogger, 20)
 
@@ -458,8 +457,8 @@ func TestErrorLoggingService_GracefulShutdown(t *testing.T) {
 		mockLogger := new(MockApplicationLogger)
 
 		// Simulate slow processing
-		mockLogger.On("Error", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("string"),
-			mock.AnythingOfType("slogger.Fields")).Return().WaitUntil(time.After(time.Millisecond * 100))
+		mockLogger.On("Error", mock.Anything, mock.AnythingOfType("string"),
+			mock.AnythingOfType("logging.Fields")).Return().WaitUntil(time.After(time.Millisecond * 100))
 
 		asyncService := NewAsyncErrorLoggingService(mockLogger, 20)
 
@@ -534,164 +533,128 @@ type AsyncErrorLoggingService interface {
 	Shutdown(ctx context.Context) error
 }
 
-// Constructor functions that should be implemented.
+// Constructor functions that use the real implementations.
 func NewErrorBuffer(size int) ErrorBuffer {
-	return &mockErrorBuffer{size: size}
+	return NewCircularErrorBuffer(size)
 }
 
 func NewAlertDeliveryCircuitBreaker(failureThreshold int, recoveryTimeout time.Duration) AlertDeliveryCircuitBreaker {
-	return &mockCircuitBreaker{failureThreshold: failureThreshold, recoveryTimeout: recoveryTimeout}
+	return &realCircuitBreakerAdapter{
+		failureThreshold: failureThreshold,
+		recoveryTimeout:  recoveryTimeout,
+		realCB:           NewReliableCircuitBreaker(failureThreshold, recoveryTimeout),
+	}
 }
 
 func NewAlertDeduplicator(window time.Duration) AlertDeduplicator {
-	return &mockDeduplicator{window: window}
+	return &realAlertDeduplicatorAdapter{
+		window:    window,
+		realDedup: NewSmartAlertDeduplicator(window),
+	}
 }
 
 func NewAsyncErrorLoggingService(logger logging.ApplicationLogger, bufferSize int) AsyncErrorLoggingService {
-	return &mockAsyncService{logger: logger, bufferSize: bufferSize}
-}
-
-// Mock implementations for testing.
-type mockErrorBuffer struct {
-	errors []*entity.ClassifiedError
-	size   int
-}
-
-func (m *mockErrorBuffer) Add(_ *entity.ClassifiedError) bool { return true }
-func (m *mockErrorBuffer) Size() int                          { return len(m.errors) }
-func (m *mockErrorBuffer) IsFull() bool                       { return len(m.errors) >= m.size }
-func (m *mockErrorBuffer) GetAll() []*entity.ClassifiedError  { return m.errors }
-func (m *mockErrorBuffer) GetBatch(count int) []*entity.ClassifiedError {
-	if count > len(m.errors) {
-		count = len(m.errors)
+	return &realAsyncErrorLoggingAdapter{
+		logger:      logger,
+		bufferSize:  bufferSize,
+		realService: NewNonBlockingErrorLoggingService(logger, bufferSize),
 	}
-	return m.errors[:count]
 }
-func (m *mockErrorBuffer) Clear()                { m.errors = nil }
-func (m *mockErrorBuffer) GetMemoryUsage() int64 { return int64(len(m.errors) * 1000) } // Rough estimate
 
-type mockCircuitBreaker struct {
-	failures         int
-	isOpen           bool
+// Adapter implementations that use real components.
+type realCircuitBreakerAdapter struct {
 	failureThreshold int
 	recoveryTimeout  time.Duration
-	lastFailure      time.Time
-	totalCalls       int64
-	successfulCalls  int64
-	failedCalls      int64
+	realCB           interface {
+		Execute(fn func() error) error
+		IsOpen() bool
+	}
 }
 
-func (m *mockCircuitBreaker) Execute(fn func() error) error {
-	m.totalCalls++
-	if m.isOpen && time.Since(m.lastFailure) < m.recoveryTimeout {
-		return errors.New("circuit breaker is open")
-	}
+func (r *realCircuitBreakerAdapter) Execute(fn func() error) error {
+	return r.realCB.Execute(fn)
+}
 
-	err := fn()
-	if err != nil {
-		m.failures++
-		m.failedCalls++
-		m.lastFailure = time.Now()
-		if m.failures >= m.failureThreshold {
-			m.isOpen = true
+func (r *realCircuitBreakerAdapter) IsOpen() bool {
+	return r.realCB.IsOpen()
+}
+
+func (r *realCircuitBreakerAdapter) GetStatistics() CircuitBreakerStats {
+	// Delegate to the underlying ReliableCircuitBreaker and convert to expected format
+	if reliableCB, ok := r.realCB.(interface {
+		GetStatistics() CircuitBreakerStatistics
+	}); ok {
+		stats := reliableCB.GetStatistics()
+		return CircuitBreakerStats{
+			TotalCalls:      stats.TotalCalls,
+			SuccessfulCalls: stats.SuccessfulCalls,
+			FailedCalls:     stats.FailedCalls,
+			SuccessRate:     stats.SuccessRate,
+			FailureRate:     stats.FailureRate,
 		}
-		return err
 	}
-
-	m.failures = 0
-	m.isOpen = false
-	m.successfulCalls++
-	return nil
-}
-
-func (m *mockCircuitBreaker) IsOpen() bool {
-	if m.isOpen && time.Since(m.lastFailure) >= m.recoveryTimeout {
-		return false // Half-open state
-	}
-	return m.isOpen
-}
-
-func (m *mockCircuitBreaker) GetStatistics() CircuitBreakerStats {
+	// Fallback to default stats if underlying implementation doesn't support GetStatistics
 	return CircuitBreakerStats{
-		TotalCalls:      m.totalCalls,
-		SuccessfulCalls: m.successfulCalls,
-		FailedCalls:     m.failedCalls,
-		SuccessRate:     float64(m.successfulCalls) / float64(m.totalCalls),
-		FailureRate:     float64(m.failedCalls) / float64(m.totalCalls),
+		TotalCalls:      0,
+		SuccessfulCalls: 0,
+		FailedCalls:     0,
+		SuccessRate:     0.0,
+		FailureRate:     0.0,
 	}
 }
 
-type mockDeduplicator struct {
-	window     time.Duration
-	recorded   map[string]time.Time
-	duplicates map[string]int
-}
-
-func (m *mockDeduplicator) IsDuplicate(alert *entity.Alert) (bool, error) {
-	if m.recorded == nil {
-		m.recorded = make(map[string]time.Time)
+type realAlertDeduplicatorAdapter struct {
+	window    time.Duration
+	realDedup interface {
+		IsDuplicate(alert *entity.Alert) (bool, error)
+		RecordAlert(alert *entity.Alert) error
 	}
+}
 
-	key := alert.DeduplicationKey()
-	if lastSeen, exists := m.recorded[key]; exists {
-		if time.Since(lastSeen) < m.window {
-			return true, nil
-		}
+func (r *realAlertDeduplicatorAdapter) IsDuplicate(alert *entity.Alert) (bool, error) {
+	return r.realDedup.IsDuplicate(alert)
+}
+
+func (r *realAlertDeduplicatorAdapter) RecordAlert(alert *entity.Alert) error {
+	return r.realDedup.RecordAlert(alert)
+}
+
+func (r *realAlertDeduplicatorAdapter) TrackDuplicate(_ *entity.Alert) {
+	// Track duplicate - may be implemented differently in real deduplicator
+}
+
+func (r *realAlertDeduplicatorAdapter) GetDuplicateCount(_ string) int {
+	// Return a default count for now
+	return 0
+}
+
+func (r *realAlertDeduplicatorAdapter) ShouldSuppress(_ string, _ int) bool {
+	// Return false for now - may need different logic
+	return false
+}
+
+type realAsyncErrorLoggingAdapter struct {
+	logger      logging.ApplicationLogger
+	bufferSize  int
+	realService interface {
+		LogAndClassifyError(ctx context.Context, err error, component string, severity *valueobject.ErrorSeverity) error
+		Shutdown(ctx context.Context) error
 	}
-	return false, nil
 }
 
-func (m *mockDeduplicator) RecordAlert(alert *entity.Alert) error {
-	if m.recorded == nil {
-		m.recorded = make(map[string]time.Time)
-	}
-	m.recorded[alert.DeduplicationKey()] = time.Now()
-	return nil
-}
-
-func (m *mockDeduplicator) TrackDuplicate(alert *entity.Alert) {
-	if m.duplicates == nil {
-		m.duplicates = make(map[string]int)
-	}
-	m.duplicates[alert.DeduplicationKey()]++
-}
-
-func (m *mockDeduplicator) GetDuplicateCount(deduplicationKey string) int {
-	if m.duplicates == nil {
-		return 0
-	}
-	return m.duplicates[deduplicationKey]
-}
-
-func (m *mockDeduplicator) ShouldSuppress(deduplicationKey string, threshold int) bool {
-	return m.GetDuplicateCount(deduplicationKey) >= threshold
-}
-
-type mockAsyncService struct {
-	logger     logging.ApplicationLogger
-	bufferSize int
-}
-
-func (m *mockAsyncService) LogAndClassifyError(
-	_ context.Context,
-	_ error,
-	_ string,
-	_ *valueobject.ErrorSeverity,
+func (r *realAsyncErrorLoggingAdapter) LogAndClassifyError(
+	ctx context.Context,
+	err error,
+	component string,
+	severity *valueobject.ErrorSeverity,
 ) error {
-	// Simulate async processing - just return nil for now
-	return nil
+	return r.realService.LogAndClassifyError(ctx, err, component, severity)
 }
 
-func (m *mockAsyncService) Flush() {
-	// Simulate flush
+func (r *realAsyncErrorLoggingAdapter) Flush() {
+	// Flush operation - may be different in real implementation
 }
 
-func (m *mockAsyncService) Shutdown(ctx context.Context) error {
-	// Simulate graceful shutdown
-	select {
-	case <-ctx.Done():
-		return fmt.Errorf("shutdown timeout: %w", ctx.Err())
-	case <-time.After(time.Millisecond * 10): // Simulate quick shutdown
-		return nil
-	}
+func (r *realAsyncErrorLoggingAdapter) Shutdown(ctx context.Context) error {
+	return r.realService.Shutdown(ctx)
 }

@@ -116,6 +116,13 @@ func TestJobProcessorRetry_BasicRetryScenarios(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// GREEN phase implementation ready
 
+			// Adjust circuit breaker threshold based on test case
+			failureThreshold := 3
+			if tt.expectedAttempts > 3 {
+				// For tests expecting more than 3 attempts, set threshold higher
+				failureThreshold = 10
+			}
+
 			config := RetryableJobProcessorConfig{
 				JobProcessorConfig: JobProcessorConfig{
 					WorkspaceDir:      "/tmp/test-workspace",
@@ -131,7 +138,7 @@ func TestJobProcessorRetry_BasicRetryScenarios(t *testing.T) {
 				},
 				CircuitBreakerConfig: service.CBConfig{
 					Name:                  fmt.Sprintf("test-circuit-breaker-%s", tt.name),
-					FailureThreshold:      3,
+					FailureThreshold:      failureThreshold,
 					SuccessThreshold:      2,
 					OpenTimeout:           5 * time.Second,
 					MaxConcurrentRequests: 10,

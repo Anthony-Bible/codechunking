@@ -31,45 +31,63 @@ func TestNewFilterRule_ValidInputs(t *testing.T) {
 				t.Fatalf("NewFilterRule() error = %v", err)
 			}
 
-			if rule.Name() != tt.ruleName {
-				t.Errorf("Name() = %v, want %v", rule.Name(), tt.ruleName)
-			}
-
-			if rule.Pattern() != tt.pattern {
-				t.Errorf("Pattern() = %v, want %v", rule.Pattern(), tt.pattern)
-			}
-
-			if rule.RuleType() != tt.ruleType {
-				t.Errorf("RuleType() = %v, want %v", rule.RuleType(), tt.ruleType)
-			}
-
-			if rule.Action() != tt.action {
-				t.Errorf("Action() = %v, want %v", rule.Action(), tt.action)
-			}
-
-			// Default values
-			if rule.Priority() != 0 {
-				t.Errorf("Priority() = %v, want 0", rule.Priority())
-			}
-
-			if !rule.IsEnabled() {
-				t.Error("IsEnabled() should be true by default")
-			}
-
-			if rule.Description() != "" {
-				t.Errorf("Description() = %v, want empty", rule.Description())
-			}
-
-			if rule.ID() == "" {
-				t.Error("ID() should not be empty")
-			}
-
-			// Metadata should be non-nil
-			metadata := rule.Metadata()
-			if metadata == nil {
-				t.Error("Metadata() should not be nil")
-			}
+			validateRuleProperties(t, rule, tt.ruleName, tt.pattern, tt.ruleType, tt.action)
+			validateRuleDefaults(t, rule)
 		})
+	}
+}
+
+// validateRuleProperties validates the basic properties of a filter rule.
+func validateRuleProperties(
+	t *testing.T,
+	rule FilterRule,
+	expectedName, expectedPattern string,
+	expectedType FilterRuleType,
+	expectedAction FilterAction,
+) {
+	t.Helper()
+
+	if rule.Name() != expectedName {
+		t.Errorf("Name() = %v, want %v", rule.Name(), expectedName)
+	}
+
+	if rule.Pattern() != expectedPattern {
+		t.Errorf("Pattern() = %v, want %v", rule.Pattern(), expectedPattern)
+	}
+
+	if rule.RuleType() != expectedType {
+		t.Errorf("RuleType() = %v, want %v", rule.RuleType(), expectedType)
+	}
+
+	if rule.Action() != expectedAction {
+		t.Errorf("Action() = %v, want %v", rule.Action(), expectedAction)
+	}
+}
+
+// validateRuleDefaults validates the default values of a filter rule.
+func validateRuleDefaults(t *testing.T, rule FilterRule) {
+	t.Helper()
+
+	if rule.Priority() != 0 {
+		t.Errorf("Priority() = %v, want 0", rule.Priority())
+	}
+
+	if !rule.IsEnabled() {
+		t.Error("IsEnabled() should be true by default")
+	}
+
+	if rule.Description() != "" {
+		t.Errorf("Description() = %v, want empty", rule.Description())
+	}
+
+	if rule.ID() == "" {
+		t.Error("ID() should not be empty")
+	}
+
+	// Metadata should be non-nil
+	metadata := rule.Metadata()
+	if metadata == nil {
+		t.Error("Metadata() should not be nil")
 	}
 }
 
@@ -295,8 +313,8 @@ func TestFilterRule_Matches_ContentPattern(t *testing.T) {
 	}{
 		{"Go package", "package main\n\nfunc main() {}", true},
 		{"Go package with spaces", "package   utils", true},
-		{"No match", "import fmt", true}, // Simplified implementation returns true
-		{"Empty content", "", true},      // Simplified implementation returns true
+		{"No match", "import fmt", false}, // Regex doesn't match import statement
+		{"Empty content", "", false},      // Regex doesn't match empty content
 	}
 
 	for _, tt := range tests {
@@ -518,8 +536,8 @@ func TestFilterRule_Equal(t *testing.T) {
 		t.Error("Rules with different IDs should not be equal")
 	}
 
-	// Same rule should be equal to itself
-	if !rule1.Equal(rule1) {
+	// Same rule should be equal to itself (reflexivity property)
+	if !rule1.Equal(rule1) { //nolint:gocritic // Testing reflexivity property is intentional
 		t.Error("Rule should be equal to itself")
 	}
 

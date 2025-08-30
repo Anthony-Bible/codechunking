@@ -47,8 +47,7 @@ func TestClassifiedError_Creation(t *testing.T) {
 	})
 
 	t.Run("should create classified error with component from context", func(t *testing.T) {
-		type contextKey string
-		ctx := context.WithValue(context.Background(), contextKey("component"), "repository-service")
+		ctx := context.WithValue(context.Background(), componentContextKey, "repository-service")
 		severity, _ := valueobject.NewErrorSeverity("ERROR")
 
 		classifiedError, err := NewClassifiedError(
@@ -65,8 +64,7 @@ func TestClassifiedError_Creation(t *testing.T) {
 	})
 
 	t.Run("should create classified error with correlation ID from context", func(t *testing.T) {
-		type contextKey string
-		ctx := context.WithValue(context.Background(), contextKey("correlation_id"), "test-correlation-123")
+		ctx := context.WithValue(context.Background(), correlationIDContextKey, "test-correlation-123")
 		severity, _ := valueobject.NewErrorSeverity("WARNING")
 
 		classifiedError, err := NewClassifiedError(

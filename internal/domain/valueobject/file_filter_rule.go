@@ -236,7 +236,7 @@ func generateFilterRuleID(name string, ruleType FilterRuleType) string {
 	return fmt.Sprintf("%s_%s_%d",
 		strings.ToLower(strings.ReplaceAll(name, " ", "_")),
 		ruleType.String(),
-		time.Now().Unix())
+		time.Now().UnixNano())
 }
 
 // copyMetadata creates a deep copy of metadata map.

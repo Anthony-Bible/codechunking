@@ -4,6 +4,7 @@ import (
 	"codechunking/internal/application/common/logging"
 	"codechunking/internal/domain/entity"
 	"context"
+	"errors"
 )
 
 // AlertingService handles alert delivery concerns.
@@ -89,8 +90,18 @@ func (s *AlertingService) extractCorrelationID(ctx context.Context) string {
 }
 
 // SendAlertWithCircuitBreaker sends an alert using circuit breaker pattern.
-func (s *AlertingService) SendAlertWithCircuitBreaker(ctx context.Context, _ *entity.Alert) error {
+func (s *AlertingService) SendAlertWithCircuitBreaker(ctx context.Context, alert *entity.Alert) error {
 	if s.circuitBreaker != nil {
+		// Check if circuit breaker is open first
+		if s.circuitBreaker.IsOpen() {
+			// Log circuit breaker state
+			s.logger.Warn(ctx, "Circuit breaker is open, cannot send alert", map[string]interface{}{
+				"circuit_breaker_state": "open",
+				"alert_id":              alert.ID(),
+			})
+			return errors.New("circuit breaker is open")
+		}
+
 		return s.circuitBreaker.Execute(ctx, func() error {
 			// Minimal implementation - would integrate with actual alerting system
 			return nil

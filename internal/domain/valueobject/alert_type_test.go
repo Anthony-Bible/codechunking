@@ -96,14 +96,14 @@ func TestAlertType_DeliveryCharacteristics(t *testing.T) {
 	t.Run("real-time alerts should require immediate delivery", func(t *testing.T) {
 		realTime, _ := NewAlertType("REAL_TIME")
 		assert.True(t, realTime.RequiresImmediateDelivery())
-		assert.InEpsilon(t, 0.0, realTime.MaxDeliveryDelay().Seconds(), 0.001)
+		assert.InDelta(t, 0.0, realTime.MaxDeliveryDelay().Seconds(), 0.001)
 		assert.Equal(t, 3, realTime.MaxRetryAttempts())
 	})
 
 	t.Run("cascade alerts should require immediate delivery", func(t *testing.T) {
 		cascade, _ := NewAlertType("CASCADE")
 		assert.True(t, cascade.RequiresImmediateDelivery())
-		assert.InEpsilon(t, 0.0, cascade.MaxDeliveryDelay().Seconds(), 0.001)
+		assert.InDelta(t, 0.0, cascade.MaxDeliveryDelay().Seconds(), 0.001)
 		assert.Equal(t, 5, cascade.MaxRetryAttempts()) // More retries for cascade
 	})
 

@@ -81,23 +81,7 @@ func (p *IntegratedFileProcessor) ProcessFile(
 	}
 
 	// 2. Check if file is a symlink
-	isSymlink, err := p.symlinkResolver.IsSymlink(ctx, filePath)
-	if err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("symlink detection error: %v", err))
-	} else {
-		result.IsSymlink = isSymlink
-		if isSymlink {
-			symlinkInfo, err := p.symlinkResolver.ResolveSymlink(ctx, filePath)
-			if err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("symlink resolution error: %v", err))
-			} else {
-				result.SymlinkInfo = symlinkInfo
-				result.ProcessingPath = symlinkInfo.ResolvedPath()
-				result.Metadata["symlink_target"] = symlinkInfo.TargetPath()
-				result.Metadata["symlink_scope"] = symlinkInfo.Scope().String()
-			}
-		}
-	}
+	p.handleSymlinkProcessing(ctx, filePath, result)
 
 	// 3. Apply file filtering
 	filterDecision, err := p.fileFilter.ShouldProcessFile(ctx, result.ProcessingPath, fileInfo)
@@ -114,6 +98,35 @@ func (p *IntegratedFileProcessor) ProcessFile(
 	result.ProcessingTime = time.Since(start)
 
 	return result, nil
+}
+
+// handleSymlinkProcessing handles symlink detection and resolution with reduced nesting complexity.
+func (p *IntegratedFileProcessor) handleSymlinkProcessing(
+	ctx context.Context,
+	filePath string,
+	result *ProcessingResult,
+) {
+	isSymlink, err := p.symlinkResolver.IsSymlink(ctx, filePath)
+	if err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("symlink detection error: %v", err))
+		return
+	}
+
+	result.IsSymlink = isSymlink
+	if !isSymlink {
+		return
+	}
+
+	symlinkInfo, err := p.symlinkResolver.ResolveSymlink(ctx, filePath)
+	if err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("symlink resolution error: %v", err))
+		return
+	}
+
+	result.SymlinkInfo = symlinkInfo
+	result.ProcessingPath = symlinkInfo.ResolvedPath()
+	result.Metadata["symlink_target"] = symlinkInfo.TargetPath()
+	result.Metadata["symlink_scope"] = symlinkInfo.Scope().String()
 }
 
 // applyIntegratedRules applies rules that combine file filtering with submodule/symlink handling.
@@ -312,61 +325,72 @@ func TestFileProcessingIntegration_SubmodulePolicyIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create test setup
-			tempDir := t.TempDir()
-			processor := createIntegratedProcessor(tempDir)
-
-			// Create submodule info with specific depth
-			submoduleInfo, err := valueobject.NewSubmoduleInfo(
-				"libs/module",
-				"module",
-				"https://github.com/example/module.git",
-			)
-			if err != nil {
-				t.Fatalf("Failed to create submodule info: %v", err)
-			}
-
-			// Set nesting information
-			isNested := tt.submoduleDepth > 0
-			parentPath := ""
-			if isNested {
-				parentPath = "parent/module"
-			}
-			submoduleInfo, err = submoduleInfo.WithNesting(isNested, tt.submoduleDepth, parentPath)
-			if err != nil {
-				t.Fatalf("Failed to set submodule nesting: %v", err)
-			}
-
-			// Create processing result with submodule
-			result := &ProcessingResult{
-				FileInfo: outbound.FileInfo{
-					Path: "libs/module/file.go",
-					Size: 1024,
-				},
-				FilterDecision: outbound.FilterDecision{
-					ShouldProcess: true,
-				},
-				IsInSubmodule: true,
-				SubmoduleInfo: &submoduleInfo,
-				Metadata:      make(map[string]interface{}),
-			}
-
-			// Apply integrated rules
-			finalDecision := processor.applyIntegratedRules(result)
-
-			if finalDecision != tt.expectedProcess {
-				t.Errorf("Expected process decision %v, got %v", tt.expectedProcess, finalDecision)
-			}
-
-			if tt.expectedSkipReason != "" {
-				skipReason, exists := result.Metadata["skip_reason"]
-				if !exists {
-					t.Error("Expected skip reason in metadata but found none")
-				} else if skipReason != tt.expectedSkipReason {
-					t.Errorf("Expected skip reason %q, got %q", tt.expectedSkipReason, skipReason)
-				}
-			}
+			runSubmodulePolicyTest(t, tt)
 		})
+	}
+}
+
+func runSubmodulePolicyTest(t *testing.T, tt struct {
+	name               string
+	submoduleDepth     int
+	submodulePolicy    valueobject.SubmoduleUpdatePolicy
+	expectedProcess    bool
+	expectedSkipReason string
+},
+) {
+	// Create test setup
+	tempDir := t.TempDir()
+	processor := createIntegratedProcessor(tempDir)
+
+	// Create submodule info with specific depth
+	submoduleInfo, err := valueobject.NewSubmoduleInfo(
+		"libs/module",
+		"module",
+		"https://github.com/example/module.git",
+	)
+	if err != nil {
+		t.Fatalf("Failed to create submodule info: %v", err)
+	}
+
+	// Set nesting information
+	isNested := tt.submoduleDepth > 0
+	parentPath := ""
+	if isNested {
+		parentPath = "parent/module"
+	}
+	submoduleInfo, err = submoduleInfo.WithNesting(isNested, tt.submoduleDepth, parentPath)
+	if err != nil {
+		t.Fatalf("Failed to set submodule nesting: %v", err)
+	}
+
+	// Create processing result with submodule
+	result := &ProcessingResult{
+		FileInfo: outbound.FileInfo{
+			Path: "libs/module/file.go",
+			Size: 1024,
+		},
+		FilterDecision: outbound.FilterDecision{
+			ShouldProcess: true,
+		},
+		IsInSubmodule: true,
+		SubmoduleInfo: &submoduleInfo,
+		Metadata:      make(map[string]interface{}),
+	}
+
+	// Apply integrated rules
+	finalDecision := processor.applyIntegratedRules(result)
+
+	if finalDecision != tt.expectedProcess {
+		t.Errorf("Expected process decision %v, got %v", tt.expectedProcess, finalDecision)
+	}
+
+	if tt.expectedSkipReason != "" {
+		skipReason, exists := result.Metadata["skip_reason"]
+		if !exists {
+			t.Error("Expected skip reason in metadata but found none")
+		} else if skipReason != tt.expectedSkipReason {
+			t.Errorf("Expected skip reason %q, got %q", tt.expectedSkipReason, skipReason)
+		}
 	}
 }
 
@@ -424,58 +448,72 @@ func TestFileProcessingIntegration_SymlinkSecurityIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create test setup
-			tempDir := t.TempDir()
-			processor := createIntegratedProcessor(tempDir)
-
-			// Create symlink info
-			symlinkInfo, err := valueobject.NewSymlinkInfo(tt.symlinkPath, tt.targetPath)
-			if err != nil {
-				t.Fatalf("Failed to create symlink info: %v", err)
-			}
-
-			// Configure symlink properties
-			symlinkInfo = symlinkInfo.WithResolution("", valueobject.SymlinkTypeFile, tt.scope)
-			if tt.isBroken {
-				symlinkInfo = symlinkInfo.WithBrokenStatus(true)
-			}
-			if tt.isCircular {
-				symlinkInfo, err = symlinkInfo.WithCircularReference(true, []string{tt.symlinkPath, tt.targetPath})
-				if err != nil {
-					t.Fatalf("Failed to set circular reference: %v", err)
-				}
-			}
-
-			// Create processing result with symlink
-			result := &ProcessingResult{
-				FileInfo: outbound.FileInfo{
-					Path: tt.symlinkPath,
-					Size: 1024,
-				},
-				FilterDecision: outbound.FilterDecision{
-					ShouldProcess: true,
-				},
-				IsSymlink:   true,
-				SymlinkInfo: &symlinkInfo,
-				Metadata:    make(map[string]interface{}),
-			}
-
-			// Apply integrated rules
-			finalDecision := processor.applyIntegratedRules(result)
-
-			if finalDecision != tt.expectedProcess {
-				t.Errorf("Expected process decision %v, got %v", tt.expectedProcess, finalDecision)
-			}
-
-			if tt.expectedSkipReason != "" {
-				skipReason, exists := result.Metadata["skip_reason"]
-				if !exists {
-					t.Error("Expected skip reason in metadata but found none")
-				} else if skipReason != tt.expectedSkipReason {
-					t.Errorf("Expected skip reason %q, got %q", tt.expectedSkipReason, skipReason)
-				}
-			}
+			runSymlinkSecurityTest(t, tt)
 		})
+	}
+}
+
+func runSymlinkSecurityTest(t *testing.T, tt struct {
+	name               string
+	symlinkPath        string
+	targetPath         string
+	scope              valueobject.SymlinkScope
+	isBroken           bool
+	isCircular         bool
+	expectedProcess    bool
+	expectedSkipReason string
+},
+) {
+	// Create test setup
+	tempDir := t.TempDir()
+	processor := createIntegratedProcessor(tempDir)
+
+	// Create symlink info
+	symlinkInfo, err := valueobject.NewSymlinkInfo(tt.symlinkPath, tt.targetPath)
+	if err != nil {
+		t.Fatalf("Failed to create symlink info: %v", err)
+	}
+
+	// Configure symlink properties
+	symlinkInfo = symlinkInfo.WithResolution("", valueobject.SymlinkTypeFile, tt.scope)
+	if tt.isBroken {
+		symlinkInfo = symlinkInfo.WithBrokenStatus(true)
+	}
+	if tt.isCircular {
+		symlinkInfo, err = symlinkInfo.WithCircularReference(true, []string{tt.symlinkPath, tt.targetPath})
+		if err != nil {
+			t.Fatalf("Failed to set circular reference: %v", err)
+		}
+	}
+
+	// Create processing result with symlink
+	result := &ProcessingResult{
+		FileInfo: outbound.FileInfo{
+			Path: tt.symlinkPath,
+			Size: 1024,
+		},
+		FilterDecision: outbound.FilterDecision{
+			ShouldProcess: true,
+		},
+		IsSymlink:   true,
+		SymlinkInfo: &symlinkInfo,
+		Metadata:    make(map[string]interface{}),
+	}
+
+	// Apply integrated rules
+	finalDecision := processor.applyIntegratedRules(result)
+
+	if finalDecision != tt.expectedProcess {
+		t.Errorf("Expected process decision %v, got %v", tt.expectedProcess, finalDecision)
+	}
+
+	if tt.expectedSkipReason != "" {
+		skipReason, exists := result.Metadata["skip_reason"]
+		if !exists {
+			t.Error("Expected skip reason in metadata but found none")
+		} else if skipReason != tt.expectedSkipReason {
+			t.Errorf("Expected skip reason %q, got %q", tt.expectedSkipReason, skipReason)
+		}
 	}
 }
 
@@ -631,69 +669,22 @@ func TestFileProcessingIntegration_ErrorHandling(t *testing.T) {
 
 // Helper functions
 
-func createIntegratedProcessor(repoPath string) *IntegratedFileProcessor {
-	// Create mock components
-	fileFilter := &testFileFilter{}
-	submoduleDetector := &MockSubmoduleDetector{
-		submodules:        make(map[string][]valueobject.SubmoduleInfo),
-		submoduleStatuses: make(map[string]valueobject.SubmoduleStatus),
-		activeSubmodules:  make(map[string]bool),
-	}
-	symlinkResolver := &MockSymlinkResolver{
-		symlinks:       make(map[string][]valueobject.SymlinkInfo),
-		resolvedChains: make(map[string]*valueobject.SymlinkInfo),
-		symlinkScopes:  make(map[string]valueobject.SymlinkScope),
-	}
-
-	// Setup mock data based on repo path patterns
-	setupMockData(repoPath, fileFilter, submoduleDetector, symlinkResolver)
+func createIntegratedProcessor(_ string) *IntegratedFileProcessor {
+	// Create simple mock implementations
+	var fileFilter outbound.FileFilter = &mockFileFilter{}
+	var submoduleDetector outbound.SubmoduleDetector = &mockSubmoduleDetector{}
+	var symlinkResolver outbound.SymlinkResolver = &mockSymlinkResolver{}
 
 	return NewIntegratedFileProcessor(fileFilter, submoduleDetector, symlinkResolver)
 }
 
-func createIntegratedProcessorWithErrors(repoPath string, errorType string) *IntegratedFileProcessor {
+func createIntegratedProcessorWithErrors(_ string, errorType string) *IntegratedFileProcessor {
 	// Create error-inducing mocks
 	var fileFilter outbound.FileFilter = &errorFileFilter{errorType: errorType}
 	var submoduleDetector outbound.SubmoduleDetector = &errorSubmoduleDetector{errorType: errorType}
 	var symlinkResolver outbound.SymlinkResolver = &errorSymlinkResolver{errorType: errorType}
 
 	return NewIntegratedFileProcessor(fileFilter, submoduleDetector, symlinkResolver)
-}
-
-func setupMockData(
-	repoPath string,
-	filter *testFileFilter,
-	detector *MockSubmoduleDetector,
-	resolver *MockSymlinkResolver,
-) {
-	// Setup submodule data
-	commonSubmodule, _ := valueobject.NewSubmoduleInfo("libs/common", "common", "https://github.com/example/common.git")
-	detector.submodules[repoPath] = []valueobject.SubmoduleInfo{commonSubmodule}
-
-	key := fmt.Sprintf("%s:libs/common", repoPath)
-	detector.activeSubmodules[key] = true
-
-	// Setup symlink data
-	internalSymlink, _ := valueobject.NewSymlinkInfo("config.json", "./shared/config.json")
-	internalSymlink = internalSymlink.WithResolution(
-		"/repo/shared/config.json",
-		valueobject.SymlinkTypeFile,
-		valueobject.SymlinkScopeInternal,
-	)
-
-	externalSymlink, _ := valueobject.NewSymlinkInfo("external_config.json", "/etc/config.json")
-	externalSymlink = externalSymlink.WithResolution("", valueobject.SymlinkTypeFile, valueobject.SymlinkScopeExternal)
-
-	brokenSymlink, _ := valueobject.NewSymlinkInfo("broken_link.txt", "./missing.txt")
-	brokenSymlink = brokenSymlink.WithBrokenStatus(true)
-
-	resolver.resolvedChains["config.json"] = &internalSymlink
-	resolver.resolvedChains["external_config.json"] = &externalSymlink
-	resolver.resolvedChains["broken_link.txt"] = &brokenSymlink
-
-	resolver.symlinkScopes["config.json"] = valueobject.SymlinkScopeInternal
-	resolver.symlinkScopes["external_config.json"] = valueobject.SymlinkScopeExternal
-	resolver.symlinkScopes["broken_link.txt"] = valueobject.SymlinkScopeBroken
 }
 
 func validateProcessingMetadata(t *testing.T, result *ProcessingResult) {
@@ -725,6 +716,140 @@ func validateProcessingMetadata(t *testing.T, result *ProcessingResult) {
 	}
 }
 
+// Simple mock implementations
+
+type mockFileFilter struct{}
+
+func (m *mockFileFilter) ShouldProcessFile(
+	_ context.Context,
+	_ string,
+	_ outbound.FileInfo,
+) (outbound.FilterDecision, error) {
+	return outbound.FilterDecision{ShouldProcess: true}, nil
+}
+
+func (m *mockFileFilter) DetectBinaryFile(_ context.Context, _ string, _ []byte) (bool, error) {
+	return false, nil
+}
+
+func (m *mockFileFilter) DetectBinaryFromPath(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+
+func (m *mockFileFilter) MatchesGitignorePatterns(
+	_ context.Context,
+	_ string,
+	_ string,
+) (bool, error) {
+	return false, nil
+}
+
+func (m *mockFileFilter) LoadGitignorePatterns(
+	_ context.Context,
+	_ string,
+) ([]outbound.GitignorePattern, error) {
+	return []outbound.GitignorePattern{}, nil
+}
+
+func (m *mockFileFilter) FilterFilesBatch(
+	_ context.Context,
+	_ []outbound.FileInfo,
+	_ string,
+) ([]outbound.FilterResult, error) {
+	return []outbound.FilterResult{}, nil
+}
+
+type mockSubmoduleDetector struct{}
+
+func (m *mockSubmoduleDetector) DetectSubmodules(
+	_ context.Context,
+	_ string,
+) ([]valueobject.SubmoduleInfo, error) {
+	return []valueobject.SubmoduleInfo{}, nil
+}
+
+func (m *mockSubmoduleDetector) ParseGitmodulesFile(
+	_ context.Context,
+	_ string,
+) ([]valueobject.SubmoduleInfo, error) {
+	return []valueobject.SubmoduleInfo{}, nil
+}
+
+func (m *mockSubmoduleDetector) IsSubmoduleDirectory(
+	_ context.Context,
+	_ string,
+	_ string,
+) (bool, *valueobject.SubmoduleInfo, error) {
+	return false, nil, nil
+}
+
+func (m *mockSubmoduleDetector) GetSubmoduleStatus(
+	_ context.Context,
+	_ string,
+	_ string,
+) (valueobject.SubmoduleStatus, error) {
+	return valueobject.SubmoduleStatusUnknown, nil
+}
+
+func (m *mockSubmoduleDetector) ValidateSubmoduleConfiguration(
+	_ context.Context,
+	_ valueobject.SubmoduleInfo,
+) error {
+	return nil
+}
+
+type mockSymlinkResolver struct{}
+
+func (m *mockSymlinkResolver) DetectSymlinks(
+	_ context.Context,
+	_ string,
+) ([]valueobject.SymlinkInfo, error) {
+	return []valueobject.SymlinkInfo{}, nil
+}
+
+func (m *mockSymlinkResolver) IsSymlink(
+	_ context.Context,
+	_ string,
+) (bool, error) {
+	return false, nil
+}
+
+func (m *mockSymlinkResolver) ResolveSymlink(
+	_ context.Context,
+	_ string,
+) (*valueobject.SymlinkInfo, error) {
+	return &valueobject.SymlinkInfo{}, nil
+}
+
+func (m *mockSymlinkResolver) ValidateSymlink(
+	_ context.Context,
+	_ valueobject.SymlinkInfo,
+) error {
+	return nil
+}
+
+func (m *mockSymlinkResolver) ResolveSymlinkChain(
+	_ context.Context,
+	_ string,
+	_ int,
+) (*valueobject.SymlinkInfo, error) {
+	return &valueobject.SymlinkInfo{}, nil
+}
+
+func (m *mockSymlinkResolver) GetSymlinkTarget(
+	_ context.Context,
+	_ string,
+) (string, error) {
+	return "", nil
+}
+
+func (m *mockSymlinkResolver) ValidateSymlinkTarget(
+	_ context.Context,
+	_ valueobject.SymlinkInfo,
+) (*outbound.SymlinkValidationResult, error) {
+	return &outbound.SymlinkValidationResult{}, nil
+}
+
 // Error-inducing mock implementations
 
 type errorFileFilter struct {
@@ -732,9 +857,9 @@ type errorFileFilter struct {
 }
 
 func (e *errorFileFilter) ShouldProcessFile(
-	ctx context.Context,
-	filePath string,
-	fileInfo outbound.FileInfo,
+	_ context.Context,
+	_ string,
+	_ outbound.FileInfo,
 ) (outbound.FilterDecision, error) {
 	if e.errorType == "filter_error" || e.errorType == "multiple_errors" {
 		return outbound.FilterDecision{}, errors.New("mock filter error")
@@ -742,33 +867,33 @@ func (e *errorFileFilter) ShouldProcessFile(
 	return outbound.FilterDecision{ShouldProcess: true}, nil
 }
 
-func (e *errorFileFilter) DetectBinaryFile(ctx context.Context, filePath string, content []byte) (bool, error) {
+func (e *errorFileFilter) DetectBinaryFile(_ context.Context, _ string, _ []byte) (bool, error) {
 	return false, nil
 }
 
-func (e *errorFileFilter) DetectBinaryFromPath(ctx context.Context, filePath string) (bool, error) {
+func (e *errorFileFilter) DetectBinaryFromPath(_ context.Context, _ string) (bool, error) {
 	return false, nil
 }
 
 func (e *errorFileFilter) MatchesGitignorePatterns(
-	ctx context.Context,
-	filePath string,
-	repoPath string,
+	_ context.Context,
+	_ string,
+	_ string,
 ) (bool, error) {
 	return false, nil
 }
 
 func (e *errorFileFilter) LoadGitignorePatterns(
-	ctx context.Context,
-	repoPath string,
+	_ context.Context,
+	_ string,
 ) ([]outbound.GitignorePattern, error) {
 	return []outbound.GitignorePattern{}, nil
 }
 
 func (e *errorFileFilter) FilterFilesBatch(
-	ctx context.Context,
-	files []outbound.FileInfo,
-	repoPath string,
+	_ context.Context,
+	_ []outbound.FileInfo,
+	_ string,
 ) ([]outbound.FilterResult, error) {
 	return []outbound.FilterResult{}, nil
 }
@@ -778,23 +903,23 @@ type errorSubmoduleDetector struct {
 }
 
 func (e *errorSubmoduleDetector) DetectSubmodules(
-	ctx context.Context,
-	repositoryPath string,
+	_ context.Context,
+	_ string,
 ) ([]valueobject.SubmoduleInfo, error) {
 	return []valueobject.SubmoduleInfo{}, nil
 }
 
 func (e *errorSubmoduleDetector) ParseGitmodulesFile(
-	ctx context.Context,
-	gitmodulesPath string,
+	_ context.Context,
+	_ string,
 ) ([]valueobject.SubmoduleInfo, error) {
 	return []valueobject.SubmoduleInfo{}, nil
 }
 
 func (e *errorSubmoduleDetector) IsSubmoduleDirectory(
-	ctx context.Context,
-	directoryPath string,
-	repositoryRoot string,
+	_ context.Context,
+	_ string,
+	_ string,
 ) (bool, *valueobject.SubmoduleInfo, error) {
 	if e.errorType == "submodule_error" || e.errorType == "multiple_errors" {
 		return false, nil, errors.New("mock submodule detection error")
@@ -803,16 +928,16 @@ func (e *errorSubmoduleDetector) IsSubmoduleDirectory(
 }
 
 func (e *errorSubmoduleDetector) GetSubmoduleStatus(
-	ctx context.Context,
-	submodulePath string,
-	repositoryRoot string,
+	_ context.Context,
+	_ string,
+	_ string,
 ) (valueobject.SubmoduleStatus, error) {
 	return valueobject.SubmoduleStatusUnknown, nil
 }
 
 func (e *errorSubmoduleDetector) ValidateSubmoduleConfiguration(
-	ctx context.Context,
-	submodule valueobject.SubmoduleInfo,
+	_ context.Context,
+	_ valueobject.SubmoduleInfo,
 ) error {
 	return nil
 }
@@ -822,13 +947,13 @@ type errorSymlinkResolver struct {
 }
 
 func (e *errorSymlinkResolver) DetectSymlinks(
-	ctx context.Context,
-	directoryPath string,
+	_ context.Context,
+	_ string,
 ) ([]valueobject.SymlinkInfo, error) {
 	return []valueobject.SymlinkInfo{}, nil
 }
 
-func (e *errorSymlinkResolver) IsSymlink(ctx context.Context, filePath string) (bool, error) {
+func (e *errorSymlinkResolver) IsSymlink(_ context.Context, _ string) (bool, error) {
 	if e.errorType == "symlink_error" || e.errorType == "multiple_errors" {
 		return false, errors.New("mock symlink detection error")
 	}
@@ -836,21 +961,21 @@ func (e *errorSymlinkResolver) IsSymlink(ctx context.Context, filePath string) (
 }
 
 func (e *errorSymlinkResolver) ResolveSymlink(
-	ctx context.Context,
-	symlinkPath string,
+	_ context.Context,
+	_ string,
 ) (*valueobject.SymlinkInfo, error) {
 	return nil, errors.New("mock symlink resolution error")
 }
 
-func (e *errorSymlinkResolver) GetSymlinkTarget(ctx context.Context, symlinkPath string) (string, error) {
+func (e *errorSymlinkResolver) GetSymlinkTarget(_ context.Context, _ string) (string, error) {
 	return "", nil
 }
 
 func (e *errorSymlinkResolver) ValidateSymlinkTarget(
-	ctx context.Context,
-	symlink valueobject.SymlinkInfo,
+	_ context.Context,
+	_ valueobject.SymlinkInfo,
 ) (*outbound.SymlinkValidationResult, error) {
-	return nil, nil
+	return &outbound.SymlinkValidationResult{}, nil
 }
 
 // Repository setup functions
@@ -872,7 +997,7 @@ func setupRepoWithSymlinks(repoPath string) error {
 	return os.MkdirAll(filepath.Join(repoPath, "shared"), 0o755)
 }
 
-func setupRepoWithExternalSymlinks(repoPath string) error {
+func setupRepoWithExternalSymlinks(_ string) error {
 	// In real implementation, this would create external symlinks
 	return nil
 }
@@ -886,7 +1011,7 @@ func setupRepoWithSubmoduleSymlinks(repoPath string) error {
 	return setupRepoWithSymlinks(repoPath)
 }
 
-func setupRepoWithBrokenSymlinks(repoPath string) error {
+func setupRepoWithBrokenSymlinks(_ string) error {
 	// In real implementation, this would create broken symlinks
 	return nil
 }

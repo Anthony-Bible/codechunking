@@ -271,7 +271,7 @@ func (m *DefaultRetryMetrics) RecordRetryFailure(
 	ctx context.Context,
 	attempt int,
 	failureType FailureType,
-	err error,
+	_ error,
 	operationName string,
 ) {
 	m.mu.RLock()
@@ -291,7 +291,7 @@ func (m *DefaultRetryMetrics) RecordRetryExhaustion(
 	ctx context.Context,
 	maxAttempts int,
 	totalDuration time.Duration,
-	lastError error,
+	_ error,
 	operationName string,
 ) {
 	m.mu.RLock()

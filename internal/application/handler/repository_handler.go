@@ -15,10 +15,12 @@ type CreateRepositoryService interface {
 	CreateRepository(ctx context.Context, request dto.CreateRepositoryRequest) (*dto.RepositoryResponse, error)
 }
 
+// GetRepositoryService defines the interface for retrieving repository details.
 type GetRepositoryService interface {
 	GetRepository(ctx context.Context, id uuid.UUID) (*dto.RepositoryResponse, error)
 }
 
+// UpdateRepositoryService defines the interface for updating repository metadata.
 type UpdateRepositoryService interface {
 	UpdateRepository(
 		ctx context.Context,
@@ -27,10 +29,12 @@ type UpdateRepositoryService interface {
 	) (*dto.RepositoryResponse, error)
 }
 
+// DeleteRepositoryService defines the interface for soft-deleting repositories.
 type DeleteRepositoryService interface {
 	DeleteRepository(ctx context.Context, id uuid.UUID) error
 }
 
+// ListRepositoriesService defines the interface for listing repositories with filtering and pagination.
 type ListRepositoriesService interface {
 	ListRepositories(ctx context.Context, query dto.RepositoryListQuery) (*dto.RepositoryListResponse, error)
 }

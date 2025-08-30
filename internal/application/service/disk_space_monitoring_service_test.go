@@ -1526,32 +1526,19 @@ func TestDefaultCacheDirectoryConstantConsistency(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Test constant equality - this will fail because DefaultCacheDirectory doesn't exist
-			isPathMatch := (tt.inputPath == DefaultCacheDirectory)
-			if isPathMatch != tt.expectedPathComparison {
-				t.Errorf("Expected path comparison %v, got %v for path %s vs constant %s",
-					tt.expectedPathComparison, isPathMatch, tt.inputPath, DefaultCacheDirectory)
-			}
+			// Validate path comparison using helper function to reduce complexity
+			validatePathComparison(t, tt.inputPath, tt.expectedPathComparison)
 
-			// Test that service behavior is consistent when using the constant
+			// Test service behavior consistency
 			service := NewDefaultDiskSpaceMonitoringService(createTestMetrics())
 			ctx := context.Background()
-
 			usage, err := service.GetCurrentDiskUsage(ctx, tt.inputPath)
 
+			// Use helper functions to validate behavior based on expectations
 			if tt.expectedConsistentUsage {
-				if err != nil {
-					t.Errorf("Expected no error for cache directory path, got: %v", err)
-				}
-				if usage == nil {
-					t.Error("Expected usage info for cache directory path")
-				}
-				if usage != nil && usage.UsedSpaceBytes != 25*1024*1024*1024 {
-					t.Errorf("Expected consistent cache directory usage, got %d bytes", usage.UsedSpaceBytes)
-				}
-			} else if usage != nil && usage.UsedSpaceBytes == 25*1024*1024*1024 {
-				// For non-cache paths, should get different behavior
-				t.Error("Non-cache directory should not have cache-specific usage values")
+				validateConsistentCacheUsage(t, usage, err)
+			} else {
+				validateNonCacheUsage(t, usage)
 			}
 		})
 	}
@@ -1603,38 +1590,90 @@ func TestCacheDirectoryConstantRefactoring(t *testing.T) {
 			// Test with hardcoded string for comparison
 			usageWithHardcoded, errWithHardcoded := service.GetCurrentDiskUsage(ctx, "/tmp/codechunking-cache")
 
+			// Use helper functions to validate behavior - reduces nesting complexity
 			if tt.expectedNoRegressions {
-				// Both should have identical behavior
-				if (errWithConstant == nil) != (errWithHardcoded == nil) {
-					t.Error("Error behavior should be identical for constant vs hardcoded string")
-				}
-
+				validateErrorConsistency(t, errWithConstant, errWithHardcoded)
 				if errWithConstant == nil && errWithHardcoded == nil {
-					if usageWithConstant.UsedSpaceBytes != usageWithHardcoded.UsedSpaceBytes {
-						t.Errorf("Usage bytes should be identical: constant=%d, hardcoded=%d",
-							usageWithConstant.UsedSpaceBytes, usageWithHardcoded.UsedSpaceBytes)
-					}
-
-					if usageWithConstant.UsagePercentage != usageWithHardcoded.UsagePercentage {
-						t.Errorf("Usage percentage should be identical: constant=%f, hardcoded=%f",
-							usageWithConstant.UsagePercentage, usageWithHardcoded.UsagePercentage)
-					}
-
-					if usageWithConstant.RepositoryCount != usageWithHardcoded.RepositoryCount {
-						t.Errorf("Repository count should be identical: constant=%d, hardcoded=%d",
-							usageWithConstant.RepositoryCount, usageWithHardcoded.RepositoryCount)
-					}
+					validateUsageConsistency(t, usageWithConstant, usageWithHardcoded)
 				}
 			}
 
 			if tt.expectedConstantUsage {
-				// Verify the constant is actually being used in the response
-				if usageWithConstant != nil && usageWithConstant.Path != DefaultCacheDirectory {
-					t.Errorf("Response path should use constant: expected=%s, got=%s",
-						DefaultCacheDirectory, usageWithConstant.Path)
-				}
+				validateConstantUsageInResponse(t, usageWithConstant)
 			}
 		})
+	}
+}
+
+// validateErrorConsistency checks that error behavior is consistent between constant and hardcoded paths.
+func validateErrorConsistency(t *testing.T, errConstant, errHardcoded error) {
+	if (errConstant == nil) != (errHardcoded == nil) {
+		t.Error("Error behavior should be identical for constant vs hardcoded string")
+	}
+}
+
+// validateUsageConsistency checks that usage values are identical between constant and hardcoded paths.
+func validateUsageConsistency(t *testing.T, usageConstant, usageHardcoded *DiskUsageInfo) {
+	if usageConstant == nil || usageHardcoded == nil {
+		return // Handled by error validation
+	}
+
+	if usageConstant.UsedSpaceBytes != usageHardcoded.UsedSpaceBytes {
+		t.Errorf("Usage bytes should be identical: constant=%d, hardcoded=%d",
+			usageConstant.UsedSpaceBytes, usageHardcoded.UsedSpaceBytes)
+	}
+
+	if usageConstant.UsagePercentage != usageHardcoded.UsagePercentage {
+		t.Errorf("Usage percentage should be identical: constant=%f, hardcoded=%f",
+			usageConstant.UsagePercentage, usageHardcoded.UsagePercentage)
+	}
+
+	if usageConstant.RepositoryCount != usageHardcoded.RepositoryCount {
+		t.Errorf("Repository count should be identical: constant=%d, hardcoded=%d",
+			usageConstant.RepositoryCount, usageHardcoded.RepositoryCount)
+	}
+}
+
+// validateConstantUsageInResponse checks that the response uses the constant value.
+func validateConstantUsageInResponse(t *testing.T, usage *DiskUsageInfo) {
+	if usage != nil && usage.Path != DefaultCacheDirectory {
+		t.Errorf("Response path should use constant: expected=%s, got=%s",
+			DefaultCacheDirectory, usage.Path)
+	}
+}
+
+// validatePathComparison checks if the path comparison result matches expectations.
+func validatePathComparison(t *testing.T, inputPath string, expectedComparison bool) {
+	isPathMatch := (inputPath == DefaultCacheDirectory)
+	if isPathMatch != expectedComparison {
+		t.Errorf("Expected path comparison %v, got %v for path %s vs constant %s",
+			expectedComparison, isPathMatch, inputPath, DefaultCacheDirectory)
+	}
+}
+
+// validateConsistentCacheUsage validates that cache directory usage is consistent.
+func validateConsistentCacheUsage(t *testing.T, usage *DiskUsageInfo, err error) {
+	if err != nil {
+		t.Errorf("Expected no error for cache directory path, got: %v", err)
+		return
+	}
+
+	if usage == nil {
+		t.Error("Expected usage info for cache directory path")
+		return
+	}
+
+	expectedBytes := int64(25 * 1024 * 1024 * 1024)
+	if usage.UsedSpaceBytes != expectedBytes {
+		t.Errorf("Expected consistent cache directory usage, got %d bytes", usage.UsedSpaceBytes)
+	}
+}
+
+// validateNonCacheUsage validates that non-cache paths don't have cache-specific values.
+func validateNonCacheUsage(t *testing.T, usage *DiskUsageInfo) {
+	cacheSpecificBytes := int64(25 * 1024 * 1024 * 1024)
+	if usage != nil && usage.UsedSpaceBytes == cacheSpecificBytes {
+		t.Error("Non-cache directory should not have cache-specific usage values")
 	}
 }
 

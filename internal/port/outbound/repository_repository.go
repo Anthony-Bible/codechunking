@@ -1,3 +1,6 @@
+// Package outbound defines the outbound ports (interfaces) for external dependencies.
+// These ports represent the contracts that external adapters must implement to provide
+// services to the application's core business logic.
 package outbound
 
 import (

@@ -282,14 +282,14 @@ func TestErrorAggregation_ThresholdDetection(t *testing.T) {
 
 		// Add errors below threshold
 		for range threshold - 1 {
-			error, _ := NewClassifiedError(ctx, assert.AnError, severity, "database_failure", "Error", nil)
-			aggregation.AddError(error)
+			classifiedError, _ := NewClassifiedError(ctx, assert.AnError, severity, "database_failure", "Error", nil)
+			aggregation.AddError(classifiedError)
 		}
 		assert.False(t, aggregation.ExceedsCountThreshold(threshold))
 
 		// Add one more to exceed threshold
-		error, _ := NewClassifiedError(ctx, assert.AnError, severity, "database_failure", "Final error", nil)
-		aggregation.AddError(error)
+		classifiedError, _ := NewClassifiedError(ctx, assert.AnError, severity, "database_failure", "Final error", nil)
+		aggregation.AddError(classifiedError)
 		assert.True(t, aggregation.ExceedsCountThreshold(threshold))
 	})
 
@@ -302,8 +302,15 @@ func TestErrorAggregation_ThresholdDetection(t *testing.T) {
 
 		// Add multiple errors quickly
 		for range 10 {
-			error, _ := NewClassifiedError(ctx, assert.AnError, severity, "performance_issue", "Performance error", nil)
-			aggregation.AddError(error)
+			classifiedError, _ := NewClassifiedError(
+				ctx,
+				assert.AnError,
+				severity,
+				"performance_issue",
+				"Performance error",
+				nil,
+			)
+			aggregation.AddError(classifiedError)
 		}
 
 		// Rate: 10 errors per minute = 0.167 errors per second
@@ -325,8 +332,8 @@ func TestErrorAggregation_Serialization(t *testing.T) {
 		aggregation, _ := NewErrorAggregation(pattern, time.Minute*10)
 
 		// Add a test error
-		error, _ := NewClassifiedError(ctx, assert.AnError, severity, "system_failure", "System failure", nil)
-		aggregation.AddError(error)
+		classifiedError, _ := NewClassifiedError(ctx, assert.AnError, severity, "system_failure", "System failure", nil)
+		aggregation.AddError(classifiedError)
 
 		jsonData, err := aggregation.MarshalJSON()
 

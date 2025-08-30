@@ -24,7 +24,7 @@ func NewResolver() *Resolver {
 
 // DetectSymlinks discovers all symbolic links in a directory tree.
 func (r *Resolver) DetectSymlinks(
-	ctx context.Context,
+	_ context.Context,
 	directoryPath string,
 ) ([]valueobject.SymlinkInfo, error) {
 	var symlinks []valueobject.SymlinkInfo
@@ -63,7 +63,7 @@ func (r *Resolver) DetectSymlinks(
 }
 
 // IsSymlink determines if a given path is a symbolic link.
-func (r *Resolver) IsSymlink(ctx context.Context, filePath string) (bool, error) {
+func (r *Resolver) IsSymlink(_ context.Context, filePath string) (bool, error) {
 	info, err := os.Lstat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -77,7 +77,7 @@ func (r *Resolver) IsSymlink(ctx context.Context, filePath string) (bool, error)
 
 // ResolveSymlink resolves a symbolic link to its target path.
 func (r *Resolver) ResolveSymlink(
-	ctx context.Context,
+	_ context.Context,
 	symlinkPath string,
 ) (*valueobject.SymlinkInfo, error) {
 	targetPath, err := os.Readlink(symlinkPath)
@@ -108,7 +108,7 @@ func (r *Resolver) ResolveSymlink(
 }
 
 // GetSymlinkTarget retrieves the target path of a symbolic link.
-func (r *Resolver) GetSymlinkTarget(ctx context.Context, symlinkPath string) (string, error) {
+func (r *Resolver) GetSymlinkTarget(_ context.Context, symlinkPath string) (string, error) {
 	targetPath, err := os.Readlink(symlinkPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read symlink: %w", err)
@@ -146,7 +146,7 @@ func (r *Resolver) DetectCircularSymlinks(
 
 // ClassifySymlinkScope determines if a symlink points inside or outside the repository.
 func (r *Resolver) ClassifySymlinkScope(
-	ctx context.Context,
+	_ context.Context,
 	symlink valueobject.SymlinkInfo,
 	repositoryRoot string,
 ) (valueobject.SymlinkScope, error) {
@@ -192,7 +192,7 @@ func (r *Resolver) ClassifySymlinkScope(
 
 // GetSymlinkType determines the type of the symlink target.
 func (r *Resolver) GetSymlinkType(
-	ctx context.Context,
+	_ context.Context,
 	symlink valueobject.SymlinkInfo,
 ) (valueobject.SymlinkType, error) {
 	targetPath := symlink.TargetPath()
@@ -201,11 +201,11 @@ func (r *Resolver) GetSymlinkType(
 
 // ResolveRelativeSymlink resolves a relative symbolic link within a repository context.
 func (r *Resolver) ResolveRelativeSymlink(
-	ctx context.Context,
+	_ context.Context,
 	symlinkPath string,
-	repositoryRoot string,
+	_ string,
 ) (*valueobject.SymlinkInfo, error) {
-	return r.ResolveSymlink(ctx, symlinkPath)
+	return r.ResolveSymlink(context.Background(), symlinkPath)
 }
 
 // ValidateSymlinkSecurity checks if following a symlink would violate security constraints.

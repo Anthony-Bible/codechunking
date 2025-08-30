@@ -1,3 +1,5 @@
+// Package inbound defines the inbound ports (interfaces) for the application layer.
+// These ports represent the entry points into the application's core business logic.
 package inbound
 
 import (

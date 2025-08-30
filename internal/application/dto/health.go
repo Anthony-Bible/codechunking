@@ -41,8 +41,11 @@ type NATSMessageMetrics struct {
 type HealthStatus string
 
 const (
-	HealthStatusHealthy   HealthStatus = "healthy"
-	HealthStatusDegraded  HealthStatus = "degraded"
+	// HealthStatusHealthy indicates that the service is operating normally.
+	HealthStatusHealthy HealthStatus = "healthy"
+	// HealthStatusDegraded indicates that the service is operational but with reduced functionality.
+	HealthStatusDegraded HealthStatus = "degraded"
+	// HealthStatusUnhealthy indicates that the service is not operational.
 	HealthStatusUnhealthy HealthStatus = "unhealthy"
 )
 
@@ -50,6 +53,8 @@ const (
 type DependencyStatusValue string
 
 const (
-	DependencyStatusHealthy   DependencyStatusValue = "healthy"
+	// DependencyStatusHealthy indicates that a dependency is functioning properly.
+	DependencyStatusHealthy DependencyStatusValue = "healthy"
+	// DependencyStatusUnhealthy indicates that a dependency is not functioning properly.
 	DependencyStatusUnhealthy DependencyStatusValue = "unhealthy"
 )

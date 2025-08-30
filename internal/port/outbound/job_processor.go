@@ -443,8 +443,11 @@ type CodeChunk struct {
 type CacheStrategy int
 
 const (
+	// CacheStrategyLRU uses Least Recently Used cache eviction policy.
 	CacheStrategyLRU CacheStrategy = iota
+	// CacheStrategyTTL uses Time To Live based cache expiration.
 	CacheStrategyTTL
+	// CacheStrategyCommitHash uses commit hash-based cache validation.
 	CacheStrategyCommitHash
 )
 
@@ -452,8 +455,11 @@ const (
 type CacheStorageType int
 
 const (
+	// CacheStorageFilesystem stores cache entries on the filesystem.
 	CacheStorageFilesystem CacheStorageType = iota
+	// CacheStorageMemoryMapped uses memory-mapped file storage for cache entries.
 	CacheStorageMemoryMapped
+	// CacheStorageHybrid combines filesystem and memory-mapped storage.
 	CacheStorageHybrid
 )
 
@@ -599,8 +605,11 @@ type CacheStatistics struct {
 type UpdateStrategy int
 
 const (
+	// UpdateStrategyIncrementalFetch fetches only new commits incrementally.
 	UpdateStrategyIncrementalFetch UpdateStrategy = iota
+	// UpdateStrategyFullClone performs a complete clone operation.
 	UpdateStrategyFullClone
+	// UpdateStrategySmartIncremental intelligently chooses between incremental and full clone.
 	UpdateStrategySmartIncremental
 )
 
@@ -608,10 +617,15 @@ const (
 type BranchUpdateStrategy int
 
 const (
+	// BranchUpdateStrategySame keeps the same branch as cached.
 	BranchUpdateStrategySame BranchUpdateStrategy = iota
+	// BranchUpdateStrategySwitch switches to a different existing branch.
 	BranchUpdateStrategySwitch
+	// BranchUpdateStrategyCreate creates a new branch from current state.
 	BranchUpdateStrategyCreate
+	// BranchUpdateStrategyMerge merges changes from another branch.
 	BranchUpdateStrategyMerge
+	// BranchUpdateStrategyForceUpdate forcefully updates to target branch state.
 	BranchUpdateStrategyForceUpdate
 )
 
@@ -619,10 +633,15 @@ const (
 type ConflictType int
 
 const (
+	// ConflictTypeMerge represents merge conflicts in text files.
 	ConflictTypeMerge ConflictType = iota
+	// ConflictTypeBinary represents conflicts in binary files.
 	ConflictTypeBinary
+	// ConflictTypeDeleted represents conflicts with deleted files.
 	ConflictTypeDeleted
+	// ConflictTypeSubmodule represents submodule conflicts.
 	ConflictTypeSubmodule
+	// ConflictTypePermissions represents file permission conflicts.
 	ConflictTypePermissions
 )
 
@@ -630,10 +649,15 @@ const (
 type ConflictResolutionStrategy int
 
 const (
+	// ConflictResolutionAutomatic automatically resolves conflicts when possible.
 	ConflictResolutionAutomatic ConflictResolutionStrategy = iota
+	// ConflictResolutionManual requires manual intervention for conflict resolution.
 	ConflictResolutionManual
+	// ConflictResolutionPreferRemote automatically chooses remote changes in conflicts.
 	ConflictResolutionPreferRemote
+	// ConflictResolutionPreserveLocal automatically chooses local changes in conflicts.
 	ConflictResolutionPreserveLocal
+	// ConflictResolutionFallbackFullClone falls back to full clone when conflicts are complex.
 	ConflictResolutionFallbackFullClone
 )
 

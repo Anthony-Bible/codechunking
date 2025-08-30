@@ -460,6 +460,7 @@ func (s *DefaultJobResumeService) ResumeJob(
 		if err != nil {
 			// Log but continue - progress tracking failure shouldn't stop resume
 			// In a real implementation, this would use structured logging
+			_ = err // Acknowledge error is intentionally ignored
 		}
 	}
 

@@ -14,20 +14,21 @@ import (
 func newMigrateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "migrate",
-		Short: "A brief description of your command",
-		Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
+		Short: "Run database migrations",
+		Long: `Run database migrations to set up or update the database schema.
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+This command handles database schema migrations for the codechunking application,
+including creating necessary tables, indexes, and extensions required for
+repository indexing and vector storage operations.
+
+Configuration for database connection is loaded from config files and environment variables.`,
 		Run: func(_ *cobra.Command, _ []string) {
 			slogger.InfoNoCtx("migrate called", nil)
 		},
 	}
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for command registration
 	rootCmd.AddCommand(newMigrateCmd())
 
 	// Here you will define your flags and configuration settings.

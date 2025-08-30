@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// MockMessagePublisher provides a mock implementation of MessagePublisher for development.
+// MessagePublisher provides a mock implementation of MessagePublisher for development.
 //
-//nolint:revive // Mock prefix is intentional for clarity in test contexts
+
 type MessagePublisher struct {
 	// Published jobs for testing/verification
 	publishedJobs []PublishedJob

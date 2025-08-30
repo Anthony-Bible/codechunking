@@ -317,7 +317,16 @@ func extractComponentOptimized(ctx context.Context) string {
 // captureOptimizedStackTrace captures stack trace with memory pooling and efficient filtering.
 func captureOptimizedStackTrace() string {
 	// Get buffer from pool to reduce allocations
-	buf := stackTracePool.Get().([]byte)
+	raw := stackTracePool.Get()
+	if raw == nil {
+		// Fallback to direct allocation if pool returns nil
+		raw = make([]byte, 2048)
+	}
+	buf, ok := raw.([]byte)
+	if !ok {
+		// Fallback to direct allocation if type assertion fails
+		buf = make([]byte, 2048)
+	}
 	defer stackTracePool.Put(buf)
 
 	// Capture stack trace with initial buffer size

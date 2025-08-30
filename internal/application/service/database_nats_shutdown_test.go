@@ -42,10 +42,10 @@ func (m *MockDatabaseConnection) GetActiveTxns() int {
 	return m.activeTxns
 }
 
-func (m *MockDatabaseConnection) SetMaxConnections(max int) error {
-	args := m.Called(max)
+func (m *MockDatabaseConnection) SetMaxConnections(maxConnections int) error {
+	args := m.Called(maxConnections)
 	if args.Error(0) == nil {
-		m.maxConnections = max
+		m.maxConnections = maxConnections
 	}
 	return args.Error(0)
 }

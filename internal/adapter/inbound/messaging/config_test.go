@@ -1,3 +1,5 @@
+// Package messaging provides tests for NATS messaging configuration
+// and related inbound adapter functionality.
 package messaging
 
 import (

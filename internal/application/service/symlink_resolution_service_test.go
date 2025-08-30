@@ -24,7 +24,7 @@ type MockSymlinkResolver struct {
 }
 
 func (m *MockSymlinkResolver) DetectSymlinks(
-	ctx context.Context,
+	_ context.Context,
 	directoryPath string,
 ) ([]valueobject.SymlinkInfo, error) {
 	if symlinks, exists := m.symlinks[directoryPath]; exists {
@@ -33,7 +33,7 @@ func (m *MockSymlinkResolver) DetectSymlinks(
 	return []valueobject.SymlinkInfo{}, nil
 }
 
-func (m *MockSymlinkResolver) IsSymlink(ctx context.Context, filePath string) (bool, error) {
+func (m *MockSymlinkResolver) IsSymlink(_ context.Context, filePath string) (bool, error) {
 	for _, symlinks := range m.symlinks {
 		for _, symlink := range symlinks {
 			if symlink.Path() == filePath {
@@ -45,7 +45,7 @@ func (m *MockSymlinkResolver) IsSymlink(ctx context.Context, filePath string) (b
 }
 
 func (m *MockSymlinkResolver) ResolveSymlink(
-	ctx context.Context,
+	_ context.Context,
 	symlinkPath string,
 ) (*valueobject.SymlinkInfo, error) {
 	if resolved, exists := m.resolvedChains[symlinkPath]; exists {
@@ -54,7 +54,7 @@ func (m *MockSymlinkResolver) ResolveSymlink(
 	return nil, fmt.Errorf("symlink not found: %s", symlinkPath)
 }
 
-func (m *MockSymlinkResolver) GetSymlinkTarget(ctx context.Context, symlinkPath string) (string, error) {
+func (m *MockSymlinkResolver) GetSymlinkTarget(_ context.Context, symlinkPath string) (string, error) {
 	if target, exists := m.symlinkTargets[symlinkPath]; exists {
 		return target, nil
 	}
@@ -62,7 +62,7 @@ func (m *MockSymlinkResolver) GetSymlinkTarget(ctx context.Context, symlinkPath 
 }
 
 func (m *MockSymlinkResolver) ValidateSymlinkTarget(
-	ctx context.Context,
+	_ context.Context,
 	symlink valueobject.SymlinkInfo,
 ) (*outbound.SymlinkValidationResult, error) {
 	if result, exists := m.validationResults[symlink.Path()]; exists {
@@ -79,7 +79,7 @@ func (m *MockSymlinkResolver) ValidateSymlinkTarget(
 
 // Additional methods for EnhancedSymlinkResolver.
 func (m *MockSymlinkResolver) ResolveSymlinkChain(
-	ctx context.Context,
+	_ context.Context,
 	symlinkPath string,
 	maxDepth int,
 ) (*valueobject.SymlinkInfo, error) {
@@ -92,7 +92,7 @@ func (m *MockSymlinkResolver) ResolveSymlinkChain(
 	return nil, fmt.Errorf("symlink chain not found: %s", symlinkPath)
 }
 
-func (m *MockSymlinkResolver) DetectCircularSymlinks(ctx context.Context, symlinkPath string) (bool, []string, error) {
+func (m *MockSymlinkResolver) DetectCircularSymlinks(_ context.Context, symlinkPath string) (bool, []string, error) {
 	if chain, exists := m.circularSymlinks[symlinkPath]; exists {
 		return true, chain, nil
 	}
@@ -100,9 +100,9 @@ func (m *MockSymlinkResolver) DetectCircularSymlinks(ctx context.Context, symlin
 }
 
 func (m *MockSymlinkResolver) ClassifySymlinkScope(
-	ctx context.Context,
+	_ context.Context,
 	symlink valueobject.SymlinkInfo,
-	repositoryRoot string,
+	_ string,
 ) (valueobject.SymlinkScope, error) {
 	if scope, exists := m.symlinkScopes[symlink.Path()]; exists {
 		return scope, nil
@@ -111,7 +111,7 @@ func (m *MockSymlinkResolver) ClassifySymlinkScope(
 }
 
 func (m *MockSymlinkResolver) GetSymlinkType(
-	ctx context.Context,
+	_ context.Context,
 	symlink valueobject.SymlinkInfo,
 ) (valueobject.SymlinkType, error) {
 	if symlinkType, exists := m.symlinkTypes[symlink.Path()]; exists {
@@ -121,8 +121,8 @@ func (m *MockSymlinkResolver) GetSymlinkType(
 }
 
 func (m *MockSymlinkResolver) ResolveRelativeSymlink(
-	ctx context.Context,
-	symlinkPath, repositoryRoot string,
+	_ context.Context,
+	symlinkPath string, _ string,
 ) (*valueobject.SymlinkInfo, error) {
 	if resolved, exists := m.resolvedChains[symlinkPath]; exists {
 		return resolved, nil
@@ -131,9 +131,9 @@ func (m *MockSymlinkResolver) ResolveRelativeSymlink(
 }
 
 func (m *MockSymlinkResolver) ValidateSymlinkSecurity(
-	ctx context.Context,
+	_ context.Context,
 	symlink valueobject.SymlinkInfo,
-	repositoryRoot string,
+	_ string,
 ) (*outbound.SymlinkSecurityResult, error) {
 	if result, exists := m.securityResults[symlink.Path()]; exists {
 		return result, nil
@@ -160,7 +160,7 @@ func TestSymlinkResolutionService_DetectSymlinks_BasicDetection(t *testing.T) {
 		{
 			name:          "Empty directory",
 			directoryPath: "empty_dir",
-			setupDir:      func(path string) error { return nil },
+			setupDir:      func(_ string) error { return nil },
 			expected:      []symlinkExpectation{},
 		},
 		{
@@ -875,23 +875,23 @@ func validateSymlinkExpectation(t *testing.T, actual valueobject.SymlinkInfo, ex
 
 // Setup functions for test directories
 
-func setupSingleFileSymlinkDir(dirPath string) error {
+func setupSingleFileSymlinkDir(_ string) error {
 	// In a real implementation, this would create actual symlinks
 	// For testing purposes, we just ensure the directory exists
 	return nil
 }
 
-func setupMultiSymlinkDir(dirPath string) error {
+func setupMultiSymlinkDir(_ string) error {
 	// In a real implementation, this would create multiple symlinks
 	return nil
 }
 
-func setupBrokenSymlinkDir(dirPath string) error {
+func setupBrokenSymlinkDir(_ string) error {
 	// In a real implementation, this would create symlinks pointing to non-existent targets
 	return nil
 }
 
-func setupCircularSymlinkDir(dirPath string) error {
+func setupCircularSymlinkDir(_ string) error {
 	// In a real implementation, this would create circular symlinks
 	return nil
 }

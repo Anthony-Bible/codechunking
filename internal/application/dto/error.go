@@ -14,14 +14,22 @@ type ErrorResponse struct {
 type ErrorCode string
 
 const (
-	ErrorCodeInvalidRequest       ErrorCode = "INVALID_REQUEST"
-	ErrorCodeInvalidURL           ErrorCode = "INVALID_URL"
-	ErrorCodeRepositoryExists     ErrorCode = "REPOSITORY_ALREADY_EXISTS"
-	ErrorCodeRepositoryNotFound   ErrorCode = "REPOSITORY_NOT_FOUND"
+	// ErrorCodeInvalidRequest indicates that the request contains invalid parameters or data.
+	ErrorCodeInvalidRequest ErrorCode = "INVALID_REQUEST"
+	// ErrorCodeInvalidURL indicates that the provided repository URL is malformed or invalid.
+	ErrorCodeInvalidURL ErrorCode = "INVALID_URL"
+	// ErrorCodeRepositoryExists indicates that a repository with the same URL already exists.
+	ErrorCodeRepositoryExists ErrorCode = "REPOSITORY_ALREADY_EXISTS"
+	// ErrorCodeRepositoryNotFound indicates that the requested repository could not be found.
+	ErrorCodeRepositoryNotFound ErrorCode = "REPOSITORY_NOT_FOUND"
+	// ErrorCodeRepositoryProcessing indicates that the repository is currently being processed.
 	ErrorCodeRepositoryProcessing ErrorCode = "REPOSITORY_PROCESSING"
-	ErrorCodeJobNotFound          ErrorCode = "JOB_NOT_FOUND"
-	ErrorCodeInternalError        ErrorCode = "INTERNAL_ERROR"
-	ErrorCodeServiceUnavailable   ErrorCode = "SERVICE_UNAVAILABLE"
+	// ErrorCodeJobNotFound indicates that the requested indexing job could not be found.
+	ErrorCodeJobNotFound ErrorCode = "JOB_NOT_FOUND"
+	// ErrorCodeInternalError indicates an unexpected internal server error occurred.
+	ErrorCodeInternalError ErrorCode = "INTERNAL_ERROR"
+	// ErrorCodeServiceUnavailable indicates that the service is temporarily unavailable.
+	ErrorCodeServiceUnavailable ErrorCode = "SERVICE_UNAVAILABLE"
 )
 
 // NewErrorResponse creates a new error response.

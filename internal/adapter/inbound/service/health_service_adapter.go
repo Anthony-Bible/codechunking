@@ -1,3 +1,5 @@
+// Package service provides inbound adapter implementations for domain services,
+// including health monitoring and repository service adapters.
 package service
 
 import (

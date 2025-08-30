@@ -54,7 +54,7 @@ func TestAlert_Creation(t *testing.T) {
 		// Create multiple errors for aggregation
 		errors := make([]*ClassifiedError, 3)
 		for i := range 3 {
-			error, _ := NewClassifiedError(
+			classifiedError, _ := NewClassifiedError(
 				ctx,
 				assert.AnError,
 				severity,
@@ -62,12 +62,12 @@ func TestAlert_Creation(t *testing.T) {
 				"Database connection failed",
 				nil,
 			)
-			errors[i] = error
+			errors[i] = classifiedError
 		}
 
 		aggregation, _ := NewErrorAggregation("database_connection_failure:ERROR", time.Minute*5)
-		for _, error := range errors {
-			aggregation.AddError(error)
+		for _, classifiedError := range errors {
+			aggregation.AddError(classifiedError)
 		}
 
 		alertType, _ := valueobject.NewAlertType("BATCH")

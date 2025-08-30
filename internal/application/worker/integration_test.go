@@ -289,7 +289,7 @@ func (s *IntegrationWorkerSystem) GetAcknowledgmentResults() []MessageAcknowledg
 // TestEndToEndMessageFlow tests complete message flow from NATS to job processing.
 func TestEndToEndMessageFlow(t *testing.T) {
 	t.Run("should process message from NATS to repository update", func(t *testing.T) {
-		nats_config := IntegrationConfig{
+		natsConfig := IntegrationConfig{
 			WorkerConfig: WorkerServiceConfig{
 				Concurrency:         3,
 				QueueGroup:          "indexing-workers",
@@ -308,7 +308,7 @@ func TestEndToEndMessageFlow(t *testing.T) {
 			},
 		}
 
-		system, err := NewIntegrationWorkerSystem(nats_config)
+		system, err := NewIntegrationWorkerSystem(natsConfig)
 
 		// Should fail in RED phase
 		require.Error(t, err)

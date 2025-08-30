@@ -14,20 +14,18 @@ import (
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "A brief description of your command",
-		Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
+		Short: "Show version information",
+		Long: `Show version information for the codechunking application.
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+This command displays the current version of the codechunking CLI tool,
+which includes version number, build information, and other relevant details.`,
 		Run: func(_ *cobra.Command, _ []string) {
 			slogger.InfoNoCtx("version called", nil)
 		},
 	}
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for command registration
 	rootCmd.AddCommand(newVersionCmd())
 
 	// Here you will define your flags and configuration settings.

@@ -21,13 +21,16 @@ import (
 func newWorkerCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "worker",
-		Short: "A brief description of your command",
-		Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
+		Short: "Start the background worker service",
+		Long: `Start the background worker service that processes indexing jobs from NATS JetStream.
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+The worker service:
+- Connects to NATS JetStream to consume indexing jobs
+- Processes repositories by cloning, parsing, and generating embeddings
+- Runs with configurable concurrency for parallel job processing
+- Provides automatic retry logic and error handling
+
+Configuration is loaded from config files and environment variables.`,
 		Run: func(_ *cobra.Command, _ []string) {
 			// Load configuration
 			cfg := config.New(viper.GetViper())
@@ -103,7 +106,7 @@ to quickly create a Cobra application.`,
 	}
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for command registration
 	rootCmd.AddCommand(newWorkerCmd())
 
 	// Here you will define your flags and configuration settings.

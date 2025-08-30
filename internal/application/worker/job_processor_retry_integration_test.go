@@ -152,7 +152,7 @@ func TestJobProcessorRetry_BasicRetryScenarios(t *testing.T) {
 			attemptCount := 0
 
 			// Configure the processor with a mock function that simulates failures
-			config.ProcessFunc = func(ctx context.Context, message messaging.EnhancedIndexingJobMessage) error {
+			config.ProcessFunc = func(_ context.Context, _ messaging.EnhancedIndexingJobMessage) error {
 				attemptCount++
 				if attemptCount <= len(tt.failureSequence) {
 					return tt.failureSequence[attemptCount-1]

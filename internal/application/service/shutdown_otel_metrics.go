@@ -20,7 +20,7 @@ func NewShutdownMetricsCollector(enabled bool) *ShutdownMetricsCollector {
 }
 
 // RecordShutdownStart records the start of a graceful shutdown operation.
-func (s *ShutdownMetricsCollector) RecordShutdownStart(ctx context.Context, phase ShutdownPhase, componentCount int) {
+func (s *ShutdownMetricsCollector) RecordShutdownStart(_ context.Context, _ ShutdownPhase, _ int) {
 	if !s.enabled {
 		return
 	}
@@ -38,10 +38,10 @@ func (s *ShutdownMetricsCollector) RecordShutdownStart(ctx context.Context, phas
 
 // RecordComponentShutdown records the completion of an individual component shutdown.
 func (s *ShutdownMetricsCollector) RecordComponentShutdown(
-	ctx context.Context,
-	componentName string,
-	duration time.Duration,
-	success bool,
+	_ context.Context,
+	_ string,
+	_ time.Duration,
+	_ bool,
 ) {
 	if !s.enabled {
 		return
@@ -55,9 +55,9 @@ func (s *ShutdownMetricsCollector) RecordComponentShutdown(
 
 // RecordShutdownPhaseTransition records transitions between shutdown phases.
 func (s *ShutdownMetricsCollector) RecordShutdownPhaseTransition(
-	ctx context.Context,
-	fromPhase, toPhase ShutdownPhase,
-	duration time.Duration,
+	_ context.Context,
+	_, _ ShutdownPhase,
+	_ time.Duration,
 ) {
 	if !s.enabled {
 		return
@@ -71,9 +71,9 @@ func (s *ShutdownMetricsCollector) RecordShutdownPhaseTransition(
 
 // RecordShutdownComplete records the completion of the entire shutdown process.
 func (s *ShutdownMetricsCollector) RecordShutdownComplete(
-	ctx context.Context,
-	totalDuration time.Duration,
-	metrics ShutdownMetrics,
+	_ context.Context,
+	_ time.Duration,
+	_ ShutdownMetrics,
 ) {
 	if !s.enabled {
 		return
@@ -89,10 +89,10 @@ func (s *ShutdownMetricsCollector) RecordShutdownComplete(
 
 // RecordResourceCleanup records resource cleanup metrics.
 func (s *ShutdownMetricsCollector) RecordResourceCleanup(
-	ctx context.Context,
-	resourceType ResourceType,
-	duration time.Duration,
-	success bool,
+	_ context.Context,
+	_ ResourceType,
+	_ time.Duration,
+	_ bool,
 ) {
 	if !s.enabled {
 		return
@@ -106,11 +106,11 @@ func (s *ShutdownMetricsCollector) RecordResourceCleanup(
 
 // RecordWorkerShutdown records worker shutdown metrics.
 func (s *ShutdownMetricsCollector) RecordWorkerShutdown(
-	ctx context.Context,
-	workerID string,
-	activeJobs int,
-	completedJobs int64,
-	duration time.Duration,
+	_ context.Context,
+	_ string,
+	_ int,
+	_ int64,
+	_ time.Duration,
 ) {
 	if !s.enabled {
 		return
@@ -125,11 +125,11 @@ func (s *ShutdownMetricsCollector) RecordWorkerShutdown(
 
 // RecordDatabaseShutdown records database shutdown metrics.
 func (s *ShutdownMetricsCollector) RecordDatabaseShutdown(
-	ctx context.Context,
-	dbName string,
-	activeConnections int,
-	pendingTxns int,
-	drainDuration time.Duration,
+	_ context.Context,
+	_ string,
+	_ int,
+	_ int,
+	_ time.Duration,
 ) {
 	if !s.enabled {
 		return
@@ -144,10 +144,10 @@ func (s *ShutdownMetricsCollector) RecordDatabaseShutdown(
 
 // RecordNATSShutdown records NATS shutdown metrics.
 func (s *ShutdownMetricsCollector) RecordNATSShutdown(
-	ctx context.Context,
-	consumerName string,
-	pendingMsgs int64,
-	drainDuration time.Duration,
+	_ context.Context,
+	_ string,
+	_ int64,
+	_ time.Duration,
 ) {
 	if !s.enabled {
 		return
@@ -193,7 +193,7 @@ func (s *ShutdownMetricsCollector) FormatDuration(duration time.Duration) float6
 }
 
 // GetHealthMetrics returns health-related metrics for shutdown components.
-func (s *ShutdownMetricsCollector) GetHealthMetrics(ctx context.Context) map[string]interface{} {
+func (s *ShutdownMetricsCollector) GetHealthMetrics(_ context.Context) map[string]interface{} {
 	if !s.enabled {
 		return nil
 	}
@@ -207,10 +207,10 @@ func (s *ShutdownMetricsCollector) GetHealthMetrics(ctx context.Context) map[str
 
 // RecordHealthCheck records health check results for shutdown components.
 func (s *ShutdownMetricsCollector) RecordHealthCheck(
-	ctx context.Context,
-	component string,
-	healthy bool,
-	checkDuration time.Duration,
+	_ context.Context,
+	_ string,
+	_ bool,
+	_ time.Duration,
 ) {
 	if !s.enabled {
 		return
@@ -225,7 +225,7 @@ func (s *ShutdownMetricsCollector) RecordHealthCheck(
 
 // CreateMetricsSummary creates a summary of all shutdown metrics for reporting.
 func (s *ShutdownMetricsCollector) CreateMetricsSummary(
-	ctx context.Context,
+	_ context.Context,
 	metrics ShutdownMetrics,
 ) map[string]interface{} {
 	if !s.enabled {

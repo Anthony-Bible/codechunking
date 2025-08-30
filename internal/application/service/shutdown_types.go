@@ -462,7 +462,7 @@ type DatabaseConnection interface {
 	GetActiveTxns() int
 
 	// SetMaxConnections sets the maximum number of connections allowed.
-	SetMaxConnections(max int) error
+	SetMaxConnections(maxConnections int) error
 
 	// DrainConnections gracefully drains connections over the specified timeout.
 	DrainConnections(ctx context.Context, timeout time.Duration) error

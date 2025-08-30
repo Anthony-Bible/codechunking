@@ -166,7 +166,7 @@ func (n *natsShutdownManager) FlushPendingMessages(ctx context.Context) error {
 }
 
 // CloseConnections closes all NATS connections.
-func (n *natsShutdownManager) CloseConnections(ctx context.Context) error {
+func (n *natsShutdownManager) CloseConnections(_ context.Context) error {
 	n.mu.RLock()
 	consumers := make(map[string]NATSConsumer)
 	for name, consumer := range n.consumers {
@@ -241,31 +241,52 @@ func (n *natsShutdownManager) updateConsumerStatus(name, status, errorMsg string
 
 	for i, consumerStatus := range n.status {
 		if consumerStatus.Name == name {
-			n.status[i].Status = status
-			n.status[i].Error = errorMsg
-
-			if status == ConsumerStatusDraining && n.status[i].DrainStartTime.IsZero() {
-				n.status[i].DrainStartTime = time.Now()
-			}
-
-			if (status == ConsumerStatusDrained || status == ConsumerStatusStopped || status == ConsumerStatusClosed) &&
-				!n.status[i].DrainStartTime.IsZero() {
-				n.status[i].DrainDuration = time.Since(n.status[i].DrainStartTime)
-
-				// Update consumer metrics
-				consumerMetrics, exists := n.metrics.ConsumerMetrics[name]
-				if !exists {
-					consumerMetrics = NATSConsumerMetrics{Name: name}
-				}
-				consumerMetrics.DrainTime = n.status[i].DrainDuration
-				consumerMetrics.DrainAttempts++
-				if status != ConsumerStatusError {
-					consumerMetrics.SuccessfulDrains++
-				}
-				n.metrics.ConsumerMetrics[name] = consumerMetrics
-			}
-
-			break
+			n.updateConsumerStatusDetails(i, name, status, errorMsg)
+			return
 		}
 	}
+}
+
+// updateConsumerStatusDetails handles the detailed status update logic for a consumer.
+// This method must be called while holding the mutex lock.
+func (n *natsShutdownManager) updateConsumerStatusDetails(index int, name, status, errorMsg string) {
+	// Update basic status information
+	n.status[index].Status = status
+	n.status[index].Error = errorMsg
+
+	// Handle drain start timing
+	isDrainingStatus := status == ConsumerStatusDraining
+	drainStartTimeNotSet := n.status[index].DrainStartTime.IsZero()
+	if isDrainingStatus && drainStartTimeNotSet {
+		n.status[index].DrainStartTime = time.Now()
+	}
+
+	// Handle drain completion and metrics
+	isCompletionStatus := status == ConsumerStatusDrained ||
+		status == ConsumerStatusStopped ||
+		status == ConsumerStatusClosed
+	drainStartTimeIsSet := !n.status[index].DrainStartTime.IsZero()
+
+	if isCompletionStatus && drainStartTimeIsSet {
+		n.status[index].DrainDuration = time.Since(n.status[index].DrainStartTime)
+		n.updateConsumerMetrics(name, status, n.status[index].DrainDuration)
+	}
+}
+
+// updateConsumerMetrics updates the metrics for a consumer.
+// This method must be called while holding the mutex lock.
+func (n *natsShutdownManager) updateConsumerMetrics(name, status string, drainDuration time.Duration) {
+	consumerMetrics, exists := n.metrics.ConsumerMetrics[name]
+	if !exists {
+		consumerMetrics = NATSConsumerMetrics{Name: name}
+	}
+
+	consumerMetrics.DrainTime = drainDuration
+	consumerMetrics.DrainAttempts++
+
+	if status != ConsumerStatusError {
+		consumerMetrics.SuccessfulDrains++
+	}
+
+	n.metrics.ConsumerMetrics[name] = consumerMetrics
 }

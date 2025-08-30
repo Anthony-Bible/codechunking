@@ -57,7 +57,7 @@ func NewGracefulShutdownService(config GracefulShutdownConfig) GracefulShutdownS
 }
 
 // Start initializes signal handlers and begins monitoring for shutdown signals.
-func (g *gracefulShutdownService) Start(ctx context.Context) error {
+func (g *gracefulShutdownService) Start(_ context.Context) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -165,7 +165,7 @@ func (g *gracefulShutdownService) IsShuttingDown() bool {
 }
 
 // ForceShutdown immediately terminates all components without graceful cleanup.
-func (g *gracefulShutdownService) ForceShutdown(ctx context.Context) error {
+func (g *gracefulShutdownService) ForceShutdown(_ context.Context) error {
 	g.mu.Lock()
 	g.isShuttingDown = true
 	g.status.IsShuttingDown = true

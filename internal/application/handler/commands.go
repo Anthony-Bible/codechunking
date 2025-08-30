@@ -1,3 +1,6 @@
+// Package handler defines command and query handlers for the application layer.
+// These handlers act as adapters between the API layer and the service layer,
+// providing validation, DTO conversion, and orchestration of business operations.
 package handler
 
 import "github.com/google/uuid"

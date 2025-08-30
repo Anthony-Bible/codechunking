@@ -1,3 +1,5 @@
+// Package common provides shared application-level validation utilities with security checks.
+// revive:disable:var-naming - allow package name "common" for shared helpers in this module
 package common
 
 import (

@@ -1,3 +1,6 @@
+// Package dto defines data transfer objects for application layer communication.
+// These DTOs are used to transfer data between the handler and service layers,
+// providing a clean separation between the API layer and business logic.
 package dto
 
 import "github.com/google/uuid"

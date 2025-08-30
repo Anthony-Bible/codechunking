@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+const (
+	// MaxSymlinkDepth defines the maximum allowed depth for symlink resolution..
+	MaxSymlinkDepth = 10
+	// MaxPathTraversalThreshold defines the maximum number of ".." references allowed..
+	MaxPathTraversalThreshold = 5
+)
+
 // SecurityValidator handles security validation for symbolic links.
 // It provides functionality to validate symlinks against security constraints
 // and determine risk levels and recommended actions.
@@ -61,7 +68,7 @@ func (sv *SecurityValidator) ValidateSymlinkSecurity(
 	}
 
 	// Check depth limit
-	exceedsDepth := symlink.Depth() > 10
+	exceedsDepth := symlink.Depth() > MaxSymlinkDepth
 	if exceedsDepth {
 		violations = append(violations, "exceeds_depth_limit")
 		isSecure = false
@@ -86,7 +93,7 @@ func (sv *SecurityValidator) ValidateSymlinkSecurity(
 
 // ValidateSymlinkTarget checks if a symlink target exists and is accessible.
 func (sv *SecurityValidator) ValidateSymlinkTarget(
-	ctx context.Context,
+	_ context.Context,
 	symlink valueobject.SymlinkInfo,
 ) (*outbound.SymlinkValidationResult, error) {
 	start := time.Now()
@@ -182,7 +189,7 @@ func (sv *SecurityValidator) CheckSecurityViolations(
 	}
 
 	// Check depth limits
-	if symlink.Depth() > 10 {
+	if symlink.Depth() > MaxSymlinkDepth {
 		violations = append(violations, "exceeds_depth_limit")
 	}
 
@@ -286,5 +293,5 @@ func (sv *SecurityValidator) hasPathTraversalAttack(targetPath string) bool {
 
 	// Check for excessive parent directory references
 	parentDirCount := strings.Count(targetPath, "..")
-	return parentDirCount > 5 // Configurable threshold
+	return parentDirCount > MaxPathTraversalThreshold
 }

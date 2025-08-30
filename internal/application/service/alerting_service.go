@@ -89,7 +89,7 @@ func (s *AlertingService) extractCorrelationID(ctx context.Context) string {
 }
 
 // SendAlertWithCircuitBreaker sends an alert using circuit breaker pattern.
-func (s *AlertingService) SendAlertWithCircuitBreaker(ctx context.Context, alert *entity.Alert) error {
+func (s *AlertingService) SendAlertWithCircuitBreaker(ctx context.Context, _ *entity.Alert) error {
 	if s.circuitBreaker != nil {
 		return s.circuitBreaker.Execute(ctx, func() error {
 			// Minimal implementation - would integrate with actual alerting system

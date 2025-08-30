@@ -1,3 +1,5 @@
+// Package api provides API-related test utilities and integration tests
+// for the inbound adapter layer.
 package api
 
 import (

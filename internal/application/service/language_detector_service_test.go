@@ -1481,7 +1481,7 @@ func createMockLanguageDetector(t *testing.T) outbound.LanguageDetector {
 type MockLanguageDetector struct{}
 
 // DetectFromFilePath implements basic extension-based detection for testing.
-func (m *MockLanguageDetector) DetectFromFilePath(ctx context.Context, filePath string) (valueobject.Language, error) {
+func (m *MockLanguageDetector) DetectFromFilePath(_ context.Context, filePath string) (valueobject.Language, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 
 	extensionMap := map[string]string{
@@ -1677,32 +1677,8 @@ func (m *MockLanguageDetector) DetectMultipleLanguages(
 
 	contentStr := string(content)
 
-	// HTML with embedded languages
-	if strings.Contains(filename, ".html") || regexp.MustCompile(`<html\b`).MatchString(contentStr) {
-		if htmlLang, err := valueobject.NewLanguage(valueobject.LanguageHTML); err == nil {
-			if !mockContainsLanguage(languages, htmlLang) {
-				languages = append(languages, htmlLang)
-			}
-		}
-
-		// Check for embedded JavaScript
-		if regexp.MustCompile(`<script\b`).MatchString(contentStr) {
-			if jsLang, err := valueobject.NewLanguage(valueobject.LanguageJavaScript); err == nil {
-				if !mockContainsLanguage(languages, jsLang) {
-					languages = append(languages, jsLang)
-				}
-			}
-		}
-
-		// Check for embedded CSS
-		if regexp.MustCompile(`<style\b`).MatchString(contentStr) {
-			if cssLang, err := valueobject.NewLanguage(valueobject.LanguageCSS); err == nil {
-				if !mockContainsLanguage(languages, cssLang) {
-					languages = append(languages, cssLang)
-				}
-			}
-		}
-	}
+	// HTML with embedded languages - now uses helper method to reduce complexity
+	m.detectHTMLWithEmbeddedLanguages(&languages, filename, contentStr)
 
 	if len(languages) == 0 {
 		if unknownLang, err := valueobject.NewLanguage(valueobject.LanguageUnknown); err == nil {
@@ -1749,6 +1725,39 @@ func (m *MockLanguageDetector) DetectBatch(
 	}
 
 	return results, nil
+}
+
+// addLanguageIfNotExists adds a language to the slice if it doesn't already exist.
+func (m *MockLanguageDetector) addLanguageIfNotExists(languages *[]valueobject.Language, languageName string) {
+	lang, err := valueobject.NewLanguage(languageName)
+	if err == nil && !mockContainsLanguage(*languages, lang) {
+		*languages = append(*languages, lang)
+	}
+}
+
+// detectHTMLWithEmbeddedLanguages detects HTML and its embedded languages to reduce nesting complexity.
+func (m *MockLanguageDetector) detectHTMLWithEmbeddedLanguages(
+	languages *[]valueobject.Language,
+	filename, contentStr string,
+) {
+	isHTMLFile := strings.Contains(filename, ".html")
+	hasHTMLTags := regexp.MustCompile(`<html\b`).MatchString(contentStr)
+
+	if !isHTMLFile && !hasHTMLTags {
+		return
+	}
+
+	// Add HTML language
+	m.addLanguageIfNotExists(languages, valueobject.LanguageHTML)
+
+	// Check for embedded languages
+	if regexp.MustCompile(`<script\b`).MatchString(contentStr) {
+		m.addLanguageIfNotExists(languages, valueobject.LanguageJavaScript)
+	}
+
+	if regexp.MustCompile(`<style\b`).MatchString(contentStr) {
+		m.addLanguageIfNotExists(languages, valueobject.LanguageCSS)
+	}
 }
 
 // mockContainsLanguage checks if a language is already in the list.

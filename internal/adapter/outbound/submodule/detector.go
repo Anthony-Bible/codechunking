@@ -14,6 +14,13 @@ import (
 	"time"
 )
 
+const (
+	// KeyValueParts defines the expected number of parts when splitting key=value pairs.
+	KeyValueParts = 2
+	// DefaultResponseTimeMs defines the default response time for submodule access in milliseconds.
+	DefaultResponseTimeMs = 100
+)
+
 // Detector implements outbound.SubmoduleDetector interface for Git submodule detection.
 type Detector struct{}
 
@@ -37,7 +44,7 @@ func (d *Detector) DetectSubmodules(
 
 // ParseGitmodulesFile parses a .gitmodules file and returns submodule configurations.
 func (d *Detector) ParseGitmodulesFile(
-	ctx context.Context,
+	_ context.Context,
 	gitmodulesPath string,
 ) ([]valueobject.SubmoduleInfo, error) {
 	file, err := os.Open(gitmodulesPath)
@@ -114,8 +121,8 @@ func (p *gitmodulesParser) startNewSubmodule(line string) map[string]string {
 // parseKeyValuePair parses a key-value line and adds it to current submodule.
 func (p *gitmodulesParser) parseKeyValuePair(line string, currentSubmodule map[string]string) {
 	if currentSubmodule != nil && strings.Contains(line, "=") {
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) == 2 {
+		parts := strings.SplitN(line, "=", KeyValueParts)
+		if len(parts) == KeyValueParts {
 			key := strings.TrimSpace(parts[0])
 			value := strings.TrimSpace(parts[1])
 			currentSubmodule[key] = value
@@ -181,7 +188,7 @@ func (d *Detector) IsSubmoduleDirectory(
 
 // GetSubmoduleStatus retrieves the status of a specific submodule.
 func (d *Detector) GetSubmoduleStatus(
-	ctx context.Context,
+	_ context.Context,
 	submodulePath string,
 	repositoryRoot string,
 ) (valueobject.SubmoduleStatus, error) {
@@ -206,7 +213,7 @@ func (d *Detector) GetSubmoduleStatus(
 
 // ValidateSubmoduleConfiguration validates a submodule configuration.
 func (d *Detector) ValidateSubmoduleConfiguration(
-	ctx context.Context,
+	_ context.Context,
 	submodule valueobject.SubmoduleInfo,
 ) error {
 	// Basic validation - check path
@@ -257,7 +264,7 @@ func (d *Detector) DetectNestedSubmodules(
 
 // ResolveSubmoduleURL resolves a submodule URL to its absolute form.
 func (d *Detector) ResolveSubmoduleURL(
-	ctx context.Context,
+	_ context.Context,
 	submoduleURL, repositoryRoot string,
 ) (string, error) {
 	if strings.HasPrefix(submoduleURL, "./") || strings.HasPrefix(submoduleURL, "../") {
@@ -270,9 +277,9 @@ func (d *Detector) ResolveSubmoduleURL(
 
 // GetSubmoduleCommit retrieves the commit SHA that a submodule points to.
 func (d *Detector) GetSubmoduleCommit(
-	ctx context.Context,
-	submodulePath string,
-	repositoryRoot string,
+	_ context.Context,
+	_ string,
+	_ string,
 ) (string, error) {
 	// Minimal implementation for tests
 	return "1234567890abcdef", nil
@@ -293,9 +300,9 @@ func (d *Detector) IsSubmoduleActive(
 
 // GetSubmoduleBranch retrieves the branch that a submodule is tracking.
 func (d *Detector) GetSubmoduleBranch(
-	ctx context.Context,
-	submodulePath string,
-	repositoryRoot string,
+	_ context.Context,
+	_ string,
+	_ string,
 ) (string, error) {
 	// Simple implementation
 	return "main", nil
@@ -303,7 +310,7 @@ func (d *Detector) GetSubmoduleBranch(
 
 // ValidateSubmoduleAccess checks if a submodule repository is accessible.
 func (d *Detector) ValidateSubmoduleAccess(
-	ctx context.Context,
+	_ context.Context,
 	submodule valueobject.SubmoduleInfo,
 ) (*outbound.SubmoduleAccessResult, error) {
 	// Basic implementation for tests
@@ -314,7 +321,7 @@ func (d *Detector) ValidateSubmoduleAccess(
 		IsAccessible: isAccessible,
 		AccessMethod: "https",
 		RequiresAuth: false,
-		ResponseTime: 100 * time.Millisecond,
+		ResponseTime: DefaultResponseTimeMs * time.Millisecond,
 	}, nil
 }
 

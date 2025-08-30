@@ -65,7 +65,14 @@ func NewCheckpointPool() *CheckpointPool {
 
 // GetCheckpoint retrieves a checkpoint from the pool.
 func (p *CheckpointPool) GetCheckpoint() *JobCheckpoint {
-	cp := p.checkpointPool.Get().(*JobCheckpoint)
+	raw := p.checkpointPool.Get()
+	if raw == nil {
+		panic("checkpoint pool returned nil - pool not properly initialized")
+	}
+	cp, ok := raw.(*JobCheckpoint)
+	if !ok {
+		panic("checkpoint pool returned wrong type")
+	}
 	p.resetCheckpoint(cp)
 	return cp
 }
@@ -79,7 +86,14 @@ func (p *CheckpointPool) PutCheckpoint(cp *JobCheckpoint) {
 
 // GetProgress retrieves a job progress from the pool.
 func (p *CheckpointPool) GetProgress() *JobProgress {
-	progress := p.progressPool.Get().(*JobProgress)
+	raw := p.progressPool.Get()
+	if raw == nil {
+		panic("progress pool returned nil - pool not properly initialized")
+	}
+	progress, ok := raw.(*JobProgress)
+	if !ok {
+		panic("progress pool returned wrong type")
+	}
 	p.resetProgress(progress)
 	return progress
 }
@@ -93,7 +107,14 @@ func (p *CheckpointPool) PutProgress(progress *JobProgress) {
 
 // GetMetadata retrieves metadata from the pool.
 func (p *CheckpointPool) GetMetadata() *CheckpointMetadata {
-	metadata := p.metadataPool.Get().(*CheckpointMetadata)
+	raw := p.metadataPool.Get()
+	if raw == nil {
+		panic("metadata pool returned nil - pool not properly initialized")
+	}
+	metadata, ok := raw.(*CheckpointMetadata)
+	if !ok {
+		panic("metadata pool returned wrong type")
+	}
 	p.resetMetadata(metadata)
 	return metadata
 }
@@ -107,7 +128,14 @@ func (p *CheckpointPool) PutMetadata(metadata *CheckpointMetadata) {
 
 // GetResumePoint retrieves a resume point from the pool.
 func (p *CheckpointPool) GetResumePoint() *ResumePoint {
-	rp := p.resumePointPool.Get().(*ResumePoint)
+	raw := p.resumePointPool.Get()
+	if raw == nil {
+		panic("resume point pool returned nil - pool not properly initialized")
+	}
+	rp, ok := raw.(*ResumePoint)
+	if !ok {
+		panic("resume point pool returned wrong type")
+	}
 	p.resetResumePoint(rp)
 	return rp
 }
@@ -121,7 +149,14 @@ func (p *CheckpointPool) PutResumePoint(rp *ResumePoint) {
 
 // GetResourceUsage retrieves resource usage from the pool.
 func (p *CheckpointPool) GetResourceUsage() *ResourceUsage {
-	usage := p.resourceUsagePool.Get().(*ResourceUsage)
+	raw := p.resourceUsagePool.Get()
+	if raw == nil {
+		panic("resource usage pool returned nil - pool not properly initialized")
+	}
+	usage, ok := raw.(*ResourceUsage)
+	if !ok {
+		panic("resource usage pool returned wrong type")
+	}
 	p.resetResourceUsage(usage)
 	return usage
 }
@@ -443,6 +478,17 @@ func (s *PerformanceOptimizedCheckpointService) copyCheckpoint(original *JobChec
 	copied := s.pool.GetCheckpoint()
 
 	// Copy basic fields
+	s.copyBasicFields(copied, original)
+	s.copyDataSlices(copied, original)
+	s.copyResumePoint(copied, original)
+	s.copyMetadata(copied, original)
+	s.copyFailureContext(copied, original)
+
+	return copied
+}
+
+// copyBasicFields copies the basic fields of a checkpoint.
+func (s *PerformanceOptimizedCheckpointService) copyBasicFields(copied, original *JobCheckpoint) {
 	copied.ID = original.ID
 	copied.JobID = original.JobID
 	copied.Stage = original.Stage
@@ -456,115 +502,131 @@ func (s *PerformanceOptimizedCheckpointService) copyCheckpoint(original *JobChec
 		validatedAt := *original.ValidatedAt
 		copied.ValidatedAt = &validatedAt
 	}
+}
 
+// copyDataSlices copies the data slices of a checkpoint.
+func (s *PerformanceOptimizedCheckpointService) copyDataSlices(copied, original *JobCheckpoint) {
 	// Copy CompressedData
 	if len(original.CompressedData) > 0 {
 		copied.CompressedData = make([]byte, len(original.CompressedData))
-		copyFunc := func(dst, src []byte) int { return copy(dst, src) }
-		copyFunc(copied.CompressedData, original.CompressedData)
+		copy(copied.CompressedData, original.CompressedData)
 	}
 
 	// Copy ProcessedFiles
 	if len(original.ProcessedFiles) > 0 {
 		copied.ProcessedFiles = make([]string, len(original.ProcessedFiles))
-		copyFunc := func(dst, src []string) int { return copy(dst, src) }
-		copyFunc(copied.ProcessedFiles, original.ProcessedFiles)
+		copy(copied.ProcessedFiles, original.ProcessedFiles)
 	}
 
 	// Copy CompletedChunks
 	if len(original.CompletedChunks) > 0 {
 		copied.CompletedChunks = make([]ChunkReference, len(original.CompletedChunks))
-		copyFunc := func(dst, src []ChunkReference) int { return copy(dst, src) }
-		copyFunc(copied.CompletedChunks, original.CompletedChunks)
+		copy(copied.CompletedChunks, original.CompletedChunks)
+	}
+}
+
+// copyResumePoint copies the resume point of a checkpoint.
+func (s *PerformanceOptimizedCheckpointService) copyResumePoint(copied, original *JobCheckpoint) {
+	if original.ResumePoint == nil {
+		return
 	}
 
-	// Copy ResumePoint if it exists
-	if original.ResumePoint != nil {
-		copied.ResumePoint = s.pool.GetResumePoint()
-		copied.ResumePoint.Stage = original.ResumePoint.Stage
-		copied.ResumePoint.CurrentFile = original.ResumePoint.CurrentFile
-		copied.ResumePoint.FileIndex = original.ResumePoint.FileIndex
-		copied.ResumePoint.ChunkIndex = original.ResumePoint.ChunkIndex
-		copied.ResumePoint.ByteOffset = original.ResumePoint.ByteOffset
-		copied.ResumePoint.LastCommitHash = original.ResumePoint.LastCommitHash
+	copied.ResumePoint = s.pool.GetResumePoint()
+	copied.ResumePoint.Stage = original.ResumePoint.Stage
+	copied.ResumePoint.CurrentFile = original.ResumePoint.CurrentFile
+	copied.ResumePoint.FileIndex = original.ResumePoint.FileIndex
+	copied.ResumePoint.ChunkIndex = original.ResumePoint.ChunkIndex
+	copied.ResumePoint.ByteOffset = original.ResumePoint.ByteOffset
+	copied.ResumePoint.LastCommitHash = original.ResumePoint.LastCommitHash
 
-		// Copy ProcessingFlags map
-		for k, v := range original.ResumePoint.ProcessingFlags {
-			copied.ResumePoint.ProcessingFlags[k] = v
-		}
-
-		// Copy Dependencies slice
-		if len(original.ResumePoint.Dependencies) > 0 {
-			copied.ResumePoint.Dependencies = make([]string, len(original.ResumePoint.Dependencies))
-			copyFunc := func(dst, src []string) int { return copy(dst, src) }
-			copyFunc(copied.ResumePoint.Dependencies, original.ResumePoint.Dependencies)
-		}
+	// Copy ProcessingFlags map
+	for k, v := range original.ResumePoint.ProcessingFlags {
+		copied.ResumePoint.ProcessingFlags[k] = v
 	}
 
-	// Copy Metadata if it exists
-	if original.Metadata != nil {
-		copied.Metadata = s.pool.GetMetadata()
-		copied.Metadata.Version = original.Metadata.Version
-		copied.Metadata.CheckpointType = original.Metadata.CheckpointType
-		copied.Metadata.Granularity = original.Metadata.Granularity
-		copied.Metadata.WorkerID = original.Metadata.WorkerID
-		copied.Metadata.WorkerVersion = original.Metadata.WorkerVersion
-		copied.Metadata.CompressionType = original.Metadata.CompressionType
-		copied.Metadata.EncryptionEnabled = original.Metadata.EncryptionEnabled
-		copied.Metadata.DataSize = original.Metadata.DataSize
+	// Copy Dependencies slice
+	if len(original.ResumePoint.Dependencies) > 0 {
+		copied.ResumePoint.Dependencies = make([]string, len(original.ResumePoint.Dependencies))
+		copy(copied.ResumePoint.Dependencies, original.ResumePoint.Dependencies)
+	}
+}
 
-		// Copy ValidationChecks map
-		for k, v := range original.Metadata.ValidationChecks {
-			copied.Metadata.ValidationChecks[k] = v
-		}
-
-		// Copy CustomProperties map
-		for k, v := range original.Metadata.CustomProperties {
-			copied.Metadata.CustomProperties[k] = v
-		}
+// copyMetadata copies the metadata of a checkpoint.
+func (s *PerformanceOptimizedCheckpointService) copyMetadata(copied, original *JobCheckpoint) {
+	if original.Metadata == nil {
+		return
 	}
 
-	// Copy FailureContext if it exists
-	if original.FailureContext != nil {
-		copied.FailureContext = &FailureContext{
-			FailureType:  original.FailureContext.FailureType,
-			ErrorMessage: original.FailureContext.ErrorMessage,
-			ErrorCode:    original.FailureContext.ErrorCode,
-			StackTrace:   original.FailureContext.StackTrace,
-			RetryCount:   original.FailureContext.RetryCount,
-			IsCritical:   original.FailureContext.IsCritical,
-		}
+	copied.Metadata = s.pool.GetMetadata()
+	copied.Metadata.Version = original.Metadata.Version
+	copied.Metadata.CheckpointType = original.Metadata.CheckpointType
+	copied.Metadata.Granularity = original.Metadata.Granularity
+	copied.Metadata.WorkerID = original.Metadata.WorkerID
+	copied.Metadata.WorkerVersion = original.Metadata.WorkerVersion
+	copied.Metadata.CompressionType = original.Metadata.CompressionType
+	copied.Metadata.EncryptionEnabled = original.Metadata.EncryptionEnabled
+	copied.Metadata.DataSize = original.Metadata.DataSize
 
-		// Copy LastRetryAt if it exists
-		if original.FailureContext.LastRetryAt != nil {
-			lastRetryAt := *original.FailureContext.LastRetryAt
-			copied.FailureContext.LastRetryAt = &lastRetryAt
-		}
-
-		// Copy RecoveryHints slice
-		if len(original.FailureContext.RecoveryHints) > 0 {
-			copied.FailureContext.RecoveryHints = make([]string, len(original.FailureContext.RecoveryHints))
-			copyFunc := func(dst, src []string) int { return copy(dst, src) }
-			copyFunc(copied.FailureContext.RecoveryHints, original.FailureContext.RecoveryHints)
-		}
-
-		// Copy AffectedFiles slice
-		if len(original.FailureContext.AffectedFiles) > 0 {
-			copied.FailureContext.AffectedFiles = make([]string, len(original.FailureContext.AffectedFiles))
-			copyFunc := func(dst, src []string) int { return copy(dst, src) }
-			copyFunc(copied.FailureContext.AffectedFiles, original.FailureContext.AffectedFiles)
-		}
-
-		// Copy SystemContext map
-		if len(original.FailureContext.SystemContext) > 0 {
-			copied.FailureContext.SystemContext = make(map[string]interface{})
-			for k, v := range original.FailureContext.SystemContext {
-				copied.FailureContext.SystemContext[k] = v
-			}
-		}
+	// Copy ValidationChecks map
+	for k, v := range original.Metadata.ValidationChecks {
+		copied.Metadata.ValidationChecks[k] = v
 	}
 
-	return copied
+	// Copy CustomProperties map
+	for k, v := range original.Metadata.CustomProperties {
+		copied.Metadata.CustomProperties[k] = v
+	}
+}
+
+// copyFailureContext copies the failure context of a checkpoint.
+func (s *PerformanceOptimizedCheckpointService) copyFailureContext(copied, original *JobCheckpoint) {
+	if original.FailureContext == nil {
+		return
+	}
+
+	copied.FailureContext = &FailureContext{
+		FailureType:  original.FailureContext.FailureType,
+		ErrorMessage: original.FailureContext.ErrorMessage,
+		ErrorCode:    original.FailureContext.ErrorCode,
+		StackTrace:   original.FailureContext.StackTrace,
+		RetryCount:   original.FailureContext.RetryCount,
+		IsCritical:   original.FailureContext.IsCritical,
+	}
+
+	// Copy LastRetryAt if it exists
+	if original.FailureContext.LastRetryAt != nil {
+		lastRetryAt := *original.FailureContext.LastRetryAt
+		copied.FailureContext.LastRetryAt = &lastRetryAt
+	}
+
+	s.copyFailureContextSlices(copied, original)
+	s.copyFailureContextMaps(copied, original)
+}
+
+// copyFailureContextSlices copies the slice fields of failure context.
+func (s *PerformanceOptimizedCheckpointService) copyFailureContextSlices(copied, original *JobCheckpoint) {
+	// Copy RecoveryHints slice
+	if len(original.FailureContext.RecoveryHints) > 0 {
+		copied.FailureContext.RecoveryHints = make([]string, len(original.FailureContext.RecoveryHints))
+		copy(copied.FailureContext.RecoveryHints, original.FailureContext.RecoveryHints)
+	}
+
+	// Copy AffectedFiles slice
+	if len(original.FailureContext.AffectedFiles) > 0 {
+		copied.FailureContext.AffectedFiles = make([]string, len(original.FailureContext.AffectedFiles))
+		copy(copied.FailureContext.AffectedFiles, original.FailureContext.AffectedFiles)
+	}
+}
+
+// copyFailureContextMaps copies the map fields of failure context.
+func (s *PerformanceOptimizedCheckpointService) copyFailureContextMaps(copied, original *JobCheckpoint) {
+	// Copy SystemContext map
+	if len(original.FailureContext.SystemContext) > 0 {
+		copied.FailureContext.SystemContext = make(map[string]interface{})
+		for k, v := range original.FailureContext.SystemContext {
+			copied.FailureContext.SystemContext[k] = v
+		}
+	}
 }
 
 // ReleaseCheckpoint returns checkpoint resources to the pool.

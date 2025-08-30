@@ -10,6 +10,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const (
+	// MaxInt32Value represents the maximum value for int32 type.
+	MaxInt32Value = 2147483647
+	// DefaultMaxConnections defines the default maximum connections for the pool.
+	DefaultMaxConnections = 10
+	// DefaultMinConnections defines the default minimum connections for the pool.
+	DefaultMinConnections = 0
+)
+
 // DatabaseConfig represents database connection configuration.
 type DatabaseConfig struct {
 	Host            string
@@ -70,23 +79,23 @@ func NewDatabaseConnection(config DatabaseConfig) (*pgxpool.Pool, error) {
 
 	// Configure connection pool
 	if config.MaxConnections > 0 {
-		if config.MaxConnections > 2147483647 { // max int32
-			poolConfig.MaxConns = 2147483647
+		if config.MaxConnections > MaxInt32Value { // max int32
+			poolConfig.MaxConns = MaxInt32Value
 		} else {
 			poolConfig.MaxConns = int32(config.MaxConnections) // #nosec G115 -- checked bounds above
 		}
 	} else {
-		poolConfig.MaxConns = 10 // default
+		poolConfig.MaxConns = DefaultMaxConnections // default
 	}
 
 	if config.MinConnections >= 0 {
-		if config.MinConnections > 2147483647 { // max int32
-			poolConfig.MinConns = 2147483647
+		if config.MinConnections > MaxInt32Value { // max int32
+			poolConfig.MinConns = MaxInt32Value
 		} else {
 			poolConfig.MinConns = int32(config.MinConnections) // #nosec G115 -- checked bounds above
 		}
 	} else {
-		poolConfig.MinConns = 0 // default
+		poolConfig.MinConns = DefaultMinConnections // default
 	}
 
 	if config.ConnMaxLifetime > 0 {

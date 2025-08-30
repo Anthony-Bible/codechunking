@@ -54,6 +54,7 @@ func (j *JSONEncoder) putPooledEncoder(pe *pooledEncoder) {
 	j.pool.Put(pe)
 }
 
+// WriteJSON writes JSON response using a default encoder instance.
 func WriteJSON(w http.ResponseWriter, statusCode int, data interface{}) error {
 	return WriteJSONWithEncoder(NewJSONEncoder(), w, statusCode, data)
 }

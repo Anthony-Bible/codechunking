@@ -15,10 +15,12 @@ type CreateIndexingJobService interface {
 	CreateIndexingJob(ctx context.Context, request dto.CreateIndexingJobRequest) (*dto.IndexingJobResponse, error)
 }
 
+// GetIndexingJobService defines the interface for retrieving indexing job details.
 type GetIndexingJobService interface {
 	GetIndexingJob(ctx context.Context, repositoryID, jobID uuid.UUID) (*dto.IndexingJobResponse, error)
 }
 
+// UpdateIndexingJobService defines the interface for updating indexing job status and progress.
 type UpdateIndexingJobService interface {
 	UpdateIndexingJob(
 		ctx context.Context,
@@ -27,6 +29,7 @@ type UpdateIndexingJobService interface {
 	) (*dto.IndexingJobResponse, error)
 }
 
+// ListIndexingJobsService defines the interface for listing indexing jobs with pagination.
 type ListIndexingJobsService interface {
 	ListIndexingJobs(
 		ctx context.Context,

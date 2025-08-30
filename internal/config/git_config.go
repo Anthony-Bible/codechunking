@@ -143,7 +143,7 @@ func (c *GitConfig) GetCloneTimeout(repositoryMB int64) time.Duration {
 	timeout := time.Duration(float64(c.DefaultTimeout) * multiplier)
 
 	// Cap at 3 hours maximum
-	maxTimeout := 180 * time.Minute
+	maxTimeout := MaxTimeoutMinutes * time.Minute
 	if timeout > maxTimeout {
 		timeout = maxTimeout
 	}
@@ -156,7 +156,7 @@ func (c *GitConfig) GetRetryConfig() RetryConfig {
 	return RetryConfig{
 		MaxAttempts:       c.RetryAttempts,
 		BackoffDuration:   c.RetryBackoffDuration,
-		BackoffMultiplier: 2.0, // Fixed exponential backoff
+		BackoffMultiplier: ExponentialBackoffMultiplier, // Fixed exponential backoff
 	}
 }
 

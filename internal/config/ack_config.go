@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+const (
+	// MaxAllowedDeliveryAttempts defines the maximum allowed delivery attempts.
+	MaxAllowedDeliveryAttempts = 50
+	// DefaultBatchSizeLimit defines the default limit for batch sizes.
+	DefaultBatchSizeLimit = 1000
+)
+
 // AckConfig holds acknowledgment configuration settings.
 type AckConfig struct {
 	EnableAcknowledgment       bool
@@ -41,7 +48,7 @@ func ValidateAckConfig(config AckConfig) error {
 		return errors.New("max_delivery_attempts must be positive")
 	}
 
-	if config.MaxDeliveryAttempts > 50 {
+	if config.MaxDeliveryAttempts > MaxAllowedDeliveryAttempts {
 		return errors.New("max_delivery_attempts too high")
 	}
 
@@ -231,7 +238,7 @@ func ValidateWorkerAckConfig(config WorkerAckConfig) error {
 			return errors.New("batch_size must be positive when batching is enabled")
 		}
 
-		if config.BatchSize >= 1000 {
+		if config.BatchSize >= DefaultBatchSizeLimit {
 			return errors.New("batch_size too large")
 		}
 

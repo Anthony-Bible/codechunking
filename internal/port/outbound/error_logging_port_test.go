@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // MockErrorClassifier is a mock implementation for testing.
@@ -61,7 +62,7 @@ func TestErrorClassifier_Interface(t *testing.T) {
 		// Test the interface
 		classifiedError, err := mockClassifier.ClassifyError(ctx, originalError, component)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, classifiedError)
 		assert.Equal(t, expectedClassifiedError.ID(), classifiedError.ID())
 		assert.Equal(t, "database_connection_failure", classifiedError.ErrorCode())
@@ -79,7 +80,7 @@ func TestErrorClassifier_Interface(t *testing.T) {
 
 		classifiedError, err := mockClassifier.ClassifyError(ctx, originalError, component)
 
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Nil(t, classifiedError)
 		mockClassifier.AssertExpectations(t)
 	})
@@ -111,8 +112,7 @@ func TestErrorClassifier_Interface(t *testing.T) {
 			return err.Error() == "invalid input"
 		})).Return(false)
 
-		retriableErr := assert.AnError
-		retriableErr = &testError{msg: "network timeout"}
+		retriableErr := &testError{msg: "network timeout"}
 		nonRetriableErr := &testError{msg: "invalid input"}
 
 		assert.True(t, mockClassifier.IsRetriableError(retriableErr))
@@ -196,7 +196,7 @@ func TestErrorAggregator_Interface(t *testing.T) {
 
 		aggregation, err := mockAggregator.AggregateError(ctx, classifiedError)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, aggregation)
 		assert.Equal(t, classifiedError.ErrorPattern(), aggregation.Pattern())
 		assert.Equal(t, 1, aggregation.Count())
@@ -216,7 +216,7 @@ func TestErrorAggregator_Interface(t *testing.T) {
 
 		result, err := mockAggregator.GetActiveAggregations(ctx)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Len(t, result, 2)
 		assert.Equal(t, "error1:ERROR", result[0].Pattern())
 		assert.Equal(t, "error2:CRITICAL", result[1].Pattern())
@@ -233,7 +233,7 @@ func TestErrorAggregator_Interface(t *testing.T) {
 
 		aggregation, err := mockAggregator.GetAggregationByPattern(ctx, pattern)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, aggregation)
 		assert.Equal(t, pattern, aggregation.Pattern())
 		mockAggregator.AssertExpectations(t)
@@ -253,7 +253,7 @@ func TestErrorAggregator_Interface(t *testing.T) {
 
 		isCascade, err := mockAggregator.DetectCascadeFailures(ctx, aggregations)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.True(t, isCascade)
 		mockAggregator.AssertExpectations(t)
 	})
@@ -279,7 +279,7 @@ func TestErrorAggregator_Interface(t *testing.T) {
 
 		groups, err := mockAggregator.GroupSimilarAggregations(ctx, aggregations, threshold)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Len(t, groups, 2)
 		assert.Len(t, groups[0], 3) // Database group
 		assert.Len(t, groups[1], 1) // Git group
@@ -354,7 +354,7 @@ func TestAlertingService_Interface(t *testing.T) {
 
 		err := mockService.SendRealTimeAlert(ctx, alert)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		mockService.AssertExpectations(t)
 	})
 
@@ -373,7 +373,7 @@ func TestAlertingService_Interface(t *testing.T) {
 
 		err := mockService.SendBatchAlert(ctx, alert)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		mockService.AssertExpectations(t)
 	})
 
@@ -393,7 +393,7 @@ func TestAlertingService_Interface(t *testing.T) {
 
 		err := mockService.SendCascadeAlert(ctx, alert)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		mockService.AssertExpectations(t)
 	})
 
@@ -409,13 +409,13 @@ func TestAlertingService_Interface(t *testing.T) {
 		// First call - not duplicate
 		mockService.On("CheckDeduplication", ctx, alert).Return(false, nil).Once()
 		isDuplicate, err := mockService.CheckDeduplication(ctx, alert)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.False(t, isDuplicate)
 
 		// Second call - is duplicate
 		mockService.On("CheckDeduplication", ctx, alert).Return(true, nil).Once()
 		isDuplicate, err = mockService.CheckDeduplication(ctx, alert)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.True(t, isDuplicate)
 
 		mockService.AssertExpectations(t)
@@ -430,7 +430,7 @@ func TestAlertingService_Interface(t *testing.T) {
 
 		err := mockService.RetryFailedAlert(ctx, alertID)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		mockService.AssertExpectations(t)
 	})
 
@@ -444,7 +444,7 @@ func TestAlertingService_Interface(t *testing.T) {
 
 		status, err := mockService.GetAlertStatus(ctx, alertID)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, expectedStatus, status)
 		mockService.AssertExpectations(t)
 	})
@@ -458,7 +458,7 @@ func TestAlertingService_Interface(t *testing.T) {
 
 		err := mockService.EscalateAlert(ctx, alertID)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		mockService.AssertExpectations(t)
 	})
 
@@ -475,7 +475,7 @@ func TestAlertingService_Interface(t *testing.T) {
 
 		err := mockService.SendRealTimeAlert(ctx, alert)
 
-		assert.Error(t, err)
+		require.Error(t, err)
 		mockService.AssertExpectations(t)
 	})
 }

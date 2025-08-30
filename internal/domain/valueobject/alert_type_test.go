@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAlertType_ValidTypes(t *testing.T) {
 	t.Run("should create real-time alert type", func(t *testing.T) {
 		alertType, err := NewAlertType("REAL_TIME")
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, alertType)
 		assert.Equal(t, "REAL_TIME", alertType.String())
 		assert.True(t, alertType.IsRealTime())
@@ -21,7 +22,7 @@ func TestAlertType_ValidTypes(t *testing.T) {
 	t.Run("should create batch alert type", func(t *testing.T) {
 		alertType, err := NewAlertType("BATCH")
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, alertType)
 		assert.Equal(t, "BATCH", alertType.String())
 		assert.False(t, alertType.IsRealTime())
@@ -32,7 +33,7 @@ func TestAlertType_ValidTypes(t *testing.T) {
 	t.Run("should create cascade alert type", func(t *testing.T) {
 		alertType, err := NewAlertType("CASCADE")
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, alertType)
 		assert.Equal(t, "CASCADE", alertType.String())
 		assert.False(t, alertType.IsRealTime())
@@ -58,7 +59,7 @@ func TestAlertType_InvalidTypes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			alertType, err := NewAlertType(tc.input)
 
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.Nil(t, alertType)
 			assert.Contains(t, err.Error(), tc.expected)
 		})
@@ -95,14 +96,14 @@ func TestAlertType_DeliveryCharacteristics(t *testing.T) {
 	t.Run("real-time alerts should require immediate delivery", func(t *testing.T) {
 		realTime, _ := NewAlertType("REAL_TIME")
 		assert.True(t, realTime.RequiresImmediateDelivery())
-		assert.Equal(t, 0.0, realTime.MaxDeliveryDelay().Seconds())
+		assert.InEpsilon(t, 0.0, realTime.MaxDeliveryDelay().Seconds(), 0.001)
 		assert.Equal(t, 3, realTime.MaxRetryAttempts())
 	})
 
 	t.Run("cascade alerts should require immediate delivery", func(t *testing.T) {
 		cascade, _ := NewAlertType("CASCADE")
 		assert.True(t, cascade.RequiresImmediateDelivery())
-		assert.Equal(t, 0.0, cascade.MaxDeliveryDelay().Seconds())
+		assert.InEpsilon(t, 0.0, cascade.MaxDeliveryDelay().Seconds(), 0.001)
 		assert.Equal(t, 5, cascade.MaxRetryAttempts()) // More retries for cascade
 	})
 
@@ -119,7 +120,7 @@ func TestAlertType_Serialization(t *testing.T) {
 		alertType, _ := NewAlertType("REAL_TIME")
 
 		jsonData, err := alertType.MarshalJSON()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.JSONEq(t, `"REAL_TIME"`, string(jsonData))
 	})
 
@@ -127,7 +128,7 @@ func TestAlertType_Serialization(t *testing.T) {
 		alertType := &AlertType{}
 		err := alertType.UnmarshalJSON([]byte(`"BATCH"`))
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "BATCH", alertType.String())
 		assert.True(t, alertType.IsBatch())
 	})
@@ -136,7 +137,7 @@ func TestAlertType_Serialization(t *testing.T) {
 		alertType := &AlertType{}
 		err := alertType.UnmarshalJSON([]byte(`"INVALID"`))
 
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid alert type")
 	})
 }

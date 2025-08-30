@@ -164,14 +164,15 @@ func (ic *instrumentCreator) createInt64Gauge(name, description, unit string) (m
 
 // createFloat64Histogram creates a Float64Histogram instrument with explicit bucket boundaries.
 // Histogram instruments are used to measure distributions of values over time.
+// All histograms use seconds as the unit.
 func (ic *instrumentCreator) createFloat64Histogram(
-	name, description, unit string,
+	name, description string,
 	buckets []float64,
 ) (metric.Float64Histogram, error) {
 	return ic.meter.Float64Histogram(
 		name,
 		metric.WithDescription(description),
-		metric.WithUnit(unit),
+		metric.WithUnit("s"),
 		metric.WithExplicitBucketBoundaries(buckets...),
 	)
 }
@@ -214,7 +215,6 @@ func (ic *instrumentCreator) createHistograms() (
 	diskOperationDuration, err := ic.createFloat64Histogram(
 		DiskOperationDurationHistogramName,
 		"Duration of disk operations in seconds",
-		"s",
 		getDiskOperationLatencyBuckets(),
 	)
 	if err != nil {
@@ -224,7 +224,6 @@ func (ic *instrumentCreator) createHistograms() (
 	diskHealthCheckDuration, err := ic.createFloat64Histogram(
 		DiskHealthCheckDurationHistogramName,
 		"Duration of disk health check operations in seconds",
-		"s",
 		getHealthCheckLatencyBuckets(),
 	)
 	if err != nil {
@@ -234,7 +233,6 @@ func (ic *instrumentCreator) createHistograms() (
 	cleanupOperationDuration, err := ic.createFloat64Histogram(
 		CleanupOperationDurationHistogramName,
 		"Duration of disk cleanup operations in seconds",
-		"s",
 		getCleanupDurationBuckets(),
 	)
 	if err != nil {
@@ -244,7 +242,6 @@ func (ic *instrumentCreator) createHistograms() (
 	retentionPolicyDuration, err := ic.createFloat64Histogram(
 		RetentionPolicyDurationHistogramName,
 		"Duration of retention policy operations in seconds",
-		"s",
 		getPolicyOperationDurationBuckets(),
 	)
 	if err != nil {
@@ -562,13 +559,13 @@ func (m *DiskMetrics) RecordDiskHealthCheck(
 	// Record health status as integer gauge
 	var healthValue int64
 	switch overallHealth {
-	case "good":
+	case DiskHealthGoodStr:
 		healthValue = 0
-	case "warning":
+	case DiskHealthWarningStr:
 		healthValue = 1
-	case "critical":
+	case DiskHealthCriticalStr:
 		healthValue = 2
-	case "failed":
+	case string(ShutdownPhaseFailed):
 		healthValue = 3
 	default:
 		healthValue = -1

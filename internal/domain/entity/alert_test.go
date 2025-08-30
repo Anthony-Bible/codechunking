@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAlert_Creation(t *testing.T) {
@@ -32,7 +33,7 @@ func TestAlert_Creation(t *testing.T) {
 			"System failure requires immediate attention",
 		)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, alert)
 		assert.NotEmpty(t, alert.ID())
 		assert.Equal(t, classifiedError.ID(), alert.ErrorID())
@@ -76,7 +77,7 @@ func TestAlert_Creation(t *testing.T) {
 			"Multiple database connection failures detected",
 		)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, alert)
 		assert.Equal(t, aggregation.Pattern(), alert.AggregationPattern())
 		assert.Equal(t, 3, alert.ErrorCount())
@@ -105,7 +106,7 @@ func TestAlert_Creation(t *testing.T) {
 			"Cascade failure detected - multiple systems affected",
 		)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, alert)
 		assert.Len(t, alert.RelatedAggregations(), 3)
 		assert.True(t, alert.IsCascadeAlert())
@@ -160,7 +161,7 @@ func TestAlert_ValidationErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			alert, err := NewAlert(tc.classifiedError, tc.alertType, tc.message)
 
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.Nil(t, alert)
 			assert.Contains(t, err.Error(), tc.expectedError)
 		})
@@ -190,7 +191,7 @@ func TestAlert_Recipients(t *testing.T) {
 		}
 
 		err := alert.AddRecipients(recipients)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Len(t, alert.Recipients(), 3)
 
 		// Check specific recipients
@@ -214,7 +215,7 @@ func TestAlert_Recipients(t *testing.T) {
 		}
 
 		err := alert.AddRecipients(invalidRecipients)
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid recipient")
 	})
 
@@ -233,7 +234,7 @@ func TestAlert_Recipients(t *testing.T) {
 		alert.AddRecipients(recipients)
 
 		err := alert.RemoveRecipient("email", "test1@example.com")
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Len(t, alert.Recipients(), 1)
 
 		remaining := alert.FindRecipient("email", "test2@example.com")
@@ -272,7 +273,7 @@ func TestAlert_DeliveryTracking(t *testing.T) {
 		}
 
 		err := alert.RecordDeliveryAttempt(deliveryResult)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Len(t, alert.DeliveryAttempts(), 1)
 		assert.Equal(t, AlertStatusSent, alert.Status())
 		assert.NotNil(t, alert.SentAt())
@@ -300,7 +301,7 @@ func TestAlert_DeliveryTracking(t *testing.T) {
 		}
 
 		err := alert.RecordDeliveryAttempt(deliveryResult)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Len(t, alert.DeliveryAttempts(), 1)
 		assert.Equal(t, AlertStatusFailed, alert.Status())
 		assert.Nil(t, alert.SentAt())
@@ -478,7 +479,7 @@ func TestAlert_Escalation(t *testing.T) {
 		}
 
 		err := alert.SetEscalationRules(escalationRules)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Len(t, alert.EscalationRules(), 2)
 
 		// Check escalation eligibility
@@ -549,7 +550,7 @@ func TestAlert_Serialization(t *testing.T) {
 		alert.AddRecipients(recipients)
 
 		jsonData, err := alert.MarshalJSON()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Contains(t, string(jsonData), "system_failure")
 		assert.Contains(t, string(jsonData), "CRITICAL")
 		assert.Contains(t, string(jsonData), "REAL_TIME")
@@ -575,7 +576,7 @@ func TestAlert_Serialization(t *testing.T) {
 		var alert Alert
 		err := alert.UnmarshalJSON([]byte(jsonData))
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "alert-123", alert.ID())
 		assert.Equal(t, "error-456", alert.ErrorID())
 		assert.Equal(t, AlertStatusSent, alert.Status())

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestErrorAggregation_Creation(t *testing.T) {
@@ -27,7 +28,7 @@ func TestErrorAggregation_Creation(t *testing.T) {
 			time.Minute*5, // 5 minute window
 		)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, aggregation)
 		assert.Equal(t, classifiedError.ErrorPattern(), aggregation.Pattern())
 		assert.Equal(t, time.Minute*5, aggregation.WindowDuration())
@@ -43,7 +44,7 @@ func TestErrorAggregation_Creation(t *testing.T) {
 
 		aggregation, err := NewErrorAggregation(pattern, windowDuration)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, pattern, aggregation.Pattern())
 		assert.Equal(t, windowDuration, aggregation.WindowDuration())
 	})
@@ -92,7 +93,7 @@ func TestErrorAggregation_ValidationErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			aggregation, err := NewErrorAggregation(tc.pattern, tc.windowDuration)
 
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.Nil(t, aggregation)
 			assert.Contains(t, err.Error(), tc.expectedError)
 		})
@@ -119,7 +120,7 @@ func TestErrorAggregation_AddError(t *testing.T) {
 
 		err := aggregation.AddError(classifiedError)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, 1, aggregation.Count())
 		assert.False(t, aggregation.IsEmpty())
 		assert.Equal(t, classifiedError.Severity(), aggregation.HighestSeverity())
@@ -137,13 +138,13 @@ func TestErrorAggregation_AddError(t *testing.T) {
 		// Add first error
 		error1, _ := NewClassifiedError(ctx, assert.AnError, severity, "database_connection_failure", "Error 1", nil)
 		err := aggregation.AddError(error1)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		// Add second error after small delay
 		time.Sleep(time.Millisecond * 10)
 		error2, _ := NewClassifiedError(ctx, assert.AnError, severity, "database_connection_failure", "Error 2", nil)
 		err = aggregation.AddError(error2)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		assert.Equal(t, 2, aggregation.Count())
 		assert.WithinDuration(t, error1.Timestamp(), aggregation.FirstOccurrence(), time.Second)
@@ -188,7 +189,7 @@ func TestErrorAggregation_AddError(t *testing.T) {
 		)
 		err := aggregation.AddError(differentError)
 
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "error pattern does not match aggregation pattern")
 		assert.Equal(t, 0, aggregation.Count())
 	})
@@ -208,7 +209,7 @@ func TestErrorAggregation_AddError(t *testing.T) {
 		err := aggregation.AddError(oldError)
 
 		// Should succeed initially, but we'd need windowing logic
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		// TODO: Add actual windowing validation when implementing
 	})
 }
@@ -217,7 +218,7 @@ func TestErrorAggregation_WindowManagement(t *testing.T) {
 	t.Run("should detect when window is expired", func(t *testing.T) {
 		pattern := "test_error:ERROR"
 		aggregation, err := NewErrorAggregation(pattern, time.Second*30) // Use minimum valid duration
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		// Initially not expired
 		assert.False(t, aggregation.IsWindowExpired())
@@ -246,7 +247,7 @@ func TestErrorAggregation_WindowManagement(t *testing.T) {
 
 		// Reset window
 		err := aggregation.ResetWindow()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		assert.Equal(t, 0, aggregation.Count())
 		assert.True(t, aggregation.IsEmpty())
@@ -264,7 +265,7 @@ func TestErrorAggregation_WindowManagement(t *testing.T) {
 		newDuration := time.Minute * 10
 		err := aggregation.ExtendWindow(newDuration)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, newDuration, aggregation.WindowDuration())
 		assert.True(t, aggregation.WindowEnd().After(originalEnd))
 	})
@@ -329,7 +330,7 @@ func TestErrorAggregation_Serialization(t *testing.T) {
 
 		jsonData, err := aggregation.MarshalJSON()
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Contains(t, string(jsonData), pattern)
 		assert.Contains(t, string(jsonData), "CRITICAL")
 		assert.Contains(t, string(jsonData), "600") // 10 minutes in seconds
@@ -350,7 +351,7 @@ func TestErrorAggregation_Serialization(t *testing.T) {
 		var aggregation ErrorAggregation
 		err := aggregation.UnmarshalJSON([]byte(jsonData))
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "test_error:ERROR", aggregation.Pattern())
 		assert.Equal(t, time.Minute*5, aggregation.WindowDuration())
 		assert.Equal(t, 5, aggregation.Count())

@@ -15,6 +15,11 @@ import (
 const (
 	OperationResultError   = "error"
 	OperationResultSuccess = "success"
+	// Disk health constants.
+	DiskHealthGoodStr     = "good"
+	DiskHealthWarningStr  = "warning"
+	DiskHealthCriticalStr = "critical"
+	DiskHealthFailedStr   = "failed"
 )
 
 // DefaultCacheDirectory is the default path for the repository cache directory.
@@ -189,81 +194,17 @@ func (s *DefaultDiskSpaceMonitoringService) MonitorDiskUsage(
 		s.metrics.RecordDiskOperation(ctx, "monitor_disk_usage", "", duration, result, "")
 	}()
 
-	if len(paths) == 0 {
+	// Validate input and adjust interval
+	validatedInterval, err := s.validateMonitoringInput(paths, interval)
+	if err != nil {
 		result = OperationResultError
-		return nil, errors.New("no paths specified")
-	}
-
-	// Check for invalid paths
-	for _, path := range paths {
-		if strings.Contains(path, "/invalid") {
-			result = OperationResultError
-			return nil, fmt.Errorf("invalid path: %s", path)
-		}
+		return nil, err
 	}
 
 	result = OperationResultSuccess
-	// Rate limit very short intervals
-	if interval < 100*time.Millisecond {
-		interval = 100 * time.Millisecond
-	}
-
 	updatesChan := make(chan DiskUsageUpdate, 10)
 
-	go func() {
-		defer close(updatesChan)
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		// Send initial updates immediately
-		for _, path := range paths {
-			usage, err := s.GetCurrentDiskUsage(ctx, path)
-			if err != nil {
-				continue // Skip errors in monitoring
-			}
-
-			update := DiskUsageUpdate{
-				Path:      path,
-				Usage:     usage,
-				Change:    1024 * 1024, // 1MB change
-				Timestamp: time.Now(),
-			}
-
-			select {
-			case updatesChan <- update:
-			case <-ctx.Done():
-				return
-			}
-		}
-
-		// Continue with regular ticker intervals
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				for _, path := range paths {
-					usage, err := s.GetCurrentDiskUsage(ctx, path)
-					if err != nil {
-						continue // Skip errors in monitoring
-					}
-
-					update := DiskUsageUpdate{
-						Path:      path,
-						Usage:     usage,
-						Change:    1024 * 1024, // 1MB change
-						Timestamp: time.Now(),
-					}
-
-					select {
-					case updatesChan <- update:
-					case <-ctx.Done():
-						return
-					}
-				}
-			}
-		}
-	}()
+	go s.runMonitoringLoop(ctx, paths, validatedInterval, updatesChan)
 
 	return updatesChan, nil
 }
@@ -525,6 +466,117 @@ func (s *DefaultDiskSpaceMonitoringService) PredictDiskUsage(
 	return prediction, nil
 }
 
+// validateMonitoringInput validates paths and adjusts interval for monitoring.
+func (s *DefaultDiskSpaceMonitoringService) validateMonitoringInput(
+	paths []string,
+	interval time.Duration,
+) (time.Duration, error) {
+	if len(paths) == 0 {
+		return interval, errors.New("no paths specified")
+	}
+
+	// Check for invalid paths
+	for _, path := range paths {
+		if strings.Contains(path, "/invalid") {
+			return interval, fmt.Errorf("invalid path: %s", path)
+		}
+	}
+
+	// Rate limit very short intervals
+	if interval < 100*time.Millisecond {
+		interval = 100 * time.Millisecond
+	}
+
+	return interval, nil
+}
+
+// createDiskUsageUpdate creates a DiskUsageUpdate from path and usage.
+func (s *DefaultDiskSpaceMonitoringService) createDiskUsageUpdate(path string, usage *DiskUsageInfo) DiskUsageUpdate {
+	return DiskUsageUpdate{
+		Path:      path,
+		Usage:     usage,
+		Change:    1024 * 1024, // 1MB change
+		Timestamp: time.Now(),
+	}
+}
+
+// sendUpdateSafely sends update with context cancellation handling.
+func (s *DefaultDiskSpaceMonitoringService) sendUpdateSafely(
+	ctx context.Context,
+	updatesChan chan DiskUsageUpdate,
+	update DiskUsageUpdate,
+) bool {
+	select {
+	case updatesChan <- update:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// sendInitialUpdates sends initial updates for all paths.
+func (s *DefaultDiskSpaceMonitoringService) sendInitialUpdates(
+	ctx context.Context,
+	paths []string,
+	updatesChan chan DiskUsageUpdate,
+) {
+	for _, path := range paths {
+		usage, err := s.GetCurrentDiskUsage(ctx, path)
+		if err != nil {
+			continue // Skip errors in monitoring
+		}
+
+		update := s.createDiskUsageUpdate(path, usage)
+		if !s.sendUpdateSafely(ctx, updatesChan, update) {
+			return
+		}
+	}
+}
+
+// sendPeriodicUpdates sends updates for all paths during ticker intervals.
+func (s *DefaultDiskSpaceMonitoringService) sendPeriodicUpdates(
+	ctx context.Context,
+	paths []string,
+	updatesChan chan DiskUsageUpdate,
+) {
+	for _, path := range paths {
+		usage, err := s.GetCurrentDiskUsage(ctx, path)
+		if err != nil {
+			continue // Skip errors in monitoring
+		}
+
+		update := s.createDiskUsageUpdate(path, usage)
+		if !s.sendUpdateSafely(ctx, updatesChan, update) {
+			return
+		}
+	}
+}
+
+// runMonitoringLoop runs the main monitoring loop with ticker.
+func (s *DefaultDiskSpaceMonitoringService) runMonitoringLoop(
+	ctx context.Context,
+	paths []string,
+	interval time.Duration,
+	updatesChan chan DiskUsageUpdate,
+) {
+	defer close(updatesChan)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Send initial updates immediately
+	s.sendInitialUpdates(ctx, paths, updatesChan)
+
+	// Continue with regular ticker intervals
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.sendPeriodicUpdates(ctx, paths, updatesChan)
+		}
+	}
+}
+
 // CheckDiskHealth performs a comprehensive health check on the specified paths.
 // validatePaths checks if paths are valid and non-empty.
 func (s *DefaultDiskSpaceMonitoringService) validatePaths(paths []string) error {
@@ -576,15 +628,15 @@ func (s *DefaultDiskSpaceMonitoringService) processPathHealth(
 func (s *DefaultDiskSpaceMonitoringService) healthToString(health DiskHealthLevel) string {
 	switch health {
 	case DiskHealthGood:
-		return "good"
+		return DiskHealthGoodStr
 	case DiskHealthWarning:
-		return "warning"
+		return DiskHealthWarningStr
 	case DiskHealthCritical:
-		return "critical"
+		return DiskHealthCriticalStr
 	case DiskHealthFailed:
-		return "failed"
+		return DiskHealthFailedStr
 	default:
-		return "unknown"
+		return unknownStateStr
 	}
 }
 

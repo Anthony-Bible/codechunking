@@ -17,18 +17,21 @@ const (
 )
 
 const (
-	unknownStateStr = "unknown"
+	CircuitBreakerStateClosedStr   = "closed"
+	CircuitBreakerStateOpenStr     = "open"
+	CircuitBreakerStateHalfOpenStr = "half_open"
+	unknownStateStr                = "unknown"
 )
 
 // String returns the string representation of circuit breaker state.
 func (cbs CircuitBreakerState) String() string {
 	switch cbs {
 	case CircuitBreakerStateClosed:
-		return "closed"
+		return CircuitBreakerStateClosedStr
 	case CircuitBreakerStateOpen:
-		return "open"
+		return CircuitBreakerStateOpenStr
 	case CircuitBreakerStateHalfOpen:
-		return "half_open"
+		return CircuitBreakerStateHalfOpenStr
 	default:
 		return unknownStateStr
 	}
@@ -310,7 +313,7 @@ func (r *DefaultRetryWithCircuitBreaker) ExecuteWithRetry(ctx context.Context, o
 		cbState := r.circuitBreaker.GetState()
 		if cbState == CircuitBreakerStateOpen {
 			// Record circuit breaker event
-			r.metrics.RecordCircuitBreakerEvent(ctx, "open", "retry_operation")
+			r.metrics.RecordCircuitBreakerEvent(ctx, CircuitBreakerStateOpenStr, "retry_operation")
 			return errors.New("circuit breaker open")
 		}
 

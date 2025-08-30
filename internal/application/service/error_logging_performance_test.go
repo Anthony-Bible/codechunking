@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // TestErrorLoggingService_NonBlockingProcessing tests that error processing doesn't block the main thread.
@@ -34,7 +35,7 @@ func TestErrorLoggingService_NonBlockingProcessing(t *testing.T) {
 		// Process multiple errors quickly - should not block
 		for i := range 50 {
 			err := asyncService.LogAndClassifyError(ctx, fmt.Errorf("error %d", i), "test-component", severity)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 		}
 
 		elapsed := time.Since(start)
@@ -238,7 +239,7 @@ func TestCircuitBreaker_AlertDeliveryReliability(t *testing.T) {
 			err := circuitBreaker.Execute(func() error {
 				return fmt.Errorf("delivery failed %d", i)
 			})
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.False(t, circuitBreaker.IsOpen(), "Circuit should not be open yet at failure %d", i)
 		}
 
@@ -246,7 +247,7 @@ func TestCircuitBreaker_AlertDeliveryReliability(t *testing.T) {
 		err := circuitBreaker.Execute(func() error {
 			return errors.New("final failure")
 		})
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.True(t, circuitBreaker.IsOpen(), "Circuit should be open after threshold failures")
 	})
 
@@ -267,7 +268,7 @@ func TestCircuitBreaker_AlertDeliveryReliability(t *testing.T) {
 			return nil
 		})
 
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "circuit breaker is open")
 		assert.False(t, functionCalled, "Function should not be called when circuit is open")
 	})
@@ -294,7 +295,7 @@ func TestCircuitBreaker_AlertDeliveryReliability(t *testing.T) {
 			return nil // Successful call
 		})
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.True(t, functionCalled)
 		assert.False(t, circuitBreaker.IsOpen(), "Circuit should close after successful call")
 	})
@@ -314,8 +315,8 @@ func TestCircuitBreaker_AlertDeliveryReliability(t *testing.T) {
 		assert.Equal(t, int64(10), stats.TotalCalls)
 		assert.Equal(t, int64(7), stats.SuccessfulCalls)
 		assert.Equal(t, int64(3), stats.FailedCalls)
-		assert.Equal(t, 0.7, stats.SuccessRate)
-		assert.Equal(t, 0.3, stats.FailureRate)
+		assert.InEpsilon(t, 0.7, stats.SuccessRate, 0.001)
+		assert.InEpsilon(t, 0.3, stats.FailureRate, 0.001)
 	})
 }
 
@@ -334,16 +335,16 @@ func TestAlertDeduplication_SpamPrevention(t *testing.T) {
 
 		// First alert should not be duplicate
 		isDuplicate, err := deduplicator.IsDuplicate(alert1)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.False(t, isDuplicate)
 
 		// Record first alert
 		err = deduplicator.RecordAlert(alert1)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		// Second identical alert should be detected as duplicate
 		isDuplicate, err = deduplicator.IsDuplicate(alert2)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.True(t, isDuplicate, "Identical alert should be detected as duplicate")
 	})
 
@@ -365,7 +366,7 @@ func TestAlertDeduplication_SpamPrevention(t *testing.T) {
 
 		// Second alert should not be duplicate after window expiry
 		isDuplicate, err := deduplicator.IsDuplicate(alert2)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.False(t, isDuplicate, "Alert should not be duplicate after window expires")
 	})
 
@@ -384,7 +385,7 @@ func TestAlertDeduplication_SpamPrevention(t *testing.T) {
 			duplicateAlert := createTestAlert(ctx, severity, "recurring_error", "This error keeps happening")
 
 			isDuplicate, err := deduplicator.IsDuplicate(duplicateAlert)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.True(t, isDuplicate)
 
 			// Track the duplicate
@@ -413,13 +414,13 @@ func TestAlertDeduplication_SpamPrevention(t *testing.T) {
 
 		// API alert should not be duplicate (different pattern)
 		isDuplicate, err := deduplicator.IsDuplicate(apiAlert)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.False(t, isDuplicate, "Different error types should not be considered duplicates")
 
 		// But another database alert should be duplicate
 		anotherDBAlert := createTestAlert(ctx, severity, "database_failure", "DB failed again")
 		isDuplicate, err = deduplicator.IsDuplicate(anotherDBAlert)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.True(t, isDuplicate, "Same error type should be considered duplicate")
 	})
 }
@@ -448,7 +449,7 @@ func TestErrorLoggingService_GracefulShutdown(t *testing.T) {
 		defer cancel()
 
 		err := asyncService.Shutdown(shutdownCtx)
-		assert.NoError(t, err, "Shutdown should complete successfully")
+		require.NoError(t, err, "Shutdown should complete successfully")
 
 		mockLogger.AssertExpectations(t)
 	})
@@ -475,7 +476,7 @@ func TestErrorLoggingService_GracefulShutdown(t *testing.T) {
 		defer cancel()
 
 		err := asyncService.Shutdown(shutdownCtx)
-		assert.Error(t, err, "Should timeout")
+		require.Error(t, err, "Should timeout")
 		assert.Contains(t, err.Error(), "shutdown timeout")
 	})
 }
@@ -496,7 +497,7 @@ func createTestAlert(
 // These should be implemented in the Green phase
 
 type ErrorBuffer interface {
-	Add(error *entity.ClassifiedError) bool
+	Add(err *entity.ClassifiedError) bool
 	Size() int
 	IsFull() bool
 	GetAll() []*entity.ClassifiedError
@@ -556,10 +557,10 @@ type mockErrorBuffer struct {
 	size   int
 }
 
-func (m *mockErrorBuffer) Add(error *entity.ClassifiedError) bool { return true }
-func (m *mockErrorBuffer) Size() int                              { return len(m.errors) }
-func (m *mockErrorBuffer) IsFull() bool                           { return len(m.errors) >= m.size }
-func (m *mockErrorBuffer) GetAll() []*entity.ClassifiedError      { return m.errors }
+func (m *mockErrorBuffer) Add(_ *entity.ClassifiedError) bool { return true }
+func (m *mockErrorBuffer) Size() int                          { return len(m.errors) }
+func (m *mockErrorBuffer) IsFull() bool                       { return len(m.errors) >= m.size }
+func (m *mockErrorBuffer) GetAll() []*entity.ClassifiedError  { return m.errors }
 func (m *mockErrorBuffer) GetBatch(count int) []*entity.ClassifiedError {
 	if count > len(m.errors) {
 		count = len(m.errors)
@@ -672,10 +673,10 @@ type mockAsyncService struct {
 }
 
 func (m *mockAsyncService) LogAndClassifyError(
-	ctx context.Context,
-	err error,
-	component string,
-	severity *valueobject.ErrorSeverity,
+	_ context.Context,
+	_ error,
+	_ string,
+	_ *valueobject.ErrorSeverity,
 ) error {
 	// Simulate async processing - just return nil for now
 	return nil

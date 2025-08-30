@@ -163,7 +163,7 @@ func (d *databaseShutdownManager) RollbackActiveTransactions(ctx context.Context
 }
 
 // CloseAllConnections forcibly closes all database connections.
-func (d *databaseShutdownManager) CloseAllConnections(ctx context.Context) error {
+func (d *databaseShutdownManager) CloseAllConnections(_ context.Context) error {
 	d.mu.RLock()
 	databases := make(map[string]DatabaseConnection)
 	for name, db := range d.databases {
@@ -182,7 +182,7 @@ func (d *databaseShutdownManager) CloseAllConnections(ctx context.Context) error
 			continue
 		}
 
-		d.updateDatabaseStatus(name, "closed", "")
+		d.updateDatabaseStatus(name, CircuitBreakerStateClosedStr, "")
 		d.mu.Lock()
 		d.metrics.SuccessfulShutdowns++
 		d.mu.Unlock()
@@ -238,31 +238,56 @@ func (d *databaseShutdownManager) updateDatabaseStatus(name, status, errorMsg st
 
 	for i, dbStatus := range d.status {
 		if dbStatus.Name == name {
-			d.status[i].Status = status
-			d.status[i].Error = errorMsg
-
-			if status == "draining" && d.status[i].DrainStartTime.IsZero() {
-				d.status[i].DrainStartTime = time.Now()
-			}
-
-			if (status == "drained" || status == "closed") && !d.status[i].DrainStartTime.IsZero() {
-				d.status[i].DrainDuration = time.Since(d.status[i].DrainStartTime)
-
-				// Update database metrics
-				dbMetrics, exists := d.metrics.DatabaseMetrics[name]
-				if !exists {
-					dbMetrics = DatabaseMetrics{Name: name}
-				}
-				dbMetrics.DrainTime = d.status[i].DrainDuration
-				dbMetrics.ShutdownAttempts++
-				if status != "error" {
-					dbMetrics.SuccessfulShutdowns++
-				}
-				d.metrics.DatabaseMetrics[name] = dbMetrics
-			}
-
+			d.updateDatabaseStatusFields(i, status, errorMsg)
+			d.handleDrainStartTime(i, status)
+			d.handleDrainCompletion(i, name, status)
 			d.status[i].LastActivity = time.Now()
 			break
 		}
 	}
+}
+
+// updateDatabaseStatusFields updates the basic status fields.
+func (d *databaseShutdownManager) updateDatabaseStatusFields(i int, status, errorMsg string) {
+	d.status[i].Status = status
+	d.status[i].Error = errorMsg
+}
+
+// handleDrainStartTime sets the drain start time when draining begins.
+func (d *databaseShutdownManager) handleDrainStartTime(i int, status string) {
+	if status == ConsumerStatusDraining && d.status[i].DrainStartTime.IsZero() {
+		d.status[i].DrainStartTime = time.Now()
+	}
+}
+
+// handleDrainCompletion handles drain completion and updates metrics.
+func (d *databaseShutdownManager) handleDrainCompletion(i int, name, status string) {
+	if (status == "drained" || status == CircuitBreakerStateClosedStr) && !d.status[i].DrainStartTime.IsZero() {
+		d.status[i].DrainDuration = time.Since(d.status[i].DrainStartTime)
+		d.updateDrainMetrics(name, status)
+	}
+}
+
+// updateDrainMetrics updates database metrics after drain completion.
+func (d *databaseShutdownManager) updateDrainMetrics(name, status string) {
+	dbMetrics, exists := d.metrics.DatabaseMetrics[name]
+	if !exists {
+		dbMetrics = DatabaseMetrics{Name: name}
+	}
+	dbMetrics.DrainTime = d.status[d.findDatabaseStatusIndex(name)].DrainDuration
+	dbMetrics.ShutdownAttempts++
+	if status != ConsumerStatusError {
+		dbMetrics.SuccessfulShutdowns++
+	}
+	d.metrics.DatabaseMetrics[name] = dbMetrics
+}
+
+// findDatabaseStatusIndex finds the index of a database status by name.
+func (d *databaseShutdownManager) findDatabaseStatusIndex(name string) int {
+	for i, dbStatus := range d.status {
+		if dbStatus.Name == name {
+			return i
+		}
+	}
+	return -1 // Should not happen in normal operation
 }

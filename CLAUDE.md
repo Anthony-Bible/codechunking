@@ -132,7 +132,7 @@ slogger.Error(ctx, "Database error", slogger.Fields{"error": err})
 ```
 
 ### Key Benefits
-- **sloglint Compliant**: No more linting violations for global slog usage
+- **sloglint Compliant**: No more linting violations for global slog usage  ~
 - **Context Propagation**: Automatic correlation ID and request ID handling  
 - **Structured Fields**: Consistent field formatting across the application
 - **Thread-Safe**: Global singleton with proper initialization

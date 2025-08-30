@@ -117,7 +117,7 @@ func (s *DefaultDiskRetentionPolicyService) CreateRetentionPolicy(
 		"rule_count":  len(policy.Rules),
 	})
 
-	result = "success"
+	result = OperationResultSuccess
 	return &RetentionPolicyResult{
 		PolicyID:  policyID,
 		Status:    "created",
@@ -381,7 +381,7 @@ func (s *DefaultDiskRetentionPolicyService) EnforceRetentionPolicy(
 	case CompliancePass:
 		complianceStatus = "pass"
 	case ComplianceWarning:
-		complianceStatus = "warning"
+		complianceStatus = DiskHealthWarningStr
 	case ComplianceFail:
 		complianceStatus = "fail"
 	case ComplianceError:
@@ -391,7 +391,7 @@ func (s *DefaultDiskRetentionPolicyService) EnforceRetentionPolicy(
 	default:
 		complianceStatus = OperationResultUnknown
 	}
-	resultStatus = "success"
+	resultStatus = OperationResultSuccess
 	return result, nil
 }
 
@@ -576,7 +576,7 @@ func (s *DefaultDiskRetentionPolicyService) EvaluatePolicyCompliance(
 	case CompliancePass:
 		complianceStatus = "pass"
 	case ComplianceWarning:
-		complianceStatus = "warning"
+		complianceStatus = DiskHealthWarningStr
 	case ComplianceFail:
 		complianceStatus = "fail"
 	case ComplianceError:
@@ -586,7 +586,7 @@ func (s *DefaultDiskRetentionPolicyService) EvaluatePolicyCompliance(
 	default:
 		complianceStatus = OperationResultUnknown
 	}
-	resultStatus = "success"
+	resultStatus = OperationResultSuccess
 	return report, nil
 }
 

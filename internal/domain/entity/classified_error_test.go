@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestClassifiedError_Creation(t *testing.T) {
@@ -28,7 +29,7 @@ func TestClassifiedError_Creation(t *testing.T) {
 			},
 		)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, classifiedError)
 		assert.NotEmpty(t, classifiedError.ID())
 		assert.Equal(t, originalErr, classifiedError.OriginalError())
@@ -46,7 +47,8 @@ func TestClassifiedError_Creation(t *testing.T) {
 	})
 
 	t.Run("should create classified error with component from context", func(t *testing.T) {
-		ctx := context.WithValue(context.Background(), "component", "repository-service")
+		type contextKey string
+		ctx := context.WithValue(context.Background(), contextKey("component"), "repository-service")
 		severity, _ := valueobject.NewErrorSeverity("ERROR")
 
 		classifiedError, err := NewClassifiedError(
@@ -58,12 +60,13 @@ func TestClassifiedError_Creation(t *testing.T) {
 			nil,
 		)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "repository-service", classifiedError.Component())
 	})
 
 	t.Run("should create classified error with correlation ID from context", func(t *testing.T) {
-		ctx := context.WithValue(context.Background(), "correlation_id", "test-correlation-123")
+		type contextKey string
+		ctx := context.WithValue(context.Background(), contextKey("correlation_id"), "test-correlation-123")
 		severity, _ := valueobject.NewErrorSeverity("WARNING")
 
 		classifiedError, err := NewClassifiedError(
@@ -75,7 +78,7 @@ func TestClassifiedError_Creation(t *testing.T) {
 			nil,
 		)
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "test-correlation-123", classifiedError.CorrelationID())
 	})
 }
@@ -145,7 +148,7 @@ func TestClassifiedError_ValidationErrors(t *testing.T) {
 				nil,
 			)
 
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.Nil(t, classifiedError)
 			assert.Contains(t, err.Error(), tc.expectedError)
 		})
@@ -286,7 +289,7 @@ func TestClassifiedError_Serialization(t *testing.T) {
 		)
 
 		jsonData, err := classifiedError.MarshalJSON()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Contains(t, string(jsonData), "test_error")
 		assert.Contains(t, string(jsonData), "ERROR")
 		assert.Contains(t, string(jsonData), "Test error message")
@@ -310,7 +313,7 @@ func TestClassifiedError_Serialization(t *testing.T) {
 		var classifiedError ClassifiedError
 		err := classifiedError.UnmarshalJSON([]byte(jsonData))
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "test-id-123", classifiedError.ID())
 		assert.Equal(t, "test_error", classifiedError.ErrorCode())
 		assert.True(t, classifiedError.Severity().IsCritical())
@@ -340,7 +343,7 @@ func TestClassifiedError_Stack(t *testing.T) {
 		assert.Contains(t, stack, "TestClassifiedError_Stack")
 	})
 
-	t.Run("should handle errors without stack trace", func(t *testing.T) {
+	t.Run("should handle errors without stack trace", func(_ *testing.T) {
 		ctx := context.Background()
 		severity, _ := valueobject.NewErrorSeverity("INFO")
 
@@ -356,6 +359,6 @@ func TestClassifiedError_Stack(t *testing.T) {
 		// Info level errors might not capture stack traces
 		stack := classifiedError.StackTrace()
 		// Should either be empty or contain trace - implementation detail
-		assert.GreaterOrEqual(t, len(stack), 0)
+		_ = stack // Stack trace behavior is implementation dependent for info level
 	})
 }

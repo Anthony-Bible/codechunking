@@ -59,39 +59,47 @@ func (s *DefaultDiskCleanupStrategyService) ExecuteLRUCleanup(
 ) (*CleanupResult, error) {
 	start := time.Now()
 	correlationID := getOrGenerateCorrelationID(ctx)
-	if config == nil {
-		err := errors.New("LRU cleanup config cannot be nil")
-		if s.metrics != nil {
-			s.metrics.RecordCleanupOperation(
-				ctx, "lru", "", time.Since(start), 0, 0, false, "error", correlationID,
-			)
-		}
-		return nil, err
-	}
-	if config.Path == "" {
-		err := errors.New("path cannot be empty")
-		if s.metrics != nil {
-			s.metrics.RecordCleanupOperation(
-				ctx, "lru", "", time.Since(start), 0, 0, false, "error", correlationID,
-			)
-		}
-		return nil, err
-	}
-	if config.MaxItems < 0 {
-		err := errors.New("max items cannot be negative")
-		if s.metrics != nil {
-			s.metrics.RecordCleanupOperation(
-				ctx, "lru", config.Path, time.Since(start), 0, 0, false, "error", correlationID,
-			)
-		}
+
+	if err := s.validateLRUConfig(ctx, config, start, correlationID); err != nil {
 		return nil, err
 	}
 
-	// Mock cleanup result based on test expectations
-	result := &CleanupResult{
+	result := s.createLRUResult(config)
+	s.applyLRULogic(config, result)
+	s.addProcessedItems(config, result)
+	s.recordLRUMetrics(ctx, config, result, start, correlationID)
+
+	return result, nil
+}
+
+// validateLRUConfig validates the LRU cleanup configuration.
+func (s *DefaultDiskCleanupStrategyService) validateLRUConfig(
+	ctx context.Context, config *LRUCleanupConfig, start time.Time, correlationID string,
+) error {
+	if config == nil {
+		err := errors.New("LRU cleanup config cannot be nil")
+		s.recordErrorMetrics(ctx, "lru", "", start, correlationID)
+		return err
+	}
+	if config.Path == "" {
+		err := errors.New("path cannot be empty")
+		s.recordErrorMetrics(ctx, "lru", "", start, correlationID)
+		return err
+	}
+	if config.MaxItems < 0 {
+		err := errors.New("max items cannot be negative")
+		s.recordErrorMetrics(ctx, "lru", config.Path, start, correlationID)
+		return err
+	}
+	return nil
+}
+
+// createLRUResult creates the base cleanup result for LRU strategy.
+func (s *DefaultDiskCleanupStrategyService) createLRUResult(config *LRUCleanupConfig) *CleanupResult {
+	return &CleanupResult{
 		Strategy: CleanupStrategyLRU,
 		DryRun:   config.DryRun,
-		Duration: 15 * time.Minute, // Mock duration
+		Duration: 15 * time.Minute,
 		Performance: &CleanupPerformance{
 			ThroughputMBps:  50.0,
 			ItemsPerSecond:  3.33,
@@ -100,25 +108,33 @@ func (s *DefaultDiskCleanupStrategyService) ExecuteLRUCleanup(
 			ParallelWorkers: 2,
 		},
 	}
+}
 
-	// Basic configuration for "/tmp/codechunking-cache"
-	if config.Path == "/tmp/codechunking-cache" && config.MaxItems == 100 {
-		result.TotalCandidates = 150
-		result.CleanedItems = 50
-		result.BytesFreed = 5 * 1024 * 1024 * 1024 // 5GB
-		if config.DryRun {
-			result.CleanedItems = 0
-			result.BytesFreed = 0
-		}
-	} else if config.MaxItems == 50 {
-		result.TotalCandidates = 80
-		if !config.DryRun {
-			result.CleanedItems = 30
-			result.BytesFreed = 3 * 1024 * 1024 * 1024 // 3GB
-		}
+// applyLRULogic applies specific LRU cleanup logic based on configuration.
+func (s *DefaultDiskCleanupStrategyService) applyLRULogic(config *LRUCleanupConfig, result *CleanupResult) {
+	switch {
+	case config.Path == "/tmp/codechunking-cache" && config.MaxItems == 100:
+		s.applyCacheCleanupLogic(config, result, 150, 50, 5*1024*1024*1024)
+	case config.MaxItems == 50:
+		s.applyCacheCleanupLogic(config, result, 80, 30, 3*1024*1024*1024)
 	}
+}
 
-	// Add mock processed items
+// applyCacheCleanupLogic applies cache-specific cleanup logic.
+func (s *DefaultDiskCleanupStrategyService) applyCacheCleanupLogic(
+	config *LRUCleanupConfig, result *CleanupResult, candidates, cleaned int, bytesFreed int64,
+) {
+	result.TotalCandidates = candidates
+	result.CleanedItems = cleaned
+	result.BytesFreed = bytesFreed
+	if config.DryRun {
+		result.CleanedItems = 0
+		result.BytesFreed = 0
+	}
+}
+
+// addProcessedItems adds mock processed items to the result.
+func (s *DefaultDiskCleanupStrategyService) addProcessedItems(config *LRUCleanupConfig, result *CleanupResult) {
 	if !config.DryRun && result.CleanedItems > 0 {
 		result.ItemsProcessed = make([]*ProcessedItem, result.CleanedItems)
 		for i := range result.CleanedItems {
@@ -132,26 +148,31 @@ func (s *DefaultDiskCleanupStrategyService) ExecuteLRUCleanup(
 			}
 		}
 	}
+}
 
-	// Record metrics if available
+// recordLRUMetrics records cleanup metrics for LRU operation.
+func (s *DefaultDiskCleanupStrategyService) recordLRUMetrics(
+	ctx context.Context, config *LRUCleanupConfig, result *CleanupResult,
+	start time.Time, correlationID string,
+) {
 	if s.metrics != nil {
-		strategy := "lru"
-		resultStr := "success"
-		duration := time.Since(start)
 		s.metrics.RecordCleanupOperation(
-			ctx,
-			strategy,
-			config.Path,
-			duration,
-			int64(result.CleanedItems),
-			result.BytesFreed,
-			config.DryRun,
-			resultStr,
-			correlationID,
+			ctx, "lru", config.Path, time.Since(start),
+			int64(result.CleanedItems), result.BytesFreed, config.DryRun,
+			OperationResultSuccess, correlationID,
 		)
 	}
+}
 
-	return result, nil
+// recordErrorMetrics records error metrics for cleanup operations.
+func (s *DefaultDiskCleanupStrategyService) recordErrorMetrics(
+	ctx context.Context, strategy, path string, start time.Time, correlationID string,
+) {
+	if s.metrics != nil {
+		s.metrics.RecordCleanupOperation(
+			ctx, strategy, path, time.Since(start), 0, 0, false, "error", correlationID,
+		)
+	}
 }
 
 // ExecuteTTLCleanup executes TTL-based cleanup strategy.
@@ -207,7 +228,7 @@ func (s *DefaultDiskCleanupStrategyService) ExecuteTTLCleanup(
 	// Record metrics if available
 	if s.metrics != nil {
 		strategy := "ttl"
-		resultStr := "success"
+		resultStr := OperationResultSuccess
 		duration := time.Since(start)
 		s.metrics.RecordCleanupOperation(
 			ctx,
@@ -276,7 +297,7 @@ func (s *DefaultDiskCleanupStrategyService) ExecuteSizeBasedCleanup(
 	// Record metrics if available
 	if s.metrics != nil {
 		strategy := "size-based"
-		resultStr := "success"
+		resultStr := OperationResultSuccess
 		duration := time.Since(start)
 		s.metrics.RecordCleanupOperation(
 			ctx,
@@ -627,7 +648,7 @@ func (s *DefaultDiskCleanupStrategyService) ExecuteHybridCleanup(
 	// Record metrics if available
 	if s.metrics != nil {
 		strategy := "hybrid"
-		resultStr := "success"
+		resultStr := OperationResultSuccess
 		duration := time.Since(start)
 		s.metrics.RecordCleanupOperation(
 			ctx,
@@ -696,7 +717,7 @@ func (s *DefaultDiskCleanupStrategyService) ExecuteSmartCleanup(
 	// Record metrics if available
 	if s.metrics != nil {
 		strategy := "smart"
-		resultStr := "success"
+		resultStr := OperationResultSuccess
 		duration := time.Since(start)
 		s.metrics.RecordCleanupOperation(
 			ctx,

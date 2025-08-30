@@ -8,6 +8,18 @@ import (
 	"time"
 )
 
+// NATS Consumer Status Constants.
+const (
+	ConsumerStatusActive   = "active"
+	ConsumerStatusDraining = "draining"
+	ConsumerStatusDrained  = "drained"
+	ConsumerStatusStopping = "stopping"
+	ConsumerStatusStopped  = "stopped"
+	ConsumerStatusClosing  = "closing"
+	ConsumerStatusClosed   = "closed"
+	ConsumerStatusError    = "error"
+)
+
 // natsShutdownManager implements NATSShutdownManager interface.
 type natsShutdownManager struct {
 	consumers map[string]NATSConsumer
@@ -51,7 +63,7 @@ func (n *natsShutdownManager) RegisterConsumer(name string, consumer NATSConsume
 		Name:              name,
 		Subject:           info.Subject,
 		QueueGroup:        info.QueueGroup,
-		Status:            "active",
+		Status:            ConsumerStatusActive,
 		PendingMessages:   consumer.GetPendingMessages(),
 		ProcessedMessages: consumer.GetProcessedMessages(),
 		LastMessageTime:   time.Now(),
@@ -74,12 +86,12 @@ func (n *natsShutdownManager) DrainAllConsumers(ctx context.Context) error {
 	n.mu.RUnlock()
 
 	for name, consumer := range consumers {
-		n.updateConsumerStatus(name, "draining", "")
+		n.updateConsumerStatus(name, ConsumerStatusDraining, "")
 
 		drainCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		if err := consumer.Drain(drainCtx, 10*time.Second); err != nil {
 			cancel()
-			n.updateConsumerStatus(name, "error", err.Error())
+			n.updateConsumerStatus(name, ConsumerStatusError, err.Error())
 			n.mu.Lock()
 			n.metrics.FailedDrains++
 			n.mu.Unlock()
@@ -87,7 +99,7 @@ func (n *natsShutdownManager) DrainAllConsumers(ctx context.Context) error {
 		}
 		cancel()
 
-		n.updateConsumerStatus(name, "drained", "")
+		n.updateConsumerStatus(name, ConsumerStatusDrained, "")
 		n.mu.Lock()
 		n.metrics.SuccessfulDrains++
 		n.mu.Unlock()
@@ -106,17 +118,17 @@ func (n *natsShutdownManager) StopConsumers(ctx context.Context) error {
 	n.mu.RUnlock()
 
 	for name, consumer := range consumers {
-		n.updateConsumerStatus(name, "stopping", "")
+		n.updateConsumerStatus(name, ConsumerStatusStopping, "")
 
 		stopCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		if err := consumer.Stop(stopCtx); err != nil {
 			cancel()
-			n.updateConsumerStatus(name, "error", err.Error())
+			n.updateConsumerStatus(name, ConsumerStatusError, err.Error())
 			continue
 		}
 		cancel()
 
-		n.updateConsumerStatus(name, "stopped", "")
+		n.updateConsumerStatus(name, ConsumerStatusStopped, "")
 	}
 
 	return nil
@@ -135,7 +147,7 @@ func (n *natsShutdownManager) FlushPendingMessages(ctx context.Context) error {
 		flushCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		if err := consumer.FlushPending(flushCtx); err != nil {
 			cancel()
-			n.updateConsumerStatus(name, "error", err.Error())
+			n.updateConsumerStatus(name, ConsumerStatusError, err.Error())
 			continue
 		}
 		cancel()
@@ -163,17 +175,17 @@ func (n *natsShutdownManager) CloseConnections(ctx context.Context) error {
 	n.mu.RUnlock()
 
 	for name, consumer := range consumers {
-		n.updateConsumerStatus(name, "closing", "")
+		n.updateConsumerStatus(name, ConsumerStatusClosing, "")
 
 		if err := consumer.Close(); err != nil {
-			n.updateConsumerStatus(name, "error", err.Error())
+			n.updateConsumerStatus(name, ConsumerStatusError, err.Error())
 			n.mu.Lock()
 			n.metrics.ForceStopCount++
 			n.mu.Unlock()
 			continue
 		}
 
-		n.updateConsumerStatus(name, "closed", "")
+		n.updateConsumerStatus(name, ConsumerStatusClosed, "")
 		n.mu.Lock()
 		n.metrics.SuccessfulDrains++
 		n.mu.Unlock()
@@ -232,11 +244,11 @@ func (n *natsShutdownManager) updateConsumerStatus(name, status, errorMsg string
 			n.status[i].Status = status
 			n.status[i].Error = errorMsg
 
-			if status == "draining" && n.status[i].DrainStartTime.IsZero() {
+			if status == ConsumerStatusDraining && n.status[i].DrainStartTime.IsZero() {
 				n.status[i].DrainStartTime = time.Now()
 			}
 
-			if (status == "drained" || status == "stopped" || status == "closed") &&
+			if (status == ConsumerStatusDrained || status == ConsumerStatusStopped || status == ConsumerStatusClosed) &&
 				!n.status[i].DrainStartTime.IsZero() {
 				n.status[i].DrainDuration = time.Since(n.status[i].DrainStartTime)
 
@@ -247,7 +259,7 @@ func (n *natsShutdownManager) updateConsumerStatus(name, status, errorMsg string
 				}
 				consumerMetrics.DrainTime = n.status[i].DrainDuration
 				consumerMetrics.DrainAttempts++
-				if status != "error" {
+				if status != ConsumerStatusError {
 					consumerMetrics.SuccessfulDrains++
 				}
 				n.metrics.ConsumerMetrics[name] = consumerMetrics

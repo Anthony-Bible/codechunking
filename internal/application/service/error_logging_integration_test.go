@@ -472,7 +472,7 @@ func TestErrorLoggingService_CircuitBreakerIntegration(t *testing.T) {
 		err := alertingService.SendAlertWithCircuitBreaker(ctx, alert)
 
 		// Should return specific circuit breaker error
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "circuit breaker is open")
 		mockCircuitBreaker.AssertExpectations(t)
 		mockLogger.AssertExpectations(t)

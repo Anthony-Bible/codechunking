@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestErrorSeverity_ValidLevels(t *testing.T) {
 	t.Run("should create critical error severity", func(t *testing.T) {
 		severity, err := NewErrorSeverity("CRITICAL")
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, severity)
 		assert.Equal(t, "CRITICAL", severity.String())
 		assert.True(t, severity.IsCritical())
@@ -22,7 +23,7 @@ func TestErrorSeverity_ValidLevels(t *testing.T) {
 	t.Run("should create error severity", func(t *testing.T) {
 		severity, err := NewErrorSeverity("ERROR")
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, severity)
 		assert.Equal(t, "ERROR", severity.String())
 		assert.False(t, severity.IsCritical())
@@ -34,7 +35,7 @@ func TestErrorSeverity_ValidLevels(t *testing.T) {
 	t.Run("should create warning severity", func(t *testing.T) {
 		severity, err := NewErrorSeverity("WARNING")
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, severity)
 		assert.Equal(t, "WARNING", severity.String())
 		assert.False(t, severity.IsCritical())
@@ -46,7 +47,7 @@ func TestErrorSeverity_ValidLevels(t *testing.T) {
 	t.Run("should create info severity", func(t *testing.T) {
 		severity, err := NewErrorSeverity("INFO")
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotNil(t, severity)
 		assert.Equal(t, "INFO", severity.String())
 		assert.False(t, severity.IsCritical())
@@ -73,7 +74,7 @@ func TestErrorSeverity_InvalidLevels(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			severity, err := NewErrorSeverity(tc.input)
 
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.Nil(t, severity)
 			assert.Contains(t, err.Error(), tc.expected)
 		})
@@ -139,7 +140,7 @@ func TestErrorSeverity_Serialization(t *testing.T) {
 		severity, _ := NewErrorSeverity("CRITICAL")
 
 		jsonData, err := severity.MarshalJSON()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.JSONEq(t, `"CRITICAL"`, string(jsonData))
 	})
 
@@ -147,7 +148,7 @@ func TestErrorSeverity_Serialization(t *testing.T) {
 		severity := &ErrorSeverity{}
 		err := severity.UnmarshalJSON([]byte(`"ERROR"`))
 
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, "ERROR", severity.String())
 		assert.True(t, severity.IsError())
 	})
@@ -156,7 +157,7 @@ func TestErrorSeverity_Serialization(t *testing.T) {
 		severity := &ErrorSeverity{}
 		err := severity.UnmarshalJSON([]byte(`"INVALID"`))
 
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid error severity")
 	})
 }

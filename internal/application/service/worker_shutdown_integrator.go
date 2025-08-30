@@ -290,7 +290,7 @@ func (w *workerShutdownIntegrator) executeConsumerShutdownPhase(ctx context.Cont
 	// Update consumer statuses to draining
 	w.mu.Lock()
 	for i := range w.status.ConsumerStatuses {
-		w.status.ConsumerStatuses[i].Status = "draining"
+		w.status.ConsumerStatuses[i].Status = ConsumerStatusDraining
 		w.status.ConsumerStatuses[i].DrainStartTime = time.Now()
 	}
 	w.mu.Unlock()
@@ -306,7 +306,7 @@ func (w *workerShutdownIntegrator) executeConsumerShutdownPhase(ctx context.Cont
 	// Update consumer statuses to stopped
 	w.mu.Lock()
 	for i := range w.status.ConsumerStatuses {
-		w.status.ConsumerStatuses[i].Status = "stopped"
+		w.status.ConsumerStatuses[i].Status = ConsumerStatusStopped
 		w.status.ConsumerStatuses[i].DrainDuration = time.Since(w.status.ConsumerStatuses[i].DrainStartTime)
 	}
 	w.mu.Unlock()
@@ -395,7 +395,7 @@ func (w *workerShutdownIntegrator) updateWorkerStatus(workerID, status, errorMsg
 			if status == "stopping" && w.status.WorkerStatuses[i].ShutdownStartTime.IsZero() {
 				w.status.WorkerStatuses[i].ShutdownStartTime = time.Now()
 			}
-			if status == "stopped" || status == "failed" {
+			if status == ConsumerStatusStopped || status == string(ShutdownPhaseFailed) {
 				w.status.WorkerStatuses[i].ShutdownDuration = time.Since(w.status.WorkerStatuses[i].ShutdownStartTime)
 			}
 			break

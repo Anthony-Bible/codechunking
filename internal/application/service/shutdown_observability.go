@@ -141,7 +141,7 @@ func (s *ShutdownObservabilityManager) CreateAuditTrail(
 	// Add per-component details for failed components
 	failedComponents := make([]map[string]interface{}, 0)
 	for _, compStatus := range status.ComponentStatuses {
-		if compStatus.Status == "failed" || compStatus.ForceKilled {
+		if compStatus.Status == string(ShutdownPhaseFailed) || compStatus.ForceKilled {
 			failedComponents = append(failedComponents, map[string]interface{}{
 				"name":         compStatus.Name,
 				"status":       compStatus.Status,

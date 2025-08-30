@@ -220,7 +220,7 @@ func (r *resourceCleanupManager) GetCleanupMetrics() ResourceCleanupMetrics {
 		switch status.Status {
 		case "cleaned":
 			metrics.CleanedResources++
-		case "failed":
+		case string(ShutdownPhaseFailed):
 			metrics.FailedResources++
 		}
 	}
@@ -330,12 +330,17 @@ func (r *resourceCleanupManager) cleanupConcurrent(ctx context.Context, names []
 
 // cleanupSequential cleans up resources sequentially.
 func (r *resourceCleanupManager) cleanupSequential(ctx context.Context, names []string) error {
+	var errors []error
 	for _, name := range names {
 		resource := r.resources[name]
 		if err := r.cleanupSingleResource(ctx, name, resource); err != nil {
+			errors = append(errors, fmt.Errorf("failed to cleanup %s: %w", name, err))
 			// Continue with other resources even if one fails
 			continue
 		}
+	}
+	if len(errors) > 0 {
+		return fmt.Errorf("sequential cleanup errors: %v", errors)
 	}
 	return nil
 }
@@ -346,7 +351,7 @@ func (r *resourceCleanupManager) cleanupSingleResource(
 	name string,
 	resource CleanupResource,
 ) error {
-	r.updateResourceStatus(name, "cleaning", "", false, 0)
+	r.updateResourceStatus(name, "cleaning", "", 0)
 
 	resourceCtx, cancel := context.WithTimeout(ctx, r.config.ResourceTimeout)
 	defer cancel()
@@ -361,7 +366,7 @@ func (r *resourceCleanupManager) cleanupSingleResource(
 		// Check health if enabled
 		if r.config.HealthCheckEnabled {
 			if !resource.IsHealthy(resourceCtx) {
-				r.updateResourceStatus(name, "failed", "resource unhealthy", false, attempt)
+				r.updateResourceStatus(name, string(ShutdownPhaseFailed), "resource unhealthy", attempt)
 				return fmt.Errorf("resource %s is not healthy", name)
 			}
 		}
@@ -373,17 +378,17 @@ func (r *resourceCleanupManager) cleanupSingleResource(
 
 		if err == nil {
 			// Success
-			r.updateResourceStatus(name, "cleaned", "", false, attempt)
+			r.updateResourceStatus(name, "cleaned", "", attempt)
 			r.updateTypeMetrics(resource.GetResourceType(), true, duration)
 			return nil
 		}
 
 		lastError = err
-		r.updateResourceStatus(name, "cleaning", err.Error(), false, attempt)
+		r.updateResourceStatus(name, "cleaning", err.Error(), attempt)
 
 		// If this was the last attempt, mark as failed
 		if attempt == maxRetries {
-			r.updateResourceStatus(name, "failed", err.Error(), false, attempt)
+			r.updateResourceStatus(name, string(ShutdownPhaseFailed), err.Error(), attempt)
 			r.updateTypeMetrics(resource.GetResourceType(), false, duration)
 			break
 		}
@@ -398,21 +403,21 @@ func (r *resourceCleanupManager) cleanupSingleResource(
 }
 
 // updateResourceStatus updates the status of a resource.
-func (r *resourceCleanupManager) updateResourceStatus(name, status, error string, forceKilled bool, retryCount int) {
+func (r *resourceCleanupManager) updateResourceStatus(name, status, errorMsg string, retryCount int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	for i, resourceStatus := range r.status {
 		if resourceStatus.Name == name {
 			r.status[i].Status = status
-			r.status[i].Error = error
-			r.status[i].ForceKilled = forceKilled
+			r.status[i].Error = errorMsg
+			r.status[i].ForceKilled = false
 			r.status[i].RetryCount = retryCount
 			r.status[i].LastRetry = time.Now()
 			if status == "cleaning" && r.status[i].StartTime.IsZero() {
 				r.status[i].StartTime = time.Now()
 			}
-			if status == "cleaned" || status == "failed" {
+			if status == "cleaned" || status == string(ShutdownPhaseFailed) {
 				r.status[i].Duration = time.Since(r.status[i].StartTime)
 			}
 			break

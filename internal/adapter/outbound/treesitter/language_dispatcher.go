@@ -1,0 +1,56 @@
+package treesitter
+
+import (
+	goparser "codechunking/internal/adapter/outbound/treesitter/parsers/go"
+	"codechunking/internal/domain/valueobject"
+	"fmt"
+)
+
+// LanguageDispatcher implements LanguageParserFactory and creates language-specific parsers.
+type LanguageDispatcher struct {
+	supportedLanguages []valueobject.Language
+}
+
+// NewLanguageDispatcher creates a new language parser factory.
+func NewLanguageDispatcher() (*LanguageDispatcher, error) {
+	goLang, err := valueobject.NewLanguage(valueobject.LanguageGo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Go language: %w", err)
+	}
+
+	return &LanguageDispatcher{
+		supportedLanguages: []valueobject.Language{goLang},
+	}, nil
+}
+
+// CreateParser creates a language-specific parser for the given language.
+func (d *LanguageDispatcher) CreateParser(language valueobject.Language) (LanguageParser, error) {
+	switch language.Name() {
+	case valueobject.LanguageGo:
+		parser, err := goparser.NewGoParser()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Go parser: %w", err)
+		}
+		return parser, nil
+	default:
+		return nil, fmt.Errorf("unsupported language: %s", language.Name())
+	}
+}
+
+// GetSupportedLanguages returns a list of all supported languages.
+func (d *LanguageDispatcher) GetSupportedLanguages() []valueobject.Language {
+	// Return a copy to prevent external modification
+	supportedCopy := make([]valueobject.Language, len(d.supportedLanguages))
+	copy(supportedCopy, d.supportedLanguages)
+	return supportedCopy
+}
+
+// IsLanguageSupported checks if the given language is supported by this factory.
+func (d *LanguageDispatcher) IsLanguageSupported(language valueobject.Language) bool {
+	for _, supported := range d.supportedLanguages {
+		if supported.Name() == language.Name() {
+			return true
+		}
+	}
+	return false
+}

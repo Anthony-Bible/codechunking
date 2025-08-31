@@ -5,11 +5,8 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -17,14 +14,87 @@ import (
 // This adapter integrates with the existing tree-sitter infrastructure to provide
 // production-ready semantic code analysis.
 type SemanticTraverserAdapter struct {
-	parserFactory *ParserFactoryImpl
+	parserFactory      *ParserFactoryImpl
+	languageDispatcher *LanguageDispatcher
 }
 
 // NewSemanticTraverserAdapter creates a new tree-sitter based semantic traverser.
 func NewSemanticTraverserAdapter(parserFactory *ParserFactoryImpl) *SemanticTraverserAdapter {
-	return &SemanticTraverserAdapter{
-		parserFactory: parserFactory,
+	languageDispatcher, err := NewLanguageDispatcher()
+	if err != nil {
+		// Log warning but continue - maintain backward compatibility
+		slogger.InfoNoCtx("Failed to create language dispatcher, some features may be limited", slogger.Fields{
+			"error": err.Error(),
+		})
 	}
+
+	return &SemanticTraverserAdapter{
+		parserFactory:      parserFactory,
+		languageDispatcher: languageDispatcher,
+	}
+}
+
+// extractSemanticChunks is a helper method to eliminate duplication in extraction methods.
+func (s *SemanticTraverserAdapter) extractSemanticChunks(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+	extractionType string,
+	langParserExtractor func(LanguageParser) ([]outbound.SemanticCodeChunk, error),
+	legacyExtractor func() []outbound.SemanticCodeChunk,
+) ([]outbound.SemanticCodeChunk, error) {
+	slogger.Info(ctx, "Extracting "+extractionType+" from parse tree", slogger.Fields{
+		"language": parseTree.Language().Name(),
+	})
+
+	if err := s.validateInput(parseTree, options); err != nil {
+		return nil, err
+	}
+
+	// Try to use language dispatcher if available
+	if s.languageDispatcher != nil {
+		parser, err := s.languageDispatcher.CreateParser(parseTree.Language())
+		if err == nil {
+			return langParserExtractor(parser)
+		}
+		slogger.Debug(ctx, "Language dispatcher unavailable, falling back to legacy implementation", slogger.Fields{
+			"error": err.Error(),
+		})
+	}
+
+	// Fallback to existing legacy implementation for backward compatibility
+	return legacyExtractor(), nil
+}
+
+// extractImports is a helper method for import extraction (different return type).
+func (s *SemanticTraverserAdapter) extractImports(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+	langParserExtractor func(LanguageParser) ([]outbound.ImportDeclaration, error),
+	legacyExtractor func() []outbound.ImportDeclaration,
+) ([]outbound.ImportDeclaration, error) {
+	slogger.Info(ctx, "Extracting imports from parse tree", slogger.Fields{
+		"language": parseTree.Language().Name(),
+	})
+
+	if err := s.validateInput(parseTree, options); err != nil {
+		return nil, err
+	}
+
+	// Try to use language dispatcher if available
+	if s.languageDispatcher != nil {
+		parser, err := s.languageDispatcher.CreateParser(parseTree.Language())
+		if err == nil {
+			return langParserExtractor(parser)
+		}
+		slogger.Debug(ctx, "Language dispatcher unavailable, falling back to legacy implementation", slogger.Fields{
+			"error": err.Error(),
+		})
+	}
+
+	// Fallback to existing legacy implementation for backward compatibility
+	return legacyExtractor(), nil
 }
 
 // ExtractFunctions extracts all function definitions from a parse tree.
@@ -33,28 +103,29 @@ func (s *SemanticTraverserAdapter) ExtractFunctions(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	slogger.Info(ctx, "Extracting functions from parse tree", slogger.Fields{
-		"language":         parseTree.Language().Name(),
-		"include_private":  options.IncludePrivate,
-		"include_comments": options.IncludeComments,
-		"max_depth":        options.MaxDepth,
-	})
-
-	if err := s.validateInput(parseTree, options); err != nil {
-		return nil, err
-	}
-
 	startTime := time.Now()
 
-	// Use the existing tree-sitter infrastructure to traverse the parse tree
-	functions := s.traverseForFunctions(ctx, parseTree, options)
+	result, err := s.extractSemanticChunks(
+		ctx,
+		parseTree,
+		options,
+		"functions",
+		func(parser LanguageParser) ([]outbound.SemanticCodeChunk, error) {
+			return parser.ExtractFunctions(ctx, parseTree, options)
+		},
+		func() []outbound.SemanticCodeChunk {
+			return s.traverseForFunctions(ctx, parseTree, options)
+		},
+	)
 
-	slogger.Info(ctx, "Function extraction completed", slogger.Fields{
-		"extracted_count": len(functions),
-		"duration_ms":     time.Since(startTime).Milliseconds(),
-	})
+	if err == nil {
+		slogger.Info(ctx, "Function extraction completed", slogger.Fields{
+			"extracted_count": len(result),
+			"duration_ms":     time.Since(startTime).Milliseconds(),
+		})
+	}
 
-	return functions, nil
+	return result, err
 }
 
 // ExtractClasses extracts all class/struct definitions from a parse tree.
@@ -63,26 +134,29 @@ func (s *SemanticTraverserAdapter) ExtractClasses(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	slogger.Info(ctx, "Extracting classes from parse tree", slogger.Fields{
-		"language":        parseTree.Language().Name(),
-		"include_private": options.IncludePrivate,
-		"max_depth":       options.MaxDepth,
-	})
-
-	if err := s.validateInput(parseTree, options); err != nil {
-		return nil, err
-	}
-
 	startTime := time.Now()
 
-	classes := s.traverseForClasses(ctx, parseTree, options)
+	result, err := s.extractSemanticChunks(
+		ctx,
+		parseTree,
+		options,
+		"classes",
+		func(parser LanguageParser) ([]outbound.SemanticCodeChunk, error) {
+			return parser.ExtractClasses(ctx, parseTree, options)
+		},
+		func() []outbound.SemanticCodeChunk {
+			return s.traverseForClasses(ctx, parseTree, options)
+		},
+	)
 
-	slogger.Info(ctx, "Class extraction completed", slogger.Fields{
-		"extracted_count": len(classes),
-		"duration_ms":     time.Since(startTime).Milliseconds(),
-	})
+	if err == nil {
+		slogger.Info(ctx, "Class extraction completed", slogger.Fields{
+			"extracted_count": len(result),
+			"duration_ms":     time.Since(startTime).Milliseconds(),
+		})
+	}
 
-	return classes, nil
+	return result, err
 }
 
 // ExtractModules extracts module/package level constructs from a parse tree.
@@ -91,26 +165,29 @@ func (s *SemanticTraverserAdapter) ExtractModules(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	slogger.Info(ctx, "Extracting modules from parse tree", slogger.Fields{
-		"language":        parseTree.Language().Name(),
-		"include_private": options.IncludePrivate,
-		"max_depth":       options.MaxDepth,
-	})
-
-	if err := s.validateInput(parseTree, options); err != nil {
-		return nil, err
-	}
-
 	startTime := time.Now()
 
-	modules := s.traverseForModules(ctx, parseTree, options)
+	result, err := s.extractSemanticChunks(
+		ctx,
+		parseTree,
+		options,
+		"modules",
+		func(parser LanguageParser) ([]outbound.SemanticCodeChunk, error) {
+			return parser.ExtractModules(ctx, parseTree, options)
+		},
+		func() []outbound.SemanticCodeChunk {
+			return s.traverseForModules(ctx, parseTree, options)
+		},
+	)
 
-	slogger.Info(ctx, "Module extraction completed", slogger.Fields{
-		"extracted_count": len(modules),
-		"duration_ms":     time.Since(startTime).Milliseconds(),
-	})
+	if err == nil {
+		slogger.Info(ctx, "Module extraction completed", slogger.Fields{
+			"extracted_count": len(result),
+			"duration_ms":     time.Since(startTime).Milliseconds(),
+		})
+	}
 
-	return modules, nil
+	return result, err
 }
 
 // ExtractInterfaces extracts interface definitions from a parse tree.
@@ -119,20 +196,18 @@ func (s *SemanticTraverserAdapter) ExtractInterfaces(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	slogger.Info(ctx, "Extracting interfaces from parse tree", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
-
-	if err := s.validateInput(parseTree, options); err != nil {
-		return nil, err
-	}
-
-	// For now, return empty interfaces extraction as it's not yet fully implemented
-	slogger.Debug(ctx, "Interface extraction not yet fully implemented", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
-
-	return []outbound.SemanticCodeChunk{}, nil
+	return s.extractSemanticChunks(
+		ctx,
+		parseTree,
+		options,
+		"interfaces",
+		func(parser LanguageParser) ([]outbound.SemanticCodeChunk, error) {
+			return parser.ExtractInterfaces(ctx, parseTree, options)
+		},
+		func() []outbound.SemanticCodeChunk {
+			return s.extractGoInterfaces(ctx, parseTree, options, time.Now())
+		},
+	)
 }
 
 // ExtractVariables extracts variable and constant declarations from a parse tree.
@@ -141,20 +216,18 @@ func (s *SemanticTraverserAdapter) ExtractVariables(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	slogger.Info(ctx, "Extracting variables from parse tree", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
-
-	if err := s.validateInput(parseTree, options); err != nil {
-		return nil, err
-	}
-
-	// For now, return empty variables extraction as it's not yet fully implemented
-	slogger.Debug(ctx, "Variable extraction not yet fully implemented", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
-
-	return []outbound.SemanticCodeChunk{}, nil
+	return s.extractSemanticChunks(
+		ctx,
+		parseTree,
+		options,
+		"variables",
+		func(parser LanguageParser) ([]outbound.SemanticCodeChunk, error) {
+			return parser.ExtractVariables(ctx, parseTree, options)
+		},
+		func() []outbound.SemanticCodeChunk {
+			return s.extractGoVariables(ctx, parseTree, options, time.Now())
+		},
+	)
 }
 
 // ExtractComments extracts documentation and comments from a parse tree.
@@ -185,20 +258,17 @@ func (s *SemanticTraverserAdapter) ExtractImports(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.ImportDeclaration, error) {
-	slogger.Info(ctx, "Extracting imports from parse tree", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
-
-	if err := s.validateInput(parseTree, options); err != nil {
-		return nil, err
-	}
-
-	// For now, return empty imports extraction as it's not yet fully implemented
-	slogger.Debug(ctx, "Import extraction not yet fully implemented", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
-
-	return []outbound.ImportDeclaration{}, nil
+	return s.extractImports(
+		ctx,
+		parseTree,
+		options,
+		func(parser LanguageParser) ([]outbound.ImportDeclaration, error) {
+			return parser.ExtractImports(ctx, parseTree, options)
+		},
+		func() []outbound.ImportDeclaration {
+			return s.extractGoImports(ctx, parseTree, options)
+		},
+	)
 }
 
 // GetSupportedConstructTypes returns the semantic constructs this traverser can extract.
@@ -257,385 +327,74 @@ func (s *SemanticTraverserAdapter) validateInput(
 	return nil
 }
 
-// traverseForFunctions traverses the parse tree to extract function definitions.
+// Legacy parsing methods have been removed and replaced with modular language parsers.
+// All parsing functionality is now delegated to language-specific parsers via LanguageDispatcher.
+// Legacy method stubs for backward compatibility - all functionality delegated to language parsers.
 func (s *SemanticTraverserAdapter) traverseForFunctions(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) []outbound.SemanticCodeChunk {
-	language := parseTree.Language()
-	now := time.Now()
-
-	// For now, use similar logic to the mock but with improved tree-sitter integration
-	// This is where we would integrate with actual tree-sitter queries
-
-	switch language.Name() {
-	case valueobject.LanguageGo:
-		return s.extractGoFunctions(ctx, parseTree, options, now)
-	case valueobject.LanguagePython:
-		return s.extractPythonFunctions(ctx, parseTree, options, now)
-	case valueobject.LanguageJavaScript:
-		return s.extractJavaScriptFunctions(ctx, parseTree, options, now)
-	case valueobject.LanguageTypeScript:
-		return s.extractTypeScriptFunctions(ctx, parseTree, options, now)
-	default:
-		slogger.Warn(ctx, "Unsupported language for function extraction", slogger.Fields{
-			"language": language.Name(),
-		})
-		return []outbound.SemanticCodeChunk{}
-	}
+	// This method is now a fallback - all functionality delegated to language parsers
+	slogger.Warn(ctx, "Using legacy fallback - language parser unavailable", slogger.Fields{
+		"language": parseTree.Language().Name(),
+	})
+	return []outbound.SemanticCodeChunk{}
 }
 
-// traverseForClasses traverses the parse tree to extract class definitions.
 func (s *SemanticTraverserAdapter) traverseForClasses(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) []outbound.SemanticCodeChunk {
-	language := parseTree.Language()
-	now := time.Now()
-
-	switch language.Name() {
-	case valueobject.LanguageGo:
-		return s.extractGoStructs(ctx, parseTree, options, now)
-	case valueobject.LanguagePython:
-		return s.extractPythonClasses(ctx, parseTree, options, now)
-	case valueobject.LanguageJavaScript:
-		return s.extractJavaScriptClasses(ctx, parseTree, options, now)
-	case valueobject.LanguageTypeScript:
-		return s.extractTypeScriptClasses(ctx, parseTree, options, now)
-	default:
-		slogger.Warn(ctx, "Unsupported language for class extraction", slogger.Fields{
-			"language": language.Name(),
-		})
-		return []outbound.SemanticCodeChunk{}
-	}
+	slogger.Warn(ctx, "Using legacy fallback - language parser unavailable", slogger.Fields{
+		"language": parseTree.Language().Name(),
+	})
+	return []outbound.SemanticCodeChunk{}
 }
 
-// traverseForModules traverses the parse tree to extract module definitions.
 func (s *SemanticTraverserAdapter) traverseForModules(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) []outbound.SemanticCodeChunk {
-	language := parseTree.Language()
-	now := time.Now()
-
-	switch language.Name() {
-	case valueobject.LanguageGo:
-		return s.extractGoPackages(ctx, parseTree, options, now)
-	case valueobject.LanguagePython:
-		return s.extractPythonModules(ctx, parseTree, options, now)
-	case valueobject.LanguageJavaScript:
-		return s.extractJavaScriptModules(ctx, parseTree, options, now)
-	case valueobject.LanguageTypeScript:
-		return s.extractTypeScriptModules(ctx, parseTree, options, now)
-	default:
-		slogger.Warn(ctx, "Unsupported language for module extraction", slogger.Fields{
-			"language": language.Name(),
-		})
-		return []outbound.SemanticCodeChunk{}
-	}
+	slogger.Warn(ctx, "Using legacy fallback - language parser unavailable", slogger.Fields{
+		"language": parseTree.Language().Name(),
+	})
+	return []outbound.SemanticCodeChunk{}
 }
 
-// Language-specific extraction methods (simplified for now)
-
-func (s *SemanticTraverserAdapter) extractGoFunctions(
-	_ context.Context,
+func (s *SemanticTraverserAdapter) extractGoInterfaces(
+	ctx context.Context,
 	parseTree *valueobject.ParseTree,
-	_ outbound.SemanticExtractionOptions,
+	options outbound.SemanticExtractionOptions,
 	now time.Time,
 ) []outbound.SemanticCodeChunk {
-	// This is a simplified implementation that would be replaced with actual tree-sitter queries
-	return []outbound.SemanticCodeChunk{
-		{
-			ID:            s.generateID("func", "main"),
-			Type:          outbound.ConstructFunction,
-			Name:          "main",
-			QualifiedName: "main.main",
-			Language:      parseTree.Language(),
-			StartByte:     0,
-			EndByte:       100,
-			Content:       "func main() {\n\t// Implementation\n}",
-			Visibility:    outbound.Public,
-			ExtractedAt:   now,
-			Hash:          s.generateHash("main"),
-		},
-	}
+	slogger.Warn(ctx, "Using legacy fallback - language parser unavailable", slogger.Fields{
+		"language": parseTree.Language().Name(),
+	})
+	return []outbound.SemanticCodeChunk{}
 }
 
-func (s *SemanticTraverserAdapter) extractPythonFunctions(
-	_ context.Context,
+func (s *SemanticTraverserAdapter) extractGoVariables(
+	ctx context.Context,
 	parseTree *valueobject.ParseTree,
-	_ outbound.SemanticExtractionOptions,
+	options outbound.SemanticExtractionOptions,
 	now time.Time,
 ) []outbound.SemanticCodeChunk {
-	return []outbound.SemanticCodeChunk{
-		{
-			ID:            s.generateID("func", "main"),
-			Type:          outbound.ConstructFunction,
-			Name:          "main",
-			QualifiedName: "main",
-			Language:      parseTree.Language(),
-			StartByte:     0,
-			EndByte:       100,
-			Content:       "def main():\n    # Implementation\n    pass",
-			Visibility:    outbound.Public,
-			ExtractedAt:   now,
-			Hash:          s.generateHash("main"),
-		},
-	}
+	slogger.Warn(ctx, "Using legacy fallback - language parser unavailable", slogger.Fields{
+		"language": parseTree.Language().Name(),
+	})
+	return []outbound.SemanticCodeChunk{}
 }
 
-func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
-	_ context.Context,
+func (s *SemanticTraverserAdapter) extractGoImports(
+	ctx context.Context,
 	parseTree *valueobject.ParseTree,
-	_ outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	return []outbound.SemanticCodeChunk{
-		{
-			ID:            s.generateID("func", "main"),
-			Type:          outbound.ConstructFunction,
-			Name:          "main",
-			QualifiedName: "main",
-			Language:      parseTree.Language(),
-			StartByte:     0,
-			EndByte:       100,
-			Content:       "function main() {\n    // Implementation\n}",
-			Visibility:    outbound.Public,
-			ExtractedAt:   now,
-			Hash:          s.generateHash("main"),
-		},
-	}
-}
-
-func (s *SemanticTraverserAdapter) extractTypeScriptFunctions(
-	_ context.Context,
-	parseTree *valueobject.ParseTree,
-	_ outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	return []outbound.SemanticCodeChunk{
-		{
-			ID:            s.generateID("func", "main"),
-			Type:          outbound.ConstructFunction,
-			Name:          "main",
-			QualifiedName: "main",
-			Language:      parseTree.Language(),
-			StartByte:     0,
-			EndByte:       100,
-			Content:       "function main(): void {\n    // Implementation\n}",
-			ReturnType:    "void",
-			Visibility:    outbound.Public,
-			ExtractedAt:   now,
-			Hash:          s.generateHash("main"),
-		},
-	}
-}
-
-func (s *SemanticTraverserAdapter) extractGoStructs(
-	_ context.Context,
-	parseTree *valueobject.ParseTree,
-	_ outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	return []outbound.SemanticCodeChunk{
-		{
-			ID:            s.generateID("struct", "User"),
-			Type:          outbound.ConstructStruct,
-			Name:          "User",
-			QualifiedName: "main.User",
-			Language:      parseTree.Language(),
-			StartByte:     0,
-			EndByte:       100,
-			Content:       "type User struct {\n\tName string\n\tID   int\n}",
-			Visibility:    outbound.Public,
-			ExtractedAt:   now,
-			Hash:          s.generateHash("User"),
-		},
-	}
-}
-
-func (s *SemanticTraverserAdapter) extractPythonClasses(
-	_ context.Context,
-	parseTree *valueobject.ParseTree,
-	_ outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	return []outbound.SemanticCodeChunk{
-		{
-			ID:            s.generateID("class", "User"),
-			Type:          outbound.ConstructClass,
-			Name:          "User",
-			QualifiedName: "User",
-			Language:      parseTree.Language(),
-			StartByte:     0,
-			EndByte:       100,
-			Content:       "class User:\n    def __init__(self, name):\n        self.name = name",
-			Visibility:    outbound.Public,
-			ExtractedAt:   now,
-			Hash:          s.generateHash("User"),
-		},
-	}
-}
-
-func (s *SemanticTraverserAdapter) extractJavaScriptClasses(
-	_ context.Context,
-	parseTree *valueobject.ParseTree,
-	_ outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	return []outbound.SemanticCodeChunk{
-		{
-			ID:            s.generateID("class", "User"),
-			Type:          outbound.ConstructClass,
-			Name:          "User",
-			QualifiedName: "User",
-			Language:      parseTree.Language(),
-			StartByte:     0,
-			EndByte:       100,
-			Content:       "class User {\n    constructor(name) {\n        this.name = name;\n    }\n}",
-			Visibility:    outbound.Public,
-			ExtractedAt:   now,
-			Hash:          s.generateHash("User"),
-		},
-	}
-}
-
-func (s *SemanticTraverserAdapter) extractTypeScriptClasses(
-	_ context.Context,
-	parseTree *valueobject.ParseTree,
-	_ outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	return []outbound.SemanticCodeChunk{
-		{
-			ID:            s.generateID("class", "User"),
-			Type:          outbound.ConstructClass,
-			Name:          "User",
-			QualifiedName: "User",
-			Language:      parseTree.Language(),
-			StartByte:     0,
-			EndByte:       100,
-			Content:       "class User {\n    constructor(private name: string) {}\n}",
-			Visibility:    outbound.Public,
-			ExtractedAt:   now,
-			Hash:          s.generateHash("User"),
-		},
-	}
-}
-
-func (s *SemanticTraverserAdapter) extractGoPackages(
-	_ context.Context,
-	parseTree *valueobject.ParseTree,
-	_ outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	return []outbound.SemanticCodeChunk{
-		{
-			ID:            s.generateID("package", "main"),
-			Type:          outbound.ConstructPackage,
-			Name:          "main",
-			QualifiedName: "main",
-			Language:      parseTree.Language(),
-			StartByte:     0,
-			EndByte:       s.safeUint32(len(parseTree.Source())),
-			Content:       "package main",
-			Visibility:    outbound.Public,
-			ExtractedAt:   now,
-			Hash:          s.generateHash("main"),
-		},
-	}
-}
-
-func (s *SemanticTraverserAdapter) extractPythonModules(
-	_ context.Context,
-	parseTree *valueobject.ParseTree,
-	_ outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	return []outbound.SemanticCodeChunk{
-		{
-			ID:            s.generateID("module", "main"),
-			Type:          outbound.ConstructModule,
-			Name:          "main",
-			QualifiedName: "main",
-			Language:      parseTree.Language(),
-			StartByte:     0,
-			EndByte:       s.safeUint32(len(parseTree.Source())),
-			Content:       string(parseTree.Source()),
-			Visibility:    outbound.Public,
-			ExtractedAt:   now,
-			Hash:          s.generateHash("main"),
-		},
-	}
-}
-
-func (s *SemanticTraverserAdapter) extractJavaScriptModules(
-	_ context.Context,
-	parseTree *valueobject.ParseTree,
-	_ outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	return []outbound.SemanticCodeChunk{
-		{
-			ID:            s.generateID("module", "main"),
-			Type:          outbound.ConstructModule,
-			Name:          "main",
-			QualifiedName: "main",
-			Language:      parseTree.Language(),
-			StartByte:     0,
-			EndByte:       s.safeUint32(len(parseTree.Source())),
-			Content:       string(parseTree.Source()),
-			Visibility:    outbound.Public,
-			ExtractedAt:   now,
-			Hash:          s.generateHash("main"),
-		},
-	}
-}
-
-func (s *SemanticTraverserAdapter) extractTypeScriptModules(
-	_ context.Context,
-	parseTree *valueobject.ParseTree,
-	_ outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	return []outbound.SemanticCodeChunk{
-		{
-			ID:            s.generateID("module", "main"),
-			Type:          outbound.ConstructModule,
-			Name:          "main",
-			QualifiedName: "main",
-			Language:      parseTree.Language(),
-			StartByte:     0,
-			EndByte:       s.safeUint32(len(parseTree.Source())),
-			Content:       string(parseTree.Source()),
-			Visibility:    outbound.Public,
-			ExtractedAt:   now,
-			Hash:          s.generateHash("main"),
-		},
-	}
-}
-
-// Utility methods
-
-func (s *SemanticTraverserAdapter) generateID(constructType, name string) string {
-	return fmt.Sprintf("%s_%s_%d", constructType, strings.ToLower(name), time.Now().UnixNano())
-}
-
-func (s *SemanticTraverserAdapter) generateHash(content string) string {
-	hash := sha256.Sum256([]byte(content))
-	return hex.EncodeToString(hash[:])[:8]
-}
-
-// safeUint32 safely converts an int to uint32, capping at maximum value to prevent overflow.
-func (s *SemanticTraverserAdapter) safeUint32(value int) uint32 {
-	if value < 0 {
-		return 0
-	}
-	if value > int(^uint32(0)) {
-		return ^uint32(0) // Maximum uint32 value
-	}
-	return uint32(value)
+	options outbound.SemanticExtractionOptions,
+) []outbound.ImportDeclaration {
+	slogger.Warn(ctx, "Using legacy fallback - language parser unavailable", slogger.Fields{
+		"language": parseTree.Language().Name(),
+	})
+	return []outbound.ImportDeclaration{}
 }

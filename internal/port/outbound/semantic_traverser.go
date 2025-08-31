@@ -151,6 +151,8 @@ type ImportDeclaration struct {
 	StartPosition   valueobject.Position   `json:"start_position"`
 	EndPosition     valueobject.Position   `json:"end_position"`
 	Content         string                 `json:"content"`
+	ExtractedAt     time.Time              `json:"extracted_at"`
+	Hash            string                 `json:"hash"`
 	Metadata        map[string]interface{} `json:"metadata,omitempty"`
 }
 

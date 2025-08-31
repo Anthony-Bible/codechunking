@@ -185,14 +185,14 @@ func trimSpaceIfNeeded(s string) string {
 }
 
 // parseMethodAndPath efficiently parses method and path without slice allocation.
-func parseMethodAndPath(pattern string) (method, path string, err error) {
+func parseMethodAndPath(pattern string) (string, string, error) {
 	spaceIndex := strings.Index(pattern, " ")
 	if spaceIndex == -1 {
 		return "", "", fmt.Errorf("ErrInvalidPatternFormat: %s", ErrInvalidPatternFormat)
 	}
 
-	method = trimSpaceIfNeeded(pattern[:spaceIndex])
-	path = trimSpaceIfNeeded(pattern[spaceIndex+1:])
+	method := trimSpaceIfNeeded(pattern[:spaceIndex])
+	path := trimSpaceIfNeeded(pattern[spaceIndex+1:])
 	return method, path, nil
 }
 

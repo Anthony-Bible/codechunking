@@ -535,7 +535,7 @@ type AsyncErrorLoggingService interface {
 
 // Constructor functions that use the real implementations.
 func NewErrorBuffer(size int) ErrorBuffer {
-	return NewCircularErrorBuffer(size)
+	return &realErrorBufferAdapter{real: NewCircularErrorBuffer(size)}
 }
 
 func NewAlertDeliveryCircuitBreaker(failureThreshold int, recoveryTimeout time.Duration) AlertDeliveryCircuitBreaker {
@@ -605,18 +605,40 @@ func (r *realCircuitBreakerAdapter) GetStatistics() CircuitBreakerStats {
 
 type realAlertDeduplicatorAdapter struct {
 	window    time.Duration
-	realDedup interface {
-		IsDuplicate(alert *entity.Alert) (bool, error)
-		RecordAlert(alert *entity.Alert) error
-	}
+	realDedup SmartAlertDeduplicator
 }
 
 func (r *realAlertDeduplicatorAdapter) IsDuplicate(alert *entity.Alert) (bool, error) {
-	return r.realDedup.IsDuplicate(alert)
+	// Prefer native IsDuplicate if available
+	type duplicatorWithIsDuplicate interface {
+		IsDuplicate(alert *entity.Alert) (bool, error)
+	}
+	if d, ok := any(r.realDedup).(duplicatorWithIsDuplicate); ok {
+		return d.IsDuplicate(alert)
+	}
+
+	if alert == nil {
+		return false, errors.New("alert cannot be nil")
+	}
+	// Fall back to ShouldSendAlert semantics: duplicate if it should NOT be sent
+	shouldSend := r.realDedup.ShouldSendAlert(alert.Type().String(), alert.Message())
+	return !shouldSend, nil
 }
 
 func (r *realAlertDeduplicatorAdapter) RecordAlert(alert *entity.Alert) error {
-	return r.realDedup.RecordAlert(alert)
+	if alert == nil {
+		return errors.New("alert cannot be nil")
+	}
+	// Prefer native RecordAlert(*Alert) if available
+	type duplicatorWithRecordAlert interface {
+		RecordAlert(alert *entity.Alert) error
+	}
+	if d, ok := any(r.realDeduplicatorAdapter()).(duplicatorWithRecordAlert); ok {
+		return d.RecordAlert(alert)
+	}
+	// Use string-based RecordAlert from real interface
+	r.realDedup.RecordAlert(alert.Type().String(), alert.Message())
+	return nil
 }
 
 func (r *realAlertDeduplicatorAdapter) TrackDuplicate(_ *entity.Alert) {
@@ -636,10 +658,7 @@ func (r *realAlertDeduplicatorAdapter) ShouldSuppress(_ string, _ int) bool {
 type realAsyncErrorLoggingAdapter struct {
 	logger      logging.ApplicationLogger
 	bufferSize  int
-	realService interface {
-		LogAndClassifyError(ctx context.Context, err error, component string, severity *valueobject.ErrorSeverity) error
-		Shutdown(ctx context.Context) error
-	}
+	realService NonBlockingErrorLogger
 }
 
 func (r *realAsyncErrorLoggingAdapter) LogAndClassifyError(
@@ -648,13 +667,71 @@ func (r *realAsyncErrorLoggingAdapter) LogAndClassifyError(
 	component string,
 	severity *valueobject.ErrorSeverity,
 ) error {
-	return r.realService.LogAndClassifyError(ctx, err, component, severity)
+	// If the underlying service supports LogAndClassifyError, use it directly
+	type svcWithLogAndClassify interface {
+		LogAndClassifyError(ctx context.Context, err error, component string, severity *valueobject.ErrorSeverity) error
+	}
+	if s, ok := any(r.realService).(svcWithLogAndClassify); ok {
+		return s.LogAndClassifyError(ctx, err, component, severity)
+	}
+
+	// Fallback: classify now and use non-blocking LogError
+	if severity == nil {
+		return errors.New("severity cannot be nil")
+	}
+	classified, cerr := entity.NewClassifiedError(
+		ctx, err, severity, "async_error", fmt.Sprintf("%v", err), map[string]interface{}{"component": component},
+	)
+	if cerr != nil {
+		return cerr
+	}
+	ok := r.realService.LogError(classified)
+	if !ok {
+		return errors.New("error buffer full, dropping error")
+	}
+	return nil
 }
 
 func (r *realAsyncErrorLoggingAdapter) Flush() {
-	// Flush operation - may be different in real implementation
+	// If underlying supports Flush, invoke it; otherwise no-op
+	type svcWithFlush interface{ Flush() error }
+	if s, ok := any(r.realService).(svcWithFlush); ok {
+		_ = s.Flush()
+	}
 }
 
 func (r *realAsyncErrorLoggingAdapter) Shutdown(ctx context.Context) error {
-	return r.realService.Shutdown(ctx)
+	// Prefer context-aware shutdown when available
+	type svcWithShutdownCtx interface{ ShutdownWithContext(context.Context) error }
+	if s, ok := any(r.realService).(svcWithShutdownCtx); ok {
+		return s.ShutdownWithContext(ctx)
+	}
+	return r.realService.Shutdown()
 }
+
+// realErrorBufferAdapter adapts CircularErrorBuffer to the test's ErrorBuffer interface.
+type realErrorBufferAdapter struct {
+	real CircularErrorBuffer
+}
+
+func (a *realErrorBufferAdapter) Add(err *entity.ClassifiedError) bool { return a.real.Add(err) }
+func (a *realErrorBufferAdapter) Size() int                            { return a.real.Size() }
+func (a *realErrorBufferAdapter) IsFull() bool                         { return a.real.Size() == a.real.Capacity() }
+func (a *realErrorBufferAdapter) GetAll() []*entity.ClassifiedError    { return a.real.GetAll() }
+func (a *realErrorBufferAdapter) GetBatch(count int) []*entity.ClassifiedError {
+	return a.real.GetBatch(count)
+}
+func (a *realErrorBufferAdapter) Clear() { a.real.Clear() }
+
+func (a *realErrorBufferAdapter) GetMemoryUsage() int64 {
+	// Prefer precise memory usage when available
+	type memUsage interface{ GetMemoryUsage() int64 }
+	if m, ok := any(a.real).(memUsage); ok {
+		return m.GetMemoryUsage()
+	}
+	// Fall back to estimate provided by the interface
+	return a.real.GetMemoryEstimate()
+}
+
+// helper to get underlying adapter as any.
+func (r *realAlertDeduplicatorAdapter) realDeduplicatorAdapter() any { return r.realDedup }

@@ -225,3 +225,28 @@ func (b *circularErrorBuffer) Clone() CircularErrorBuffer {
 
 	return clone
 }
+
+// GetMemoryEstimate returns the estimated memory usage of the buffer.
+func (b *circularErrorBuffer) GetMemoryEstimate() int64 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	// Estimate memory usage:
+	// - Fixed overhead for the struct
+	// - Size of buffer slice (cap * pointer size)
+	// - Estimated size of stored error messages
+	const structOverhead = 64 // bytes for struct fields and mutex
+	const pointerSize = 8     // bytes per pointer on 64-bit systems
+
+	bufferMemory := int64(cap(b.buffer) * pointerSize)
+
+	// Estimate average error message size (rough estimate)
+	var messageMemory int64
+	count := b.size
+	if count > 0 {
+		const averageErrorSize = 256 // estimated average bytes per error
+		messageMemory = int64(count) * averageErrorSize
+	}
+
+	return structOverhead + bufferMemory + messageMemory
+}

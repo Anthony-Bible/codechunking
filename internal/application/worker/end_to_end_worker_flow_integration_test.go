@@ -56,12 +56,12 @@ func TestEndToEndWorkerFlow_RepositoryCloning_to_ChunkProcessing(t *testing.T) {
 			defer cleanupTestWorkspace(t, workspace)
 
 			// Step 1: Repository Cloning
-			cloneResult := executeRepositoryCloning(t, ctx, tc.repoURL, workspace)
+			cloneResult := executeRepositoryCloning(ctx, t, tc.repoURL, workspace)
 			assert.True(t, cloneResult.Success, "Repository cloning should succeed")
 			assert.NotEmpty(t, cloneResult.Files, "Should have cloned files")
 
 			// Step 2: File Processing and Language Detection
-			langDetectionResult := executeLanguageDetection(t, ctx, cloneResult.RepoPath)
+			langDetectionResult := executeLanguageDetection(ctx, t, cloneResult.RepoPath)
 			assert.Equal(
 				t,
 				tc.expectedLang,
@@ -71,17 +71,17 @@ func TestEndToEndWorkerFlow_RepositoryCloning_to_ChunkProcessing(t *testing.T) {
 			assert.NotEmpty(t, langDetectionResult.DetectedFiles, "Should detect language files")
 
 			// Step 3: Binary File Filtering
-			filterResult := executeBinaryFileFiltering(t, ctx, cloneResult.RepoPath)
+			filterResult := executeBinaryFileFiltering(ctx, t, cloneResult.RepoPath)
 			assert.Less(t, len(filterResult.FilteredFiles), len(cloneResult.Files), "Should filter out some files")
 			assert.NotEmpty(t, filterResult.ProcessableFiles, "Should have processable files")
 
 			// Step 4: Submodule and Symlink Handling
-			submoduleResult := executeSubmoduleProcessing(t, ctx, cloneResult.RepoPath)
+			submoduleResult := executeSubmoduleProcessing(ctx, t, cloneResult.RepoPath)
 			// Results depend on repository - just verify no errors
-			assert.NoError(t, submoduleResult.Error, "Submodule processing should not error")
+			require.NoError(t, submoduleResult.Error, "Submodule processing should not error")
 
 			// Step 5: Code Chunk Processing (simulated - actual implementation would be in Phase 4)
-			chunkResult := simulateChunkProcessing(t, ctx, filterResult.ProcessableFiles)
+			chunkResult := simulateChunkProcessing(ctx, t, filterResult.ProcessableFiles)
 			assert.Positive(t, chunkResult.ChunkCount, "Should generate code chunks")
 			assert.NotEmpty(t, chunkResult.ChunkMetadata, "Should have chunk metadata")
 
@@ -131,12 +131,12 @@ func TestEndToEndWorkerFlow_ErrorRecovery_and_Resilience(t *testing.T) {
 			defer cleanupTestWorkspace(t, workspace)
 
 			// Execute the pipeline and expect controlled failure
-			result := executeResilientWorkerPipeline(t, ctx, scenario.repoURL, workspace)
+			result := executeResilientWorkerPipeline(ctx, t, scenario.repoURL, workspace)
 
 			switch scenario.errorStage {
 			case "cloning":
 				assert.False(t, result.CloningSuccess, "Cloning should fail for invalid repository")
-				assert.Error(t, result.CloningError, "Should report cloning error")
+				require.Error(t, result.CloningError, "Should report cloning error")
 			case "file_processing":
 				assert.True(t, result.CloningSuccess, "Cloning should succeed")
 				assert.True(t, result.HasPartialResults, "Should have partial processing results")
@@ -188,7 +188,7 @@ func TestEndToEndWorkerFlow_Performance_and_Concurrency(t *testing.T) {
 			start := time.Now()
 
 			// Execute concurrent worker processing
-			results := executeConcurrentWorkerProcessing(t, ctx, repositories, scenario.concurrentWorkers)
+			results := executeConcurrentWorkerProcessing(ctx, t, repositories, scenario.concurrentWorkers)
 
 			elapsed := time.Since(start)
 
@@ -262,7 +262,7 @@ type ConcurrentProcessingResult struct {
 }
 
 func createTestWorkspace(t *testing.T, name string) string {
-	workspace := filepath.Join(os.TempDir(), "worker-integration-test", name)
+	workspace := filepath.Join(t.TempDir(), "worker-integration-test", name)
 	err := os.MkdirAll(workspace, 0o755)
 	require.NoError(t, err, "Should create test workspace")
 	return workspace
@@ -275,7 +275,7 @@ func cleanupTestWorkspace(t *testing.T, workspace string) {
 	}
 }
 
-func executeRepositoryCloning(t *testing.T, _ context.Context, repoURL, workspace string) CloneResult {
+func executeRepositoryCloning(_ context.Context, t *testing.T, repoURL, workspace string) CloneResult {
 	// Simulate repository cloning using existing Git client components
 	// In a real implementation, this would use the GitClient service
 
@@ -342,7 +342,7 @@ func executeRepositoryCloning(t *testing.T, _ context.Context, repoURL, workspac
 	}
 }
 
-func executeLanguageDetection(t *testing.T, ctx context.Context, repoPath string) LanguageDetectionResult {
+func executeLanguageDetection(_ context.Context, t *testing.T, repoPath string) LanguageDetectionResult {
 	// For integration testing, use simple file extension-based detection
 
 	result := LanguageDetectionResult{
@@ -376,7 +376,7 @@ func executeLanguageDetection(t *testing.T, ctx context.Context, repoPath string
 	return result
 }
 
-func executeBinaryFileFiltering(t *testing.T, ctx context.Context, repoPath string) FilterResult {
+func executeBinaryFileFiltering(_ context.Context, t *testing.T, repoPath string) FilterResult {
 	// For integration testing, use simple extension-based binary detection
 
 	result := FilterResult{}
@@ -401,7 +401,7 @@ func executeBinaryFileFiltering(t *testing.T, ctx context.Context, repoPath stri
 	return result
 }
 
-func executeSubmoduleProcessing(t *testing.T, ctx context.Context, repoPath string) SubmoduleResult {
+func executeSubmoduleProcessing(_ context.Context, _ *testing.T, repoPath string) SubmoduleResult {
 	// For integration testing, simulate submodule and symlink detection
 	submoduleCount := 0
 	symlinkCount := 0
@@ -413,7 +413,7 @@ func executeSubmoduleProcessing(t *testing.T, ctx context.Context, repoPath stri
 	}
 
 	// Count symlinks
-	err := filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(repoPath, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -430,7 +430,7 @@ func executeSubmoduleProcessing(t *testing.T, ctx context.Context, repoPath stri
 	}
 }
 
-func simulateChunkProcessing(t *testing.T, ctx context.Context, processableFiles []string) ChunkResult {
+func simulateChunkProcessing(_ context.Context, _ *testing.T, processableFiles []string) ChunkResult {
 	// Simulate code chunking (actual implementation would be in Phase 4)
 	// For now, create mock chunks based on file content
 
@@ -495,8 +495,8 @@ func verifyEndToEndMetrics(t *testing.T, testName string, cloneResult CloneResul
 }
 
 func executeResilientWorkerPipeline(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	repoURL, workspace string,
 ) ResilientPipelineResult {
 	result := ResilientPipelineResult{
@@ -504,7 +504,7 @@ func executeResilientWorkerPipeline(
 	}
 
 	// Step 1: Attempt cloning
-	cloneResult := executeRepositoryCloning(t, ctx, repoURL, workspace)
+	cloneResult := executeRepositoryCloning(ctx, t, repoURL, workspace)
 	result.CloningSuccess = cloneResult.Success
 	result.CloningError = cloneResult.Error
 
@@ -534,8 +534,8 @@ func generateTestRepositories(count int) []string {
 }
 
 func executeConcurrentWorkerProcessing(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	repositories []string,
 	workerCount int,
 ) []ConcurrentProcessingResult {
@@ -549,7 +549,7 @@ func executeConcurrentWorkerProcessing(
 		workspace := createTestWorkspace(t, fmt.Sprintf("concurrent-%d", i))
 
 		// Execute the pipeline
-		cloneResult := executeRepositoryCloning(t, ctx, repo, workspace)
+		cloneResult := executeRepositoryCloning(ctx, t, repo, workspace)
 
 		results[i] = ConcurrentProcessingResult{
 			Success:        cloneResult.Success,

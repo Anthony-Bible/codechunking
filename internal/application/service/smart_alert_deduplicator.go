@@ -68,12 +68,13 @@ func (d *smartAlertDeduplicator) IsDuplicate(alert *entity.Alert) (bool, error) 
 }
 
 // RecordAlert records an alert in the deduplication system.
-func (d *smartAlertDeduplicator) RecordAlert(alert *entity.Alert) error {
-	if alert == nil {
-		return errors.New("alert cannot be nil")
+func (d *smartAlertDeduplicator) RecordAlert(alertType, message string) {
+	if alertType == "" || message == "" {
+		return // Invalid input, ignore
 	}
 
-	key := d.generateDeduplicationKey(alert)
+	// Generate key from the parameters
+	key := fmt.Sprintf("%s:%s", alertType, message)
 	now := time.Now()
 
 	d.mu.Lock()
@@ -93,11 +94,9 @@ func (d *smartAlertDeduplicator) RecordAlert(alert *entity.Alert) error {
 			firstSeen: now,
 			lastSeen:  now,
 			count:     1,
-			alertData: alert,
+			alertData: nil, // No alert data for string-based alerts
 		}
 	}
-
-	return nil
 }
 
 // TrackDuplicate tracks that a duplicate alert was encountered.
@@ -282,4 +281,52 @@ func (d *smartAlertDeduplicator) generateDeduplicationKey(alert *entity.Alert) s
 
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:8]) // Use first 8 bytes for reasonable key length
+}
+
+// ShouldSendAlert determines if an alert should be sent based on deduplication rules.
+func (d *smartAlertDeduplicator) ShouldSendAlert(alertType, message string) bool {
+	if alertType == "" || message == "" {
+		return false // Invalid input, don't send
+	}
+
+	// Generate key from the parameters
+	key := fmt.Sprintf("%s:%s", alertType, message)
+	now := time.Now()
+
+	d.mu.RLock()
+	entry, exists := d.entries[key]
+	d.mu.RUnlock()
+
+	if !exists {
+		// First time seeing this alert, should send it
+		return true
+	}
+
+	// Check if entry is still within deduplication window
+	if now.Sub(entry.firstSeen) > d.deduplicationWindow {
+		// Entry expired, should send the alert
+		return true
+	}
+
+	// Check if it's suppressed due to too many duplicates
+	if entry.suppressed {
+		return false
+	}
+
+	// Within deduplication window, don't send duplicate
+	return false
+}
+
+// Reset resets the deduplicator state, clearing all tracked entries and statistics.
+func (d *smartAlertDeduplicator) Reset() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Clear all entries
+	d.entries = make(map[string]*deduplicationEntry)
+
+	// Reset statistics
+	d.totalProcessed = 0
+	d.duplicatesDetected = 0
+	d.alertsSuppressed = 0
 }

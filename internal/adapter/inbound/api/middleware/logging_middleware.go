@@ -187,7 +187,7 @@ func (lb *LogBuffer) Reset() {
 }
 
 // Write implements io.Writer for compatibility with fmt.Fprintf.
-func (lb *LogBuffer) Write(p []byte) (n int, err error) {
+func (lb *LogBuffer) Write(p []byte) (int, error) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 	return lb.buffer.Write(p)

@@ -6,6 +6,8 @@ package cmd
 
 import (
 	"codechunking/internal/adapter/inbound/messaging"
+	"codechunking/internal/adapter/outbound/gitclient"
+	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/service"
 	"codechunking/internal/application/worker"
@@ -15,6 +17,10 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+)
+
+const (
+	defaultHost = "localhost"
 )
 
 // newWorkerCmd creates and returns the worker command.
@@ -32,78 +38,123 @@ The worker service:
 
 Configuration is loaded from config files and environment variables.`,
 		Run: func(_ *cobra.Command, _ []string) {
-			// Load configuration
-			cfg := config.New(viper.GetViper())
-
-			slogger.InfoNoCtx("Starting worker service", slogger.Fields{
-				"concurrency": cfg.Worker.Concurrency,
-				"queue_group": cfg.Worker.QueueGroup,
-			})
-
-			// Create job processor (simplified for GREEN phase)
-			jobProcessorConfig := worker.JobProcessorConfig{
-				WorkspaceDir:      "/tmp/codechunking-workspace",
-				MaxConcurrentJobs: cfg.Worker.Concurrency,
-				JobTimeout:        cfg.Worker.JobTimeout,
-			}
-
-			jobProcessor := worker.NewDefaultJobProcessor(
-				jobProcessorConfig,
-				nil, // Repository will be injected in BLUE phase
-				nil, // Repository will be injected in BLUE phase
-				nil, // GitClient will be injected in BLUE phase
-				nil, // CodeParser will be injected in BLUE phase
-				nil, // EmbeddingGenerator will be injected in BLUE phase
-			)
-
-			// Create consumer configuration
-			consumerConfig := messaging.ConsumerConfig{
-				Subject:     "indexing.job",
-				QueueGroup:  cfg.Worker.QueueGroup,
-				DurableName: "indexing-consumer",
-				AckWait:     30 * time.Second,
-				MaxDeliver:  3,
-			}
-
-			// Create consumer (simplified for GREEN phase)
-			consumer, err := messaging.NewNATSConsumer(consumerConfig, cfg.NATS, jobProcessor)
-			if err != nil {
-				slogger.ErrorNoCtx("Failed to create consumer", slogger.Fields{"error": err.Error()})
-				return
-			}
-
-			// Create worker service
-			workerServiceConfig := service.WorkerServiceConfig{
-				Concurrency:         cfg.Worker.Concurrency,
-				QueueGroup:          cfg.Worker.QueueGroup,
-				JobTimeout:          cfg.Worker.JobTimeout,
-				HealthCheckInterval: 30 * time.Second,
-				RestartDelay:        5 * time.Second,
-				MaxRestartAttempts:  3,
-				ShutdownTimeout:     30 * time.Second,
-			}
-
-			workerService := service.NewDefaultWorkerService(workerServiceConfig, cfg.NATS, jobProcessor)
-
-			// Add consumer to service
-			if err := workerService.AddConsumer(consumer); err != nil {
-				slogger.ErrorNoCtx("Failed to add consumer", slogger.Fields{"error": err.Error()})
-				return
-			}
-
-			// Start worker service
-			ctx := context.Background()
-			if err := workerService.Start(ctx); err != nil {
-				slogger.ErrorNoCtx("Failed to start worker service", slogger.Fields{"error": err.Error()})
-				return
-			}
-
-			slogger.InfoNoCtx("Worker service started successfully", nil)
-
-			// Keep running (simplified for GREEN phase)
-			select {}
+			runWorkerService()
 		},
 	}
+}
+
+// runWorkerService starts and runs the worker service.
+func runWorkerService() {
+	// Load configuration
+	cfg := config.New(viper.GetViper())
+
+	slogger.InfoNoCtx("Starting worker service", slogger.Fields{
+		"concurrency": cfg.Worker.Concurrency,
+		"queue_group": cfg.Worker.QueueGroup,
+	})
+
+	// Initialize database connection using the same pattern as API command
+	dbConfig := repository.DatabaseConfig{
+		Host:           cfg.Database.Host,
+		Port:           cfg.Database.Port,
+		Database:       cfg.Database.Name,
+		Username:       cfg.Database.User,
+		Password:       cfg.Database.Password,
+		Schema:         "codechunking",
+		MaxConnections: cfg.Database.MaxConnections,
+		SSLMode:        cfg.Database.SSLMode,
+	}
+
+	// Set defaults if not configured
+	if dbConfig.Host == "" {
+		dbConfig.Host = defaultHost
+	}
+	if dbConfig.Port == 0 {
+		dbConfig.Port = 5432
+	}
+	if dbConfig.MaxConnections == 0 {
+		dbConfig.MaxConnections = 10
+	}
+	if dbConfig.SSLMode == "" {
+		dbConfig.SSLMode = "disable"
+	}
+
+	dbPool, err := repository.NewDatabaseConnection(dbConfig)
+	if err != nil {
+		slogger.ErrorNoCtx("Failed to create database connection pool", slogger.Fields{"error": err.Error()})
+		return
+	}
+	defer dbPool.Close()
+
+	// Create repository implementations
+	repoRepository := repository.NewPostgreSQLRepositoryRepository(dbPool)
+	indexingJobRepository := repository.NewPostgreSQLIndexingJobRepository(dbPool)
+
+	// Create git client implementation
+	gitClient := gitclient.NewAuthenticatedGitClient()
+
+	// Create job processor (simplified for GREEN phase)
+	jobProcessorConfig := worker.JobProcessorConfig{
+		WorkspaceDir:      "/tmp/codechunking-workspace",
+		MaxConcurrentJobs: cfg.Worker.Concurrency,
+		JobTimeout:        cfg.Worker.JobTimeout,
+	}
+
+	jobProcessor := worker.NewDefaultJobProcessor(
+		jobProcessorConfig,
+		indexingJobRepository, // IndexingJobRepository (first param)
+		repoRepository,        // RepositoryRepository (second param)
+		gitClient,             // GitClient (third param)
+		nil,                   // CodeParser will be injected in Phase 4.2+
+		nil,                   // EmbeddingGenerator will be injected in Phase 4.2+
+	)
+
+	// Create consumer configuration
+	consumerConfig := messaging.ConsumerConfig{
+		Subject:     "indexing.job",
+		QueueGroup:  cfg.Worker.QueueGroup,
+		DurableName: "indexing-consumer",
+		AckWait:     30 * time.Second,
+		MaxDeliver:  3,
+	}
+
+	// Create consumer (simplified for GREEN phase)
+	consumer, err := messaging.NewNATSConsumer(consumerConfig, cfg.NATS, jobProcessor)
+	if err != nil {
+		slogger.ErrorNoCtx("Failed to create consumer", slogger.Fields{"error": err.Error()})
+		return
+	}
+
+	// Create worker service
+	workerServiceConfig := service.WorkerServiceConfig{
+		Concurrency:         cfg.Worker.Concurrency,
+		QueueGroup:          cfg.Worker.QueueGroup,
+		JobTimeout:          cfg.Worker.JobTimeout,
+		HealthCheckInterval: 30 * time.Second,
+		RestartDelay:        5 * time.Second,
+		MaxRestartAttempts:  3,
+		ShutdownTimeout:     30 * time.Second,
+	}
+
+	workerService := service.NewDefaultWorkerService(workerServiceConfig, cfg.NATS, jobProcessor)
+
+	// Add consumer to service
+	if err := workerService.AddConsumer(consumer); err != nil {
+		slogger.ErrorNoCtx("Failed to add consumer", slogger.Fields{"error": err.Error()})
+		return
+	}
+
+	// Start worker service
+	ctx := context.Background()
+	if err := workerService.Start(ctx); err != nil {
+		slogger.ErrorNoCtx("Failed to start worker service", slogger.Fields{"error": err.Error()})
+		return
+	}
+
+	slogger.InfoNoCtx("Worker service started successfully", nil)
+
+	// Keep running (simplified for GREEN phase)
+	select {}
 }
 
 func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for command registration

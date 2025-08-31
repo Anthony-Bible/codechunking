@@ -111,7 +111,7 @@ func AllRepositoryStatuses() []RepositoryStatus {
 // Returns:
 //   - isEmpty: true if the status string is empty ("")
 //   - isValidStatus: true if the status string matches a valid repository status (when not empty)
-func checkRepositoryStatusValidity(status string) (isEmpty bool, isValidStatus bool) {
+func checkRepositoryStatusValidity(status string) (bool, bool) {
 	if status == "" {
 		return true, false
 	}

@@ -163,8 +163,8 @@ func (s *asyncErrorLoggingService) Flush() error {
 	return nil
 }
 
-// Shutdown gracefully shuts down the service, processing remaining errors.
-func (s *asyncErrorLoggingService) Shutdown(ctx context.Context) error {
+// ShutdownWithContext gracefully shuts down the service, processing remaining errors.
+func (s *asyncErrorLoggingService) ShutdownWithContext(ctx context.Context) error {
 	if !atomic.CompareAndSwapInt32(&s.isRunning, 1, 0) {
 		// Already shut down
 		return nil
@@ -206,4 +206,39 @@ func (s *asyncErrorLoggingService) GetDroppedCount() int64 {
 // IsRunning returns true if the service is currently processing errors.
 func (s *asyncErrorLoggingService) IsRunning() bool {
 	return atomic.LoadInt32(&s.isRunning) == 1
+}
+
+// GetQueueStatus returns the current status of the error queue.
+func (s *asyncErrorLoggingService) GetQueueStatus() (int, int) {
+	capacity := s.bufferSize
+	used := len(s.errorChan)
+	return capacity, used
+}
+
+// LogError logs a classified error in a non-blocking manner.
+func (s *asyncErrorLoggingService) LogError(err *entity.ClassifiedError) bool {
+	if err == nil {
+		return false
+	}
+
+	// Create error request
+	request := &errorRequest{
+		ctx:       context.Background(),
+		err:       err.OriginalError(),
+		component: err.Component(),
+		severity:  err.Severity(),
+	}
+
+	select {
+	case s.errorChan <- request:
+		return true
+	default:
+		atomic.AddInt64(&s.droppedCount, 1)
+		return false
+	}
+}
+
+// Shutdown gracefully shuts down the error logger (interface method).
+func (s *asyncErrorLoggingService) Shutdown() error {
+	return s.ShutdownWithContext(context.Background())
 }

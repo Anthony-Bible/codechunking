@@ -133,7 +133,7 @@ func NewObservableTreeSitterParser(
 	return parser, nil
 }
 
-// ParseSource parses source code and returns a parse tree.
+// ParseSource parses source code and returns a parse tree using tree-sitter.
 func (p *ObservableTreeSitterParserImpl) ParseSource(
 	ctx context.Context,
 	language valueobject.Language,
@@ -141,25 +141,189 @@ func (p *ObservableTreeSitterParserImpl) ParseSource(
 	options ParseOptions,
 ) (*ParseResult, error) {
 	start := time.Now()
+	attrs := p.createMetricAttributes(language.Name(), "parse_source")
 
-	// Record metrics
-	attrs := []attribute.KeyValue{
-		attribute.String("language", language.Name()),
-		attribute.String("operation", "parse_source"),
+	p.recordStartMetrics(ctx, attrs)
+	defer p.recordDurationMetrics(ctx, attrs, start)
+
+	// Parse with tree-sitter
+	tree, err := p.parseWithTreeSitter(ctx, language, source, attrs)
+	if err != nil {
+		return nil, err
 	}
+	defer tree.Close()
 
+	// Convert and create parse result
+	return p.createParseResult(ctx, tree, language, source, options, start, attrs)
+}
+
+// createMetricAttributes creates OTEL metric attributes.
+func (p *ObservableTreeSitterParserImpl) createMetricAttributes(language, operation string) []attribute.KeyValue {
+	return []attribute.KeyValue{
+		attribute.String("language", language),
+		attribute.String("operation", operation),
+	}
+}
+
+// recordStartMetrics records parsing start metrics.
+func (p *ObservableTreeSitterParserImpl) recordStartMetrics(ctx context.Context, attrs []attribute.KeyValue) {
 	if p.parseCounter != nil {
 		p.parseCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
 	}
+}
 
-	defer func() {
-		duration := time.Since(start)
-		if p.durationHist != nil {
-			p.durationHist.Record(ctx, duration.Seconds(), metric.WithAttributes(attrs...))
+// recordDurationMetrics records parsing duration metrics.
+func (p *ObservableTreeSitterParserImpl) recordDurationMetrics(
+	ctx context.Context,
+	attrs []attribute.KeyValue,
+	start time.Time,
+) {
+	duration := time.Since(start)
+	if p.durationHist != nil {
+		p.durationHist.Record(ctx, duration.Seconds(), metric.WithAttributes(attrs...))
+	}
+}
+
+// parseWithTreeSitter performs the actual tree-sitter parsing.
+func (p *ObservableTreeSitterParserImpl) parseWithTreeSitter(
+	ctx context.Context,
+	language valueobject.Language,
+	source []byte,
+	attrs []attribute.KeyValue,
+) (*tree_sitter.Tree, error) {
+	// Get parser for language
+	p.mu.RLock()
+	parser := p.parsers[language.Name()]
+	p.mu.RUnlock()
+
+	if parser == nil {
+		if p.errorCounter != nil {
+			p.errorCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
 		}
-	}()
+		return nil, fmt.Errorf("no parser available for language %s", language.Name())
+	}
 
-	// Create a simple parse result
+	// Parse source with tree-sitter
+	tree, err := parser.ParseString(ctx, nil, source)
+	if err != nil {
+		if p.errorCounter != nil {
+			p.errorCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		return nil, fmt.Errorf("tree-sitter parsing failed for language %s: %w", language.Name(), err)
+	}
+
+	if tree == nil {
+		if p.errorCounter != nil {
+			p.errorCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		return nil, fmt.Errorf("tree-sitter parsing returned nil tree for language %s", language.Name())
+	}
+
+	return tree, nil
+}
+
+// createParseResult creates the final parse result from tree-sitter output.
+func (p *ObservableTreeSitterParserImpl) createParseResult(
+	ctx context.Context,
+	tree *tree_sitter.Tree,
+	language valueobject.Language,
+	source []byte,
+	options ParseOptions,
+	start time.Time,
+	attrs []attribute.KeyValue,
+) (*ParseResult, error) {
+	// Convert tree-sitter tree to domain ParseNode
+	rootTSNode := tree.RootNode()
+	rootNode, nodeCount, maxDepth := p.convertTreeSitterNode(rootTSNode, 0)
+
+	// Create domain parse tree and result
+	domainParseTree, err := p.createDomainParseTree(ctx, language, rootNode, source, nodeCount, maxDepth, start, attrs)
+	if err != nil {
+		return nil, err
+	}
+
+	domainResult, err := p.createDomainParseResult(ctx, domainParseTree, language, options, start, attrs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to port result
+	portResult, err := ConvertDomainParseResultToPort(domainResult)
+	if err != nil {
+		if p.errorCounter != nil {
+			p.errorCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		return nil, fmt.Errorf("failed to convert parse result: %w", err)
+	}
+
+	// Log completion
+	hasErrors, _ := domainParseTree.HasSyntaxErrors()
+	slogger.Info(ctx, "Parse source completed", slogger.Fields{
+		"language":    language.Name(),
+		"source_size": len(source),
+		"node_count":  nodeCount,
+		"max_depth":   maxDepth,
+		"duration_ms": time.Since(start).Milliseconds(),
+		"has_errors":  hasErrors,
+		"success":     portResult.Success,
+	})
+
+	return portResult, nil
+}
+
+// createDomainParseTree creates a domain ParseTree with metadata.
+func (p *ObservableTreeSitterParserImpl) createDomainParseTree(
+	ctx context.Context,
+	language valueobject.Language,
+	rootNode *valueobject.ParseNode,
+	source []byte,
+	nodeCount, maxDepth int,
+	start time.Time,
+	attrs []attribute.KeyValue,
+) (*valueobject.ParseTree, error) {
+	// Create metadata with actual parsing statistics
+	metadata, err := valueobject.NewParseMetadata(
+		time.Since(start),
+		"go-tree-sitter-bare",
+		"1.0.0",
+	)
+	if err != nil {
+		if p.errorCounter != nil {
+			p.errorCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		return nil, fmt.Errorf("failed to create metadata: %w", err)
+	}
+
+	// Update metadata with actual counts
+	metadata.NodeCount = nodeCount
+	metadata.MaxDepth = maxDepth
+
+	// Create domain parse tree
+	domainParseTree, err := valueobject.NewParseTree(ctx, language, rootNode, source, metadata)
+	if err != nil {
+		if p.errorCounter != nil {
+			p.errorCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		return nil, fmt.Errorf("failed to create domain parse tree: %w", err)
+	}
+
+	return domainParseTree, nil
+}
+
+// createDomainParseResult creates a domain ParseResult.
+func (p *ObservableTreeSitterParserImpl) createDomainParseResult(
+	ctx context.Context,
+	domainParseTree *valueobject.ParseTree,
+	language valueobject.Language,
+	options ParseOptions,
+	start time.Time,
+	attrs []attribute.KeyValue,
+) (*valueobject.ParseResult, error) {
+	// Check for syntax errors
+	hasErrors, _ := domainParseTree.HasSyntaxErrors()
+	parseErrors := []valueobject.ParseError{} // Simplified for refactor phase
+
+	// Create domain parse result
 	domainOptions := valueobject.ParseOptions{
 		Language:          language,
 		RecoveryMode:      options.RecoveryMode,
@@ -170,49 +334,11 @@ func (p *ObservableTreeSitterParserImpl) ParseSource(
 		TimeoutDuration:   time.Duration(options.TimeoutMs) * time.Millisecond,
 	}
 
-	// Simple implementation: create a basic parse tree
-	sourceLen := len(source)
-	var sourceLenU32 uint32
-	if sourceLen > int(^uint32(0)) {
-		sourceLenU32 = ^uint32(0) // Cap at max uint32
-	} else {
-		sourceLenU32 = uint32(sourceLen) // #nosec G115 - checked above
-	}
-
-	rootNode := &valueobject.ParseNode{
-		Type:      "source_file",
-		StartByte: 0,
-		EndByte:   sourceLenU32,
-		StartPos:  valueobject.Position{Row: 0, Column: 0},
-		EndPos:    valueobject.Position{Row: sourceLenU32, Column: 0},
-		Children:  []*valueobject.ParseNode{},
-	}
-
-	metadata, _ := valueobject.NewParseMetadata(
-		time.Since(start),
-		"go-tree-sitter-bare",
-		"1.0.0",
-	)
-
-	domainParseTree, err := valueobject.NewParseTree(
-		ctx,
-		language,
-		rootNode,
-		source,
-		metadata,
-	)
-	if err != nil {
-		if p.errorCounter != nil {
-			p.errorCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
-		}
-		return nil, fmt.Errorf("failed to create domain parse tree: %w", err)
-	}
-
 	domainResult, err := valueobject.NewParseResult(
 		ctx,
-		true, // success
+		!hasErrors, // success = no errors
 		domainParseTree,
-		[]valueobject.ParseError{},
+		parseErrors,
 		[]valueobject.ParseWarning{},
 		time.Since(start),
 		domainOptions,
@@ -224,23 +350,7 @@ func (p *ObservableTreeSitterParserImpl) ParseSource(
 		return nil, fmt.Errorf("failed to create domain parse result: %w", err)
 	}
 
-	// Convert domain result to port result
-	portResult, err := ConvertDomainParseResultToPort(domainResult)
-	if err != nil {
-		if p.errorCounter != nil {
-			p.errorCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
-		}
-		return nil, fmt.Errorf("failed to convert parse result: %w", err)
-	}
-
-	slogger.Debug(ctx, "Parse source completed", slogger.Fields{
-		"language":    language.Name(),
-		"source_size": len(source),
-		"duration_ms": time.Since(start).Milliseconds(),
-		"success":     portResult.Success,
-	})
-
-	return portResult, nil
+	return domainResult, nil
 }
 
 // ParseFile parses a source file and returns a parse tree.
@@ -671,4 +781,65 @@ type HighlightScope struct {
 	StartByte uint32            `json:"start_byte"`
 	EndByte   uint32            `json:"end_byte"`
 	Children  []*HighlightScope `json:"children,omitempty"`
+}
+
+// convertTreeSitterNode converts a tree-sitter node to domain ParseNode recursively.
+func (p *ObservableTreeSitterParserImpl) convertTreeSitterNode(
+	node tree_sitter.Node,
+	depth int,
+) (*valueobject.ParseNode, int, int) {
+	if node.IsNull() {
+		return nil, 0, depth
+	}
+
+	// Create parse node with safe type conversion
+	parseNode := p.createParseNodeFromTSNode(node)
+	nodeCount := 1
+	maxDepth := depth
+
+	// Convert children recursively
+	childCount := node.ChildCount()
+	for i := range childCount {
+		childNode := node.Child(i)
+		if childNode.IsNull() {
+			continue
+		}
+
+		childParseNode, childNodeCount, childMaxDepth := p.convertTreeSitterNode(childNode, depth+1)
+		if childParseNode != nil {
+			parseNode.Children = append(parseNode.Children, childParseNode)
+			nodeCount += childNodeCount
+			if childMaxDepth > maxDepth {
+				maxDepth = childMaxDepth
+			}
+		}
+	}
+
+	return parseNode, nodeCount, maxDepth
+}
+
+// createParseNodeFromTSNode creates a ParseNode from tree-sitter node with safe type conversion.
+func (p *ObservableTreeSitterParserImpl) createParseNodeFromTSNode(node tree_sitter.Node) *valueobject.ParseNode {
+	return &valueobject.ParseNode{
+		Type:      node.Type(),
+		StartByte: p.safeUintToUint32(node.StartByte()),
+		EndByte:   p.safeUintToUint32(node.EndByte()),
+		StartPos: valueobject.Position{
+			Row:    p.safeUintToUint32(node.StartPoint().Row),
+			Column: p.safeUintToUint32(node.StartPoint().Column),
+		},
+		EndPos: valueobject.Position{
+			Row:    p.safeUintToUint32(node.EndPoint().Row),
+			Column: p.safeUintToUint32(node.EndPoint().Column),
+		},
+		Children: make([]*valueobject.ParseNode, 0),
+	}
+}
+
+// safeUintToUint32 safely converts uint to uint32 with bounds checking.
+func (p *ObservableTreeSitterParserImpl) safeUintToUint32(val uint) uint32 {
+	if val > uint(^uint32(0)) {
+		return ^uint32(0) // Return max uint32 if overflow would occur
+	}
+	return uint32(val) // #nosec G115 - bounds checked above
 }

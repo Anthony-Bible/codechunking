@@ -2,6 +2,7 @@ package treesitter
 
 import (
 	goparser "codechunking/internal/adapter/outbound/treesitter/parsers/go"
+	pythonparser "codechunking/internal/adapter/outbound/treesitter/parsers/python"
 	"codechunking/internal/domain/valueobject"
 	"fmt"
 )
@@ -18,8 +19,13 @@ func NewLanguageDispatcher() (*LanguageDispatcher, error) {
 		return nil, fmt.Errorf("failed to initialize Go language: %w", err)
 	}
 
+	pythonLang, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Python language: %w", err)
+	}
+
 	return &LanguageDispatcher{
-		supportedLanguages: []valueobject.Language{goLang},
+		supportedLanguages: []valueobject.Language{goLang, pythonLang},
 	}, nil
 }
 
@@ -30,6 +36,12 @@ func (d *LanguageDispatcher) CreateParser(language valueobject.Language) (Langua
 		parser, err := goparser.NewGoParser()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Go parser: %w", err)
+		}
+		return parser, nil
+	case valueobject.LanguagePython:
+		parser, err := pythonparser.NewPythonParser()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Python parser: %w", err)
 		}
 		return parser, nil
 	default:

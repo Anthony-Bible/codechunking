@@ -1609,16 +1609,16 @@ type ExpectedModule struct {
 	ClassCount       int
 }
 
-// MockSemanticTraverser provides a minimal implementation for GREEN PHASE testing.
-type MockSemanticTraverser struct{}
+// BasicMockSemanticTraverser provides a minimal implementation for GREEN PHASE testing.
+type BasicMockSemanticTraverser struct{}
 
 // NewMockSemanticTraverser creates a new mock implementation.
 func NewMockSemanticTraverser() SemanticTraverser {
-	return &MockSemanticTraverser{}
+	return &BasicMockSemanticTraverser{}
 }
 
 // ExtractFunctions implements the SemanticTraverser interface.
-func (m *MockSemanticTraverser) ExtractFunctions(
+func (m *BasicMockSemanticTraverser) ExtractFunctions(
 	_ context.Context,
 	parseTree *valueobject.ParseTree,
 	options SemanticExtractionOptions,
@@ -1654,7 +1654,7 @@ func (m *MockSemanticTraverser) ExtractFunctions(
 }
 
 // ExtractClasses implements the SemanticTraverser interface.
-func (m *MockSemanticTraverser) ExtractClasses(
+func (m *BasicMockSemanticTraverser) ExtractClasses(
 	_ context.Context,
 	parseTree *valueobject.ParseTree,
 	options SemanticExtractionOptions,
@@ -1711,7 +1711,7 @@ func (m *MockSemanticTraverser) ExtractClasses(
 }
 
 // ExtractModules implements the SemanticTraverser interface.
-func (m *MockSemanticTraverser) ExtractModules(
+func (m *BasicMockSemanticTraverser) ExtractModules(
 	_ context.Context,
 	parseTree *valueobject.ParseTree,
 	options SemanticExtractionOptions,
@@ -1757,7 +1757,7 @@ func (m *MockSemanticTraverser) ExtractModules(
 }
 
 // ExtractInterfaces implements the SemanticTraverser interface.
-func (m *MockSemanticTraverser) ExtractInterfaces(
+func (m *BasicMockSemanticTraverser) ExtractInterfaces(
 	_ context.Context,
 	parseTree *valueobject.ParseTree,
 	_ SemanticExtractionOptions,
@@ -1775,7 +1775,7 @@ func (m *MockSemanticTraverser) ExtractInterfaces(
 }
 
 // ExtractVariables implements the SemanticTraverser interface.
-func (m *MockSemanticTraverser) ExtractVariables(
+func (m *BasicMockSemanticTraverser) ExtractVariables(
 	_ context.Context,
 	parseTree *valueobject.ParseTree,
 	_ SemanticExtractionOptions,
@@ -1793,7 +1793,7 @@ func (m *MockSemanticTraverser) ExtractVariables(
 }
 
 // ExtractComments implements the SemanticTraverser interface.
-func (m *MockSemanticTraverser) ExtractComments(
+func (m *BasicMockSemanticTraverser) ExtractComments(
 	_ context.Context,
 	parseTree *valueobject.ParseTree,
 	_ SemanticExtractionOptions,
@@ -1811,7 +1811,7 @@ func (m *MockSemanticTraverser) ExtractComments(
 }
 
 // ExtractImports implements the SemanticTraverser interface.
-func (m *MockSemanticTraverser) ExtractImports(
+func (m *BasicMockSemanticTraverser) ExtractImports(
 	_ context.Context,
 	parseTree *valueobject.ParseTree,
 	_ SemanticExtractionOptions,
@@ -1829,7 +1829,7 @@ func (m *MockSemanticTraverser) ExtractImports(
 }
 
 // GetSupportedConstructTypes implements the SemanticTraverser interface.
-func (m *MockSemanticTraverser) GetSupportedConstructTypes(
+func (m *BasicMockSemanticTraverser) GetSupportedConstructTypes(
 	_ context.Context,
 	language valueobject.Language,
 ) ([]SemanticConstructType, error) {

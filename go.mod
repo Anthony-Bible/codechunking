@@ -4,6 +4,7 @@ go 1.24.6
 
 require (
 	github.com/alexaandru/go-sitter-forest v1.9.163
+	github.com/alexaandru/go-sitter-forest/javascript v1.9.2
 	github.com/alexaandru/go-tree-sitter-bare v1.11.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.5
@@ -241,7 +242,6 @@ require (
 	github.com/alexaandru/go-sitter-forest/jasmin v1.9.0 // indirect
 	github.com/alexaandru/go-sitter-forest/java v1.9.5 // indirect
 	github.com/alexaandru/go-sitter-forest/javadoc v1.9.1 // indirect
-	github.com/alexaandru/go-sitter-forest/javascript v1.9.2 // indirect
 	github.com/alexaandru/go-sitter-forest/jinja v1.9.6 // indirect
 	github.com/alexaandru/go-sitter-forest/jinja_inline v1.9.6 // indirect
 	github.com/alexaandru/go-sitter-forest/jq v1.9.1 // indirect

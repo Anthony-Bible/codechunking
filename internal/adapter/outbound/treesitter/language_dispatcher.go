@@ -2,6 +2,7 @@ package treesitter
 
 import (
 	goparser "codechunking/internal/adapter/outbound/treesitter/parsers/go"
+	javascriptparser "codechunking/internal/adapter/outbound/treesitter/parsers/javascript"
 	pythonparser "codechunking/internal/adapter/outbound/treesitter/parsers/python"
 	"codechunking/internal/domain/valueobject"
 	"fmt"
@@ -24,8 +25,13 @@ func NewLanguageDispatcher() (*LanguageDispatcher, error) {
 		return nil, fmt.Errorf("failed to initialize Python language: %w", err)
 	}
 
+	jsLang, err := valueobject.NewLanguage(valueobject.LanguageJavaScript)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize JavaScript language: %w", err)
+	}
+
 	return &LanguageDispatcher{
-		supportedLanguages: []valueobject.Language{goLang, pythonLang},
+		supportedLanguages: []valueobject.Language{goLang, pythonLang, jsLang},
 	}, nil
 }
 
@@ -42,6 +48,12 @@ func (d *LanguageDispatcher) CreateParser(language valueobject.Language) (Langua
 		parser, err := pythonparser.NewPythonParser()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Python parser: %w", err)
+		}
+		return parser, nil
+	case valueobject.LanguageJavaScript:
+		parser, err := javascriptparser.NewJavaScriptParser()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create JavaScript parser: %w", err)
 		}
 		return parser, nil
 	default:

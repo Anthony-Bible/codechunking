@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockCodeChunkingStrategy is a mock implementation for testing
+// MockCodeChunkingStrategy is a mock implementation for testing.
 type MockCodeChunkingStrategy struct {
 	ShouldFailChunkCode               bool
 	ShouldFailGetOptimalChunkSize     bool
@@ -40,7 +40,7 @@ func (m *MockCodeChunkingStrategy) ChunkCode(
 	copy(result, m.ExpectedChunks)
 
 	// Apply configuration settings to all chunks
-	for i := 0; i < len(result); i++ {
+	for i := range result {
 		// Apply configuration settings
 		result[i].ContextStrategy = config.ContextPreservation
 		result[i].ChunkingStrategy = config.Strategy
@@ -106,7 +106,7 @@ func (m *MockCodeChunkingStrategy) PreserveContext(
 	return m.ExpectedPreservedChunks, nil
 }
 
-// Test Core Interface Methods
+// Test Core Interface Methods.
 func TestCodeChunkingStrategy_ChunkCode(t *testing.T) {
 	ctx := context.Background()
 
@@ -261,7 +261,7 @@ func TestCodeChunkingStrategy_ChunkCode(t *testing.T) {
 			assert.Equal(t, StrategyHybrid, chunk.ChunkingStrategy)
 		}
 
-		assert.True(t, len(chunkTypes) > 1, "Hybrid strategy should produce multiple chunk types")
+		assert.Greater(t, len(chunkTypes), 1, "Hybrid strategy should produce multiple chunk types")
 	})
 
 	t.Run("empty_semantic_chunks_input", func(t *testing.T) {
@@ -1019,7 +1019,7 @@ func TestCodeChunkingStrategy_PreserveContext(t *testing.T) {
 				resolvedCount++
 			}
 		}
-		assert.Greater(t, resolvedCount, 0, "At least some dependencies should be resolved")
+		assert.Positive(t, resolvedCount, "At least some dependencies should be resolved")
 	})
 
 	t.Run("preserve_context_cross_language", func(t *testing.T) {
@@ -1112,7 +1112,7 @@ func TestCodeChunkingStrategy_PreserveContext(t *testing.T) {
 	})
 }
 
-// Helper functions for creating test data
+// Helper functions for creating test data.
 func createTestEnhancedCodeChunk(name string, chunkType ChunkType, strategy ChunkingStrategyType) EnhancedCodeChunk {
 	return EnhancedCodeChunk{
 		ID:                 generateTestID(),

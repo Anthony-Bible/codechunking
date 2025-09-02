@@ -5,9 +5,11 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 // ContextPreserver implements context preservation algorithms that maintain semantic
@@ -223,8 +225,21 @@ func (c *ContextPreserver) extractImportStatements(
 ) ([]outbound.ImportDeclaration, error) {
 	var imports []outbound.ImportDeclaration
 
-	// Extract imports from semantic constructs
+	// Phase 4.3 Step 2: Enhanced import extraction from dependencies and content
 	for _, construct := range chunk.SemanticConstructs {
+		// Extract from dependencies (Phase 4.3 Step 2 requirement)
+		for _, dep := range construct.Dependencies {
+			if dep.Type == "import" {
+				import_ := outbound.ImportDeclaration{
+					Path:        dep.Path,
+					Content:     fmt.Sprintf("import \"%s\"", dep.Path),
+					Hash:        hex.EncodeToString([]byte(dep.Path)),
+					ExtractedAt: time.Now(),
+				}
+				imports = append(imports, import_)
+			}
+		}
+
 		// Look for import-like patterns in the content
 		importLines := c.findImportLines(construct.Content, chunk.Language)
 		for _, importLine := range importLines {
@@ -232,6 +247,19 @@ func (c *ContextPreserver) extractImportStatements(
 			if import_.Path != "" {
 				imports = append(imports, import_)
 			}
+		}
+	}
+
+	// Phase 4.3 Step 2: Extract imports from chunk dependencies
+	for _, dep := range chunk.Dependencies {
+		if dep.Type == outbound.DependencyImport {
+			import_ := outbound.ImportDeclaration{
+				Path:        dep.TargetSymbol,
+				Content:     fmt.Sprintf("// Dependency import: %s", dep.TargetSymbol),
+				Hash:        hex.EncodeToString([]byte(dep.TargetSymbol)),
+				ExtractedAt: time.Now(),
+			}
+			imports = append(imports, import_)
 		}
 	}
 
@@ -272,7 +300,7 @@ func (c *ContextPreserver) parseImportLine(line string, language valueobject.Lan
 
 	import_ := outbound.ImportDeclaration{
 		Content: line,
-		Hash:    fmt.Sprintf("%x", []byte(line)), // Simple hash
+		Hash:    hex.EncodeToString([]byte(line)), // Simple hash
 	}
 
 	switch language.Name() {
@@ -342,7 +370,7 @@ func (c *ContextPreserver) findVariableReferences(
 	return variables
 }
 
-func (c *ContextPreserver) looksLikeVariable(word string, language valueobject.Language) bool {
+func (c *ContextPreserver) looksLikeVariable(word string, _ valueobject.Language) bool {
 	// Simple heuristics for variable identification
 	if len(word) < 2 || len(word) > 50 {
 		return false
@@ -369,7 +397,9 @@ func (c *ContextPreserver) looksLikeVariable(word string, language valueobject.L
 func (c *ContextPreserver) extractTypeReferences(constructs []outbound.SemanticCodeChunk) []outbound.TypeReference {
 	var types []outbound.TypeReference
 
+	// Phase 4.3 Step 2: Enhanced type reference extraction
 	for _, construct := range constructs {
+		// Extract used types from semantic construct
 		for _, typeRef := range construct.UsedTypes {
 			types = append(types, outbound.TypeReference{
 				Name:          typeRef.Name,
@@ -377,6 +407,29 @@ func (c *ContextPreserver) extractTypeReferences(constructs []outbound.SemanticC
 				IsGeneric:     typeRef.IsGeneric,
 				GenericArgs:   typeRef.GenericArgs,
 			})
+		}
+
+		// Phase 4.3 Step 2: Extract type information from function signatures
+		if construct.ReturnType != "" {
+			returnType := outbound.TypeReference{
+				Name:          construct.ReturnType,
+				QualifiedName: construct.ReturnType,
+				IsGeneric: strings.Contains(construct.ReturnType, "[") ||
+					strings.Contains(construct.ReturnType, "<"),
+			}
+			types = append(types, returnType)
+		}
+
+		// Extract parameter types
+		for _, param := range construct.Parameters {
+			if param.Type != "" {
+				paramType := outbound.TypeReference{
+					Name:          param.Type,
+					QualifiedName: param.Type,
+					IsGeneric:     strings.Contains(param.Type, "[") || strings.Contains(param.Type, "<"),
+				}
+				types = append(types, paramType)
+			}
 		}
 	}
 
@@ -386,7 +439,9 @@ func (c *ContextPreserver) extractTypeReferences(constructs []outbound.SemanticC
 func (c *ContextPreserver) extractFunctionCalls(constructs []outbound.SemanticCodeChunk) []outbound.FunctionCall {
 	var calls []outbound.FunctionCall
 
+	// Phase 4.3 Step 2: Enhanced function call extraction
 	for _, construct := range constructs {
+		// Extract existing called functions
 		for _, call := range construct.CalledFunctions {
 			calls = append(calls, outbound.FunctionCall{
 				Name:      call.Name,
@@ -395,9 +450,136 @@ func (c *ContextPreserver) extractFunctionCalls(constructs []outbound.SemanticCo
 				EndByte:   call.EndByte,
 			})
 		}
+
+		// Phase 4.3 Step 2: Enhanced function call extraction from content analysis
+		additionalCalls := c.extractFunctionCallsFromContent(construct.Content, construct.Language)
+		calls = append(calls, additionalCalls...)
 	}
 
 	return calls
+}
+
+// extractFunctionCallsFromContent extracts function calls by analyzing code content.
+// Phase 4.3 Step 2: Enhanced called function preservation.
+func (c *ContextPreserver) extractFunctionCallsFromContent(
+	content string,
+	language valueobject.Language,
+) []outbound.FunctionCall {
+	var calls []outbound.FunctionCall
+
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		// Simple pattern matching for function calls (basic implementation)
+		switch language.Name() {
+		case valueobject.LanguageGo:
+			calls = append(calls, c.extractGoFunctionCalls(line, i)...)
+		case valueobject.LanguagePython:
+			calls = append(calls, c.extractPythonFunctionCalls(line, i)...)
+		case valueobject.LanguageJavaScript, valueobject.LanguageTypeScript:
+			calls = append(calls, c.extractJSFunctionCalls(line, i)...)
+		}
+	}
+
+	return calls
+}
+
+// extractGoFunctionCalls extracts Go function calls from a line of code.
+func (c *ContextPreserver) extractGoFunctionCalls(line string, lineNum int) []outbound.FunctionCall {
+	var calls []outbound.FunctionCall
+
+	// Simple pattern: functionName( or variable.functionName(
+	words := strings.Fields(line)
+	for _, word := range words {
+		if strings.Contains(word, "(") {
+			funcName := strings.Split(word, "(")[0]
+			if strings.Contains(funcName, ".") {
+				funcName = strings.Split(funcName, ".")[1]
+			}
+			if c.isValidFunctionName(funcName) {
+				calls = append(calls, outbound.FunctionCall{
+					Name:      funcName,
+					StartByte: uint32(lineNum * 80), // Rough estimate
+					EndByte:   uint32(lineNum*80 + len(word)),
+				})
+			}
+		}
+	}
+
+	return calls
+}
+
+// extractPythonFunctionCalls extracts Python function calls from a line of code.
+func (c *ContextPreserver) extractPythonFunctionCalls(line string, lineNum int) []outbound.FunctionCall {
+	var calls []outbound.FunctionCall
+
+	// Similar logic for Python
+	words := strings.Fields(line)
+	for _, word := range words {
+		if strings.Contains(word, "(") {
+			funcName := strings.Split(word, "(")[0]
+			if strings.Contains(funcName, ".") {
+				funcName = strings.Split(funcName, ".")[1]
+			}
+			if c.isValidFunctionName(funcName) {
+				calls = append(calls, outbound.FunctionCall{
+					Name:      funcName,
+					StartByte: uint32(lineNum * 80),
+					EndByte:   uint32(lineNum*80 + len(word)),
+				})
+			}
+		}
+	}
+
+	return calls
+}
+
+// extractJSFunctionCalls extracts JavaScript function calls from a line of code.
+func (c *ContextPreserver) extractJSFunctionCalls(line string, lineNum int) []outbound.FunctionCall {
+	var calls []outbound.FunctionCall
+
+	// Similar logic for JavaScript
+	words := strings.Fields(line)
+	for _, word := range words {
+		if strings.Contains(word, "(") {
+			funcName := strings.Split(word, "(")[0]
+			if strings.Contains(funcName, ".") {
+				funcName = strings.Split(funcName, ".")[1]
+			}
+			if c.isValidFunctionName(funcName) {
+				calls = append(calls, outbound.FunctionCall{
+					Name:      funcName,
+					StartByte: uint32(lineNum * 80),
+					EndByte:   uint32(lineNum*80 + len(word)),
+				})
+			}
+		}
+	}
+
+	return calls
+}
+
+// isValidFunctionName checks if a string looks like a valid function name.
+func (c *ContextPreserver) isValidFunctionName(name string) bool {
+	if len(name) < 1 || len(name) > 100 {
+		return false
+	}
+
+	// Must start with letter or underscore
+	if !((name[0] >= 'a' && name[0] <= 'z') ||
+		(name[0] >= 'A' && name[0] <= 'Z') ||
+		name[0] == '_') {
+		return false
+	}
+
+	// Common non-function words
+	nonFunctions := []string{"if", "else", "for", "while", "return", "var", "let", "const"}
+	for _, nonFunc := range nonFunctions {
+		if name == nonFunc {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (c *ContextPreserver) extractDocumentationLinks(

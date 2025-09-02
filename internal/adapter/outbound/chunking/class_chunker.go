@@ -6,6 +6,7 @@ import (
 	"codechunking/internal/port/outbound"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -109,22 +110,127 @@ func (c *ClassChunker) buildClassRelationshipMap(
 		}
 	}
 
+	// Handle nested classes - merge nested classes into their parent
+	c.handleNestedClasses(classMap, semanticChunks)
+
 	// Second pass: associate methods and properties with classes
 	for _, chunk := range semanticChunks {
-		if chunk.Type == outbound.ConstructMethod || chunk.Type == outbound.ConstructFunction {
+		switch chunk.Type {
+		case outbound.ConstructMethod, outbound.ConstructFunction:
 			// Try to find the parent class for this method
 			if parentClass := c.findParentClass(chunk, classMap); parentClass != nil {
 				parentClass.Methods = append(parentClass.Methods, chunk)
 			}
-		} else if chunk.Type == outbound.ConstructField || chunk.Type == outbound.ConstructProperty {
+		case outbound.ConstructField, outbound.ConstructProperty:
 			// Try to find the parent class for this property
 			if parentClass := c.findParentClass(chunk, classMap); parentClass != nil {
 				parentClass.Properties = append(parentClass.Properties, chunk)
 			}
+		case outbound.ConstructClass, outbound.ConstructStruct, outbound.ConstructInterface:
+			// Already handled in first pass
+		case outbound.ConstructEnum, outbound.ConstructVariable, outbound.ConstructConstant,
+			outbound.ConstructModule, outbound.ConstructPackage, outbound.ConstructNamespace,
+			outbound.ConstructType, outbound.ConstructComment, outbound.ConstructDecorator,
+			outbound.ConstructAttribute, outbound.ConstructLambda, outbound.ConstructClosure,
+			outbound.ConstructGenerator, outbound.ConstructAsyncFunction:
+			// These types are not associated with classes in this chunking strategy
 		}
 	}
 
 	return classMap
+}
+
+// handleNestedClasses identifies nested classes and merges them into their parent classes.
+func (c *ClassChunker) handleNestedClasses(
+	classMap map[string]*ClassInfo,
+	semanticChunks []outbound.SemanticCodeChunk,
+) {
+	// Find classes that are nested inside others based on byte ranges
+	var nestedClasses []*ClassInfo
+
+	for _, classInfo := range classMap {
+		// Check if this class is nested inside another class
+		parentClass := c.findParentClassForNestedClass(classInfo, classMap)
+		if parentClass != nil {
+			// Add nested class as a method to the parent (for content inclusion)
+			parentClass.Methods = append(parentClass.Methods, classInfo.Chunk)
+			nestedClasses = append(nestedClasses, classInfo)
+		}
+	}
+
+	// Remove nested classes from the main class map since they're now part of parent classes
+	for _, nestedClass := range nestedClasses {
+		delete(classMap, nestedClass.QualifiedName)
+	}
+}
+
+// findParentClassForNestedClass finds the parent class for a potentially nested class.
+func (c *ClassChunker) findParentClassForNestedClass(
+	nestedClass *ClassInfo,
+	classMap map[string]*ClassInfo,
+) *ClassInfo {
+	var bestParent *ClassInfo
+	smallestRange := ^uint32(0)
+
+	for _, potentialParent := range classMap {
+		// Skip self
+		if potentialParent.QualifiedName == nestedClass.QualifiedName {
+			continue
+		}
+
+		// Check if nested class is contained within potential parent's byte range
+		if nestedClass.Chunk.StartByte >= potentialParent.Chunk.StartByte &&
+			nestedClass.Chunk.EndByte <= potentialParent.Chunk.EndByte {
+			// Prefer the parent with smallest containing range (most immediate parent)
+			parentRange := potentialParent.Chunk.EndByte - potentialParent.Chunk.StartByte
+			if parentRange < smallestRange {
+				smallestRange = parentRange
+				bestParent = potentialParent
+			}
+		}
+	}
+
+	// If no containment found, check for indentation-based nesting (for Python)
+	if bestParent == nil && nestedClass.Chunk.Language.Name() == valueobject.LanguagePython {
+		// Look for classes that start with indentation suggesting nesting
+		if c.isIndentedClass(nestedClass.Chunk) {
+			// Find the closest preceding class as potential parent
+			var closestParent *ClassInfo
+			minDistance := ^uint32(0)
+
+			for _, potentialParent := range classMap {
+				if potentialParent.QualifiedName == nestedClass.QualifiedName {
+					continue
+				}
+
+				// Check if potential parent comes before nested class
+				if potentialParent.Chunk.EndByte <= nestedClass.Chunk.StartByte {
+					distance := nestedClass.Chunk.StartByte - potentialParent.Chunk.EndByte
+					if distance < minDistance {
+						minDistance = distance
+						closestParent = potentialParent
+					}
+				}
+			}
+
+			// Only consider if they're close (within 100 bytes)
+			if closestParent != nil && minDistance <= 100 {
+				bestParent = closestParent
+			}
+		}
+	}
+
+	return bestParent
+}
+
+// isIndentedClass checks if a class appears to be nested based on indentation.
+func (c *ClassChunker) isIndentedClass(chunk outbound.SemanticCodeChunk) bool {
+	// Simple heuristic: check if content starts with spaces (indicating indentation)
+	content := chunk.Content
+	if len(content) > 0 && (content[0] == ' ' || content[0] == '\t') {
+		return true
+	}
+	return false
 }
 
 // ClassInfo represents information about a class and its associated chunks.
@@ -142,6 +248,13 @@ func (c *ClassChunker) isClassLikeConstruct(constructType outbound.SemanticConst
 	switch constructType {
 	case outbound.ConstructClass, outbound.ConstructStruct, outbound.ConstructInterface:
 		return true
+	case outbound.ConstructFunction, outbound.ConstructMethod, outbound.ConstructEnum,
+		outbound.ConstructVariable, outbound.ConstructConstant, outbound.ConstructField,
+		outbound.ConstructProperty, outbound.ConstructModule, outbound.ConstructPackage,
+		outbound.ConstructNamespace, outbound.ConstructType, outbound.ConstructComment,
+		outbound.ConstructDecorator, outbound.ConstructAttribute, outbound.ConstructLambda,
+		outbound.ConstructClosure, outbound.ConstructGenerator, outbound.ConstructAsyncFunction:
+		return false
 	default:
 		return false
 	}
@@ -152,21 +265,67 @@ func (c *ClassChunker) findParentClass(
 	chunk outbound.SemanticCodeChunk,
 	classMap map[string]*ClassInfo,
 ) *ClassInfo {
-	// Simple heuristic: find the closest class that contains this chunk's byte range
+	// For methods/functions, check qualified name first
+	if chunk.Type == outbound.ConstructMethod || chunk.Type == outbound.ConstructFunction {
+		// Extract receiver type from qualified name (e.g., "Calculator.Add" -> "Calculator")
+		for _, classInfo := range classMap {
+			// Check if the method's qualified name suggests it belongs to this class
+			if chunk.QualifiedName != "" {
+				// Look for patterns like "ClassName.MethodName" or "*ClassName.MethodName"
+				if len(chunk.QualifiedName) > len(classInfo.Name) {
+					if chunk.QualifiedName[len(chunk.QualifiedName)-len(classInfo.Name)-1:] == classInfo.Name+"."+chunk.Name ||
+						chunk.QualifiedName == classInfo.QualifiedName+"."+chunk.Name ||
+						chunk.QualifiedName == "*"+classInfo.Name+"."+chunk.Name ||
+						chunk.QualifiedName == classInfo.Name+"."+chunk.Name {
+						return classInfo
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback: find the closest class that contains this chunk's byte range
 	var bestMatch *ClassInfo
-	var smallestRange uint32 = ^uint32(0) // Max uint32
+	smallestRange := ^uint32(0) // Max uint32
 
 	for _, classInfo := range classMap {
 		// Check if the chunk is within the class's byte range
 		if chunk.StartByte >= classInfo.Chunk.StartByte &&
 			chunk.EndByte <= classInfo.Chunk.EndByte {
-
 			// Prefer the class with the smallest containing range (most specific)
 			classRange := classInfo.Chunk.EndByte - classInfo.Chunk.StartByte
 			if classRange < smallestRange {
 				smallestRange = classRange
 				bestMatch = classInfo
 			}
+		}
+	}
+
+	// Second fallback: find the closest class by proximity (for methods defined outside class body)
+	if bestMatch == nil {
+		var closestClass *ClassInfo
+		minDistance := ^uint32(0)
+
+		for _, classInfo := range classMap {
+			var distance uint32
+			if chunk.StartByte > classInfo.Chunk.EndByte {
+				distance = chunk.StartByte - classInfo.Chunk.EndByte
+			} else if classInfo.Chunk.StartByte > chunk.EndByte {
+				distance = classInfo.Chunk.StartByte - chunk.EndByte
+			} else {
+				// Overlapping - prefer this
+				distance = 0
+			}
+
+			if distance < minDistance {
+				minDistance = distance
+				closestClass = classInfo
+			}
+		}
+
+		// Only use proximity if within reasonable distance (1000 bytes)
+		if closestClass != nil && minDistance <= 1000 {
+			bestMatch = closestClass
 		}
 	}
 
@@ -420,7 +579,7 @@ func (c *ClassChunker) createSingleEnhancedChunk(
 	config outbound.ChunkingConfiguration,
 ) (*outbound.EnhancedCodeChunk, error) {
 	if len(group) == 0 {
-		return nil, fmt.Errorf("cannot create enhanced chunk from empty group")
+		return nil, errors.New("cannot create enhanced chunk from empty group")
 	}
 
 	// Calculate boundaries and content
@@ -538,6 +697,15 @@ func (c *ClassChunker) determineChunkType(group []outbound.SemanticCodeChunk) ou
 		return outbound.ChunkVariable
 	case outbound.ConstructConstant:
 		return outbound.ChunkConstant
+	case outbound.ConstructClass, outbound.ConstructStruct, outbound.ConstructInterface:
+		// These should have been handled earlier, but handle as class type
+		return outbound.ChunkClass
+	case outbound.ConstructEnum, outbound.ConstructField, outbound.ConstructProperty,
+		outbound.ConstructModule, outbound.ConstructPackage, outbound.ConstructNamespace,
+		outbound.ConstructType, outbound.ConstructComment, outbound.ConstructDecorator,
+		outbound.ConstructAttribute, outbound.ConstructLambda, outbound.ConstructClosure,
+		outbound.ConstructGenerator, outbound.ConstructAsyncFunction:
+		return outbound.ChunkMixed
 	default:
 		return outbound.ChunkMixed
 	}
@@ -630,6 +798,13 @@ func (c *ClassChunker) calculateComplexityScore(group []outbound.SemanticCodeChu
 			totalComplexity += 1.5
 		case outbound.ConstructFunction:
 			totalComplexity += 1.0
+		case outbound.ConstructEnum, outbound.ConstructVariable, outbound.ConstructConstant,
+			outbound.ConstructField, outbound.ConstructProperty, outbound.ConstructModule,
+			outbound.ConstructPackage, outbound.ConstructNamespace, outbound.ConstructType,
+			outbound.ConstructComment, outbound.ConstructDecorator, outbound.ConstructAttribute,
+			outbound.ConstructLambda, outbound.ConstructClosure, outbound.ConstructGenerator,
+			outbound.ConstructAsyncFunction:
+			totalComplexity += 0.5
 		default:
 			totalComplexity += 0.5
 		}
@@ -663,7 +838,7 @@ func (c *ClassChunker) calculateCohesionScore(group []outbound.SemanticCodeChunk
 	totalRelations := 0
 	classRelations := 0
 
-	for i := 0; i < len(group); i++ {
+	for i := range group {
 		for j := i + 1; j < len(group); j++ {
 			totalRelations++
 

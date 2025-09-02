@@ -169,7 +169,7 @@ func main() {
 			if tt.wantError {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errorMsg)
-				assert.True(t, parseTree.IsCleanedUp() || parseTree.CreatedAt().IsZero())
+				assert.Nil(t, parseTree, "parseTree should be nil when creation fails")
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, tt.language.Name(), parseTree.Language().Name())

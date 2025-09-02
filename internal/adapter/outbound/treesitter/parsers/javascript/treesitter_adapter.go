@@ -4,6 +4,7 @@ import (
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/valueobject"
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -23,7 +24,7 @@ func NewJavaScriptTreeSitterAdapter() (*JavaScriptTreeSitterAdapter, error) {
 	jsLang := tree_sitter.NewLanguage(javascript.GetLanguage())
 
 	if !parser.SetLanguage(jsLang) {
-		return nil, fmt.Errorf("failed to set JavaScript language in tree-sitter parser")
+		return nil, errors.New("failed to set JavaScript language in tree-sitter parser")
 	}
 
 	return &JavaScriptTreeSitterAdapter{
@@ -104,7 +105,7 @@ func (adapter *JavaScriptTreeSitterAdapter) convertTreeSitterNode(
 
 	// Convert all children
 	childCount := tsNode.ChildCount()
-	for i := uint32(0); i < childCount; i++ {
+	for i := range childCount {
 		child := tsNode.Child(i)
 		if !child.IsNull() {
 			childNode := adapter.convertTreeSitterNode(child, source)

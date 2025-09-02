@@ -6,8 +6,10 @@ import (
 	"codechunking/internal/port/outbound"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,47 +17,54 @@ import (
 
 // FunctionChunker implements function-level chunking algorithms that group related functions
 // and preserve semantic boundaries while respecting size constraints.
-type FunctionChunker struct{}
+type FunctionChunker struct {
+	analysisUtils *FunctionAnalysisUtils
+}
 
 // NewFunctionChunker creates a new function-level chunker.
 func NewFunctionChunker() *FunctionChunker {
-	return &FunctionChunker{}
+	return &FunctionChunker{
+		analysisUtils: &FunctionAnalysisUtils{},
+	}
 }
 
-// ChunkByFunction groups semantic chunks based on function boundaries and relationships.
-// This strategy prioritizes keeping complete functions together while respecting size limits.
+// ChunkByFunction creates individual discrete chunks for functions with context preservation.
+// Phase 4.3 Step 2: Implements function-level chunking with context preservation.
 func (f *FunctionChunker) ChunkByFunction(
 	ctx context.Context,
 	semanticChunks []outbound.SemanticCodeChunk,
 	config outbound.ChunkingConfiguration,
 ) ([]outbound.EnhancedCodeChunk, error) {
-	slogger.Info(ctx, "Starting function-based chunking", slogger.Fields{
+	slogger.Info(ctx, "Starting function-based chunking Phase 4.3 Step 2", slogger.Fields{
 		"semantic_chunks": len(semanticChunks),
-		"max_chunk_size":  config.MaxChunkSize,
-		"min_chunk_size":  config.MinChunkSize,
+		"strategy":        string(config.Strategy),
+		"preserve_deps":   config.PreserveDependencies,
 	})
 
 	if len(semanticChunks) == 0 {
 		return []outbound.EnhancedCodeChunk{}, nil
 	}
 
-	// Group semantic chunks by function relationships
-	functionGroups := f.groupByFunctionRelationships(ctx, semanticChunks)
-
+	// Phase 4.3 Step 2: Create individual discrete chunks for each function
 	var enhancedChunks []outbound.EnhancedCodeChunk
 
-	for _, group := range functionGroups {
-		chunks, err := f.createEnhancedChunksFromGroup(ctx, group, config)
+	for _, semanticChunk := range semanticChunks {
+		// Create individual chunk for each function/method
+		chunk, err := f.createDiscreteFunction(ctx, semanticChunk, semanticChunks, config)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create enhanced chunks from function group: %w", err)
+			return nil, fmt.Errorf("failed to create discrete function chunk: %w", err)
 		}
-		enhancedChunks = append(enhancedChunks, chunks...)
+		enhancedChunks = append(enhancedChunks, *chunk)
+	}
+
+	// Handle related helper functions if PreserveDependencies is enabled
+	if config.PreserveDependencies {
+		enhancedChunks = f.includeHelperFunctions(ctx, enhancedChunks, semanticChunks, config)
 	}
 
 	slogger.Info(ctx, "Function-based chunking completed", slogger.Fields{
-		"input_chunks":   len(semanticChunks),
-		"output_chunks":  len(enhancedChunks),
-		"groups_created": len(functionGroups),
+		"input_chunks":  len(semanticChunks),
+		"output_chunks": len(enhancedChunks),
 	})
 
 	return enhancedChunks, nil
@@ -259,7 +268,7 @@ func (f *FunctionChunker) createSingleEnhancedChunk(
 	config outbound.ChunkingConfiguration,
 ) (*outbound.EnhancedCodeChunk, error) {
 	if len(group) == 0 {
-		return nil, fmt.Errorf("cannot create enhanced chunk from empty group")
+		return nil, errors.New("cannot create enhanced chunk from empty group")
 	}
 
 	// Calculate boundaries
@@ -484,7 +493,7 @@ func (f *FunctionChunker) calculateCohesionScore(group []outbound.SemanticCodeCh
 	totalRelations := 0
 	sharedDependencies := 0
 
-	for i := 0; i < len(group); i++ {
+	for i := range group {
 		for j := i + 1; j < len(group); j++ {
 			totalRelations++
 
@@ -531,6 +540,449 @@ func (f *FunctionChunker) hasSharedTypes(chunk1, chunk2 outbound.SemanticCodeChu
 
 	for _, typeRef := range chunk2.UsedTypes {
 		if types1[typeRef.Name] {
+			return true
+		}
+	}
+
+	return false
+}
+
+// createDiscreteFunction creates an individual enhanced chunk for a single function/method.
+// Phase 4.3 Step 2: Creates discrete chunks for individual functions with context preservation.
+func (f *FunctionChunker) createDiscreteFunction(
+	ctx context.Context,
+	semanticChunk outbound.SemanticCodeChunk,
+	allChunks []outbound.SemanticCodeChunk,
+	config outbound.ChunkingConfiguration,
+) (*outbound.EnhancedCodeChunk, error) {
+	// Phase 4.3 Step 2: Validate chunk boundaries
+	if semanticChunk.EndByte < semanticChunk.StartByte {
+		return nil, fmt.Errorf("invalid boundaries: end byte %d is less than start byte %d",
+			semanticChunk.EndByte, semanticChunk.StartByte)
+	}
+
+	// Phase 4.3 Step 2: Check for size limits
+	contentSize := len(semanticChunk.Content)
+	if contentSize > 1000000 { // 1MB limit
+		return nil, fmt.Errorf("size limit exceeded: function size %d bytes exceeds maximum allowed size", contentSize)
+	}
+
+	// Phase 4.3 Step 2: Detect circular dependencies
+	if f.hasCircularDependency(semanticChunk, allChunks) {
+		return nil, fmt.Errorf("circular dependency detected involving function %s", semanticChunk.Name)
+	}
+
+	// Create chunk ID and hash
+	chunkID := uuid.New().String()
+	contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(semanticChunk.Content)))
+
+	// Preserve documentation if requested
+	content := semanticChunk.Content
+	if config.IncludeDocumentation && semanticChunk.Documentation != "" {
+		content = semanticChunk.Documentation + "\n" + content
+	}
+
+	// Determine chunk type based on semantic construct type
+	chunkType := f.mapSemanticToChunkType(semanticChunk.Type)
+
+	// Calculate size metrics
+	size := outbound.ChunkSize{
+		Bytes:      len(content),
+		Lines:      f.countLines(content),
+		Characters: len(content),
+		Constructs: 1,
+	}
+
+	// Create enhanced chunk
+	chunk := &outbound.EnhancedCodeChunk{
+		ID:                 chunkID,
+		SourceFile:         fmt.Sprintf("function_%s", semanticChunk.Name),
+		Language:           semanticChunk.Language,
+		StartByte:          semanticChunk.StartByte,
+		EndByte:            semanticChunk.EndByte,
+		StartPosition:      semanticChunk.StartPosition,
+		EndPosition:        semanticChunk.EndPosition,
+		Content:            content,
+		PreservedContext:   outbound.PreservedContext{},
+		SemanticConstructs: []outbound.SemanticCodeChunk{semanticChunk},
+		Dependencies:       f.extractSingleChunkDependencies(semanticChunk),
+		ChunkType:          chunkType,
+		ChunkingStrategy:   config.Strategy,
+		ContextStrategy:    config.ContextPreservation,
+		QualityMetrics:     outbound.ChunkQualityMetrics{},
+		CreatedAt:          time.Now(),
+		Hash:               contentHash,
+		Size:               size,
+		ComplexityScore:    f.calculateSingleChunkComplexity(semanticChunk),
+		CohesionScore:      1.0, // Single functions have perfect cohesion
+	}
+
+	return chunk, nil
+}
+
+// includeHelperFunctions identifies and includes related helper functions with main functions.
+// Phase 4.3 Step 2: Implements helper function inclusion for context preservation.
+func (f *FunctionChunker) includeHelperFunctions(
+	ctx context.Context,
+	enhancedChunks []outbound.EnhancedCodeChunk,
+	allSemanticChunks []outbound.SemanticCodeChunk,
+	config outbound.ChunkingConfiguration,
+) []outbound.EnhancedCodeChunk {
+	// Create a map of function names to chunks for quick lookup
+	chunkMap := make(map[string]*outbound.EnhancedCodeChunk)
+	for i := range enhancedChunks {
+		if len(enhancedChunks[i].SemanticConstructs) > 0 {
+			name := enhancedChunks[i].SemanticConstructs[0].Name
+			chunkMap[name] = &enhancedChunks[i]
+		}
+	}
+
+	// Analyze function calls to identify helper relationships
+	for i := range enhancedChunks {
+		chunk := &enhancedChunks[i]
+		if len(chunk.SemanticConstructs) > 0 {
+			mainFunction := chunk.SemanticConstructs[0]
+
+			// Phase 4.3 Step 2: Extract function calls from content analysis
+			allCalledFunctions := append([]outbound.FunctionCall{}, mainFunction.CalledFunctions...)
+
+			// Analyze content for additional function calls
+			contentCalls := f.analysisUtils.ExtractFunctionCallsFromContent(mainFunction.Content, mainFunction.Language)
+			allCalledFunctions = append(allCalledFunctions, contentCalls...)
+
+			// Find called functions that exist in our chunk set
+			for _, funcCall := range allCalledFunctions {
+				if helperChunk, exists := chunkMap[funcCall.Name]; exists && helperChunk.ID != chunk.ID {
+					// Add helper function as dependency (external helper)
+					dependency := outbound.ChunkDependency{
+						Type:         outbound.DependencyCall,
+						TargetChunk:  helperChunk.ID,
+						TargetSymbol: funcCall.Name,
+						Relationship: "helper_function",
+						Strength:     0.8,
+						IsResolved:   true,
+					}
+					chunk.Dependencies = append(chunk.Dependencies, dependency)
+
+					// Update relationship count for cohesion
+					chunk.CohesionScore = f.calculateHelperCohesion(chunk, helperChunk)
+				} else {
+					// Phase 4.3 Step 2: Handle internal closures/nested functions
+					if f.analysisUtils.IsInternalFunction(funcCall.Name, mainFunction) {
+						dependency := outbound.ChunkDependency{
+							Type:         outbound.DependencyCall,
+							TargetSymbol: funcCall.Name,
+							Relationship: "internal_closure",
+							Strength:     0.9, // Internal closures have high strength
+							IsResolved:   true,
+						}
+						chunk.Dependencies = append(chunk.Dependencies, dependency)
+
+						// Internal closures also increase cohesion
+						chunk.CohesionScore = 0.95
+					}
+				}
+			}
+		}
+	}
+
+	return enhancedChunks
+}
+
+// mapSemanticToChunkType maps semantic construct types to chunk types.
+func (f *FunctionChunker) mapSemanticToChunkType(semanticType outbound.SemanticConstructType) outbound.ChunkType {
+	switch semanticType {
+	case outbound.ConstructFunction, outbound.ConstructMethod:
+		return outbound.ChunkFunction
+	case outbound.ConstructClass:
+		return outbound.ChunkClass
+	case outbound.ConstructStruct:
+		return outbound.ChunkStruct
+	case outbound.ConstructInterface:
+		return outbound.ChunkInterface
+	case outbound.ConstructVariable:
+		return outbound.ChunkVariable
+	case outbound.ConstructConstant:
+		return outbound.ChunkConstant
+	default:
+		return outbound.ChunkMixed
+	}
+}
+
+// extractSingleChunkDependencies extracts dependencies from a single semantic chunk.
+func (f *FunctionChunker) extractSingleChunkDependencies(chunk outbound.SemanticCodeChunk) []outbound.ChunkDependency {
+	var dependencies []outbound.ChunkDependency
+
+	// Extract function call dependencies
+	for _, funcCall := range chunk.CalledFunctions {
+		dependencies = append(dependencies, outbound.ChunkDependency{
+			Type:         outbound.DependencyCall,
+			TargetSymbol: funcCall.Name,
+			Relationship: "function_call",
+			Strength:     0.8,
+			IsResolved:   false,
+		})
+	}
+
+	// Extract type dependencies
+	for _, typeRef := range chunk.UsedTypes {
+		dependencies = append(dependencies, outbound.ChunkDependency{
+			Type:         outbound.DependencyRef,
+			TargetSymbol: typeRef.Name,
+			Relationship: "type_reference",
+			Strength:     0.6,
+			IsResolved:   false,
+		})
+	}
+
+	return dependencies
+}
+
+// calculateSingleChunkComplexity calculates complexity for a single semantic chunk.
+func (f *FunctionChunker) calculateSingleChunkComplexity(chunk outbound.SemanticCodeChunk) float64 {
+	complexity := 0.0
+
+	// Base complexity by construct type
+	switch chunk.Type {
+	case outbound.ConstructFunction, outbound.ConstructMethod:
+		complexity = 1.0
+	case outbound.ConstructClass, outbound.ConstructStruct:
+		complexity = 2.0
+	case outbound.ConstructInterface:
+		complexity = 1.5
+	default:
+		complexity = 0.5
+	}
+
+	// Add complexity for dependencies
+	complexity += float64(len(chunk.CalledFunctions)) * 0.1
+	complexity += float64(len(chunk.UsedTypes)) * 0.1
+
+	// Normalize to 0-1 range
+	return complexity / 3.0 // Max expected complexity for a single function
+}
+
+// calculateHelperCohesion calculates cohesion score when including helper functions.
+func (f *FunctionChunker) calculateHelperCohesion(mainChunk, helperChunk *outbound.EnhancedCodeChunk) float64 {
+	// Helper functions that are called increase cohesion
+	return 0.9 // High cohesion for helper relationship
+}
+
+// hasCircularDependency detects circular dependencies between functions.
+// Phase 4.3 Step 2: Circular dependency detection for error handling.
+func (f *FunctionChunker) hasCircularDependency(
+	chunk outbound.SemanticCodeChunk,
+	allChunks []outbound.SemanticCodeChunk,
+) bool {
+	// Create a map of function names to their called functions
+	functionCalls := make(map[string][]string)
+
+	// Build the call graph
+	for _, c := range allChunks {
+		var calls []string
+		for _, funcCall := range c.CalledFunctions {
+			calls = append(calls, funcCall.Name)
+		}
+		functionCalls[c.Name] = calls
+	}
+
+	// Add current chunk to the map
+	var currentCalls []string
+	for _, funcCall := range chunk.CalledFunctions {
+		currentCalls = append(currentCalls, funcCall.Name)
+	}
+	functionCalls[chunk.Name] = currentCalls
+
+	// Use DFS to detect cycles
+	visited := make(map[string]bool)
+	recursionStack := make(map[string]bool)
+
+	return f.detectCycleFromNode(chunk.Name, functionCalls, visited, recursionStack)
+}
+
+// detectCycleFromNode performs DFS to detect cycles starting from a given node.
+func (f *FunctionChunker) detectCycleFromNode(
+	node string,
+	graph map[string][]string,
+	visited map[string]bool,
+	recursionStack map[string]bool,
+) bool {
+	visited[node] = true
+	recursionStack[node] = true
+
+	// Visit all adjacent nodes
+	for _, neighbor := range graph[node] {
+		// If neighbor is in recursion stack, we found a cycle
+		if recursionStack[neighbor] {
+			return true
+		}
+
+		// If neighbor hasn't been visited, recurse
+		if !visited[neighbor] {
+			if f.detectCycleFromNode(neighbor, graph, visited, recursionStack) {
+				return true
+			}
+		}
+	}
+
+	// Remove from recursion stack before returning
+	recursionStack[node] = false
+	return false
+}
+
+// extractFunctionCallsFromContent extracts function calls by analyzing code content.
+// Phase 4.3 Step 2: Enhanced called function detection for helper relationship analysis.
+func (f *FunctionChunker) extractFunctionCallsFromContent(
+	content string,
+	language valueobject.Language,
+) []outbound.FunctionCall {
+	var calls []outbound.FunctionCall
+
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		// Simple pattern matching for function calls (basic implementation)
+		switch language.Name() {
+		case valueobject.LanguageGo:
+			calls = append(calls, f.extractGoFunctionCalls(line, i)...)
+		case valueobject.LanguagePython:
+			calls = append(calls, f.extractPythonFunctionCalls(line, i)...)
+		case valueobject.LanguageJavaScript, valueobject.LanguageTypeScript:
+			calls = append(calls, f.extractJSFunctionCalls(line, i)...)
+		}
+	}
+
+	return calls
+}
+
+// extractGoFunctionCalls extracts Go function calls from a line of code.
+func (f *FunctionChunker) extractGoFunctionCalls(line string, lineNum int) []outbound.FunctionCall {
+	var calls []outbound.FunctionCall
+
+	// Simple pattern: functionName( or variable.functionName(
+	words := strings.Fields(line)
+	for _, word := range words {
+		if strings.Contains(word, "(") {
+			funcName := strings.Split(word, "(")[0]
+			if strings.Contains(funcName, ".") {
+				funcName = strings.Split(funcName, ".")[1]
+			}
+			if f.isValidFunctionName(funcName) {
+				calls = append(calls, outbound.FunctionCall{
+					Name:      funcName,
+					StartByte: uint32(lineNum * 80), // Rough estimate
+					EndByte:   uint32(lineNum*80 + len(word)),
+				})
+			}
+		}
+	}
+
+	return calls
+}
+
+// extractPythonFunctionCalls extracts Python function calls from a line of code.
+func (f *FunctionChunker) extractPythonFunctionCalls(line string, lineNum int) []outbound.FunctionCall {
+	var calls []outbound.FunctionCall
+
+	// Similar logic for Python
+	words := strings.Fields(line)
+	for _, word := range words {
+		if strings.Contains(word, "(") {
+			funcName := strings.Split(word, "(")[0]
+			if strings.Contains(funcName, ".") {
+				funcName = strings.Split(funcName, ".")[1]
+			}
+			if f.isValidFunctionName(funcName) {
+				calls = append(calls, outbound.FunctionCall{
+					Name:      funcName,
+					StartByte: uint32(lineNum * 80),
+					EndByte:   uint32(lineNum*80 + len(word)),
+				})
+			}
+		}
+	}
+
+	return calls
+}
+
+// extractJSFunctionCalls extracts JavaScript function calls from a line of code.
+func (f *FunctionChunker) extractJSFunctionCalls(line string, lineNum int) []outbound.FunctionCall {
+	var calls []outbound.FunctionCall
+
+	// Similar logic for JavaScript
+	words := strings.Fields(line)
+	for _, word := range words {
+		if strings.Contains(word, "(") {
+			funcName := strings.Split(word, "(")[0]
+			if strings.Contains(funcName, ".") {
+				funcName = strings.Split(funcName, ".")[1]
+			}
+			if f.isValidFunctionName(funcName) {
+				calls = append(calls, outbound.FunctionCall{
+					Name:      funcName,
+					StartByte: uint32(lineNum * 80),
+					EndByte:   uint32(lineNum*80 + len(word)),
+				})
+			}
+		}
+	}
+
+	return calls
+}
+
+// isValidFunctionName checks if a string looks like a valid function name.
+func (f *FunctionChunker) isValidFunctionName(name string) bool {
+	if len(name) < 1 || len(name) > 100 {
+		return false
+	}
+
+	// Must start with letter or underscore
+	if !((name[0] >= 'a' && name[0] <= 'z') ||
+		(name[0] >= 'A' && name[0] <= 'Z') ||
+		name[0] == '_') {
+		return false
+	}
+
+	// Common non-function words
+	nonFunctions := []string{"if", "else", "for", "while", "return", "var", "let", "const"}
+	for _, nonFunc := range nonFunctions {
+		if name == nonFunc {
+			return false
+		}
+	}
+
+	return true
+}
+
+// isInternalFunction checks if a function call refers to an internal function/closure within the same chunk.
+// Phase 4.3 Step 2: Internal closure and nested function detection.
+func (f *FunctionChunker) isInternalFunction(funcName string, chunk outbound.SemanticCodeChunk) bool {
+	// Check if the function is defined within the chunk content
+	content := strings.ToLower(chunk.Content)
+	funcName = strings.ToLower(funcName)
+
+	// Language-specific patterns for internal function definitions
+	switch chunk.Language.Name() {
+	case valueobject.LanguageJavaScript, valueobject.LanguageTypeScript:
+		// JavaScript patterns: "const funcName =", "function funcName", "let funcName ="
+		patterns := []string{
+			"const " + funcName + " =",
+			"let " + funcName + " =",
+			"var " + funcName + " =",
+			"function " + funcName,
+		}
+		for _, pattern := range patterns {
+			if strings.Contains(content, pattern) {
+				return true
+			}
+		}
+	case valueobject.LanguagePython:
+		// Python patterns: "def funcName("
+		if strings.Contains(content, "def "+funcName+"(") {
+			return true
+		}
+	case valueobject.LanguageGo:
+		// Go patterns: "func funcName(" (but usually Go doesn't have nested functions)
+		if strings.Contains(content, "func "+funcName+"(") {
 			return true
 		}
 	}

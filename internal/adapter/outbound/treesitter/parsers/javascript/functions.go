@@ -444,13 +444,14 @@ func extractParameters(parseTree *valueobject.ParseTree, node *valueobject.Parse
 	// Find formal_parameters node
 	if paramsChild := findChildByType(node, "formal_parameters"); paramsChild != nil {
 		for _, child := range paramsChild.Children {
-			if child.Type == "identifier" {
+			switch child.Type {
+			case "identifier":
 				paramName := parseTree.GetNodeText(child)
 				parameters = append(parameters, outbound.Parameter{
 					Name: paramName,
 					Type: "any", // JavaScript is dynamically typed
 				})
-			} else if child.Type == "rest_pattern" {
+			case "rest_pattern":
 				// Handle rest parameters (...args)
 				if identChild := findChildByType(child, "identifier"); identChild != nil {
 					paramName := parseTree.GetNodeText(identChild)
@@ -476,14 +477,15 @@ func extractArrowFunctionParameters(
 
 	// Arrow functions can have parameters in different forms
 	for _, child := range node.Children {
-		if child.Type == "identifier" {
+		switch child.Type {
+		case "identifier":
 			// Single parameter without parentheses: x => x * 2
 			paramName := parseTree.GetNodeText(child)
 			parameters = append(parameters, outbound.Parameter{
 				Name: paramName,
 				Type: "any",
 			})
-		} else if child.Type == "formal_parameters" {
+		case "formal_parameters":
 			// Multiple parameters with parentheses: (x, y) => x + y
 			return extractParameters(parseTree, node)
 		}

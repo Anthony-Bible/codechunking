@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockSemanticTraverser implements SemanticTraverser for testing integration
+// MockSemanticTraverser implements SemanticTraverser for testing integration.
 type MockSemanticTraverser struct {
 	ShouldFailExtractFunctions  bool
 	ShouldFailExtractClasses    bool
@@ -115,7 +115,7 @@ func (m *MockSemanticTraverser) GetSupportedConstructTypes(
 	return m.ExpectedConstructs, nil
 }
 
-// Test Integration with Semantic Traverser
+// Test Integration with Semantic Traverser.
 func TestChunkingStrategy_SemanticTraverserIntegration(t *testing.T) {
 	ctx := context.Background()
 
@@ -475,7 +475,7 @@ func TestChunkingStrategy_SemanticTraverserIntegration(t *testing.T) {
 				resolvedDeps++
 			}
 		}
-		assert.Greater(t, resolvedDeps, 0, "Some dependencies should be resolved")
+		assert.Positive(t, resolvedDeps, "Some dependencies should be resolved")
 
 		// Verify imports are preserved
 		importPaths := make(map[string]bool)
@@ -487,7 +487,7 @@ func TestChunkingStrategy_SemanticTraverserIntegration(t *testing.T) {
 	})
 }
 
-// Test Performance Scenarios
+// Test Performance Scenarios.
 func TestChunkingStrategy_PerformanceScenarios(t *testing.T) {
 	ctx := context.Background()
 
@@ -496,14 +496,14 @@ func TestChunkingStrategy_PerformanceScenarios(t *testing.T) {
 
 		// Create many semantic chunks to simulate a large file
 		var largeSemanticChunks []SemanticCodeChunk
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			chunk := createTestSemanticCodeChunk("Function"+string(rune(i)), ConstructFunction)
 			chunk.Content = generateLargeCodeContent(500) // Each function is 500 bytes
 			largeSemanticChunks = append(largeSemanticChunks, chunk)
 		}
 
 		var expectedChunks []EnhancedCodeChunk
-		for i := 0; i < 50; i++ { // Expect compression due to size-based chunking
+		for i := range 50 { // Expect compression due to size-based chunking
 			chunk := createTestEnhancedCodeChunk("Fragment"+string(rune(i)), ChunkFragment, StrategySizeBased)
 			chunk.Size.Bytes = 1000 // Each enhanced chunk is ~1000 bytes
 			expectedChunks = append(expectedChunks, chunk)
@@ -562,7 +562,7 @@ func TestChunkingStrategy_PerformanceScenarios(t *testing.T) {
 		// Main class with many methods
 		mainClass := createTestSemanticCodeChunk("ComplexService", ConstructClass)
 		mainClass.ChildChunks = make([]SemanticCodeChunk, 20) // 20 methods
-		for i := 0; i < 20; i++ {
+		for i := range 20 {
 			method := createTestSemanticCodeChunk("Method"+string(rune(i)), ConstructMethod)
 			method.ParentChunk = &mainClass
 			mainClass.ChildChunks[i] = method
@@ -570,7 +570,7 @@ func TestChunkingStrategy_PerformanceScenarios(t *testing.T) {
 		complexSemanticChunks = append(complexSemanticChunks, mainClass)
 
 		// Add interfaces with many method signatures
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			iface := createTestSemanticCodeChunk("Interface"+string(rune(i)), ConstructInterface)
 			iface.ChildChunks = make([]SemanticCodeChunk, 10) // 10 method signatures each
 			complexSemanticChunks = append(complexSemanticChunks, iface)
@@ -632,7 +632,7 @@ func TestChunkingStrategy_PerformanceScenarios(t *testing.T) {
 
 		// Simulate very large input that would exceed memory if not streamed
 		var streamingSemanticChunks []SemanticCodeChunk
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			chunk := createTestSemanticCodeChunk("StreamFunction"+string(rune(i)), ConstructFunction)
 			chunk.Content = generateLargeCodeContent(1000) // 1KB each = 1MB total
 			streamingSemanticChunks = append(streamingSemanticChunks, chunk)
@@ -640,7 +640,7 @@ func TestChunkingStrategy_PerformanceScenarios(t *testing.T) {
 
 		// Expected output should be processed in smaller batches
 		var expectedStreamChunks []EnhancedCodeChunk
-		for i := 0; i < 100; i++ { // 10:1 compression ratio
+		for i := range 100 { // 10:1 compression ratio
 			chunk := createTestEnhancedCodeChunk("StreamChunk"+string(rune(i)), ChunkFragment, StrategySizeBased)
 			chunk.Size.Bytes = 10000 // 10KB chunks
 			expectedStreamChunks = append(expectedStreamChunks, chunk)
@@ -719,10 +719,10 @@ func TestChunkingStrategy_PerformanceScenarios(t *testing.T) {
 		startTime := time.Now()
 
 		// Launch concurrent chunking operations
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			go func(routineID int) {
 				var semanticChunks []SemanticCodeChunk
-				for j := 0; j < chunksPerGoroutine; j++ {
+				for j := range chunksPerGoroutine {
 					chunk := createTestSemanticCodeChunk(
 						"Func"+string(rune(routineID))+string(rune(j)),
 						ConstructFunction,
@@ -741,7 +741,7 @@ func TestChunkingStrategy_PerformanceScenarios(t *testing.T) {
 
 		// Collect all results
 		var allResults [][]EnhancedCodeChunk
-		for i := 0; i < numGoroutines; i++ {
+		for range numGoroutines {
 			select {
 			case result := <-results:
 				allResults = append(allResults, result)
@@ -772,7 +772,7 @@ func TestChunkingStrategy_PerformanceScenarios(t *testing.T) {
 	})
 }
 
-// Helper functions for integration tests
+// Helper functions for integration tests.
 func createTestParseTree() *valueobject.ParseTree {
 	// Create a simple mock parse tree for testing
 	language := createTestLanguage()

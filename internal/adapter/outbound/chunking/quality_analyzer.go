@@ -78,7 +78,7 @@ func (q *QualityAnalyzer) calculateCohesionScore(ctx context.Context, chunk *out
 	var totalPairs float64
 
 	// Analyze pairwise relationships between semantic constructs
-	for i := 0; i < len(chunk.SemanticConstructs); i++ {
+	for i := range len(chunk.SemanticConstructs) {
 		for j := i + 1; j < len(chunk.SemanticConstructs); j++ {
 			construct1 := chunk.SemanticConstructs[i]
 			construct2 := chunk.SemanticConstructs[j]
@@ -536,13 +536,13 @@ func (q *QualityAnalyzer) haveSimilarNames(name1, name2 string) bool {
 
 	// Check prefix similarity
 	prefixLen := minLen / 2
-	if prefixLen > 0 && strings.ToLower(name1[:prefixLen]) == strings.ToLower(name2[:prefixLen]) {
+	if prefixLen > 0 && strings.EqualFold(name1[:prefixLen], name2[:prefixLen]) {
 		return true
 	}
 
 	// Check suffix similarity
 	if prefixLen > 0 &&
-		strings.ToLower(name1[len(name1)-prefixLen:]) == strings.ToLower(name2[len(name2)-prefixLen:]) {
+		strings.EqualFold(name1[len(name1)-prefixLen:], name2[len(name2)-prefixLen:]) {
 		return true
 	}
 

@@ -6,6 +6,7 @@ import (
 	"codechunking/internal/port/outbound"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -381,7 +382,7 @@ func (s *SizeBasedChunker) createEnhancedChunkFromGroup(
 	config outbound.ChunkingConfiguration,
 ) (*outbound.EnhancedCodeChunk, error) {
 	if len(group) == 0 {
-		return nil, fmt.Errorf("cannot create enhanced chunk from empty group")
+		return nil, errors.New("cannot create enhanced chunk from empty group")
 	}
 
 	// Calculate boundaries and aggregate content

@@ -146,7 +146,7 @@ func (p *GoParser) parseGoMethod(
 	// Parse receiver to get the type
 	receiver := p.findChildByType(node, "parameter_list")
 	receiverType := ""
-	qualifiedName := packageName + "." + methodName
+	qualifiedName := methodName // Default to just method name
 
 	if receiver != nil {
 		receiverType = p.parseGoReceiver(parseTree, receiver)
@@ -156,7 +156,7 @@ func (p *GoParser) parseGoMethod(
 			if strings.HasPrefix(receiverType, "*") {
 				baseType = receiverType[1:]
 			}
-			qualifiedName = packageName + "." + baseType + "." + methodName
+			qualifiedName = baseType + "." + methodName // Type.Method format, no package prefix
 		}
 	}
 

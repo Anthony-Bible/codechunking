@@ -513,7 +513,7 @@ func (c *ChunkingStrategyAdapter) calculateDefaultOptimalSize(contentSize int) i
 	return int(float64(contentSize) * 0.4)
 }
 
-// Helper function for max (Go 1.18+ style)
+// Helper function for max (Go 1.18+ style).
 func max(a, b int) int {
 	if a > b {
 		return a

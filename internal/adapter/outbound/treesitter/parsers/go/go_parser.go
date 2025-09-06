@@ -95,14 +95,14 @@ func (p *GoParser) ExtractMethodsFromStruct(
 
 	// Find method declarations with matching receiver
 	methodNodes := parseTree.GetNodesByType("method_declaration")
-	for _, node := range methodNodes {
+	for methodIndex, node := range methodNodes {
 		receiver := p.findChildByType(node, "parameter_list")
 		if receiver != nil {
 			receiverType := p.parseGoReceiver(parseTree, receiver)
 			// Remove pointer prefix and check if it matches our struct
 			baseType := strings.TrimPrefix(receiverType, "*")
 			if baseType == structName {
-				method := p.parseGoMethod(ctx, parseTree, node, packageName, options, now)
+				method := p.parseGoMethod(ctx, parseTree, node, packageName, options, now, methodIndex)
 				if method != nil {
 					methods = append(methods, *method)
 				}

@@ -57,9 +57,13 @@ func (s *SemanticTraverserAdapter) extractSemanticChunks(
 		if err == nil {
 			return langParserExtractor(parser)
 		}
-		slogger.Debug(ctx, "Language dispatcher unavailable, falling back to legacy implementation", slogger.Fields{
-			"error": err.Error(),
-		})
+		slogger.Warn(
+			ctx,
+			"Tree-sitter language dispatcher unavailable, falling back to legacy implementation",
+			slogger.Fields{
+				"error": err.Error(),
+			},
+		)
 	}
 
 	// Fallback to existing legacy implementation for backward compatibility
@@ -88,9 +92,13 @@ func (s *SemanticTraverserAdapter) extractImports(
 		if err == nil {
 			return langParserExtractor(parser)
 		}
-		slogger.Debug(ctx, "Language dispatcher unavailable, falling back to legacy implementation", slogger.Fields{
-			"error": err.Error(),
-		})
+		slogger.Warn(
+			ctx,
+			"Tree-sitter language dispatcher unavailable for import extraction, falling back to legacy implementation",
+			slogger.Fields{
+				"error": err.Error(),
+			},
+		)
 	}
 
 	// Fallback to existing legacy implementation for backward compatibility
@@ -336,9 +344,13 @@ func (s *SemanticTraverserAdapter) traverseForFunctions(
 	options outbound.SemanticExtractionOptions,
 ) []outbound.SemanticCodeChunk {
 	// This method is now a fallback - all functionality delegated to language parsers
-	slogger.Warn(ctx, "Using legacy fallback - language parser unavailable", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
+	slogger.Warn(
+		ctx,
+		"Using tree-sitter legacy fallback for function extraction - language parser unavailable",
+		slogger.Fields{
+			"language": parseTree.Language().Name(),
+		},
+	)
 	return []outbound.SemanticCodeChunk{}
 }
 
@@ -347,9 +359,13 @@ func (s *SemanticTraverserAdapter) traverseForClasses(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) []outbound.SemanticCodeChunk {
-	slogger.Warn(ctx, "Using legacy fallback - language parser unavailable", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
+	slogger.Warn(
+		ctx,
+		"Using tree-sitter legacy fallback for class extraction - language parser unavailable",
+		slogger.Fields{
+			"language": parseTree.Language().Name(),
+		},
+	)
 	return []outbound.SemanticCodeChunk{}
 }
 
@@ -358,9 +374,13 @@ func (s *SemanticTraverserAdapter) traverseForModules(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) []outbound.SemanticCodeChunk {
-	slogger.Warn(ctx, "Using legacy fallback - language parser unavailable", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
+	slogger.Warn(
+		ctx,
+		"Using tree-sitter legacy fallback for module extraction - language parser unavailable",
+		slogger.Fields{
+			"language": parseTree.Language().Name(),
+		},
+	)
 	return []outbound.SemanticCodeChunk{}
 }
 
@@ -370,9 +390,13 @@ func (s *SemanticTraverserAdapter) extractGoInterfaces(
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
 ) []outbound.SemanticCodeChunk {
-	slogger.Warn(ctx, "Using legacy fallback - language parser unavailable", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
+	slogger.Warn(
+		ctx,
+		"Using tree-sitter legacy fallback for interface extraction - language parser unavailable",
+		slogger.Fields{
+			"language": parseTree.Language().Name(),
+		},
+	)
 	return []outbound.SemanticCodeChunk{}
 }
 
@@ -382,9 +406,13 @@ func (s *SemanticTraverserAdapter) extractGoVariables(
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
 ) []outbound.SemanticCodeChunk {
-	slogger.Warn(ctx, "Using legacy fallback - language parser unavailable", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
+	slogger.Warn(
+		ctx,
+		"Using tree-sitter legacy fallback for variable extraction - language parser unavailable",
+		slogger.Fields{
+			"language": parseTree.Language().Name(),
+		},
+	)
 	return []outbound.SemanticCodeChunk{}
 }
 
@@ -393,8 +421,12 @@ func (s *SemanticTraverserAdapter) extractGoImports(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) []outbound.ImportDeclaration {
-	slogger.Warn(ctx, "Using legacy fallback - language parser unavailable", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
+	slogger.Warn(
+		ctx,
+		"Using tree-sitter legacy fallback for import extraction - language parser unavailable",
+		slogger.Fields{
+			"language": parseTree.Language().Name(),
+		},
+	)
 	return []outbound.ImportDeclaration{}
 }

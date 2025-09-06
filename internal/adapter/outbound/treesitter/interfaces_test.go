@@ -490,8 +490,8 @@ func createMockGoParseTree(t *testing.T, sourceCode string) *valueobject.ParseTr
 	language, err := valueobject.NewLanguage(valueobject.LanguageGo)
 	require.NoError(t, err)
 
-	// Use the existing mock parser function from the other test file
-	return createMockParseTreeFromSource(t, language, sourceCode)
+	// Use the real parser function from the main test file
+	return createRealParseTreeFromSource(t, language, sourceCode)
 }
 
 // Helper functions for finding specific items in results.

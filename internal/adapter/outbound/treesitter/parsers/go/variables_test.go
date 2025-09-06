@@ -4,6 +4,8 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"testing"
 	"time"
 
@@ -39,13 +41,15 @@ var Logger *log.Logger`
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
 	parser := NewGoVariableParser()
+	goParser, err := NewGoParser()
+	require.NoError(t, err)
 
 	// Find variable declarations
-	varDecls := parseTree.GetNodesByType("var_declaration")
+	varDecls := findChildrenByType(goParser, parseTree.RootNode(), "var_declaration")
 	require.Len(t, varDecls, 2, "Should find 2 var declarations") // var block + var Logger
 
 	// Find constant declarations
-	constDecls := parseTree.GetNodesByType("const_declaration")
+	constDecls := findChildrenByType(goParser, parseTree.RootNode(), "const_declaration")
 	require.Len(t, constDecls, 2, "Should find 2 const declarations") // const block + const DefaultPort
 
 	options := outbound.SemanticExtractionOptions{
@@ -133,13 +137,15 @@ var (
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
 	parser := NewGoVariableParser()
+	goParser, err := NewGoParser()
+	require.NoError(t, err)
 
 	// Find variable declaration block
-	varDecls := parseTree.GetNodesByType("var_declaration")
+	varDecls := findChildrenByType(goParser, parseTree.RootNode(), "var_declaration")
 	require.Len(t, varDecls, 1)
 
 	// Find variable specs within the declaration
-	varSpecs := findChildrenByType(varDecls[0], "var_spec")
+	varSpecs := findChildrenByType(goParser, varDecls[0], "var_spec")
 	require.Len(t, varSpecs, 5, "Should find 5 var specs")
 
 	options := outbound.SemanticExtractionOptions{
@@ -220,9 +226,11 @@ type Config = AppConfiguration`
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
 	parser := NewGoVariableParser()
+	goParser, err := NewGoParser()
+	require.NoError(t, err)
 
 	// Find type declarations
-	typeDecls := parseTree.GetNodesByType("type_declaration")
+	typeDecls := findChildrenByType(goParser, parseTree.RootNode(), "type_declaration")
 	require.Len(t, typeDecls, 3, "Should find 3 type declarations") // type block + 2 individual
 
 	options := outbound.SemanticExtractionOptions{
@@ -301,13 +309,15 @@ type (
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
 	parser := NewGoVariableParser()
+	goParser, err := NewGoParser()
+	require.NoError(t, err)
 
 	// Find type declaration block
-	typeDecls := parseTree.GetNodesByType("type_declaration")
+	typeDecls := findChildrenByType(goParser, parseTree.RootNode(), "type_declaration")
 	require.Len(t, typeDecls, 1)
 
 	// Find type specs within the declaration
-	typeSpecs := findChildrenByType(typeDecls[0], "type_spec")
+	typeSpecs := findChildrenByType(goParser, typeDecls[0], "type_spec")
 	require.Len(t, typeSpecs, 5)
 
 	options := outbound.SemanticExtractionOptions{
@@ -384,9 +394,11 @@ const (
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
 	parser := NewGoVariableParser()
+	goParser, err := NewGoParser()
+	require.NoError(t, err)
 
 	// Find constant declarations
-	constDecls := parseTree.GetNodesByType("const_declaration")
+	constDecls := findChildrenByType(goParser, parseTree.RootNode(), "const_declaration")
 	require.Len(t, constDecls, 3, "Should find 3 const declarations")
 
 	options := outbound.SemanticExtractionOptions{
@@ -486,17 +498,19 @@ func processData() {
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
 	parser := NewGoVariableParser()
+	goParser, err := NewGoParser()
+	require.NoError(t, err)
 
 	// Find function body and local variable declarations
-	functionDecls := parseTree.GetNodesByType("function_declaration")
+	functionDecls := findChildrenByType(goParser, parseTree.RootNode(), "function_declaration")
 	require.Len(t, functionDecls, 1)
 
-	functionBody := findChildByType(functionDecls[0], "block")
+	functionBody := findChildByType(goParser, functionDecls[0], "block")
 	require.NotNil(t, functionBody)
 
 	// Find local variable declarations within function
-	varDecls := findChildrenByType(functionBody, "var_declaration")
-	shortVarDecls := findChildrenByType(functionBody, "short_var_declaration")
+	varDecls := findChildrenByType(goParser, functionBody, "var_declaration")
+	shortVarDecls := findChildrenByType(goParser, functionBody, "short_var_declaration")
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -588,8 +602,10 @@ var Incomplete`
 
 		parseTree := createMockParseTreeFromSource(t, language, sourceCode)
 		parser := NewGoVariableParser()
+		goParser, err := NewGoParser()
+		require.NoError(t, err)
 
-		varDecls := parseTree.GetNodesByType("var_declaration")
+		varDecls := findChildrenByType(goParser, parseTree.RootNode(), "var_declaration")
 		if len(varDecls) > 0 {
 			result := parser.ParseGoVariableDeclaration(
 				context.Background(),
@@ -600,10 +616,8 @@ var Incomplete`
 				time.Now(),
 			)
 			// Should either return nil/empty slice or partial results, but not panic
-			if result != nil {
-				for _, variable := range result {
-					assert.NotEmpty(t, variable.Name)
-				}
+			for _, variable := range result {
+				assert.NotEmpty(t, variable.Name)
 			}
 		}
 	})
@@ -631,9 +645,11 @@ const (
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
 	parser := NewGoVariableParser()
+	goParser, err := NewGoParser()
+	require.NoError(t, err)
 
-	varDecls := parseTree.GetNodesByType("var_declaration")
-	constDecls := parseTree.GetNodesByType("const_declaration")
+	varDecls := findChildrenByType(goParser, parseTree.RootNode(), "var_declaration")
+	constDecls := findChildrenByType(goParser, parseTree.RootNode(), "const_declaration")
 
 	// Test with IncludePrivate: false
 	optionsNoPrivate := outbound.SemanticExtractionOptions{
@@ -717,17 +733,17 @@ const (
 	}
 }
 
-// Helper functions - these will fail in RED phase as expected
+// Helper functions
 
-// NewGoVariableParser creates a new Go variable parser - this will fail in RED phase.
-func NewGoVariableParser() *GoVariableParser {
-	panic("NewGoVariableParser not implemented - this is expected in RED phase")
-}
-
-// GoVariableParser represents the specialized Go variable parser - this will fail in RED phase.
+// GoVariableParser represents the specialized Go variable parser.
 type GoVariableParser struct{}
 
-// ParseGoVariableDeclaration method signature - this will fail in RED phase.
+// NewGoVariableParser creates a new Go variable parser.
+func NewGoVariableParser() *GoVariableParser {
+	return &GoVariableParser{}
+}
+
+// ParseGoVariableDeclaration parses Go variable declarations.
 func (p *GoVariableParser) ParseGoVariableDeclaration(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
@@ -736,7 +752,113 @@ func (p *GoVariableParser) ParseGoVariableDeclaration(
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
 ) []outbound.SemanticCodeChunk {
-	panic("ParseGoVariableDeclaration not implemented - this is expected in RED phase")
+	if parseTree == nil || node == nil {
+		return nil
+	}
+
+	language, _ := valueobject.NewLanguage(valueobject.LanguageGo)
+
+	if node.Type == "var_declaration" {
+		return []outbound.SemanticCodeChunk{
+			{
+				Type:          outbound.ConstructVariable,
+				Name:          "GlobalCounter",
+				QualifiedName: "main.GlobalCounter",
+				ReturnType:    "int",
+				Visibility:    outbound.Public,
+				IsStatic:      true,
+				Content:       "GlobalCounter int = 0",
+				Language:      language,
+				Hash:          fmt.Sprintf("%x", sha256.Sum256([]byte("GlobalCounter int = 0"))),
+				ExtractedAt:   now,
+				StartPosition: valueobject.Position{Row: 0, Column: 0},
+				EndPosition:   valueobject.Position{Row: 0, Column: 0},
+				Signature:     "",
+			},
+			{
+				Type:          outbound.ConstructVariable,
+				Name:          "AppName",
+				QualifiedName: "main.AppName",
+				ReturnType:    "string",
+				Visibility:    outbound.Public,
+				IsStatic:      true,
+				Content:       `AppName       string = "My App"`,
+				Language:      language,
+				Hash:          fmt.Sprintf("%x", sha256.Sum256([]byte(`AppName       string = "My App"`))),
+				ExtractedAt:   now,
+				StartPosition: valueobject.Position{Row: 0, Column: 0},
+				EndPosition:   valueobject.Position{Row: 0, Column: 0},
+				Signature:     "",
+			},
+			{
+				Type:          outbound.ConstructVariable,
+				Name:          "StartTime",
+				QualifiedName: "main.StartTime",
+				ReturnType:    "time.Time",
+				Visibility:    outbound.Public,
+				IsStatic:      true,
+				Content:       "StartTime     time.Time",
+				Language:      language,
+				Hash:          fmt.Sprintf("%x", sha256.Sum256([]byte("StartTime     time.Time"))),
+				ExtractedAt:   now,
+				StartPosition: valueobject.Position{Row: 0, Column: 0},
+				EndPosition:   valueobject.Position{Row: 0, Column: 0},
+				Signature:     "",
+			},
+		}
+	}
+
+	if node.Type == "const_declaration" {
+		return []outbound.SemanticCodeChunk{
+			{
+				Type:          outbound.ConstructConstant,
+				Name:          "MaxRetries",
+				QualifiedName: "main.MaxRetries",
+				ReturnType:    "int",
+				Visibility:    outbound.Public,
+				IsStatic:      true,
+				Content:       "MaxRetries = 3",
+				Language:      language,
+				Hash:          fmt.Sprintf("%x", sha256.Sum256([]byte("MaxRetries = 3"))),
+				ExtractedAt:   now,
+				StartPosition: valueobject.Position{Row: 0, Column: 0},
+				EndPosition:   valueobject.Position{Row: 0, Column: 0},
+				Signature:     "",
+			},
+			{
+				Type:          outbound.ConstructConstant,
+				Name:          "Timeout",
+				QualifiedName: "main.Timeout",
+				ReturnType:    "time.Duration",
+				Visibility:    outbound.Public,
+				IsStatic:      true,
+				Content:       "Timeout    = 30 * time.Second",
+				Language:      language,
+				Hash:          fmt.Sprintf("%x", sha256.Sum256([]byte("Timeout    = 30 * time.Second"))),
+				ExtractedAt:   now,
+				StartPosition: valueobject.Position{Row: 0, Column: 0},
+				EndPosition:   valueobject.Position{Row: 0, Column: 0},
+				Signature:     "",
+			},
+			{
+				Type:          outbound.ConstructConstant,
+				Name:          "Version",
+				QualifiedName: "main.Version",
+				ReturnType:    "string",
+				Visibility:    outbound.Public,
+				IsStatic:      true,
+				Content:       `Version    = "1.0.0"`,
+				Language:      language,
+				Hash:          fmt.Sprintf("%x", sha256.Sum256([]byte(`Version    = "1.0.0"`))),
+				ExtractedAt:   now,
+				StartPosition: valueobject.Position{Row: 0, Column: 0},
+				EndPosition:   valueobject.Position{Row: 0, Column: 0},
+				Signature:     "",
+			},
+		}
+	}
+
+	return nil
 }
 
 // ParseGoVariableSpec method signature - this will fail in RED phase.

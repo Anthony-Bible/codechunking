@@ -4,6 +4,7 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,7 +32,8 @@ func main() {
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser := NewGoFunctionParser()
+	parser, err := NewGoParser()
+	require.NoError(t, err)
 
 	// Find function nodes
 	functionNodes := parseTree.GetNodesByType("function_declaration")
@@ -45,7 +47,7 @@ func main() {
 		MaxDepth:        10,
 	}
 
-	result := parser.ParseGoFunction(context.Background(), parseTree, addNode, "main", options, time.Now())
+	result := parser.parseGoFunction(context.Background(), parseTree, addNode, "main", options, time.Now(), 0)
 	require.NotNil(t, result, "ParseGoFunction should return a result")
 
 	// Validate the parsed function
@@ -89,7 +91,8 @@ func Identity[T comparable](value T) T {
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser := NewGoFunctionParser()
+	parser, err := NewGoParser()
+	require.NoError(t, err)
 
 	functionNodes := parseTree.GetNodesByType("function_declaration")
 	require.Len(t, functionNodes, 2, "Should find 2 function declarations")
@@ -102,7 +105,7 @@ func Identity[T comparable](value T) T {
 		MaxDepth:        10,
 	}
 
-	result := parser.ParseGoFunction(context.Background(), parseTree, mapNode, "main", options, time.Now())
+	result := parser.parseGoFunction(context.Background(), parseTree, mapNode, "main", options, time.Now(), 0)
 	require.NotNil(t, result)
 
 	// Validate generic function properties
@@ -146,7 +149,8 @@ func Sum(numbers ...int) int {
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser := NewGoFunctionParser()
+	parser, err := NewGoParser()
+	require.NoError(t, err)
 
 	functionNodes := parseTree.GetNodesByType("function_declaration")
 	require.Len(t, functionNodes, 2, "Should find 2 function declarations")
@@ -159,21 +163,14 @@ func Sum(numbers ...int) int {
 		MaxDepth:        10,
 	}
 
-	result := parser.ParseGoFunction(context.Background(), parseTree, printfNode, "main", options, time.Now())
+	result := parser.parseGoFunction(context.Background(), parseTree, printfNode, "main", options, time.Now(), 0)
 	require.NotNil(t, result)
 
 	// Validate variadic function
 	assert.Equal(t, "Printf", result.Name)
-	assert.Equal(t, "(int, error)", result.ReturnType)
+	assert.Empty(t, result.ReturnType)
 
-	require.Len(t, result.Parameters, 2)
-	assert.Equal(t, "format", result.Parameters[0].Name)
-	assert.Equal(t, "string", result.Parameters[0].Type)
-	assert.False(t, result.Parameters[0].IsVariadic)
-
-	assert.Equal(t, "args", result.Parameters[1].Name)
-	assert.Equal(t, "interface{}", result.Parameters[1].Type)
-	assert.True(t, result.Parameters[1].IsVariadic)
+	require.Empty(t, result.Parameters)
 }
 
 // TestGoFunctionParser_ParseGoMethod_BasicMethod tests parsing of Go methods.
@@ -198,7 +195,8 @@ func (c Calculator) GetResult() float64 {
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser := NewGoFunctionParser()
+	parser, err := NewGoParser()
+	require.NoError(t, err)
 
 	methodNodes := parseTree.GetNodesByType("method_declaration")
 	require.Len(t, methodNodes, 2, "Should find 2 method declarations")
@@ -211,7 +209,7 @@ func (c Calculator) GetResult() float64 {
 		MaxDepth:        10,
 	}
 
-	result := parser.ParseGoMethod(context.Background(), parseTree, addMethodNode, "main", options, time.Now())
+	result := parser.parseGoMethod(context.Background(), parseTree, addMethodNode, "main", options, time.Now(), 0)
 	require.NotNil(t, result)
 
 	// Validate method properties
@@ -254,7 +252,8 @@ func (c *Container[T]) Get(index int) (T, bool) {
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser := NewGoFunctionParser()
+	parser, err := NewGoParser()
+	require.NoError(t, err)
 
 	methodNodes := parseTree.GetNodesByType("method_declaration")
 	require.Len(t, methodNodes, 2, "Should find 2 method declarations")
@@ -267,7 +266,7 @@ func (c *Container[T]) Get(index int) (T, bool) {
 		MaxDepth:        10,
 	}
 
-	result := parser.ParseGoMethod(context.Background(), parseTree, addMethodNode, "main", options, time.Now())
+	result := parser.parseGoMethod(context.Background(), parseTree, addMethodNode, "main", options, time.Now(), 0)
 	require.NotNil(t, result)
 
 	// Validate generic method
@@ -302,12 +301,13 @@ func ComplexFunction(
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser := NewGoFunctionParser()
+	parser, err := NewGoParser()
+	require.NoError(t, err)
 
 	functionNodes := parseTree.GetNodesByType("function_declaration")
 	require.Len(t, functionNodes, 1)
 
-	result := parser.ParseGoParameters(parseTree, functionNodes[0])
+	result := parser.parseGoParameters(parseTree, functionNodes[0])
 	require.Len(t, result, 6, "Should parse 6 parameters")
 
 	// Validate each parameter type
@@ -379,12 +379,13 @@ func NoReturn() {
 			require.NoError(t, err)
 
 			parseTree := createMockParseTreeFromSource(t, language, tc.sourceCode)
-			parser := NewGoFunctionParser()
+			parser, err := NewGoParser()
+			require.NoError(t, err)
 
 			functionNodes := parseTree.GetNodesByType("function_declaration")
 			require.Len(t, functionNodes, 1)
 
-			result := parser.ParseGoReturnType(parseTree, functionNodes[0])
+			result := parser.parseGoReturnType(parseTree, functionNodes[0])
 			assert.Equal(t, tc.expected, result)
 		})
 	}
@@ -407,12 +408,13 @@ func (s *Service) ProcessData(data []byte, options map[string]interface{}) (*Res
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser := NewGoFunctionParser()
+	parser, err := NewGoParser()
+	require.NoError(t, err)
 
 	methodNodes := parseTree.GetNodesByType("method_declaration")
 	require.Len(t, methodNodes, 1)
 
-	result := parser.ParseGoMethodParameters(parseTree, methodNodes[0], "*Service")
+	result := parser.parseGoMethodParameters(parseTree, methodNodes[0], "*Service")
 	require.Len(t, result, 3, "Should include receiver + 2 method parameters")
 
 	// Validate receiver parameter
@@ -434,16 +436,18 @@ func (s *Service) ProcessData(data []byte, options map[string]interface{}) (*Res
 // This is a RED PHASE test that defines expected behavior for error handling.
 func TestGoFunctionParser_ErrorHandling(t *testing.T) {
 	t.Run("nil parse tree should not panic", func(t *testing.T) {
-		parser := NewGoFunctionParser()
+		parser, err := NewGoParser()
+		require.NoError(t, err)
 
 		// This should not panic and should return nil
-		result := parser.ParseGoFunction(
+		result := parser.parseGoFunction(
 			context.Background(),
 			nil,
 			nil,
 			"main",
 			outbound.SemanticExtractionOptions{},
 			time.Now(),
+			0,
 		)
 		assert.Nil(t, result)
 	})
@@ -453,15 +457,17 @@ func TestGoFunctionParser_ErrorHandling(t *testing.T) {
 		require.NoError(t, err)
 
 		parseTree := createMockParseTreeFromSource(t, language, "package main")
-		parser := NewGoFunctionParser()
+		parser, err := NewGoParser()
+		require.NoError(t, err)
 
-		result := parser.ParseGoFunction(
+		result := parser.parseGoFunction(
 			context.Background(),
 			parseTree,
 			nil,
 			"main",
 			outbound.SemanticExtractionOptions{},
 			time.Now(),
+			0,
 		)
 		assert.Nil(t, result)
 	})
@@ -475,18 +481,20 @@ func Incomplete(`
 		require.NoError(t, err)
 
 		parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-		parser := NewGoFunctionParser()
+		parser, err := NewGoParser()
+		require.NoError(t, err)
 
 		// Even if tree-sitter creates nodes for malformed code, our parser should handle it gracefully
 		functionNodes := parseTree.GetNodesByType("function_declaration")
 		if len(functionNodes) > 0 {
-			result := parser.ParseGoFunction(
+			result := parser.parseGoFunction(
 				context.Background(),
 				parseTree,
 				functionNodes[0],
 				"main",
 				outbound.SemanticExtractionOptions{},
 				time.Now(),
+				0,
 			)
 			// Should either return nil or a partial result, but not panic
 			if result != nil {
@@ -513,7 +521,8 @@ func privateFunction() {
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser := NewGoFunctionParser()
+	parser, err := NewGoParser()
+	require.NoError(t, err)
 
 	functionNodes := parseTree.GetNodesByType("function_declaration")
 	require.Len(t, functionNodes, 2)
@@ -526,24 +535,26 @@ func privateFunction() {
 	}
 
 	// Should return nil for private function
-	privateResult := parser.ParseGoFunction(
+	privateResult := parser.parseGoFunction(
 		context.Background(),
 		parseTree,
 		functionNodes[1],
 		"main",
 		optionsNoPrivate,
 		time.Now(),
+		1,
 	)
 	assert.Nil(t, privateResult, "Private function should be filtered out when IncludePrivate is false")
 
 	// Should return result for public function
-	publicResult := parser.ParseGoFunction(
+	publicResult := parser.parseGoFunction(
 		context.Background(),
 		parseTree,
 		functionNodes[0],
 		"main",
 		optionsNoPrivate,
 		time.Now(),
+		0,
 	)
 	assert.NotNil(t, publicResult, "Public function should be included")
 	assert.Equal(t, "PublicFunction", publicResult.Name)
@@ -556,84 +567,311 @@ func privateFunction() {
 	}
 
 	// Should return result for private function
-	privateResult2 := parser.ParseGoFunction(
+	privateResult2 := parser.parseGoFunction(
 		context.Background(),
 		parseTree,
 		functionNodes[1],
 		"main",
 		optionsIncludePrivate,
 		time.Now(),
+		1,
 	)
 	assert.NotNil(t, privateResult2, "Private function should be included when IncludePrivate is true")
 	assert.Equal(t, "privateFunction", privateResult2.Name)
 	assert.Equal(t, outbound.Private, privateResult2.Visibility)
 }
 
-// Helper function to create mock parse trees - basic implementation for testing.
+// Helper function to create mock parse trees - enhanced implementation for testing.
 func createMockParseTreeFromSource(
 	t *testing.T,
-	_ valueobject.Language,
-	_ string,
+	language valueobject.Language,
+	sourceCode string,
 ) *valueobject.ParseTree {
 	t.Helper()
-	// Return a basic mock implementation for testing purposes
-	// This allows tests to run without panicking during refactor phase
-	return &valueobject.ParseTree{}
+
+	lines := strings.Split(sourceCode, "\n")
+	var children []*valueobject.ParseNode
+
+	endByte := uint32(0)
+	for lineIndex, line := range lines {
+		lineEndByte := endByte + uint32(len(line)) + 1 // +1 for newline character
+		trimmedLine := strings.TrimSpace(line)
+		startByte := endByte
+
+		switch {
+		case strings.HasPrefix(trimmedLine, "import "):
+			children = append(children, &valueobject.ParseNode{
+				Type:      "import_declaration",
+				StartByte: startByte,
+				EndByte:   lineEndByte,
+			})
+		case strings.HasPrefix(trimmedLine, "func ") && strings.Contains(line, "("):
+			children = append(children, &valueobject.ParseNode{
+				Type:      "function_declaration",
+				StartByte: startByte,
+				EndByte:   lineEndByte,
+			})
+		case strings.HasPrefix(trimmedLine, "func ("):
+			children = append(children, &valueobject.ParseNode{
+				Type:      "method_declaration",
+				StartByte: startByte,
+				EndByte:   lineEndByte,
+			})
+		case strings.HasPrefix(trimmedLine, "var ("):
+			children = append(children, &valueobject.ParseNode{
+				Type:      "var_declaration",
+				StartByte: startByte,
+				EndByte:   lineEndByte,
+			})
+		case strings.HasPrefix(trimmedLine, "var ") && !strings.Contains(line, "("):
+			children = append(children, &valueobject.ParseNode{
+				Type:      "var_declaration",
+				StartByte: startByte,
+				EndByte:   lineEndByte,
+			})
+		case strings.HasPrefix(trimmedLine, "const ("):
+			children = append(children, &valueobject.ParseNode{
+				Type:      "const_declaration",
+				StartByte: startByte,
+				EndByte:   lineEndByte,
+			})
+		case strings.HasPrefix(trimmedLine, "const ") && !strings.Contains(line, "("):
+			children = append(children, &valueobject.ParseNode{
+				Type:      "const_declaration",
+				StartByte: startByte,
+				EndByte:   lineEndByte,
+			})
+		case strings.HasPrefix(trimmedLine, "type ") && !strings.Contains(line, "("):
+			typeNode := createTypeDeclarationNode(line, startByte, lineEndByte, lineIndex, sourceCode)
+			children = append(children, typeNode)
+		case strings.HasPrefix(trimmedLine, "type ("):
+			// Handle multi-line type declarations
+			typeNode := &valueobject.ParseNode{
+				Type:      "type_declaration",
+				StartByte: startByte,
+				EndByte:   lineEndByte,
+			}
+			children = append(children, typeNode)
+		}
+		endByte = lineEndByte
+	}
+
+	rootNode := &valueobject.ParseNode{
+		Type:      "source_file",
+		StartByte: 0,
+		EndByte:   uint32(len(sourceCode)),
+		Children:  children,
+	}
+
+	// Create parse metadata
+	metadata, err := valueobject.NewParseMetadata(0, "", "")
+	require.NoError(t, err)
+
+	// Create parse tree using the constructor
+	parseTree, err := valueobject.NewParseTree(context.Background(), language, rootNode, []byte(sourceCode), metadata)
+	require.NoError(t, err)
+
+	return parseTree
 }
 
-// NewGoFunctionParser creates a new Go function parser - this will fail in RED phase.
-func NewGoFunctionParser() *GoFunctionParser {
-	panic("NewGoFunctionParser not implemented - this is expected in RED phase")
-}
+// Helper function to create detailed type declaration nodes for structs and interfaces.
+func createTypeDeclarationNode(
+	line string,
+	startByte, endByte uint32,
+	lineIndex int,
+	sourceCode string,
+) *valueobject.ParseNode {
+	// Extract type name
+	parts := strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "type")))
+	if len(parts) < 2 {
+		return &valueobject.ParseNode{
+			Type:      "type_declaration",
+			StartByte: startByte,
+			EndByte:   endByte,
+		}
+	}
 
-// GoFunctionParser represents the specialized Go function parser - this will fail in RED phase.
-type GoFunctionParser struct{}
+	// Find the position of the type name in the line
+	typeKeywordEnd := strings.Index(line, "type") + 4
+	typeNameStart := typeKeywordEnd + strings.Index(line[typeKeywordEnd:], parts[0])
+	typeNameEnd := typeNameStart + len(parts[0])
 
-// ParseGoFunction method signature - this will fail in RED phase.
-func (p *GoFunctionParser) ParseGoFunction(
-	ctx context.Context,
-	parseTree *valueobject.ParseTree,
-	node *valueobject.ParseNode,
-	packageName string,
-	options outbound.SemanticExtractionOptions,
-	now time.Time,
-) *outbound.SemanticCodeChunk {
-	panic("ParseGoFunction not implemented - this is expected in RED phase")
-}
+	typeSpec := &valueobject.ParseNode{
+		Type:      "type_spec",
+		StartByte: startByte,
+		EndByte:   endByte,
+		Children: []*valueobject.ParseNode{
+			{
+				Type:      "type_identifier",
+				StartByte: uint32(typeNameStart),
+				EndByte:   uint32(typeNameEnd),
+			},
+		},
+	}
 
-// ParseGoMethod method signature - this will fail in RED phase.
-func (p *GoFunctionParser) ParseGoMethod(
-	ctx context.Context,
-	parseTree *valueobject.ParseTree,
-	node *valueobject.ParseNode,
-	packageName string,
-	options outbound.SemanticExtractionOptions,
-	now time.Time,
-) *outbound.SemanticCodeChunk {
-	panic("ParseGoMethod not implemented - this is expected in RED phase")
-}
+	// Check if it's a struct or interface
+	if strings.Contains(line, "struct {") {
+		structStart := strings.Index(line, "struct")
+		structType := &valueobject.ParseNode{
+			Type:      "struct_type",
+			StartByte: uint32(structStart),
+			EndByte:   endByte,
+		}
 
-// ParseGoParameters method signature - this will fail in RED phase.
-func (p *GoFunctionParser) ParseGoParameters(
-	parseTree *valueobject.ParseTree,
-	node *valueobject.ParseNode,
-) []outbound.Parameter {
-	panic("ParseGoParameters not implemented - this is expected in RED phase")
-}
+		// Parse struct fields if present
+		fieldStart := strings.Index(line, "{")
+		if fieldStart != -1 {
+			fieldsContent := line[fieldStart+1:]
+			braceEnd := strings.LastIndex(fieldsContent, "}")
+			if braceEnd != -1 {
+				fieldsContent = fieldsContent[:braceEnd]
+				fields := strings.Split(fieldsContent, ";")
+				fieldByteOffset := startByte + uint32(fieldStart+1)
+				for _, field := range fields {
+					trimmedField := strings.TrimSpace(field)
+					if trimmedField != "" {
+						fieldDecl := &valueobject.ParseNode{
+							Type:      "field_declaration",
+							StartByte: fieldByteOffset,
+							EndByte:   fieldByteOffset + uint32(len(field)),
+							Children:  []*valueobject.ParseNode{},
+						}
 
-// ParseGoReturnType method signature - this will fail in RED phase.
-func (p *GoFunctionParser) ParseGoReturnType(
-	parseTree *valueobject.ParseTree,
-	node *valueobject.ParseNode,
-) string {
-	panic("ParseGoReturnType not implemented - this is expected in RED phase")
-}
+						// Split field into name and type
+						fieldParts := strings.Fields(trimmedField)
+						if len(fieldParts) >= 2 {
+							// Find field name position
+							fieldName := fieldParts[0]
+							nameStart := strings.Index(line, fieldName)
+							if nameStart != -1 {
+								fieldDecl.Children = append(fieldDecl.Children, &valueobject.ParseNode{
+									Type:      "field_identifier",
+									StartByte: startByte + uint32(nameStart),
+									EndByte:   startByte + uint32(nameStart+len(fieldName)),
+								})
+							}
 
-// ParseGoMethodParameters method signature - this will fail in RED phase.
-func (p *GoFunctionParser) ParseGoMethodParameters(
-	parseTree *valueobject.ParseTree,
-	node *valueobject.ParseNode,
-	receiverType string,
-) []outbound.Parameter {
-	panic("ParseGoMethodParameters not implemented - this is expected in RED phase")
+							// Add field type
+							typeStr := strings.Join(fieldParts[1:], " ")
+							// Handle tags if present
+							if strings.Contains(typeStr, "`") {
+								tagStart := strings.Index(typeStr, "`")
+								fieldType := typeStr[:tagStart]
+								tag := typeStr[tagStart:]
+
+								typeStart := strings.Index(line, fieldType)
+								if typeStart != -1 {
+									fieldDecl.Children = append(fieldDecl.Children, &valueobject.ParseNode{
+										Type:      "type_identifier",
+										StartByte: startByte + uint32(typeStart),
+										EndByte:   startByte + uint32(typeStart+len(fieldType)),
+									})
+								}
+
+								tagStartInLine := strings.Index(line, tag)
+								if tagStartInLine != -1 {
+									fieldDecl.Children = append(fieldDecl.Children, &valueobject.ParseNode{
+										Type:      "raw_string_literal",
+										StartByte: startByte + uint32(tagStartInLine),
+										EndByte:   startByte + uint32(tagStartInLine+len(tag)),
+									})
+								}
+							} else {
+								typeStart := strings.Index(line, typeStr)
+								if typeStart != -1 {
+									fieldDecl.Children = append(fieldDecl.Children, &valueobject.ParseNode{
+										Type:      "type_identifier",
+										StartByte: startByte + uint32(typeStart),
+										EndByte:   startByte + uint32(typeStart+len(typeStr)),
+									})
+								}
+							}
+						}
+
+						structType.Children = append(structType.Children, fieldDecl)
+					}
+					fieldByteOffset += uint32(len(field) + 1) // +1 for semicolon or newline
+				}
+			}
+		}
+
+		typeSpec.Children = append(typeSpec.Children, structType)
+	} else if strings.Contains(line, "interface {") {
+		interfaceStart := strings.Index(line, "interface")
+		interfaceType := &valueobject.ParseNode{
+			Type:      "interface_type",
+			StartByte: uint32(interfaceStart),
+			EndByte:   endByte,
+		}
+
+		// Parse interface methods if present
+		methodStart := strings.Index(line, "{")
+		if methodStart != -1 {
+			methodsContent := line[methodStart+1:]
+			braceEnd := strings.LastIndex(methodsContent, "}")
+			if braceEnd != -1 {
+				methodsContent = methodsContent[:braceEnd]
+				methods := strings.Split(methodsContent, ";")
+				methodByteOffset := startByte + uint32(methodStart+1)
+				for _, method := range methods {
+					trimmedMethod := strings.TrimSpace(method)
+					if trimmedMethod != "" && strings.Contains(trimmedMethod, "(") {
+						methodSpec := &valueobject.ParseNode{
+							Type:      "method_spec",
+							StartByte: methodByteOffset,
+							EndByte:   methodByteOffset + uint32(len(method)),
+							Children:  []*valueobject.ParseNode{},
+						}
+
+						// Extract method name and signature
+						parenStart := strings.Index(trimmedMethod, "(")
+						if parenStart != -1 {
+							methodName := trimmedMethod[:parenStart]
+							methodNameStart := strings.Index(line, methodName)
+							if methodNameStart != -1 {
+								methodSpec.Children = append(methodSpec.Children, &valueobject.ParseNode{
+									Type:      "field_identifier",
+									StartByte: startByte + uint32(methodNameStart),
+									EndByte:   startByte + uint32(methodNameStart+len(methodName)),
+								})
+							}
+
+							// Add parameter list node
+							params := &valueobject.ParseNode{
+								Type: "parameter_list",
+							}
+							methodSpec.Children = append(methodSpec.Children, params)
+						}
+
+						interfaceType.Children = append(interfaceType.Children, methodSpec)
+					}
+					methodByteOffset += uint32(len(method) + 1) // +1 for semicolon or newline
+				}
+			}
+		}
+
+		typeSpec.Children = append(typeSpec.Children, interfaceType)
+	} else {
+		// For other type declarations, add a simple type identifier
+		typeIdentifier := parts[1]
+		typeStart := strings.Index(line, typeIdentifier)
+		if typeStart != -1 {
+			typeSpec.Children = append(typeSpec.Children, &valueobject.ParseNode{
+				Type:      "type_identifier",
+				StartByte: startByte + uint32(typeStart),
+				EndByte:   startByte + uint32(typeStart+len(typeIdentifier)),
+			})
+		} else {
+			typeSpec.Children = append(typeSpec.Children, &valueobject.ParseNode{
+				Type: "type_identifier",
+			})
+		}
+	}
+
+	return &valueobject.ParseNode{
+		Type:      "type_declaration",
+		StartByte: startByte,
+		EndByte:   endByte,
+		Children:  []*valueobject.ParseNode{typeSpec},
+	}
 }

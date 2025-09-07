@@ -11,10 +11,120 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
+
+// MockStreamingCodeProcessor mocks the streaming code processor interface.
+type MockStreamingCodeProcessor struct {
+	mock.Mock
+}
+
+func (m *MockStreamingCodeProcessor) ProcessDirectoryStreaming(
+	ctx context.Context,
+	dirPath string,
+	config StreamingProcessingConfig,
+) (ProcessingResult, error) {
+	args := m.Called(ctx, dirPath, config)
+	if args.Get(0) == nil {
+		return ProcessingResult{}, args.Error(1)
+	}
+	return args.Get(0).(ProcessingResult), args.Error(1)
+}
+
+func (m *MockStreamingCodeProcessor) ProcessDirectoryBatch(
+	ctx context.Context,
+	dirPath string,
+	config BatchProcessingConfig,
+) (ProcessingResult, error) {
+	args := m.Called(ctx, dirPath, config)
+	if args.Get(0) == nil {
+		return ProcessingResult{}, args.Error(1)
+	}
+	return args.Get(0).(ProcessingResult), args.Error(1)
+}
+
+// MockEnhancedGitClient mocks the enhanced git client interface.
+type MockEnhancedGitClient struct {
+	mock.Mock
+}
+
+func (m *MockEnhancedGitClient) Clone(ctx context.Context, repoURL, targetPath string) error {
+	args := m.Called(ctx, repoURL, targetPath)
+	return args.Error(0)
+}
+
+func (m *MockEnhancedGitClient) GetCommitHash(ctx context.Context, repoPath string) (string, error) {
+	args := m.Called(ctx, repoPath)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockEnhancedGitClient) GetBranch(ctx context.Context, repoPath string) (string, error) {
+	args := m.Called(ctx, repoPath)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockEnhancedGitClient) CloneWithOptions(
+	ctx context.Context,
+	repoURL, targetPath string,
+	opts valueobject.CloneOptions,
+) (*outbound.CloneResult, error) {
+	args := m.Called(ctx, repoURL, targetPath, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.CloneResult), args.Error(1)
+}
+
+func (m *MockEnhancedGitClient) GetRepositoryInfo(
+	ctx context.Context,
+	repoURL string,
+) (*outbound.RepositoryInfo, error) {
+	args := m.Called(ctx, repoURL)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.RepositoryInfo), args.Error(1)
+}
+
+func (m *MockEnhancedGitClient) ValidateRepository(
+	ctx context.Context,
+	repoURL string,
+) (bool, error) {
+	args := m.Called(ctx, repoURL)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockEnhancedGitClient) EstimateCloneTime(
+	ctx context.Context,
+	repoURL string,
+	opts valueobject.CloneOptions,
+) (*outbound.CloneEstimation, error) {
+	args := m.Called(ctx, repoURL, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.CloneEstimation), args.Error(1)
+}
+
+func (m *MockEnhancedGitClient) GetCloneProgress(
+	ctx context.Context,
+	operationID string,
+) (*outbound.CloneProgress, error) {
+	args := m.Called(ctx, operationID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.CloneProgress), args.Error(1)
+}
+
+func (m *MockEnhancedGitClient) CancelClone(
+	ctx context.Context,
+	operationID string,
+) error {
+	args := m.Called(ctx, operationID)
+	return args.Error(0)
+}
 
 // MockIndexingJobRepository mocks the indexing job repository interface.
 type MockIndexingJobRepository struct {
@@ -41,7 +151,7 @@ func (m *MockIndexingJobRepository) FindByRepositoryID(
 ) ([]*entity.IndexingJob, int, error) {
 	args := m.Called(ctx, repositoryID, filters)
 	if args.Get(0) == nil {
-		return nil, args.Int(1), args.Error(2)
+		return nil, 0, args.Error(2)
 	}
 	return args.Get(0).([]*entity.IndexingJob), args.Int(1), args.Error(2)
 }
@@ -91,7 +201,7 @@ func (m *MockRepositoryRepository) FindAll(
 ) ([]*entity.Repository, int, error) {
 	args := m.Called(ctx, filters)
 	if args.Get(0) == nil {
-		return nil, args.Int(1), args.Error(2)
+		return nil, 0, args.Error(2)
 	}
 	return args.Get(0).([]*entity.Repository), args.Int(1), args.Error(2)
 }
@@ -130,26 +240,6 @@ func (m *MockRepositoryRepository) FindByNormalizedURL(
 	return args.Get(0).(*entity.Repository), args.Error(1)
 }
 
-// MockGitClient mocks the git client interface.
-type MockGitClient struct {
-	mock.Mock
-}
-
-func (m *MockGitClient) Clone(ctx context.Context, repoURL, targetPath string) error {
-	args := m.Called(ctx, repoURL, targetPath)
-	return args.Error(0)
-}
-
-func (m *MockGitClient) GetCommitHash(ctx context.Context, repoPath string) (string, error) {
-	args := m.Called(ctx, repoPath)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockGitClient) GetBranch(ctx context.Context, repoPath string) (string, error) {
-	args := m.Called(ctx, repoPath)
-	return args.String(0), args.Error(1)
-}
-
 // MockCodeParser mocks the code parser interface.
 type MockCodeParser struct {
 	mock.Mock
@@ -180,628 +270,899 @@ func (m *MockEmbeddingGenerator) GenerateEmbedding(ctx context.Context, text str
 	return args.Get(0).([]float64), args.Error(1)
 }
 
-// CodeParsingConfig holds configuration for code parsing.
-type CodeParsingConfig struct {
-	ChunkSizeBytes   int
-	MaxFileSizeBytes int64
-	FileFilters      []string
-	IncludeTests     bool
-	ExcludeVendor    bool
+// StreamingProcessingConfig holds configuration for streaming processing.
+type StreamingProcessingConfig struct {
+	MaxConcurrency     int
+	ChunkBufferSize    int
+	EnableProgress     bool
+	ProgressInterval   time.Duration
+	MemoryOptimization bool
 }
 
-// CodeChunk represents a parsed code chunk.
-type CodeChunk struct {
-	ID        string    `json:"id"`
-	FilePath  string    `json:"file_path"`
-	StartLine int       `json:"start_line"`
-	EndLine   int       `json:"end_line"`
-	Content   string    `json:"content"`
-	Language  string    `json:"language"`
-	Size      int       `json:"size"`
-	Hash      string    `json:"hash"`
-	CreatedAt time.Time `json:"created_at"`
+// BatchProcessingConfig holds configuration for batch processing.
+type BatchProcessingConfig struct {
+	BatchSize          int
+	EnableCompression  bool
+	MaxMemoryUsageMB   int
+	DiskUsageThreshold int64
 }
 
-// GitClient defines the interface for git operations.
-type GitClient interface {
-	Clone(ctx context.Context, repoURL, targetPath string) error
-	GetCommitHash(ctx context.Context, repoPath string) (string, error)
-	GetBranch(ctx context.Context, repoPath string) (string, error)
+// ProcessingResult represents the result of a processing operation.
+type ProcessingResult struct {
+	ChunksProcessed int64
+	FilesProcessed  int64
+	Duration        time.Duration
+	MemoryUsedMB    int
+	Success         bool
+	Error           error
 }
 
-// CodeParser defines the interface for parsing code.
-type CodeParser interface {
-	ParseDirectory(ctx context.Context, dirPath string, config CodeParsingConfig) ([]CodeChunk, error)
+// ProcessingStrategy represents processing strategy types.
+type ProcessingStrategy int
+
+const (
+	ProcessingStrategyStreaming ProcessingStrategy = iota
+	ProcessingStrategyBatch
+)
+
+// JobProcessorTestSuite defines the test suite for job processor.
+type JobProcessorTestSuite struct {
+	suite.Suite
+
+	processor *DefaultJobProcessor
 }
 
-// EmbeddingGenerator defines the interface for generating embeddings.
-type EmbeddingGenerator interface {
-	GenerateEmbedding(ctx context.Context, text string) ([]float64, error)
+// SetupTest sets up the test suite.
+func (suite *JobProcessorTestSuite) SetupTest() {
+	config := JobProcessorConfig{
+		WorkspaceDir:      "/tmp/workspace",
+		MaxConcurrentJobs: 5,
+		JobTimeout:        5 * time.Minute,
+		MaxMemoryMB:       1024,
+		MaxDiskUsageMB:    10240,
+		CleanupInterval:   1 * time.Hour,
+		RetryAttempts:     3,
+		RetryBackoff:      5 * time.Second,
+	}
+
+	suite.processor = &DefaultJobProcessor{
+		config:             config,
+		indexingJobRepo:    &MockIndexingJobRepository{},
+		repositoryRepo:     &MockRepositoryRepository{},
+		gitClient:          &MockEnhancedGitClient{},
+		codeParser:         &MockCodeParser{},
+		embeddingGenerator: &MockEmbeddingGenerator{},
+		activeJobs:         make(map[string]*JobExecution),
+	}
 }
 
-// TestJobProcessorCreation tests job processor creation and configuration.
-func TestJobProcessorCreation(t *testing.T) {
-	t.Run("should create job processor with valid configuration", func(t *testing.T) {
-		config := JobProcessorConfig{
-			WorkspaceDir:      "/tmp/workspace",
-			MaxConcurrentJobs: 5,
-			JobTimeout:        5 * time.Minute,
-			MaxMemoryMB:       1024,
-			MaxDiskUsageMB:    10240,
-			CleanupInterval:   1 * time.Hour,
-			RetryAttempts:     3,
-			RetryBackoff:      5 * time.Second,
-		}
-
-		mockIndexingJobRepo := &MockIndexingJobRepository{}
-		mockRepositoryRepo := &MockRepositoryRepository{}
-		mockGitClient := &MockGitClient{}
-		mockCodeParser := &MockCodeParser{}
-		mockEmbeddingGenerator := &MockEmbeddingGenerator{}
-
-		processor := NewDefaultJobProcessor(
-			config,
-			mockIndexingJobRepo,
-			mockRepositoryRepo,
-			mockGitClient,
-			mockCodeParser,
-			mockEmbeddingGenerator,
-		)
-
-		require.NotNil(t, processor)
-
-		// Health status should be empty in RED phase
-		health := processor.GetHealthStatus()
-		assert.False(t, health.IsReady)
-		assert.Equal(t, 0, health.ActiveJobs)
-	})
-
-	t.Run("should fail with invalid workspace directory", func(t *testing.T) {
-		config := JobProcessorConfig{
-			WorkspaceDir:      "", // Invalid empty workspace
-			MaxConcurrentJobs: 5,
-			JobTimeout:        5 * time.Minute,
-		}
-
-		mockIndexingJobRepo := &MockIndexingJobRepository{}
-		mockRepositoryRepo := &MockRepositoryRepository{}
-		mockGitClient := &MockGitClient{}
-		mockCodeParser := &MockCodeParser{}
-		mockEmbeddingGenerator := &MockEmbeddingGenerator{}
-
-		// In a real implementation, this should validate the config
-		processor := NewDefaultJobProcessor(
-			config,
-			mockIndexingJobRepo,
-			mockRepositoryRepo,
-			mockGitClient,
-			mockCodeParser,
-			mockEmbeddingGenerator,
-		)
-
-		// For now, processor is created but should fail validation later
-		require.NotNil(t, processor)
-	})
-
-	t.Run("should fail with nil dependencies", func(t *testing.T) {
-		config := JobProcessorConfig{
-			WorkspaceDir:      "/tmp/workspace",
-			MaxConcurrentJobs: 5,
-			JobTimeout:        5 * time.Minute,
-		}
-
-		// In a real implementation, this should panic or return error
-		processor := NewDefaultJobProcessor(
-			config,
-			nil, // nil dependency
-			nil,
-			nil,
-			nil,
-			nil,
-		)
-
-		// For RED phase, processor is created but will fail on use
-		require.NotNil(t, processor)
-	})
+// TestJobProcessorTestSuite runs the job processor test suite.
+func TestJobProcessorTestSuite(t *testing.T) {
+	suite.Run(t, new(JobProcessorTestSuite))
 }
 
-// TestJobExecution tests job execution with repository status updates.
-func TestJobExecution(t *testing.T) {
-	t.Run("should execute job and update status to running", func(t *testing.T) {
-		// Create enhanced job message
-		message := messaging.EnhancedIndexingJobMessage{
-			MessageID:     "test-msg-123",
-			CorrelationID: "test-corr-456",
-			SchemaVersion: "2.0",
-			Timestamp:     time.Now(),
-			RepositoryID:  uuid.New(),
-			RepositoryURL: "https://github.com/example/repo.git",
-			Priority:      messaging.JobPriorityNormal,
-			RetryAttempt:  0,
-			MaxRetries:    3,
-			ProcessingMetadata: messaging.ProcessingMetadata{
-				ChunkSizeBytes: 1024,
-			},
-			ProcessingContext: messaging.ProcessingContext{
-				TimeoutSeconds: 300,
-			},
-		}
+// TestProcessJob_CompleteWorkflow_SmallRepository tests complete workflow for small repository.
+func (suite *JobProcessorTestSuite) TestProcessJob_CompleteWorkflow_SmallRepository() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "small-repo-test",
+		CorrelationID: "corr-small-repo",
+		SchemaVersion: "2.0",
+		Timestamp:     time.Now(),
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/small-repo.git",
+		Priority:      messaging.JobPriorityNormal,
+		RetryAttempt:  0,
+		MaxRetries:    3,
+		ProcessingMetadata: messaging.ProcessingMetadata{
+			ChunkSizeBytes: 1024,
+		},
+		ProcessingContext: messaging.ProcessingContext{
+			TimeoutSeconds: 300,
+		},
+	}
 
-		config := JobProcessorConfig{
-			WorkspaceDir:      "/tmp/workspace",
-			MaxConcurrentJobs: 5,
-			JobTimeout:        5 * time.Minute,
-		}
+	ctx := context.Background()
+	err := suite.processor.ProcessJob(ctx, message)
 
-		mockIndexingJobRepo := &MockIndexingJobRepository{}
-		mockRepositoryRepo := &MockRepositoryRepository{}
-		mockGitClient := &MockGitClient{}
-		mockCodeParser := &MockCodeParser{}
-		mockEmbeddingGenerator := &MockEmbeddingGenerator{}
-
-		// Mock expectations for job status updates
-		mockIndexingJobRepo.On("GetByID", mock.Anything, mock.AnythingOfType("uuid.UUID")).
-			Return(nil, errors.New("job not found"))
-		mockIndexingJobRepo.On("Create", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
-		mockIndexingJobRepo.On("Update", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
-
-		processor := NewDefaultJobProcessor(
-			config,
-			mockIndexingJobRepo,
-			mockRepositoryRepo,
-			mockGitClient,
-			mockCodeParser,
-			mockEmbeddingGenerator,
-		)
-
-		ctx := context.Background()
-		err := processor.ProcessJob(ctx, message)
-
-		// Should fail in RED phase
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not implemented yet")
-	})
-
-	t.Run("should handle job timeout", func(t *testing.T) {
-		message := messaging.EnhancedIndexingJobMessage{
-			MessageID:     "test-msg-timeout",
-			CorrelationID: "test-corr-timeout",
-			RepositoryID:  uuid.New(),
-			RepositoryURL: "https://github.com/example/slow-repo.git",
-			ProcessingContext: messaging.ProcessingContext{
-				TimeoutSeconds: 1, // Very short timeout
-			},
-		}
-
-		config := JobProcessorConfig{
-			WorkspaceDir: "/tmp/workspace",
-			JobTimeout:   1 * time.Second,
-		}
-
-		mockIndexingJobRepo := &MockIndexingJobRepository{}
-		processor := NewDefaultJobProcessor(
-			config,
-			mockIndexingJobRepo,
-			nil,
-			nil,
-			nil,
-			nil,
-		)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		err := processor.ProcessJob(ctx, message)
-
-		// Should fail in RED phase
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not implemented yet")
-	})
-
-	t.Run("should handle context cancellation", func(t *testing.T) {
-		message := messaging.EnhancedIndexingJobMessage{
-			MessageID:     "test-msg-cancel",
-			RepositoryID:  uuid.New(),
-			RepositoryURL: "https://github.com/example/repo.git",
-		}
-
-		config := JobProcessorConfig{
-			WorkspaceDir: "/tmp/workspace",
-		}
-
-		processor := NewDefaultJobProcessor(
-			config,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-		)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel() // Cancel immediately
-
-		err := processor.ProcessJob(ctx, message)
-
-		// Should fail in RED phase
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not implemented yet")
-	})
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
 }
 
-// TestProgressTracking tests progress tracking and metrics collection.
-func TestProgressTracking(t *testing.T) {
-	t.Run("should track job processing progress", func(t *testing.T) {
-		config := JobProcessorConfig{
-			WorkspaceDir: "/tmp/workspace",
-		}
+// TestProcessJob_CompleteWorkflow_LargeRepository tests streaming processing for large repository.
+func (suite *JobProcessorTestSuite) TestProcessJob_CompleteWorkflow_LargeRepository() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "large-repo-test",
+		CorrelationID: "corr-large-repo",
+		SchemaVersion: "2.0",
+		Timestamp:     time.Now(),
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/large-repo.git",
+		Priority:      messaging.JobPriorityNormal,
+		RetryAttempt:  0,
+		MaxRetries:    3,
+		ProcessingMetadata: messaging.ProcessingMetadata{
+			ChunkSizeBytes: 2048,
+		},
+		ProcessingContext: messaging.ProcessingContext{
+			TimeoutSeconds: 600,
+			MaxMemoryMB:    512,
+		},
+	}
 
-		processor := NewDefaultJobProcessor(
-			config,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-		)
+	ctx := context.Background()
+	err := suite.processor.ProcessJob(ctx, message)
 
-		// Should return empty metrics in RED phase
-		metrics := processor.GetMetrics()
-		assert.Equal(t, int64(0), metrics.TotalJobsProcessed)
-		assert.Equal(t, int64(0), metrics.FilesProcessed)
-		assert.Equal(t, int64(0), metrics.ChunksGenerated)
-	})
-
-	t.Run("should update metrics after job completion", func(t *testing.T) {
-		config := JobProcessorConfig{
-			WorkspaceDir: "/tmp/workspace",
-		}
-
-		processor := NewDefaultJobProcessor(
-			config,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-		)
-
-		// Process a job first
-		message := messaging.EnhancedIndexingJobMessage{
-			MessageID:     "test-msg-metrics",
-			RepositoryID:  uuid.New(),
-			RepositoryURL: "https://github.com/example/repo.git",
-		}
-
-		ctx := context.Background()
-		err := processor.ProcessJob(ctx, message)
-
-		// Should fail in RED phase
-		require.Error(t, err)
-
-		// Metrics should still be empty in RED phase
-		metrics := processor.GetMetrics()
-		assert.Equal(t, int64(0), metrics.TotalJobsProcessed)
-	})
-
-	t.Run("should calculate average processing time", func(t *testing.T) {
-		config := JobProcessorConfig{
-			WorkspaceDir: "/tmp/workspace",
-		}
-
-		processor := NewDefaultJobProcessor(
-			config,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-		)
-
-		// Should return zero average in RED phase
-		metrics := processor.GetMetrics()
-		assert.Equal(t, time.Duration(0), metrics.AverageProcessingTime)
-	})
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
 }
 
-// TestErrorHandling tests error handling and job failure scenarios.
-func TestErrorHandling(t *testing.T) {
-	t.Run("should handle git clone failure", func(t *testing.T) {
-		message := messaging.EnhancedIndexingJobMessage{
-			MessageID:     "test-msg-git-fail",
-			RepositoryID:  uuid.New(),
-			RepositoryURL: "https://github.com/nonexistent/repo.git",
-		}
+// TestProcessJob_CompleteWorkflow_MultiLanguageRepository tests processing mixed language repository.
+func (suite *JobProcessorTestSuite) TestProcessJob_CompleteWorkflow_MultiLanguageRepository() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "multi-lang-test",
+		CorrelationID: "corr-multi-lang",
+		SchemaVersion: "2.0",
+		Timestamp:     time.Now(),
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/multi-lang-repo.git",
+		Priority:      messaging.JobPriorityHigh,
+		RetryAttempt:  0,
+		MaxRetries:    3,
+		ProcessingMetadata: messaging.ProcessingMetadata{
+			ChunkSizeBytes: 1024,
+			FileFilters:    []string{"*.go", "*.js", "*.py"},
+		},
+		ProcessingContext: messaging.ProcessingContext{
+			TimeoutSeconds: 900,
+		},
+	}
 
-		config := JobProcessorConfig{
-			WorkspaceDir: "/tmp/workspace",
-		}
+	ctx := context.Background()
+	err := suite.processor.ProcessJob(ctx, message)
 
-		mockIndexingJobRepo := &MockIndexingJobRepository{}
-		mockGitClient := &MockGitClient{}
-
-		// Mock git clone failure
-		mockGitClient.On("Clone", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("string")).
-			Return(errors.New("repository not found"))
-
-		processor := NewDefaultJobProcessor(
-			config,
-			mockIndexingJobRepo,
-			nil,
-			mockGitClient,
-			nil,
-			nil,
-		)
-
-		ctx := context.Background()
-		err := processor.ProcessJob(ctx, message)
-
-		// Should fail in RED phase
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not implemented yet")
-	})
-
-	t.Run("should handle code parsing failure", func(t *testing.T) {
-		message := messaging.EnhancedIndexingJobMessage{
-			MessageID:     "test-msg-parse-fail",
-			RepositoryID:  uuid.New(),
-			RepositoryURL: "https://github.com/example/repo.git",
-		}
-
-		config := JobProcessorConfig{
-			WorkspaceDir: "/tmp/workspace",
-		}
-
-		mockCodeParser := &MockCodeParser{}
-
-		// Mock parsing failure
-		mockCodeParser.On("ParseDirectory", mock.Anything, mock.AnythingOfType("string"), mock.AnythingOfType("CodeParsingConfig")).
-			Return(nil, errors.New("parsing failed"))
-
-		processor := NewDefaultJobProcessor(
-			config,
-			nil,
-			nil,
-			nil,
-			mockCodeParser,
-			nil,
-		)
-
-		ctx := context.Background()
-		err := processor.ProcessJob(ctx, message)
-
-		// Should fail in RED phase
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not implemented yet")
-	})
-
-	t.Run("should handle embedding generation failure", func(t *testing.T) {
-		message := messaging.EnhancedIndexingJobMessage{
-			MessageID:     "test-msg-embed-fail",
-			RepositoryID:  uuid.New(),
-			RepositoryURL: "https://github.com/example/repo.git",
-		}
-
-		config := JobProcessorConfig{
-			WorkspaceDir: "/tmp/workspace",
-		}
-
-		mockEmbeddingGenerator := &MockEmbeddingGenerator{}
-
-		// Mock embedding failure
-		mockEmbeddingGenerator.On("GenerateEmbedding", mock.Anything, mock.AnythingOfType("string")).
-			Return(nil, errors.New("embedding generation failed"))
-
-		processor := NewDefaultJobProcessor(
-			config,
-			nil,
-			nil,
-			nil,
-			nil,
-			mockEmbeddingGenerator,
-		)
-
-		ctx := context.Background()
-		err := processor.ProcessJob(ctx, message)
-
-		// Should fail in RED phase
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not implemented yet")
-	})
-
-	t.Run("should handle database update failure", func(t *testing.T) {
-		message := messaging.EnhancedIndexingJobMessage{
-			MessageID:     "test-msg-db-fail",
-			RepositoryID:  uuid.New(),
-			RepositoryURL: "https://github.com/example/repo.git",
-		}
-
-		config := JobProcessorConfig{
-			WorkspaceDir: "/tmp/workspace",
-		}
-
-		mockIndexingJobRepo := &MockIndexingJobRepository{}
-
-		// Mock database failure
-		mockIndexingJobRepo.On("Update", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).
-			Return(errors.New("database connection failed"))
-
-		processor := NewDefaultJobProcessor(
-			config,
-			mockIndexingJobRepo,
-			nil,
-			nil,
-			nil,
-			nil,
-		)
-
-		ctx := context.Background()
-		err := processor.ProcessJob(ctx, message)
-
-		// Should fail in RED phase
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not implemented yet")
-	})
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
 }
 
-// TestResourceCleanup tests resource cleanup and memory management.
-func TestResourceCleanup(t *testing.T) {
-	t.Run("should cleanup workspace after job completion", func(t *testing.T) {
-		config := JobProcessorConfig{
-			WorkspaceDir:    "/tmp/workspace",
-			CleanupInterval: 1 * time.Minute,
-		}
-
-		processor := NewDefaultJobProcessor(
-			config,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-		)
-
-		err := processor.Cleanup()
-
-		// Should fail in RED phase
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not implemented yet")
-	})
-
-	t.Run("should handle cleanup failure gracefully", func(t *testing.T) {
-		config := JobProcessorConfig{
-			WorkspaceDir: "/invalid/path",
-		}
-
-		processor := NewDefaultJobProcessor(
-			config,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-		)
-
-		err := processor.Cleanup()
-
-		// Should fail in RED phase
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not implemented yet")
-	})
-
-	t.Run("should monitor resource usage", func(t *testing.T) {
-		config := JobProcessorConfig{
-			WorkspaceDir:   "/tmp/workspace",
-			MaxMemoryMB:    1024,
-			MaxDiskUsageMB: 10240,
-		}
-
-		processor := NewDefaultJobProcessor(
-			config,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-		)
-
-		// Should return empty resource usage in RED phase
-		health := processor.GetHealthStatus()
-		assert.Equal(t, 0, health.ResourceUsage.MemoryMB)
-		assert.InDelta(t, float64(0), health.ResourceUsage.CPUPercent, 1e-9)
-		assert.Equal(t, int64(0), health.ResourceUsage.DiskUsageMB)
-	})
-}
-
-// TestConcurrentJobProcessing tests concurrent job processing capabilities.
-func TestConcurrentJobProcessing(t *testing.T) {
-	t.Run("should handle multiple concurrent jobs", func(t *testing.T) {
-		config := JobProcessorConfig{
-			WorkspaceDir:      "/tmp/workspace",
-			MaxConcurrentJobs: 3,
-		}
-
-		processor := NewDefaultJobProcessor(
-			config,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-		)
-
-		// Create multiple job messages
-		messages := []messaging.EnhancedIndexingJobMessage{
-			{
-				MessageID:     "job-1",
-				RepositoryID:  uuid.New(),
-				RepositoryURL: "https://github.com/example/repo1.git",
-			},
-			{
-				MessageID:     "job-2",
-				RepositoryID:  uuid.New(),
-				RepositoryURL: "https://github.com/example/repo2.git",
-			},
-			{
-				MessageID:     "job-3",
-				RepositoryID:  uuid.New(),
-				RepositoryURL: "https://github.com/example/repo3.git",
-			},
-		}
-
-		ctx := context.Background()
-
-		// Process jobs concurrently
-		for _, msg := range messages {
-			err := processor.ProcessJob(ctx, msg)
-
-			// Should fail in RED phase
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "not implemented yet")
-		}
-
-		// Health status should show no active jobs in RED phase
-		health := processor.GetHealthStatus()
-		assert.Equal(t, 0, health.ActiveJobs)
-	})
-
-	t.Run("should limit concurrent job execution", func(t *testing.T) {
-		config := JobProcessorConfig{
-			WorkspaceDir:      "/tmp/workspace",
-			MaxConcurrentJobs: 1, // Only allow one concurrent job
-		}
-
-		processor := NewDefaultJobProcessor(
-			config,
-			nil,
-			nil,
-			nil,
-			nil,
-			nil,
-		)
-
-		ctx := context.Background()
-
-		// Try to process multiple jobs
-		msg1 := messaging.EnhancedIndexingJobMessage{
-			MessageID:     "job-limit-1",
+// TestProcessJob_ConcurrentJobs_WithinLimit tests concurrent job processing within limit.
+func (suite *JobProcessorTestSuite) TestProcessJob_ConcurrentJobs_WithinLimit() {
+	messages := []messaging.EnhancedIndexingJobMessage{
+		{
+			MessageID:     "concurrent-1",
 			RepositoryID:  uuid.New(),
 			RepositoryURL: "https://github.com/example/repo1.git",
-		}
-
-		msg2 := messaging.EnhancedIndexingJobMessage{
-			MessageID:     "job-limit-2",
+		},
+		{
+			MessageID:     "concurrent-2",
 			RepositoryID:  uuid.New(),
 			RepositoryURL: "https://github.com/example/repo2.git",
-		}
+		},
+		{
+			MessageID:     "concurrent-3",
+			RepositoryID:  uuid.New(),
+			RepositoryURL: "https://github.com/example/repo3.git",
+		},
+	}
 
-		err1 := processor.ProcessJob(ctx, msg1)
-		err2 := processor.ProcessJob(ctx, msg2)
+	ctx := context.Background()
+	for _, msg := range messages {
+		err := suite.processor.ProcessJob(ctx, msg)
+		suite.Require().Error(err)
+		suite.Contains(err.Error(), "not implemented yet")
+	}
 
-		// Should fail in RED phase
-		require.Error(t, err1)
-		require.Error(t, err2)
-		assert.Contains(t, err1.Error(), "not implemented yet")
-		assert.Contains(t, err2.Error(), "not implemented yet")
-	})
+	// Health status should show no active jobs in RED phase
+	health := suite.processor.GetHealthStatus()
+	suite.Equal(0, health.ActiveJobs)
+}
+
+// TestProcessJob_ConcurrentJobs_ExceedsLimit tests job queuing when max concurrent jobs exceeded.
+func (suite *JobProcessorTestSuite) TestProcessJob_ConcurrentJobs_ExceedsLimit() {
+	config := JobProcessorConfig{
+		WorkspaceDir:      "/tmp/workspace",
+		MaxConcurrentJobs: 2, // Limit to 2 concurrent jobs
+	}
+
+	processor := &DefaultJobProcessor{
+		config:          config,
+		activeJobs:      make(map[string]*JobExecution),
+		indexingJobRepo: &MockIndexingJobRepository{},
+		gitClient:       &MockEnhancedGitClient{},
+		codeParser:      &MockCodeParser{},
+	}
+
+	messages := []messaging.EnhancedIndexingJobMessage{
+		{
+			MessageID:     "exceeds-1",
+			RepositoryID:  uuid.New(),
+			RepositoryURL: "https://github.com/example/repo1.git",
+		},
+		{
+			MessageID:     "exceeds-2",
+			RepositoryID:  uuid.New(),
+			RepositoryURL: "https://github.com/example/repo2.git",
+		},
+		{
+			MessageID:     "exceeds-3",
+			RepositoryID:  uuid.New(),
+			RepositoryURL: "https://github.com/example/repo3.git",
+		},
+	}
+
+	ctx := context.Background()
+	for _, msg := range messages {
+		err := processor.ProcessJob(ctx, msg)
+		suite.Require().Error(err)
+		suite.Contains(err.Error(), "not implemented yet")
+	}
+}
+
+// TestProcessJob_JobTimeout_Enforcement tests job timeout handling.
+func (suite *JobProcessorTestSuite) TestProcessJob_JobTimeout_Enforcement() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "timeout-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/slow-repo.git",
+		ProcessingContext: messaging.ProcessingContext{
+			TimeoutSeconds: 1, // Very short timeout
+		},
+	}
+
+	config := JobProcessorConfig{
+		WorkspaceDir: "/tmp/workspace",
+		JobTimeout:   1 * time.Second,
+	}
+
+	processor := &DefaultJobProcessor{
+		config:          config,
+		activeJobs:      make(map[string]*JobExecution),
+		indexingJobRepo: &MockIndexingJobRepository{},
+		gitClient:       &MockEnhancedGitClient{},
+		codeParser:      &MockCodeParser{},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err := processor.ProcessJob(ctx, message)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_ProgressTracking_ThroughoutWorkflow tests JobProgress updates.
+func (suite *JobProcessorTestSuite) TestProcessJob_ProgressTracking_ThroughoutWorkflow() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "progress-test",
+		CorrelationID: "corr-progress",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/progress-repo.git",
+	}
+
+	ctx := context.Background()
+	err := suite.processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+
+	// Progress should be empty in RED phase
+	health := suite.processor.GetHealthStatus()
+	suite.Equal(0, health.ActiveJobs)
+}
+
+// TestProcessJob_MemoryPressure_AdaptiveProcessing tests adaptive processing under memory pressure.
+func (suite *JobProcessorTestSuite) TestProcessJob_MemoryPressure_AdaptiveProcessing() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "memory-pressure-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/large-repo.git",
+		ProcessingContext: messaging.ProcessingContext{
+			MaxMemoryMB: 256, // Low memory limit
+		},
+	}
+
+	ctx := context.Background()
+	err := suite.processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_MemoryLimit_Enforcement tests memory limit enforcement.
+func (suite *JobProcessorTestSuite) TestProcessJob_MemoryLimit_Enforcement() {
+	config := JobProcessorConfig{
+		WorkspaceDir: "/tmp/workspace",
+		MaxMemoryMB:  128, // Very low memory limit
+	}
+
+	processor := &DefaultJobProcessor{
+		config:          config,
+		activeJobs:      make(map[string]*JobExecution),
+		indexingJobRepo: &MockIndexingJobRepository{},
+		gitClient:       &MockEnhancedGitClient{},
+		codeParser:      &MockCodeParser{},
+	}
+
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "memory-limit-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/memory-heavy-repo.git",
+	}
+
+	ctx := context.Background()
+	err := processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_MemoryCleanup_BetweenJobs tests memory cleanup between jobs.
+func (suite *JobProcessorTestSuite) TestProcessJob_MemoryCleanup_BetweenJobs() {
+	messages := []messaging.EnhancedIndexingJobMessage{
+		{
+			MessageID:     "cleanup-1",
+			RepositoryID:  uuid.New(),
+			RepositoryURL: "https://github.com/example/repo1.git",
+		},
+		{
+			MessageID:     "cleanup-2",
+			RepositoryID:  uuid.New(),
+			RepositoryURL: "https://github.com/example/repo2.git",
+		},
+	}
+
+	ctx := context.Background()
+	for _, msg := range messages {
+		err := suite.processor.ProcessJob(ctx, msg)
+		suite.Require().Error(err)
+		suite.Contains(err.Error(), "not implemented yet")
+	}
+
+	// Cleanup should be implemented but fail in RED phase
+	err := suite.processor.Cleanup()
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_LargeRepository_MemoryOptimization tests memory optimization.
+func (suite *JobProcessorTestSuite) TestProcessJob_LargeRepository_MemoryOptimization() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "memory-opt-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/huge-repo.git",
+		ProcessingMetadata: messaging.ProcessingMetadata{
+			ChunkSizeBytes: 4096,
+		},
+		ProcessingContext: messaging.ProcessingContext{
+			MaxMemoryMB:        512,
+			ConcurrencyLevel:   1,
+			EnableDeepAnalysis: false,
+		},
+	}
+
+	ctx := context.Background()
+	err := suite.processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestDecideProcessingStrategy_BasedOnMemoryAndRepoSize tests strategy decision logic.
+func (suite *JobProcessorTestSuite) TestDecideProcessingStrategy_BasedOnMemoryAndRepoSize() {
+	// This test requires implementation of decideProcessingStrategy method
+	suite.T().Skip("Skipping until decideProcessingStrategy is implemented")
+}
+
+// TestProcessJob_EnhancedGitClient_Integration tests EnhancedGitClient integration.
+func (suite *JobProcessorTestSuite) TestProcessJob_EnhancedGitClient_Integration() {
+	mockGitClient := &MockEnhancedGitClient{}
+	mockGitClient.On("CloneWithOptions", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&outbound.CloneResult{}, nil)
+
+	processor := &DefaultJobProcessor{
+		config:          suite.processor.config,
+		activeJobs:      make(map[string]*JobExecution),
+		indexingJobRepo: &MockIndexingJobRepository{},
+		gitClient:       mockGitClient,
+		codeParser:      &MockCodeParser{},
+	}
+
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "enhanced-git-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/repo.git",
+	}
+
+	ctx := context.Background()
+	err := processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_StreamingCodeProcessor_Integration tests streaming processor integration.
+func (suite *JobProcessorTestSuite) TestProcessJob_StreamingCodeProcessor_Integration() {
+	mockStreamingProcessor := &MockStreamingCodeProcessor{}
+	mockStreamingProcessor.On("ProcessDirectoryStreaming", mock.Anything, mock.Anything, mock.Anything).
+		Return(ProcessingResult{}, nil)
+
+	// This test requires streaming processor integration
+	suite.T().Skip("Skipping until streaming processor integration is implemented")
+}
+
+// TestProcessJob_TreeSitterParser_MultiLanguage tests tree-sitter parser integration.
+func (suite *JobProcessorTestSuite) TestProcessJob_TreeSitterParser_MultiLanguage() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "tree-sitter-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/multi-lang-repo.git",
+		ProcessingMetadata: messaging.ProcessingMetadata{
+			FileFilters: []string{"*.go", "*.js", "*.rs"},
+		},
+	}
+
+	ctx := context.Background()
+	err := suite.processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_EmbeddingGenerator_Integration tests embedding generator integration.
+func (suite *JobProcessorTestSuite) TestProcessJob_EmbeddingGenerator_Integration() {
+	mockEmbeddingGenerator := &MockEmbeddingGenerator{}
+	mockEmbeddingGenerator.On("GenerateEmbedding", mock.Anything, mock.Anything).
+		Return([]float64{0.1, 0.2, 0.3}, nil)
+
+	processor := &DefaultJobProcessor{
+		config:             suite.processor.config,
+		activeJobs:         make(map[string]*JobExecution),
+		indexingJobRepo:    &MockIndexingJobRepository{},
+		gitClient:          &MockEnhancedGitClient{},
+		codeParser:         &MockCodeParser{},
+		embeddingGenerator: mockEmbeddingGenerator,
+	}
+
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "embedding-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/embedding-repo.git",
+	}
+
+	ctx := context.Background()
+	err := processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_IntegrationFailure_ErrorPropagation tests error propagation.
+func (suite *JobProcessorTestSuite) TestProcessJob_IntegrationFailure_ErrorPropagation() {
+	mockGitClient := &MockEnhancedGitClient{}
+	mockGitClient.On("Clone", mock.Anything, mock.Anything, mock.Anything).
+		Return(errors.New("git clone failed"))
+
+	processor := &DefaultJobProcessor{
+		config:          suite.processor.config,
+		activeJobs:      make(map[string]*JobExecution),
+		indexingJobRepo: &MockIndexingJobRepository{},
+		gitClient:       mockGitClient,
+		codeParser:      &MockCodeParser{},
+	}
+
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "error-propagation-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/nonexistent/repo.git",
+	}
+
+	ctx := context.Background()
+	err := processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_Authentication_GitClient tests git client authentication.
+func (suite *JobProcessorTestSuite) TestProcessJob_Authentication_GitClient() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "auth-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/private/repo.git",
+	}
+
+	ctx := context.Background()
+	err := suite.processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_StreamingVsBatch_DecisionLogic tests processing strategy decision.
+func (suite *JobProcessorTestSuite) TestProcessJob_StreamingVsBatch_DecisionLogic() {
+	// This test requires implementation of strategy decision logic
+	suite.T().Skip("Skipping until processing strategy decision logic is implemented")
+}
+
+// TestProcessJob_StreamingVsBatch_PerformanceMetrics tests performance metrics.
+func (suite *JobProcessorTestSuite) TestProcessJob_StreamingVsBatch_PerformanceMetrics() {
+	// This test requires implementation of performance metrics collection
+	suite.T().Skip("Skipping until performance metrics collection is implemented")
+}
+
+// TestProcessJob_Streaming_FallbackToBatch tests streaming to batch fallback.
+func (suite *JobProcessorTestSuite) TestProcessJob_Streaming_FallbackToBatch() {
+	// This test requires implementation of fallback logic
+	suite.T().Skip("Skipping until streaming to batch fallback is implemented")
+}
+
+// TestProcessJob_FileSizeThresholds_StrategySelection tests strategy selection based on file sizes.
+func (suite *JobProcessorTestSuite) TestProcessJob_FileSizeThresholds_StrategySelection() {
+	// This test requires implementation of file size threshold logic
+	suite.T().Skip("Skipping until file size threshold logic is implemented")
+}
+
+// TestProcessJob_JobExecution_Tracking tests JobExecution tracking.
+func (suite *JobProcessorTestSuite) TestProcessJob_JobExecution_Tracking() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "execution-tracking-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/tracking-repo.git",
+	}
+
+	ctx := context.Background()
+	err := suite.processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+
+	// Job execution tracking should be empty in RED phase
+	health := suite.processor.GetHealthStatus()
+	suite.Equal(0, health.ActiveJobs)
+}
+
+// TestProcessJob_ActiveJobs_Management tests active jobs management.
+func (suite *JobProcessorTestSuite) TestProcessJob_ActiveJobs_Management() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "active-jobs-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/active-repo.git",
+	}
+
+	ctx := context.Background()
+	err := suite.processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+
+	// Active jobs map should be empty in RED phase
+	suite.Empty(suite.processor.activeJobs)
+}
+
+// TestProcessJob_JobProgress_Updates tests JobProgress updates.
+func (suite *JobProcessorTestSuite) TestProcessJob_JobProgress_Updates() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "progress-updates-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/progress-repo.git",
+	}
+
+	ctx := context.Background()
+	err := suite.processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+
+	// Progress updates should be empty in RED phase
+	metrics := suite.processor.GetMetrics()
+	suite.Equal(int64(0), metrics.FilesProcessed)
+	suite.Equal(int64(0), metrics.ChunksGenerated)
+}
+
+// TestProcessJob_JobStatus_Transitions tests job status transitions.
+func (suite *JobProcessorTestSuite) TestProcessJob_JobStatus_Transitions() {
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "status-transition-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/status-repo.git",
+	}
+
+	ctx := context.Background()
+	err := suite.processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestGetHealthStatus_DuringProcessing tests health status during processing.
+func (suite *JobProcessorTestSuite) TestGetHealthStatus_DuringProcessing() {
+	health := suite.processor.GetHealthStatus()
+	suite.False(health.IsReady)
+	suite.Equal(0, health.ActiveJobs)
+}
+
+// TestGetMetrics_JobProcessing tests metrics collection.
+func (suite *JobProcessorTestSuite) TestGetMetrics_JobProcessing() {
+	metrics := suite.processor.GetMetrics()
+	suite.Equal(int64(0), metrics.TotalJobsProcessed)
+	suite.Equal(int64(0), metrics.FilesProcessed)
+	suite.Equal(int64(0), metrics.ChunksGenerated)
+}
+
+// TestProcessJob_RetryLogic_WithBackoff tests retry logic with backoff.
+func (suite *JobProcessorTestSuite) TestProcessJob_RetryLogic_WithBackoff() {
+	config := JobProcessorConfig{
+		WorkspaceDir:      "/tmp/workspace",
+		RetryAttempts:     3,
+		RetryBackoff:      2 * time.Second,
+		MaxConcurrentJobs: 5,
+	}
+
+	processor := &DefaultJobProcessor{
+		config:          config,
+		activeJobs:      make(map[string]*JobExecution),
+		indexingJobRepo: &MockIndexingJobRepository{},
+		gitClient:       &MockEnhancedGitClient{},
+		codeParser:      &MockCodeParser{},
+	}
+
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "retry-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/retry-repo.git",
+		RetryAttempt:  1,
+		MaxRetries:    3,
+	}
+
+	ctx := context.Background()
+	err := processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_ErrorClassification_AndResponse tests error classification.
+func (suite *JobProcessorTestSuite) TestProcessJob_ErrorClassification_AndResponse() {
+	// This test requires implementation of error classification logic
+	suite.T().Skip("Skipping until error classification logic is implemented")
+}
+
+// TestProcessJob_PartialFailure_Recovery tests partial failure recovery.
+func (suite *JobProcessorTestSuite) TestProcessJob_PartialFailure_Recovery() {
+	// This test requires implementation of partial failure recovery
+	suite.T().Skip("Skipping until partial failure recovery is implemented")
+}
+
+// TestProcessJob_JobCancellation_AndCleanup tests job cancellation.
+func (suite *JobProcessorTestSuite) TestProcessJob_JobCancellation_AndCleanup() {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "cancellation-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/cancel-repo.git",
+	}
+
+	err := suite.processor.ProcessJob(ctx, message)
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_ErrorPropagation_WithStructuredLogging tests structured logging.
+func (suite *JobProcessorTestSuite) TestProcessJob_ErrorPropagation_WithStructuredLogging() {
+	// This test requires implementation of structured logging
+	suite.T().Skip("Skipping until structured logging is implemented")
+}
+
+// TestProcessJob_IndexingJobRepo_PersistenceOperations tests persistence operations.
+func (suite *JobProcessorTestSuite) TestProcessJob_IndexingJobRepo_PersistenceOperations() {
+	mockIndexingJobRepo := &MockIndexingJobRepository{}
+	mockIndexingJobRepo.On("Save", mock.Anything, mock.Anything).Return(nil)
+	mockIndexingJobRepo.On("FindByID", mock.Anything, mock.Anything).Return(&entity.IndexingJob{}, nil)
+	mockIndexingJobRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+	mockIndexingJobRepo.On("Delete", mock.Anything, mock.Anything).Return(nil)
+
+	processor := &DefaultJobProcessor{
+		config:          suite.processor.config,
+		activeJobs:      make(map[string]*JobExecution),
+		indexingJobRepo: mockIndexingJobRepo,
+		gitClient:       &MockEnhancedGitClient{},
+		codeParser:      &MockCodeParser{},
+	}
+
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "persistence-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/persistence-repo.git",
+	}
+
+	ctx := context.Background()
+	err := processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_RepositoryRepo_MetadataUpdates tests repository metadata updates.
+func (suite *JobProcessorTestSuite) TestProcessJob_RepositoryRepo_MetadataUpdates() {
+	mockRepositoryRepo := &MockRepositoryRepository{}
+	mockRepositoryRepo.On("Save", mock.Anything, mock.Anything).Return(nil)
+	mockRepositoryRepo.On("FindByID", mock.Anything, mock.Anything).Return(&entity.Repository{}, nil)
+	mockRepositoryRepo.On("FindByURL", mock.Anything, mock.Anything).Return(&entity.Repository{}, nil)
+	mockRepositoryRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
+
+	processor := &DefaultJobProcessor{
+		config:          suite.processor.config,
+		activeJobs:      make(map[string]*JobExecution),
+		indexingJobRepo: &MockIndexingJobRepository{},
+		repositoryRepo:  mockRepositoryRepo,
+		gitClient:       &MockEnhancedGitClient{},
+		codeParser:      &MockCodeParser{},
+	}
+
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "metadata-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/metadata-repo.git",
+	}
+
+	ctx := context.Background()
+	err := processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestProcessJob_RepositoryStatus_Tracking tests repository status tracking.
+func (suite *JobProcessorTestSuite) TestProcessJob_RepositoryStatus_Tracking() {
+	// This test requires implementation of repository status tracking
+	suite.T().Skip("Skipping until repository status tracking is implemented")
+}
+
+// TestProcessJob_TransactionHandling_MultiStep tests transaction handling.
+func (suite *JobProcessorTestSuite) TestProcessJob_TransactionHandling_MultiStep() {
+	// This test requires implementation of transaction handling
+	suite.T().Skip("Skipping until transaction handling is implemented")
+}
+
+// TestProcessJob_DatabaseFailure_Handling tests database failure handling.
+func (suite *JobProcessorTestSuite) TestProcessJob_DatabaseFailure_Handling() {
+	mockIndexingJobRepo := &MockIndexingJobRepository{}
+	mockIndexingJobRepo.On("Save", mock.Anything, mock.Anything).Return(errors.New("database error"))
+
+	processor := &DefaultJobProcessor{
+		config:          suite.processor.config,
+		activeJobs:      make(map[string]*JobExecution),
+		indexingJobRepo: mockIndexingJobRepo,
+		gitClient:       &MockEnhancedGitClient{},
+		codeParser:      &MockCodeParser{},
+	}
+
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "db-failure-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/db-failure-repo.git",
+	}
+
+	ctx := context.Background()
+	err := processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestJobProcessor_ConfigValidation_AllFields tests config validation.
+func (suite *JobProcessorTestSuite) TestJobProcessor_ConfigValidation_AllFields() {
+	// This test requires implementation of config validation
+	suite.T().Skip("Skipping until config validation is implemented")
+}
+
+// TestJobProcessor_WorkspaceDir_Management tests workspace directory management.
+func (suite *JobProcessorTestSuite) TestJobProcessor_WorkspaceDir_Management() {
+	config := JobProcessorConfig{
+		WorkspaceDir: "/invalid/workspace/path",
+	}
+
+	processor := &DefaultJobProcessor{
+		config:          config,
+		activeJobs:      make(map[string]*JobExecution),
+		indexingJobRepo: &MockIndexingJobRepository{},
+		gitClient:       &MockEnhancedGitClient{},
+		codeParser:      &MockCodeParser{},
+	}
+
+	err := processor.Cleanup()
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestJobProcessor_ResourceLimits_Enforcement tests resource limit enforcement.
+func (suite *JobProcessorTestSuite) TestJobProcessor_ResourceLimits_Enforcement() {
+	config := JobProcessorConfig{
+		WorkspaceDir:   "/tmp/workspace",
+		MaxMemoryMB:    64,  // Very low memory limit
+		MaxDiskUsageMB: 128, // Very low disk usage limit
+	}
+
+	processor := &DefaultJobProcessor{
+		config:          config,
+		activeJobs:      make(map[string]*JobExecution),
+		indexingJobRepo: &MockIndexingJobRepository{},
+		gitClient:       &MockEnhancedGitClient{},
+		codeParser:      &MockCodeParser{},
+	}
+
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "resource-limit-test",
+		RepositoryID:  uuid.New(),
+		RepositoryURL: "https://github.com/example/resource-heavy-repo.git",
+	}
+
+	ctx := context.Background()
+	err := processor.ProcessJob(ctx, message)
+
+	// Should fail in RED phase
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestCleanup_Implementation tests cleanup implementation.
+func (suite *JobProcessorTestSuite) TestCleanup_Implementation() {
+	err := suite.processor.Cleanup()
+	suite.Require().Error(err)
+	suite.Contains(err.Error(), "not implemented yet")
+}
+
+// TestJobProcessor_CleanupInterval_Scheduling tests cleanup scheduling.
+func (suite *JobProcessorTestSuite) TestJobProcessor_CleanupInterval_Scheduling() {
+	// This test requires implementation of cleanup scheduling
+	suite.T().Skip("Skipping until cleanup scheduling is implemented")
+}
+
+// TestProcessJob_StructuredLogging_WithSlogger tests structured logging.
+func (suite *JobProcessorTestSuite) TestProcessJob_StructuredLogging_WithSlogger() {
+	// This test requires implementation of structured logging with slogger
+	suite.T().Skip("Skipping until structured logging with slogger is implemented")
+}
+
+// TestProcessJob_HealthStatus_RealTimeUpdates tests real-time health updates.
+func (suite *JobProcessorTestSuite) TestProcessJob_HealthStatus_RealTimeUpdates() {
+	health := suite.processor.GetHealthStatus()
+	suite.Equal(0, health.ActiveJobs)
+	suite.Equal(int64(0), health.CompletedJobs)
+	suite.Equal(int64(0), health.FailedJobs)
+}
+
+// TestProcessJob_Metrics_OTEL_Integration tests OTEL metrics integration.
+func (suite *JobProcessorTestSuite) TestProcessJob_Metrics_OTEL_Integration() {
+	// This test requires implementation of OTEL metrics integration
+	suite.T().Skip("Skipping until OTEL metrics integration is implemented")
+}
+
+// TestProcessJob_ResourceUsage_Monitoring tests resource usage monitoring.
+func (suite *JobProcessorTestSuite) TestProcessJob_ResourceUsage_Monitoring() {
+	health := suite.processor.GetHealthStatus()
+	suite.Equal(0, health.ResourceUsage.MemoryMB)
+	suite.InDelta(0.0, health.ResourceUsage.CPUPercent, 1e-9)
+	suite.Equal(int64(0), health.ResourceUsage.DiskUsageMB)
 }

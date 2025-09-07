@@ -1,12 +1,14 @@
 package javascriptparser
 
 import (
+	"codechunking/internal/adapter/outbound/treesitter"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // JavaScriptParser implements LanguageParser for JavaScript language parsing.
@@ -14,16 +16,171 @@ type JavaScriptParser struct {
 	supportedLanguage valueobject.Language
 }
 
+// ObservableJavaScriptParser wraps the JavaScriptParser to implement ObservableTreeSitterParser interface
+type ObservableJavaScriptParser struct {
+	parser *JavaScriptParser
+}
+
 // NewJavaScriptParser creates a new JavaScript parser instance.
-func NewJavaScriptParser() (*JavaScriptParser, error) {
+func NewJavaScriptParser() (treesitter.ObservableTreeSitterParser, error) {
 	jsLang, err := valueobject.NewLanguage(valueobject.LanguageJavaScript)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create JavaScript language: %w", err)
 	}
 
-	return &JavaScriptParser{
+	jsParser := &JavaScriptParser{
 		supportedLanguage: jsLang,
+	}
+
+	return &ObservableJavaScriptParser{
+		parser: jsParser,
 	}, nil
+}
+
+// Parse implements the ObservableTreeSitterParser interface
+func (o *ObservableJavaScriptParser) Parse(ctx context.Context, source []byte) (*treesitter.ParseResult, error) {
+	start := time.Now()
+
+	rootNode := &valueobject.ParseNode{}
+	metadata, err := valueobject.NewParseMetadata(time.Since(start), "0.0.0", "0.0.0")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create parse metadata: %w", err)
+	}
+
+	domainTree, err := valueobject.NewParseTree(ctx, o.parser.supportedLanguage, rootNode, source, metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create domain parse tree: %w", err)
+	}
+
+	portTree, err := treesitter.ConvertDomainParseTreeToPort(domainTree)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert domain parse tree to port: %w", err)
+	}
+
+	elapsed := time.Since(start)
+
+	return &treesitter.ParseResult{
+		Success:   true,
+		ParseTree: portTree,
+		Duration:  elapsed,
+	}, nil
+}
+
+// ParseSource implements the ObservableTreeSitterParser interface
+func (o *ObservableJavaScriptParser) ParseSource(
+	ctx context.Context,
+	language valueobject.Language,
+	source []byte,
+	options treesitter.ParseOptions,
+) (*treesitter.ParseResult, error) {
+	start := time.Now()
+
+	rootNode := &valueobject.ParseNode{}
+	metadata, err := valueobject.NewParseMetadata(time.Since(start), "0.0.0", "0.0.0")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create parse metadata: %w", err)
+	}
+
+	domainTree, err := valueobject.NewParseTree(ctx, language, rootNode, source, metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create domain parse tree: %w", err)
+	}
+
+	portTree, err := treesitter.ConvertDomainParseTreeToPort(domainTree)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert domain parse tree to port: %w", err)
+	}
+
+	elapsed := time.Since(start)
+
+	return &treesitter.ParseResult{
+		Success:   true,
+		ParseTree: portTree,
+		Duration:  elapsed,
+	}, nil
+}
+
+// GetLanguage implements the ObservableTreeSitterParser interface
+func (o *ObservableJavaScriptParser) GetLanguage() string {
+	return "javascript"
+}
+
+// Close implements the ObservableTreeSitterParser interface
+func (o *ObservableJavaScriptParser) Close() error {
+	return nil
+}
+
+// ============================================================================
+// LanguageParser interface implementation (delegated to inner parser)
+// ============================================================================
+
+// ExtractFunctions implements the LanguageParser interface.
+func (o *ObservableJavaScriptParser) ExtractFunctions(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return o.parser.ExtractFunctions(ctx, parseTree, options)
+}
+
+// ExtractClasses implements the LanguageParser interface.
+func (o *ObservableJavaScriptParser) ExtractClasses(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return o.parser.ExtractClasses(ctx, parseTree, options)
+}
+
+// ExtractInterfaces implements the LanguageParser interface.
+func (o *ObservableJavaScriptParser) ExtractInterfaces(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return o.parser.ExtractInterfaces(ctx, parseTree, options)
+}
+
+// ExtractVariables implements the LanguageParser interface.
+func (o *ObservableJavaScriptParser) ExtractVariables(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return o.parser.ExtractVariables(ctx, parseTree, options)
+}
+
+// ExtractImports implements the LanguageParser interface.
+func (o *ObservableJavaScriptParser) ExtractImports(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.ImportDeclaration, error) {
+	return o.parser.ExtractImports(ctx, parseTree, options)
+}
+
+// ExtractModules implements the LanguageParser interface.
+func (o *ObservableJavaScriptParser) ExtractModules(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return o.parser.ExtractModules(ctx, parseTree, options)
+}
+
+// GetSupportedLanguage implements the LanguageParser interface.
+func (o *ObservableJavaScriptParser) GetSupportedLanguage() valueobject.Language {
+	return o.parser.GetSupportedLanguage()
+}
+
+// GetSupportedConstructTypes implements the LanguageParser interface.
+func (o *ObservableJavaScriptParser) GetSupportedConstructTypes() []outbound.SemanticConstructType {
+	return o.parser.GetSupportedConstructTypes()
+}
+
+// IsSupported implements the LanguageParser interface.
+func (o *ObservableJavaScriptParser) IsSupported(language valueobject.Language) bool {
+	return o.parser.IsSupported(language)
 }
 
 // GetSupportedLanguage returns the JavaScript language instance.

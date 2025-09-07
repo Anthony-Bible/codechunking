@@ -27,7 +27,7 @@ func (p *GoParser) ExtractImports(
 	// Find import declarations
 	importNodes := parseTree.GetNodesByType("import_declaration")
 	for _, node := range importNodes {
-		importDecls := p.parseGoImportDeclaration(parseTree, node)
+		importDecls := parseGoImportDeclaration(parseTree, node)
 		imports = append(imports, importDecls...)
 	}
 
@@ -35,16 +35,16 @@ func (p *GoParser) ExtractImports(
 }
 
 // parseGoImportDeclaration parses an import declaration.
-func (p *GoParser) parseGoImportDeclaration(
+func parseGoImportDeclaration(
 	parseTree *valueobject.ParseTree,
 	importDecl *valueobject.ParseNode,
 ) []outbound.ImportDeclaration {
 	var imports []outbound.ImportDeclaration
 
 	// Find import specs
-	importSpecs := p.findChildrenByType(importDecl, "import_spec")
+	importSpecs := findChildrenByType(importDecl, "import_spec")
 	for _, importSpec := range importSpecs {
-		importDeclaration := p.parseGoImportSpec(parseTree, importSpec)
+		importDeclaration := parseGoImportSpec(parseTree, importSpec)
 		if importDeclaration != nil {
 			imports = append(imports, *importDeclaration)
 		}
@@ -52,9 +52,9 @@ func (p *GoParser) parseGoImportDeclaration(
 
 	// Handle single import without parentheses
 	if len(importSpecs) == 0 {
-		pathNode := p.findChildByType(importDecl, "interpreted_string_literal")
+		pathNode := findChildByTypeInNode(importDecl, "interpreted_string_literal")
 		if pathNode != nil {
-			importDeclaration := p.createImportFromPath(parseTree, importDecl, pathNode, "")
+			importDeclaration := createImportFromPath(parseTree, importDecl, pathNode, "")
 			if importDeclaration != nil {
 				imports = append(imports, *importDeclaration)
 			}
@@ -65,37 +65,37 @@ func (p *GoParser) parseGoImportDeclaration(
 }
 
 // parseGoImportSpec parses an import specification.
-func (p *GoParser) parseGoImportSpec(
+func parseGoImportSpec(
 	parseTree *valueobject.ParseTree,
 	importSpec *valueobject.ParseNode,
 ) *outbound.ImportDeclaration {
 	// Find import path
-	pathNode := p.findChildByType(importSpec, "interpreted_string_literal")
+	pathNode := findChildByTypeInNode(importSpec, "interpreted_string_literal")
 	if pathNode == nil {
 		return nil
 	}
 
 	// Find alias (if any)
 	alias := ""
-	identifierNode := p.findChildByType(importSpec, "package_identifier")
+	identifierNode := findChildByTypeInNode(importSpec, "package_identifier")
 	if identifierNode != nil {
 		alias = parseTree.GetNodeText(identifierNode)
 	} else {
 		// Check for dot import
-		if dotNode := p.findChildByType(importSpec, "."); dotNode != nil {
+		if dotNode := findChildByTypeInNode(importSpec, "."); dotNode != nil {
 			alias = "."
 		}
 		// Check for blank import
-		if blankNode := p.findChildByType(importSpec, "_"); blankNode != nil {
+		if blankNode := findChildByTypeInNode(importSpec, "_"); blankNode != nil {
 			alias = "_"
 		}
 	}
 
-	return p.createImportFromPath(parseTree, importSpec, pathNode, alias)
+	return createImportFromPath(parseTree, importSpec, pathNode, alias)
 }
 
 // createImportFromPath creates an ImportDeclaration from path and alias.
-func (p *GoParser) createImportFromPath(
+func createImportFromPath(
 	parseTree *valueobject.ParseTree,
 	importDecl *valueobject.ParseNode,
 	pathNode *valueobject.ParseNode,

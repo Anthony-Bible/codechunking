@@ -1,6 +1,7 @@
 package javascriptparser
 
 import (
+	"codechunking/internal/adapter/outbound/treesitter"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -71,9 +72,9 @@ import axios from 'axios';
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -81,7 +82,7 @@ import axios from 'axios';
 		MaxDepth:        10,
 	}
 
-	imports, err := parser.ExtractImports(context.Background(), parseTree, options)
+	imports, err := adapter.ExtractImports(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Should find multiple import statements
@@ -219,9 +220,9 @@ const { version, dependencies } = require('./package.json');
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -229,7 +230,7 @@ const { version, dependencies } = require('./package.json');
 		MaxDepth:        10,
 	}
 
-	imports, err := parser.ExtractImports(context.Background(), parseTree, options)
+	imports, err := adapter.ExtractImports(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Should find multiple require statements
@@ -377,9 +378,9 @@ module.exports = {
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -389,7 +390,7 @@ module.exports = {
 
 	// For exports, we might extract them as imports of the current module
 	// or handle them separately in ExtractModules
-	imports, err := parser.ExtractImports(context.Background(), parseTree, options)
+	imports, err := adapter.ExtractImports(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Should find re-export requires
@@ -458,9 +459,9 @@ const version = import.meta.env.PACKAGE_VERSION;
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -468,7 +469,7 @@ const version = import.meta.env.PACKAGE_VERSION;
 		MaxDepth:        10,
 	}
 
-	imports, err := parser.ExtractImports(context.Background(), parseTree, options)
+	imports, err := adapter.ExtractImports(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Look for dynamic imports that use import.meta
@@ -496,13 +497,13 @@ const version = import.meta.env.PACKAGE_VERSION;
 // TestJavaScriptImports_ErrorHandling tests error conditions for import parsing.
 // This is a RED PHASE test that defines expected behavior for import parsing error handling.
 func TestJavaScriptImports_ErrorHandling(t *testing.T) {
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	t.Run("nil parse tree should return error", func(t *testing.T) {
 		options := outbound.SemanticExtractionOptions{}
 
-		_, err := parser.ExtractImports(context.Background(), nil, options)
+		_, err := adapter.ExtractImports(ctx, nil, options)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parse tree cannot be nil")
 	})
@@ -514,7 +515,7 @@ func TestJavaScriptImports_ErrorHandling(t *testing.T) {
 		parseTree := createMockParseTreeFromSource(t, goLang, "package main")
 		options := outbound.SemanticExtractionOptions{}
 
-		_, err = parser.ExtractImports(context.Background(), parseTree, options)
+		_, err = adapter.ExtractImports(ctx, parseTree, options)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported language")
 	})
@@ -532,7 +533,7 @@ require();
 		options := outbound.SemanticExtractionOptions{}
 
 		// Should not panic, even with malformed code
-		imports, err := parser.ExtractImports(context.Background(), parseTree, options)
+		imports, err := adapter.ExtractImports(ctx, parseTree, options)
 		// May return error or empty results, but should not panic
 		if err == nil {
 			assert.NotNil(t, imports)

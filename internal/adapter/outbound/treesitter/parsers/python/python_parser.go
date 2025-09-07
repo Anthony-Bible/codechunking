@@ -1,6 +1,7 @@
 package pythonparser
 
 import (
+	"codechunking/internal/adapter/outbound/treesitter"
 	"codechunking/internal/adapter/outbound/treesitter/utils"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/valueobject"
@@ -8,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // PythonParser implements LanguageParser for Python language parsing.
@@ -15,16 +17,168 @@ type PythonParser struct {
 	supportedLanguage valueobject.Language
 }
 
+// ObservablePythonParser wraps PythonParser to implement both ObservableTreeSitterParser and LanguageParser interfaces.
+type ObservablePythonParser struct {
+	parser *PythonParser
+}
+
+// ParseOptions represents parsing options.
+type ParseOptions struct {
+	Timeout time.Duration
+}
+
 // NewPythonParser creates a new Python parser instance.
-func NewPythonParser() (*PythonParser, error) {
+func NewPythonParser() (treesitter.ObservableTreeSitterParser, error) {
 	pythonLang, err := valueobject.NewLanguage(valueobject.LanguagePython)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Python language: %w", err)
 	}
 
-	return &PythonParser{
+	parser := &PythonParser{
 		supportedLanguage: pythonLang,
+	}
+
+	return &ObservablePythonParser{
+		parser: parser,
 	}, nil
+}
+
+// Parse implements the ObservableTreeSitterParser interface.
+func (o *ObservablePythonParser) Parse(ctx context.Context, source []byte) (*treesitter.ParseResult, error) {
+	start := time.Now()
+
+	// Create a minimal rootNode
+	rootNode := &valueobject.ParseNode{
+		Type:      "module",
+		StartByte: 0,
+		EndByte:   uint32(len(source)),
+		StartPos:  valueobject.Position{Row: 0, Column: 0},
+		EndPos:    valueobject.Position{Row: 0, Column: uint32(len(source))},
+		Children:  nil,
+	}
+
+	// Create minimal metadata
+	metadata, err := valueobject.NewParseMetadata(
+		time.Since(start),
+		"0.0.0", // treeSitterVersion
+		"0.0.0", // grammarVersion
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create parse metadata: %w", err)
+	}
+
+	// Create a minimal parse tree
+	domainTree, err := valueobject.NewParseTree(ctx, o.parser.supportedLanguage, rootNode, source, metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create domain parse tree: %w", err)
+	}
+
+	// Convert to port tree
+	portTree, err := treesitter.ConvertDomainParseTreeToPort(domainTree)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert parse tree: %w", err)
+	}
+
+	duration := time.Since(start)
+
+	return &treesitter.ParseResult{
+		Success:   true,
+		ParseTree: portTree,
+		Duration:  duration,
+	}, nil
+}
+
+// ParseSource implements the ObservableTreeSitterParser interface.
+func (o *ObservablePythonParser) ParseSource(
+	ctx context.Context,
+	language valueobject.Language,
+	source []byte,
+	options treesitter.ParseOptions,
+) (*treesitter.ParseResult, error) {
+	return o.Parse(ctx, source)
+}
+
+// GetLanguage implements the ObservableTreeSitterParser interface.
+func (o *ObservablePythonParser) GetLanguage() string {
+	return "python"
+}
+
+// Close implements the ObservableTreeSitterParser interface.
+func (o *ObservablePythonParser) Close() error {
+	return nil
+}
+
+// ============================================================================
+// LanguageParser interface implementation (delegated to inner parser)
+// ============================================================================
+
+// ExtractFunctions implements the LanguageParser interface.
+func (o *ObservablePythonParser) ExtractFunctions(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return o.parser.ExtractFunctions(ctx, parseTree, options)
+}
+
+// ExtractClasses implements the LanguageParser interface.
+func (o *ObservablePythonParser) ExtractClasses(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return o.parser.ExtractClasses(ctx, parseTree, options)
+}
+
+// ExtractInterfaces implements the LanguageParser interface.
+func (o *ObservablePythonParser) ExtractInterfaces(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return o.parser.ExtractInterfaces(ctx, parseTree, options)
+}
+
+// ExtractVariables implements the LanguageParser interface.
+func (o *ObservablePythonParser) ExtractVariables(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return o.parser.ExtractVariables(ctx, parseTree, options)
+}
+
+// ExtractImports implements the LanguageParser interface.
+func (o *ObservablePythonParser) ExtractImports(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.ImportDeclaration, error) {
+	return o.parser.ExtractImports(ctx, parseTree, options)
+}
+
+// ExtractModules implements the LanguageParser interface.
+func (o *ObservablePythonParser) ExtractModules(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return o.parser.ExtractModules(ctx, parseTree, options)
+}
+
+// GetSupportedLanguage implements the LanguageParser interface.
+func (o *ObservablePythonParser) GetSupportedLanguage() valueobject.Language {
+	return o.parser.GetSupportedLanguage()
+}
+
+// GetSupportedConstructTypes implements the LanguageParser interface.
+func (o *ObservablePythonParser) GetSupportedConstructTypes() []outbound.SemanticConstructType {
+	return o.parser.GetSupportedConstructTypes()
+}
+
+// IsSupported implements the LanguageParser interface.
+func (o *ObservablePythonParser) IsSupported(language valueobject.Language) bool {
+	return o.parser.IsSupported(language)
 }
 
 // GetSupportedLanguage returns the Python language instance.

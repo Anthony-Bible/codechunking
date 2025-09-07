@@ -332,6 +332,9 @@ type FactoryLanguageVersionInfo struct {
 
 // ObservableTreeSitterParser defines the interface for observable parsers.
 type ObservableTreeSitterParser interface {
+	// Embed the LanguageParser interface to include semantic extraction methods
+	LanguageParser
+
 	// Parse parses source code and returns a parse tree
 	Parse(ctx context.Context, source []byte) (*ParseResult, error)
 

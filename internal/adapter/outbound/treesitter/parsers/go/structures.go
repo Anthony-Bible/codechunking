@@ -15,7 +15,7 @@ func (p *GoParser) ExtractClasses(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	return p.extractTypeDeclarations(ctx, parseTree, options, "struct_type", "Extracting Go structs", p.parseGoStruct)
+	return extractTypeDeclarations(ctx, parseTree, options, "struct_type", "Extracting Go structs", parseGoStruct)
 }
 
 // ExtractInterfaces extracts interface definitions from a Go parse tree.
@@ -24,18 +24,54 @@ func (p *GoParser) ExtractInterfaces(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	return p.extractTypeDeclarations(
+	return extractTypeDeclarations(
 		ctx,
 		parseTree,
 		options,
 		"interface_type",
 		"Extracting Go interfaces",
-		p.parseGoInterface,
+		parseGoInterface,
 	)
 }
 
+// extractTypeDeclarations is a generic method for extracting type declarations.
+func extractTypeDeclarations(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+	typeName string,
+	progressMessage string,
+	parserFunc func(context.Context, *valueobject.ParseTree, *valueobject.ParseNode, *valueobject.ParseNode, string, outbound.SemanticExtractionOptions, time.Time) *outbound.SemanticCodeChunk,
+) ([]outbound.SemanticCodeChunk, error) {
+	packageName := extractPackageNameFromTree(parseTree)
+	var chunks []outbound.SemanticCodeChunk
+	now := time.Now()
+
+	// Find all type declarations
+	typeDecls := findChildrenByType(parseTree.RootNode(), "type_declaration")
+	for _, typeDecl := range typeDecls {
+		// Find type specifications
+		typeSpecs := findChildrenByTypeInNode(typeDecl, "type_spec")
+		for _, typeSpec := range typeSpecs {
+			// Check if this is the type we're looking for
+			targetType := findChildByTypeInNode(typeSpec, typeName)
+			if targetType == nil {
+				continue
+			}
+
+			// Parse the construct
+			chunk := parserFunc(ctx, parseTree, typeDecl, typeSpec, packageName, options, now)
+			if chunk != nil {
+				chunks = append(chunks, *chunk)
+			}
+		}
+	}
+
+	return chunks, nil
+}
+
 // parseGoStruct parses a Go struct declaration.
-func (p *GoParser) parseGoStruct(
+func parseGoStruct(
 	_ context.Context,
 	parseTree *valueobject.ParseTree,
 	typeDecl *valueobject.ParseNode,
@@ -45,14 +81,14 @@ func (p *GoParser) parseGoStruct(
 	now time.Time,
 ) *outbound.SemanticCodeChunk {
 	// Find struct name
-	nameNode := p.findChildByType(typeSpec, "type_identifier")
+	nameNode := findChildByTypeInNode(typeSpec, "type_identifier")
 	if nameNode == nil {
 		return nil
 	}
 
 	structName := parseTree.GetNodeText(nameNode)
 	content := parseTree.GetNodeText(typeDecl)
-	visibility := p.getVisibility(structName)
+	visibility := getVisibility(structName)
 
 	// Skip private structs if not included
 	if !options.IncludePrivate && visibility == outbound.Private {
@@ -62,17 +98,17 @@ func (p *GoParser) parseGoStruct(
 	// Parse generic parameters
 	var genericParams []outbound.GenericParameter
 	isGeneric := false
-	typeParams := p.findChildByType(typeSpec, "type_parameter_list")
+	typeParams := findChildByTypeInNode(typeSpec, "type_parameter_list")
 	if typeParams != nil {
 		isGeneric = true
-		genericParams = p.parseGoGenericParameters(parseTree, typeParams)
+		genericParams = parseGoGenericParameters(parseTree, typeParams)
 	}
 
 	// Parse struct fields as child chunks
 	var childChunks []outbound.SemanticCodeChunk
-	structType := p.findChildByType(typeSpec, "struct_type")
+	structType := findChildByTypeInNode(typeSpec, "struct_type")
 	if structType != nil {
-		childChunks = p.parseGoStructFields(parseTree, structType, packageName, structName, options, now)
+		childChunks = parseGoStructFields(parseTree, structType, packageName, structName, options, now)
 	}
 
 	return &outbound.SemanticCodeChunk{
@@ -94,7 +130,7 @@ func (p *GoParser) parseGoStruct(
 }
 
 // parseGoInterface parses a Go interface declaration.
-func (p *GoParser) parseGoInterface(
+func parseGoInterface(
 	_ context.Context,
 	parseTree *valueobject.ParseTree,
 	typeDecl *valueobject.ParseNode,
@@ -104,14 +140,14 @@ func (p *GoParser) parseGoInterface(
 	now time.Time,
 ) *outbound.SemanticCodeChunk {
 	// Find interface name
-	nameNode := p.findChildByType(typeSpec, "type_identifier")
+	nameNode := findChildByTypeInNode(typeSpec, "type_identifier")
 	if nameNode == nil {
 		return nil
 	}
 
 	interfaceName := parseTree.GetNodeText(nameNode)
 	content := parseTree.GetNodeText(typeDecl)
-	visibility := p.getVisibility(interfaceName)
+	visibility := getVisibility(interfaceName)
 
 	// Skip private interfaces if not included
 	if !options.IncludePrivate && visibility == outbound.Private {
@@ -121,17 +157,17 @@ func (p *GoParser) parseGoInterface(
 	// Parse generic parameters
 	var genericParams []outbound.GenericParameter
 	isGeneric := false
-	typeParams := p.findChildByType(typeSpec, "type_parameter_list")
+	typeParams := findChildByTypeInNode(typeSpec, "type_parameter_list")
 	if typeParams != nil {
 		isGeneric = true
-		genericParams = p.parseGoGenericParameters(parseTree, typeParams)
+		genericParams = parseGoGenericParameters(parseTree, typeParams)
 	}
 
 	// Parse interface methods as child chunks
 	var childChunks []outbound.SemanticCodeChunk
-	interfaceType := p.findChildByType(typeSpec, "interface_type")
+	interfaceType := findChildByTypeInNode(typeSpec, "interface_type")
 	if interfaceType != nil {
-		childChunks = p.parseGoInterfaceMethods(parseTree, interfaceType, packageName, interfaceName, options, now)
+		childChunks = parseGoInterfaceMethods(parseTree, interfaceType, packageName, interfaceName, options, now)
 	}
 
 	return &outbound.SemanticCodeChunk{
@@ -154,7 +190,7 @@ func (p *GoParser) parseGoInterface(
 }
 
 // parseGoStructFields parses struct fields.
-func (p *GoParser) parseGoStructFields(
+func parseGoStructFields(
 	parseTree *valueobject.ParseTree,
 	structType *valueobject.ParseNode,
 	packageName string,
@@ -164,17 +200,49 @@ func (p *GoParser) parseGoStructFields(
 ) []outbound.SemanticCodeChunk {
 	var fields []outbound.SemanticCodeChunk
 
-	fieldDecls := p.findChildrenByType(structType, "field_declaration")
+	fieldDecls := findChildrenByTypeInNode(structType, "field_declaration")
 	for _, fieldDecl := range fieldDecls {
-		fieldChunks := p.parseGoFieldDeclaration(parseTree, fieldDecl, packageName, structName, options, now)
+		fieldChunks := parseGoFieldDeclaration(parseTree, fieldDecl, packageName, structName, options, now)
 		fields = append(fields, fieldChunks...)
 	}
 
 	return fields
 }
 
+// parseGoInterfaceMethods parses interface methods.
+func parseGoInterfaceMethods(
+	parseTree *valueobject.ParseTree,
+	interfaceType *valueobject.ParseNode,
+	packageName string,
+	interfaceName string,
+	options outbound.SemanticExtractionOptions,
+	now time.Time,
+) []outbound.SemanticCodeChunk {
+	var methods []outbound.SemanticCodeChunk
+
+	// Find method specifications
+	methodSpecs := findChildrenByTypeInNode(interfaceType, "method_spec")
+	for _, methodSpec := range methodSpecs {
+		method := parseGoInterfaceMethod(parseTree, methodSpec, packageName, interfaceName, options, now)
+		if method != nil {
+			methods = append(methods, *method)
+		}
+	}
+
+	// Find embedded interfaces
+	embeddedTypes := findChildrenByTypeInNode(interfaceType, "type_identifier")
+	for _, embeddedType := range embeddedTypes {
+		embedded := parseGoEmbeddedInterface(parseTree, embeddedType, packageName, interfaceName, now)
+		if embedded != nil {
+			methods = append(methods, *embedded)
+		}
+	}
+
+	return methods
+}
+
 // parseGoFieldDeclaration parses a struct field declaration.
-func (p *GoParser) parseGoFieldDeclaration(
+func parseGoFieldDeclaration(
 	parseTree *valueobject.ParseTree,
 	fieldDecl *valueobject.ParseNode,
 	packageName string,
@@ -185,22 +253,22 @@ func (p *GoParser) parseGoFieldDeclaration(
 	var fields []outbound.SemanticCodeChunk
 
 	// Get field names
-	identifiers := p.findChildrenByType(fieldDecl, "field_identifier")
+	identifiers := findChildrenByTypeInNode(fieldDecl, "field_identifier")
 	if len(identifiers) == 0 {
 		// Handle embedded fields
-		identifiers = p.findChildrenByType(fieldDecl, "type_identifier")
+		identifiers = findChildrenByTypeInNode(fieldDecl, "type_identifier")
 	}
 
 	// Get field type
-	fieldType := p.getFieldType(parseTree, fieldDecl)
+	fieldType := getFieldType(parseTree, fieldDecl)
 
 	// Get field tag
-	tag := p.getFieldTag(parseTree, fieldDecl)
+	tag := getFieldTag(parseTree, fieldDecl)
 	content := parseTree.GetNodeText(fieldDecl)
 
 	for _, identifier := range identifiers {
 		fieldName := parseTree.GetNodeText(identifier)
-		visibility := p.getVisibility(fieldName)
+		visibility := getVisibility(fieldName)
 
 		// Skip private fields if not included
 		if !options.IncludePrivate && visibility == outbound.Private {
@@ -208,7 +276,7 @@ func (p *GoParser) parseGoFieldDeclaration(
 		}
 
 		// Parse annotations from tag
-		annotations := p.parseFieldTags(tag)
+		annotations := parseFieldTags(tag)
 
 		fields = append(fields, outbound.SemanticCodeChunk{
 			ID:            utils.GenerateID("field", fieldName, nil),
@@ -230,40 +298,8 @@ func (p *GoParser) parseGoFieldDeclaration(
 	return fields
 }
 
-// parseGoInterfaceMethods parses interface methods.
-func (p *GoParser) parseGoInterfaceMethods(
-	parseTree *valueobject.ParseTree,
-	interfaceType *valueobject.ParseNode,
-	packageName string,
-	interfaceName string,
-	options outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	var methods []outbound.SemanticCodeChunk
-
-	// Find method specifications
-	methodSpecs := p.findChildrenByType(interfaceType, "method_spec")
-	for _, methodSpec := range methodSpecs {
-		method := p.parseGoInterfaceMethod(parseTree, methodSpec, packageName, interfaceName, options, now)
-		if method != nil {
-			methods = append(methods, *method)
-		}
-	}
-
-	// Find embedded interfaces
-	embeddedTypes := p.findChildrenByType(interfaceType, "type_identifier")
-	for _, embeddedType := range embeddedTypes {
-		embedded := p.parseGoEmbeddedInterface(parseTree, embeddedType, packageName, interfaceName, now)
-		if embedded != nil {
-			methods = append(methods, *embedded)
-		}
-	}
-
-	return methods
-}
-
 // parseGoInterfaceMethod parses an interface method specification.
-func (p *GoParser) parseGoInterfaceMethod(
+func parseGoInterfaceMethod(
 	parseTree *valueobject.ParseTree,
 	methodSpec *valueobject.ParseNode,
 	packageName string,
@@ -272,18 +308,18 @@ func (p *GoParser) parseGoInterfaceMethod(
 	now time.Time,
 ) *outbound.SemanticCodeChunk {
 	// Find method name
-	nameNode := p.findChildByType(methodSpec, "field_identifier")
+	nameNode := findChildByTypeInNode(methodSpec, "field_identifier")
 	if nameNode == nil {
 		return nil
 	}
 
 	methodName := parseTree.GetNodeText(nameNode)
 	content := parseTree.GetNodeText(methodSpec)
-	visibility := p.getVisibility(methodName)
+	visibility := getVisibility(methodName)
 
 	// Parse parameters and return type from method signature
-	parameters := p.parseGoParameters(parseTree, methodSpec)
-	returnType := p.parseGoReturnType(parseTree, methodSpec)
+	parameters := parseGoParameters(parseTree, methodSpec)
+	returnType := parseGoReturnType(parseTree, methodSpec)
 
 	return &outbound.SemanticCodeChunk{
 		ID:            utils.GenerateID("method", methodName, nil),
@@ -304,7 +340,7 @@ func (p *GoParser) parseGoInterfaceMethod(
 }
 
 // parseGoEmbeddedInterface parses an embedded interface.
-func (p *GoParser) parseGoEmbeddedInterface(
+func parseGoEmbeddedInterface(
 	parseTree *valueobject.ParseTree,
 	embeddedType *valueobject.ParseNode,
 	packageName string,
@@ -331,11 +367,11 @@ func (p *GoParser) parseGoEmbeddedInterface(
 }
 
 // getFieldType gets the type of a struct field.
-func (p *GoParser) getFieldType(
+func getFieldType(
 	parseTree *valueobject.ParseTree,
 	fieldDecl *valueobject.ParseNode,
 ) string {
-	typeNode := p.getParameterType(fieldDecl)
+	typeNode := getParameterType(fieldDecl)
 	if typeNode != nil {
 		return parseTree.GetNodeText(typeNode)
 	}
@@ -343,11 +379,11 @@ func (p *GoParser) getFieldType(
 }
 
 // getFieldTag gets the tag of a struct field.
-func (p *GoParser) getFieldTag(
+func getFieldTag(
 	parseTree *valueobject.ParseTree,
 	fieldDecl *valueobject.ParseNode,
 ) string {
-	tagNode := p.findChildByType(fieldDecl, "raw_string_literal")
+	tagNode := findChildByTypeInNode(fieldDecl, "raw_string_literal")
 	if tagNode != nil {
 		return parseTree.GetNodeText(tagNode)
 	}
@@ -355,7 +391,7 @@ func (p *GoParser) getFieldTag(
 }
 
 // parseFieldTags parses struct field tags into annotations.
-func (p *GoParser) parseFieldTags(tag string) []outbound.Annotation {
+func parseFieldTags(tag string) []outbound.Annotation {
 	var annotations []outbound.Annotation
 
 	if tag == "" {
@@ -387,7 +423,7 @@ func (p *GoParser) parseFieldTags(tag string) []outbound.Annotation {
 }
 
 // getParameterType gets the type node from a parameter-like declaration.
-func (p *GoParser) getParameterType(decl *valueobject.ParseNode) *valueobject.ParseNode {
+func getParameterType(decl *valueobject.ParseNode) *valueobject.ParseNode {
 	if decl == nil {
 		return nil
 	}
@@ -406,10 +442,52 @@ func (p *GoParser) getParameterType(decl *valueobject.ParseNode) *valueobject.Pa
 	}
 
 	for _, typeNode := range typeNodes {
-		if node := p.findChildByType(decl, typeNode); node != nil {
+		if node := findChildByTypeInNode(decl, typeNode); node != nil {
 			return node
 		}
 	}
 
 	return nil
+}
+
+// getVisibility determines if a name is public or private in Go.
+func getVisibility(name string) outbound.VisibilityModifier {
+	if len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z' {
+		return outbound.Public
+	}
+	return outbound.Private
+}
+
+// findChildrenByTypeInNode finds all direct children of a node with the specified type.
+func findChildrenByTypeInNode(parent *valueobject.ParseNode, nodeType string) []*valueobject.ParseNode {
+	var result []*valueobject.ParseNode
+
+	if parent == nil {
+		return result
+	}
+
+	for _, child := range parent.Children {
+		if child.Type == nodeType {
+			result = append(result, child)
+		}
+	}
+
+	return result
+}
+
+// extractPackageNameFromTree extracts the package name from the parse tree.
+func extractPackageNameFromTree(parseTree *valueobject.ParseTree) string {
+	// Find the package declaration
+	packageDecls := findChildrenByType(parseTree.RootNode(), "package_clause")
+	if len(packageDecls) == 0 {
+		return ""
+	}
+
+	// Get the package identifier
+	packageIdentifiers := findChildrenByTypeInNode(packageDecls[0], "package_identifier")
+	if len(packageIdentifiers) == 0 {
+		return ""
+	}
+
+	return parseTree.GetNodeText(packageIdentifiers[0])
 }

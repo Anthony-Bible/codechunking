@@ -1,6 +1,7 @@
 package javascriptparser
 
 import (
+	"codechunking/internal/adapter/outbound/treesitter"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -65,9 +66,9 @@ const modulePattern = (function() {
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -75,7 +76,7 @@ const modulePattern = (function() {
 		MaxDepth:        10,
 	}
 
-	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	functions, err := adapter.ExtractFunctions(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Should find multiple IIFEs and their internal functions
@@ -172,9 +173,9 @@ function* outerGenerator() {
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -182,7 +183,7 @@ function* outerGenerator() {
 		MaxDepth:        15, // Increased depth for nested functions
 	}
 
-	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	functions, err := adapter.ExtractFunctions(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Should find all nested functions
@@ -332,9 +333,9 @@ const PromiseBuilder = {
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -342,7 +343,7 @@ const PromiseBuilder = {
 		MaxDepth:        10,
 	}
 
-	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	functions, err := adapter.ExtractFunctions(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Should find all methods and functions including chained ones
@@ -464,9 +465,9 @@ function processUserData(userId, callback) {
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -474,7 +475,7 @@ function processUserData(userId, callback) {
 		MaxDepth:        12,
 	}
 
-	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	functions, err := adapter.ExtractFunctions(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Should find all functions including anonymous callbacks

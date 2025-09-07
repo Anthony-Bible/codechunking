@@ -37,7 +37,7 @@ type User struct {
 	typeDecls := parseTree.GetNodesByType("type_declaration")
 	require.Len(t, typeDecls, 1, "Should find 1 type declaration")
 
-	typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+	typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 	require.NotNil(t, typeSpec, "Should find type_spec")
 
 	options := outbound.SemanticExtractionOptions{
@@ -90,7 +90,7 @@ type Employee struct {
 	require.Len(t, typeDecls, 2, "Should find 2 type declarations")
 
 	// Test Employee struct (second declaration)
-	employeeTypeSpec := findChildByType(parser, typeDecls[1], "type_spec")
+	employeeTypeSpec := findChildByTypeInNode(typeDecls[1], "type_spec")
 	require.NotNil(t, employeeTypeSpec)
 
 	options := outbound.SemanticExtractionOptions{
@@ -144,7 +144,7 @@ type Pair[K comparable, V any] struct {
 	require.Len(t, typeDecls, 2, "Should find 2 type declarations")
 
 	// Test Container struct
-	containerTypeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+	containerTypeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 	require.NotNil(t, containerTypeSpec)
 
 	options := outbound.SemanticExtractionOptions{
@@ -205,7 +205,7 @@ type ReadWriter interface {
 	require.Len(t, typeDecls, 3, "Should find 3 type declarations")
 
 	// Test Writer interface
-	writerTypeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+	writerTypeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 	require.NotNil(t, writerTypeSpec)
 
 	options := outbound.SemanticExtractionOptions{
@@ -264,7 +264,7 @@ type Container[T any] interface {
 	require.Len(t, typeDecls, 2, "Should find 2 type declarations")
 
 	// Test Container interface
-	containerTypeSpec := findChildByType(parser, typeDecls[1], "type_spec")
+	containerTypeSpec := findChildByTypeInNode(typeDecls[1], "type_spec")
 	require.NotNil(t, containerTypeSpec)
 
 	options := outbound.SemanticExtractionOptions{
@@ -327,7 +327,7 @@ type ReadWriter interface {
 	require.Len(t, typeDecls, 3, "Should find 3 type declarations")
 
 	// Test ReadWriter interface (third declaration)
-	readWriterTypeSpec := findChildByType(parser, typeDecls[2], "type_spec")
+	readWriterTypeSpec := findChildByTypeInNode(typeDecls[2], "type_spec")
 	require.NotNil(t, readWriterTypeSpec)
 
 	options := outbound.SemanticExtractionOptions{
@@ -411,10 +411,10 @@ type ComplexStruct struct {
 	typeDecls := parseTree.GetNodesByType("type_declaration")
 	require.Len(t, typeDecls, 1)
 
-	typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+	typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 	require.NotNil(t, typeSpec)
 
-	structType := findChildByType(parser, typeSpec, "struct_type")
+	structType := findChildByTypeInNode(typeSpec, "struct_type")
 	require.NotNil(t, structType)
 
 	options := outbound.SemanticExtractionOptions{
@@ -497,10 +497,10 @@ type ComplexInterface interface {
 	typeDecls := parseTree.GetNodesByType("type_declaration")
 	require.Len(t, typeDecls, 1)
 
-	typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+	typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 	require.NotNil(t, typeSpec)
 
-	interfaceType := findChildByType(parser, typeSpec, "interface_type")
+	interfaceType := findChildByTypeInNode(typeSpec, "interface_type")
 	require.NotNil(t, interfaceType)
 
 	options := outbound.SemanticExtractionOptions{
@@ -566,9 +566,9 @@ type TaggedStruct struct {
 	typeDecls := parseTree.GetNodesByType("type_declaration")
 	require.Len(t, typeDecls, 1)
 
-	typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
-	structType := findChildByType(parser, typeSpec, "struct_type")
-	fieldDecls := findChildrenByType(parser, structType, "field_declaration")
+	typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
+	structType := findChildByTypeInNode(typeSpec, "struct_type")
+	fieldDecls := findChildrenByType(structType, "field_declaration")
 	require.Len(t, fieldDecls, 3, "Should find 3 field declarations")
 
 	options := outbound.SemanticExtractionOptions{
@@ -665,7 +665,7 @@ type Incomplete struct {`
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoStruct(
 					context.Background(),
@@ -697,7 +697,7 @@ type Incomplete struct {
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoStruct(
 					context.Background(),
@@ -734,7 +734,7 @@ type BadStruct {
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoStruct(
 					context.Background(),
@@ -764,7 +764,7 @@ type BadInterface interface {`
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoInterface(
 					context.Background(),
@@ -801,7 +801,7 @@ type TestStruct struct {
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoStruct(
 					context.Background(),
@@ -846,7 +846,7 @@ type B struct {
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		for _, typeDecl := range typeDecls {
-			typeSpec := findChildByType(parser, typeDecl, "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecl, "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoStruct(
 					context.Background(),
@@ -885,7 +885,7 @@ type GenericStruct[T comparable, U interface{ String() string; ~int | ~string }]
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoStruct(
 					context.Background(),
@@ -929,7 +929,7 @@ type BadInterface interface {
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoInterface(
 					context.Background(),
@@ -966,7 +966,7 @@ type CompositeInterface interface {
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoInterface(
 					context.Background(),
@@ -1004,7 +1004,7 @@ func TestGoStructureParser_ErrorHandling_EncodingIssues(t *testing.T) {
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoStruct(
 					context.Background(),
@@ -1043,7 +1043,7 @@ type UnicodeStruct struct {
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoStruct(
 					context.Background(),
@@ -1094,7 +1094,7 @@ type LargeStruct struct {
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				// Test with timeout to ensure it doesn't hang
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1146,7 +1146,7 @@ type NestedStruct struct {
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				// Test with timeout to ensure it doesn't hang
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1194,7 +1194,7 @@ type ValidStruct struct {
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		require.NotEmpty(t, typeDecls, "Should have at least one type declaration")
 
-		typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+		typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 		require.NotNil(t, typeSpec, "Should have type spec")
 
 		// Test with invalid position data that might cause chunk creation to fail
@@ -1242,7 +1242,7 @@ type FieldTest struct {
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoStruct(
 					context.Background(),
@@ -1285,7 +1285,7 @@ type HashTest struct {
 
 		typeDecls := parseTree.GetNodesByType("type_declaration")
 		if len(typeDecls) > 0 {
-			typeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+			typeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 			if typeSpec != nil {
 				result := parser.parseGoStruct(
 					context.Background(),
@@ -1351,7 +1351,7 @@ type privateInterface interface {
 	}
 
 	// Should filter out private struct
-	privateStructTypeSpec := findChildByType(parser, typeDecls[1], "type_spec")
+	privateStructTypeSpec := findChildByTypeInNode(typeDecls[1], "type_spec")
 	privateStructResult := parser.parseGoStruct(
 		context.Background(),
 		parseTree,
@@ -1364,7 +1364,7 @@ type privateInterface interface {
 	assert.Nil(t, privateStructResult, "Private struct should be filtered out")
 
 	// Should include public struct
-	publicStructTypeSpec := findChildByType(parser, typeDecls[0], "type_spec")
+	publicStructTypeSpec := findChildByTypeInNode(typeDecls[0], "type_spec")
 	publicStructResult := parser.parseGoStruct(
 		context.Background(),
 		parseTree,
@@ -1380,13 +1380,4 @@ type privateInterface interface {
 	// Should filter out private fields in public struct
 	require.Len(t, publicStructResult.ChildChunks, 1, "Should only include public field")
 	assert.Equal(t, "PublicField", publicStructResult.ChildChunks[0].Name)
-}
-
-// Helper functions that delegate to parser methods.
-func findChildByType(parser *GoParser, node *valueobject.ParseNode, nodeType string) *valueobject.ParseNode {
-	return parser.findChildByType(node, nodeType)
-}
-
-func findChildrenByType(parser *GoParser, node *valueobject.ParseNode, nodeType string) []*valueobject.ParseNode {
-	return parser.findChildrenByType(node, nodeType)
 }

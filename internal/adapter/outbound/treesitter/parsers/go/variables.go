@@ -28,26 +28,26 @@ func (p *GoParser) ExtractVariables(
 	// Find variable declarations
 	varNodes := parseTree.GetNodesByType("var_declaration")
 	for _, node := range varNodes {
-		vars := p.parseGoVariableDeclaration(parseTree, node, packageName, outbound.ConstructVariable, options, now)
+		vars := parseGoVariableDeclaration(parseTree, node, packageName, outbound.ConstructVariable, options, now)
 		variables = append(variables, vars...)
 	}
 
 	// Find constant declarations
 	constNodes := parseTree.GetNodesByType("const_declaration")
 	for _, node := range constNodes {
-		consts := p.parseGoVariableDeclaration(parseTree, node, packageName, outbound.ConstructConstant, options, now)
+		consts := parseGoVariableDeclaration(parseTree, node, packageName, outbound.ConstructConstant, options, now)
 		variables = append(variables, consts...)
 	}
 
 	// Find type declarations
-	typeDecls := p.parseGoTypeDeclarations(parseTree, packageName, options, now)
+	typeDecls := parseGoTypeDeclarations(parseTree, packageName, options, now)
 	variables = append(variables, typeDecls...)
 
 	return variables, nil
 }
 
 // parseGoVariableDeclaration parses variable/constant declarations.
-func (p *GoParser) parseGoVariableDeclaration(
+func parseGoVariableDeclaration(
 	parseTree *valueobject.ParseTree,
 	varDecl *valueobject.ParseNode,
 	packageName string,
@@ -58,14 +58,14 @@ func (p *GoParser) parseGoVariableDeclaration(
 	var variables []outbound.SemanticCodeChunk
 
 	// Find variable specifications
-	varSpecs := p.findChildrenByType(varDecl, "var_spec")
+	varSpecs := findChildrenByType(varDecl, "var_spec")
 	if len(varSpecs) == 0 {
 		// Try const_spec for constants
-		varSpecs = p.findChildrenByType(varDecl, "const_spec")
+		varSpecs = findChildrenByType(varDecl, "const_spec")
 	}
 
 	for _, varSpec := range varSpecs {
-		vars := p.parseGoVariableSpec(parseTree, varDecl, varSpec, packageName, constructType, options, now)
+		vars := parseGoVariableSpec(parseTree, varDecl, varSpec, packageName, constructType, options, now)
 		variables = append(variables, vars...)
 	}
 
@@ -73,7 +73,7 @@ func (p *GoParser) parseGoVariableDeclaration(
 }
 
 // parseGoVariableSpec parses a variable specification.
-func (p *GoParser) parseGoVariableSpec(
+func parseGoVariableSpec(
 	parseTree *valueobject.ParseTree,
 	varDecl *valueobject.ParseNode,
 	varSpec *valueobject.ParseNode,
@@ -85,21 +85,21 @@ func (p *GoParser) parseGoVariableSpec(
 	var variables []outbound.SemanticCodeChunk
 
 	// Get variable names
-	identifiers := p.findChildrenByType(varSpec, "identifier")
+	identifiers := findChildrenByType(varSpec, "identifier")
 
 	// Get variable type
-	varType := p.getVariableType(parseTree, varSpec)
+	varType := getVariableType(parseTree, varSpec)
 
 	// Get content (use full declaration for grouped vars)
 	content := parseTree.GetNodeText(varDecl)
-	if len(p.findChildrenByType(varDecl, "var_spec")) == 1 || len(p.findChildrenByType(varDecl, "const_spec")) == 1 {
+	if len(findChildrenByType(varDecl, "var_spec")) == 1 || len(findChildrenByType(varDecl, "const_spec")) == 1 {
 		// Single variable, use spec content
 		content = parseTree.GetNodeText(varSpec)
 	}
 
 	for _, identifier := range identifiers {
 		varName := parseTree.GetNodeText(identifier)
-		visibility := p.getVisibility(varName)
+		visibility := getVisibility(varName)
 
 		// Skip private variables if not included
 		if !options.IncludePrivate && visibility == outbound.Private {
@@ -127,7 +127,7 @@ func (p *GoParser) parseGoVariableSpec(
 }
 
 // parseGoTypeDeclarations parses type alias declarations.
-func (p *GoParser) parseGoTypeDeclarations(
+func parseGoTypeDeclarations(
 	parseTree *valueobject.ParseTree,
 	packageName string,
 	options outbound.SemanticExtractionOptions,
@@ -138,15 +138,15 @@ func (p *GoParser) parseGoTypeDeclarations(
 	// Find type declarations that are aliases (not struct/interface)
 	typeNodes := parseTree.GetNodesByType("type_declaration")
 	for _, node := range typeNodes {
-		typeSpecs := p.findChildrenByType(node, "type_spec")
+		typeSpecs := findChildrenByType(node, "type_spec")
 		for _, typeSpec := range typeSpecs {
 			// Skip struct and interface types (they're handled elsewhere)
-			if p.findChildByType(typeSpec, "struct_type") != nil ||
-				p.findChildByType(typeSpec, "interface_type") != nil {
+			if findChildByTypeInNode(typeSpec, "struct_type") != nil ||
+				findChildByTypeInNode(typeSpec, "interface_type") != nil {
 				continue
 			}
 
-			typeChunk := p.parseGoTypeSpec(parseTree, node, typeSpec, packageName, options, now)
+			typeChunk := parseGoTypeSpec(parseTree, node, typeSpec, packageName, options, now)
 			if typeChunk != nil {
 				types = append(types, *typeChunk)
 			}
@@ -157,7 +157,7 @@ func (p *GoParser) parseGoTypeDeclarations(
 }
 
 // parseGoTypeSpec parses a type specification (type alias).
-func (p *GoParser) parseGoTypeSpec(
+func parseGoTypeSpec(
 	parseTree *valueobject.ParseTree,
 	typeDecl *valueobject.ParseNode,
 	typeSpec *valueobject.ParseNode,
@@ -166,14 +166,14 @@ func (p *GoParser) parseGoTypeSpec(
 	now time.Time,
 ) *outbound.SemanticCodeChunk {
 	// Find type name
-	nameNode := p.findChildByType(typeSpec, "type_identifier")
+	nameNode := findChildByTypeInNode(typeSpec, "type_identifier")
 	if nameNode == nil {
 		return nil
 	}
 
 	typeName := parseTree.GetNodeText(nameNode)
 	content := parseTree.GetNodeText(typeDecl)
-	visibility := p.getVisibility(typeName)
+	visibility := getVisibility(typeName)
 
 	// Skip private types if not included
 	if !options.IncludePrivate && visibility == outbound.Private {
@@ -181,7 +181,7 @@ func (p *GoParser) parseGoTypeSpec(
 	}
 
 	// Get the aliased type
-	aliasedType := p.getAliasedType(parseTree, typeSpec)
+	aliasedType := getAliasedType(parseTree, typeSpec)
 
 	return &outbound.SemanticCodeChunk{
 		ID:            utils.GenerateID("type", typeName, nil),
@@ -201,11 +201,11 @@ func (p *GoParser) parseGoTypeSpec(
 }
 
 // getVariableType gets the type of a variable.
-func (p *GoParser) getVariableType(
+func getVariableType(
 	parseTree *valueobject.ParseTree,
 	varSpec *valueobject.ParseNode,
 ) string {
-	typeNode := p.getParameterType(varSpec)
+	typeNode := getParameterType(varSpec)
 	if typeNode != nil {
 		return parseTree.GetNodeText(typeNode)
 	}
@@ -213,7 +213,7 @@ func (p *GoParser) getVariableType(
 }
 
 // getAliasedType gets the type that a type alias points to.
-func (p *GoParser) getAliasedType(
+func getAliasedType(
 	parseTree *valueobject.ParseTree,
 	typeSpec *valueobject.ParseNode,
 ) string {

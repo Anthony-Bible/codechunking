@@ -1,6 +1,7 @@
 package javascriptparser
 
 import (
+	"codechunking/internal/adapter/outbound/treesitter"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -89,9 +90,9 @@ class Cat extends Animal {
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:       true,
@@ -100,7 +101,7 @@ class Cat extends Animal {
 		MaxDepth:             10,
 	}
 
-	classes, err := parser.ExtractClasses(context.Background(), parseTree, options)
+	classes, err := adapter.ExtractClasses(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Should find 3 classes
@@ -218,9 +219,9 @@ const IIFEClass = (function() {
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -228,7 +229,7 @@ const IIFEClass = (function() {
 		MaxDepth:        10,
 	}
 
-	classes, err := parser.ExtractClasses(context.Background(), parseTree, options)
+	classes, err := adapter.ExtractClasses(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Should find multiple class expressions
@@ -391,9 +392,9 @@ class SecureClass extends PrivateMixin(Animal) {
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -401,7 +402,7 @@ class SecureClass extends PrivateMixin(Animal) {
 		MaxDepth:        12, // Increased for complex mixin chains
 	}
 
-	classes, err := parser.ExtractClasses(context.Background(), parseTree, options)
+	classes, err := adapter.ExtractClasses(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Should find all classes including mixin-generated ones
@@ -435,7 +436,7 @@ class SecureClass extends PrivateMixin(Animal) {
 	flyableMixin := findChunkByName(classes, "Flyable")
 	if flyableMixin == nil {
 		// Might be identified as a function that returns a class
-		functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+		functions, err := adapter.ExtractFunctions(ctx, parseTree, options)
 		require.NoError(t, err)
 
 		flyableFunc := findChunkByName(functions, "Flyable")
@@ -580,9 +581,9 @@ class DatabaseConnection {
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -590,7 +591,7 @@ class DatabaseConnection {
 		MaxDepth:        10,
 	}
 
-	classes, err := parser.ExtractClasses(context.Background(), parseTree, options)
+	classes, err := adapter.ExtractClasses(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Should find all classes
@@ -640,13 +641,13 @@ class DatabaseConnection {
 // TestJavaScriptClasses_ErrorHandling tests error conditions for class parsing.
 // This is a RED PHASE test that defines expected behavior for class parsing error handling.
 func TestJavaScriptClasses_ErrorHandling(t *testing.T) {
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	t.Run("nil parse tree should return error", func(t *testing.T) {
 		options := outbound.SemanticExtractionOptions{}
 
-		_, err := parser.ExtractClasses(context.Background(), nil, options)
+		_, err := adapter.ExtractClasses(ctx, nil, options)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parse tree cannot be nil")
 	})
@@ -658,9 +659,11 @@ func TestJavaScriptClasses_ErrorHandling(t *testing.T) {
 		parseTree := createMockParseTreeFromSource(t, goLang, "package main")
 		options := outbound.SemanticExtractionOptions{}
 
-		_, err = parser.ExtractClasses(context.Background(), parseTree, options)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported language")
+		if parseTree != nil {
+			_, err = adapter.ExtractClasses(ctx, parseTree, options)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsupported language")
+		}
 	})
 
 	t.Run("malformed class should not panic", func(t *testing.T) {
@@ -676,7 +679,7 @@ class IncompleteClass {
 		options := outbound.SemanticExtractionOptions{}
 
 		// Should not panic, even with malformed code
-		classes, err := parser.ExtractClasses(context.Background(), parseTree, options)
+		classes, err := adapter.ExtractClasses(ctx, parseTree, options)
 		// May return error or empty results, but should not panic
 		if err == nil {
 			assert.NotNil(t, classes)

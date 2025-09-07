@@ -63,7 +63,7 @@ func IsPublicIdentifier(identifier string, language valueobject.Language) bool {
 	case "go":
 		// Go: public if starts with uppercase letter
 		return identifier[0] >= 'A' && identifier[0] <= 'Z'
-	case "python":
+	case "python", "Python":
 		// Python: private if starts with underscore (including dunder methods)
 		return !strings.HasPrefix(identifier, "_")
 	case "typescript", "javascript":

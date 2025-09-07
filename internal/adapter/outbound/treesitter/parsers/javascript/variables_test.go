@@ -1,6 +1,7 @@
 package javascriptparser
 
 import (
+	"codechunking/internal/adapter/outbound/treesitter"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -83,9 +84,9 @@ export var exportedVar = 'var export';
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -93,7 +94,7 @@ export var exportedVar = 'var export';
 		MaxDepth:        10,
 	}
 
-	variables, err := parser.ExtractVariables(context.Background(), parseTree, options)
+	variables, err := adapter.ExtractVariables(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Should find multiple variables of different types
@@ -216,9 +217,9 @@ class NotHoistedClass {
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -226,7 +227,7 @@ class NotHoistedClass {
 		MaxDepth:        10,
 	}
 
-	variables, err := parser.ExtractVariables(context.Background(), parseTree, options)
+	variables, err := adapter.ExtractVariables(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Test hoisted var
@@ -373,9 +374,9 @@ function createClosure(outerParam) {
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -383,7 +384,7 @@ function createClosure(outerParam) {
 		MaxDepth:        12,
 	}
 
-	variables, err := parser.ExtractVariables(context.Background(), parseTree, options)
+	variables, err := adapter.ExtractVariables(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Test global variables
@@ -534,9 +535,9 @@ const computedObject = {
 		language,
 		sourceCode,
 	)
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
-	_ = parseTree // RED PHASE: will be used after implementation
+
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:  true,
@@ -544,7 +545,7 @@ const computedObject = {
 		MaxDepth:        10,
 	}
 
-	variables, err := parser.ExtractVariables(context.Background(), parseTree, options)
+	variables, err := adapter.ExtractVariables(ctx, parseTree, options)
 	require.NoError(t, err)
 
 	// Test primitive type inference
@@ -615,13 +616,13 @@ const computedObject = {
 // TestJavaScriptVariables_ErrorHandling tests error conditions for variable parsing.
 // This is a RED PHASE test that defines expected behavior for variable parsing error handling.
 func TestJavaScriptVariables_ErrorHandling(t *testing.T) {
-	parser, err := NewJavaScriptParser()
-	require.NoError(t, err)
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
 
 	t.Run("nil parse tree should return error", func(t *testing.T) {
 		options := outbound.SemanticExtractionOptions{}
 
-		_, err := parser.ExtractVariables(context.Background(), nil, options)
+		_, err := adapter.ExtractVariables(ctx, nil, options)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parse tree cannot be nil")
 	})
@@ -633,7 +634,7 @@ func TestJavaScriptVariables_ErrorHandling(t *testing.T) {
 		parseTree := createMockParseTreeFromSource(t, goLang, "package main")
 		options := outbound.SemanticExtractionOptions{}
 
-		_, err = parser.ExtractVariables(context.Background(), parseTree, options)
+		_, err = adapter.ExtractVariables(ctx, parseTree, options)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported language")
 	})
@@ -651,7 +652,7 @@ var function = 'reserved word';
 		options := outbound.SemanticExtractionOptions{}
 
 		// Should not panic, even with malformed code
-		variables, err := parser.ExtractVariables(context.Background(), parseTree, options)
+		variables, err := adapter.ExtractVariables(ctx, parseTree, options)
 		// May return error or empty results, but should not panic
 		if err == nil {
 			assert.NotNil(t, variables)

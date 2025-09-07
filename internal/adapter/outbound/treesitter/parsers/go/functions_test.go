@@ -32,8 +32,9 @@ func main() {
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser, err := NewGoParser()
+	parserInterface, err := NewGoParser()
 	require.NoError(t, err)
+	parser := parserInterface.(*ObservableGoParser)
 
 	// Find function nodes
 	functionNodes := parseTree.GetNodesByType("function_declaration")
@@ -91,8 +92,9 @@ func Identity[T comparable](value T) T {
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser, err := NewGoParser()
+	parserInterface, err := NewGoParser()
 	require.NoError(t, err)
+	parser := parserInterface.(*ObservableGoParser)
 
 	functionNodes := parseTree.GetNodesByType("function_declaration")
 	require.Len(t, functionNodes, 2, "Should find 2 function declarations")
@@ -149,8 +151,9 @@ func Sum(numbers ...int) int {
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser, err := NewGoParser()
+	parserInterface, err := NewGoParser()
 	require.NoError(t, err)
+	parser := parserInterface.(*ObservableGoParser)
 
 	functionNodes := parseTree.GetNodesByType("function_declaration")
 	require.Len(t, functionNodes, 2, "Should find 2 function declarations")
@@ -195,8 +198,9 @@ func (c Calculator) GetResult() float64 {
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser, err := NewGoParser()
+	parserInterface, err := NewGoParser()
 	require.NoError(t, err)
+	parser := parserInterface.(*ObservableGoParser)
 
 	methodNodes := parseTree.GetNodesByType("method_declaration")
 	require.Len(t, methodNodes, 2, "Should find 2 method declarations")
@@ -252,8 +256,9 @@ func (c *Container[T]) Get(index int) (T, bool) {
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser, err := NewGoParser()
+	parserInterface, err := NewGoParser()
 	require.NoError(t, err)
+	parser := parserInterface.(*ObservableGoParser)
 
 	methodNodes := parseTree.GetNodesByType("method_declaration")
 	require.Len(t, methodNodes, 2, "Should find 2 method declarations")
@@ -301,8 +306,9 @@ func ComplexFunction(
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser, err := NewGoParser()
+	parserInterface, err := NewGoParser()
 	require.NoError(t, err)
+	parser := parserInterface.(*ObservableGoParser)
 
 	functionNodes := parseTree.GetNodesByType("function_declaration")
 	require.Len(t, functionNodes, 1)
@@ -379,8 +385,9 @@ func NoReturn() {
 			require.NoError(t, err)
 
 			parseTree := createMockParseTreeFromSource(t, language, tc.sourceCode)
-			parser, err := NewGoParser()
+			parserInterface, err := NewGoParser()
 			require.NoError(t, err)
+			parser := parserInterface.(*ObservableGoParser)
 
 			functionNodes := parseTree.GetNodesByType("function_declaration")
 			require.Len(t, functionNodes, 1)
@@ -408,8 +415,9 @@ func (s *Service) ProcessData(data []byte, options map[string]interface{}) (*Res
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser, err := NewGoParser()
+	parserInterface, err := NewGoParser()
 	require.NoError(t, err)
+	parser := parserInterface.(*ObservableGoParser)
 
 	methodNodes := parseTree.GetNodesByType("method_declaration")
 	require.Len(t, methodNodes, 1)
@@ -436,8 +444,9 @@ func (s *Service) ProcessData(data []byte, options map[string]interface{}) (*Res
 // This is a RED PHASE test that defines expected behavior for error handling.
 func TestGoFunctionParser_ErrorHandling(t *testing.T) {
 	t.Run("nil parse tree should not panic", func(t *testing.T) {
-		parser, err := NewGoParser()
+		parserInterface, err := NewGoParser()
 		require.NoError(t, err)
+		parser := parserInterface.(*ObservableGoParser)
 
 		// This should not panic and should return nil
 		result := parser.parseGoFunction(
@@ -457,8 +466,9 @@ func TestGoFunctionParser_ErrorHandling(t *testing.T) {
 		require.NoError(t, err)
 
 		parseTree := createMockParseTreeFromSource(t, language, "package main")
-		parser, err := NewGoParser()
+		parserInterface, err := NewGoParser()
 		require.NoError(t, err)
+		parser := parserInterface.(*ObservableGoParser)
 
 		result := parser.parseGoFunction(
 			context.Background(),
@@ -481,8 +491,9 @@ func Incomplete(`
 		require.NoError(t, err)
 
 		parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-		parser, err := NewGoParser()
+		parserInterface, err := NewGoParser()
 		require.NoError(t, err)
+		parser := parserInterface.(*ObservableGoParser)
 
 		// Even if tree-sitter creates nodes for malformed code, our parser should handle it gracefully
 		functionNodes := parseTree.GetNodesByType("function_declaration")
@@ -521,8 +532,9 @@ func privateFunction() {
 	require.NoError(t, err)
 
 	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
-	parser, err := NewGoParser()
+	parserInterface, err := NewGoParser()
 	require.NoError(t, err)
+	parser := parserInterface.(*ObservableGoParser)
 
 	functionNodes := parseTree.GetNodesByType("function_declaration")
 	require.Len(t, functionNodes, 2)

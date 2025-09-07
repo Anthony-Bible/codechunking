@@ -91,7 +91,7 @@ func NewStreamingCodeProcessor(
 		5, // failure threshold
 		3, // success threshold
 		30*time.Second,
-		nil, // meter - would be provided in real implementation
+		nil, // meter - pass nil directly
 	)
 
 	retryConfig := pipeline.ProcessingRetryConfig{
@@ -708,7 +708,10 @@ func (m *MockStreamingFileReader) ReadFile(ctx context.Context, path string) ([]
 		copy(buf, content)
 		return buf, nil
 	}
-	return nil, errors.New("file not found")
+
+	// Return default mock content if not explicitly set
+	defaultContent := []byte("package main\n\nfunc main() {\n\tprintln(\"Hello, World!\")\n}")
+	return defaultContent, nil
 }
 
 func (m *MockStreamingFileReader) Close() error {
@@ -783,9 +786,28 @@ func NewMockTreeSitterParser() *MockTreeSitterParser {
 }
 
 func (m *MockTreeSitterParser) Parse(ctx context.Context, content []byte) ([]*SyntaxNode, error) {
-	result := make([]*SyntaxNode, len(m.nodes))
-	copy(result, m.nodes)
-	return result, nil
+	if len(m.nodes) > 0 {
+		result := make([]*SyntaxNode, len(m.nodes))
+		copy(result, m.nodes)
+		return result, nil
+	}
+
+	// Return default mock syntax nodes based on content size
+	contentSize := len(content)
+	nodeCount := contentSize / 50 // Roughly one node per 50 bytes
+	if nodeCount == 0 {
+		nodeCount = 1
+	}
+
+	nodes := make([]*SyntaxNode, nodeCount)
+	for i := range nodeCount {
+		nodes[i] = &SyntaxNode{
+			NodeType: fmt.Sprintf("node_type_%d", i),
+			Content:  fmt.Sprintf("node_content_%d", i),
+		}
+	}
+
+	return nodes, nil
 }
 
 func (m *MockTreeSitterParser) SetNodes(nodes []*SyntaxNode) {
@@ -803,9 +825,33 @@ func NewMockChunker() *MockChunker {
 }
 
 func (m *MockChunker) Chunk(ctx context.Context, nodes []*SyntaxNode) ([]outbound.EnhancedCodeChunk, error) {
-	result := make([]outbound.EnhancedCodeChunk, len(m.chunks))
-	copy(result, m.chunks)
-	return result, nil
+	if len(m.chunks) > 0 {
+		result := make([]outbound.EnhancedCodeChunk, len(m.chunks))
+		copy(result, m.chunks)
+		return result, nil
+	}
+
+	// Return default mock chunks based on nodes count
+	nodeCount := len(nodes)
+	chunkCount := nodeCount/3 + 1 // Roughly one chunk per 3 nodes
+
+	lang, _ := valueobject.NewLanguage(valueobject.LanguageGo)
+	chunks := make([]outbound.EnhancedCodeChunk, chunkCount)
+	for i := range chunkCount {
+		startPos := valueobject.Position{Row: uint32(i * 10), Column: 0}
+		endPos := valueobject.Position{Row: uint32((i + 1) * 10), Column: 0}
+
+		chunks[i] = outbound.EnhancedCodeChunk{
+			ID:            fmt.Sprintf("chunk_%d", i),
+			Content:       fmt.Sprintf("chunk_content_%d", i),
+			StartPosition: startPos,
+			EndPosition:   endPos,
+			Language:      lang,
+			SourceFile:    "mock.go",
+		}
+	}
+
+	return chunks, nil
 }
 
 func (m *MockChunker) SetChunks(chunks []outbound.EnhancedCodeChunk) {

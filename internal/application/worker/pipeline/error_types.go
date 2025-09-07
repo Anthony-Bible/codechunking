@@ -211,10 +211,13 @@ func NewProcessingCircuitBreaker(
 	timeout time.Duration,
 	meter metric.Meter,
 ) *ProcessingCircuitBreaker {
-	stateCounter, _ := meter.Int64Counter(
-		"processing_circuit_breaker_state_changes",
-		metric.WithDescription("Number of state changes in processing circuit breaker"),
-	)
+	var stateCounter metric.Int64Counter
+	if meter != nil {
+		stateCounter, _ = meter.Int64Counter(
+			"processing_circuit_breaker_state_changes",
+			metric.WithDescription("Number of state changes in processing circuit breaker"),
+		)
+	}
 
 	return &ProcessingCircuitBreaker{
 		name:             name,
@@ -236,10 +239,12 @@ func (cb *ProcessingCircuitBreaker) Execute(ctx context.Context, fn func() error
 		// Check if timeout has passed
 		if time.Since(cb.lastFailure) >= cb.timeout {
 			cb.state = ProcessingHalfOpen
-			cb.stateCounter.Add(ctx, 1, metric.WithAttributes(
-				attribute.String("circuit_breaker", cb.name),
-				attribute.String("state", "processing_half_open"),
-			))
+			if cb.stateCounter != nil {
+				cb.stateCounter.Add(ctx, 1, metric.WithAttributes(
+					attribute.String("circuit_breaker", cb.name),
+					attribute.String("state", "processing_half_open"),
+				))
+			}
 		} else {
 			cb.mutex.Unlock()
 			return fmt.Errorf("processing circuit breaker %s is open", cb.name)
@@ -261,10 +266,12 @@ func (cb *ProcessingCircuitBreaker) Execute(ctx context.Context, fn func() error
 
 		if cb.failureCount >= cb.failureThreshold && cb.state == ProcessingClosed {
 			cb.state = ProcessingOpen
-			cb.stateCounter.Add(ctx, 1, metric.WithAttributes(
-				attribute.String("circuit_breaker", cb.name),
-				attribute.String("state", "processing_open"),
-			))
+			if cb.stateCounter != nil {
+				cb.stateCounter.Add(ctx, 1, metric.WithAttributes(
+					attribute.String("circuit_breaker", cb.name),
+					attribute.String("state", "processing_open"),
+				))
+			}
 		}
 
 		return err
@@ -278,10 +285,12 @@ func (cb *ProcessingCircuitBreaker) Execute(ctx context.Context, fn func() error
 			cb.state = ProcessingClosed
 			cb.failureCount = 0
 			cb.successCount = 0
-			cb.stateCounter.Add(ctx, 1, metric.WithAttributes(
-				attribute.String("circuit_breaker", cb.name),
-				attribute.String("state", "processing_closed"),
-			))
+			if cb.stateCounter != nil {
+				cb.stateCounter.Add(ctx, 1, metric.WithAttributes(
+					attribute.String("circuit_breaker", cb.name),
+					attribute.String("state", "processing_closed"),
+				))
+			}
 		}
 	case ProcessingClosed:
 		cb.failureCount = 0

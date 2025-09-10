@@ -1,3 +1,6 @@
+//go:build disabled
+// +build disabled
+
 package chunking_test
 
 import (

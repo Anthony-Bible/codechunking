@@ -869,8 +869,8 @@ func (f *FunctionChunker) extractGoFunctionCalls(line string, lineNum int) []out
 			if f.isValidFunctionName(funcName) {
 				calls = append(calls, outbound.FunctionCall{
 					Name:      funcName,
-					StartByte: uint32(lineNum * 80), // Rough estimate
-					EndByte:   uint32(lineNum*80 + len(word)),
+					StartByte: valueobject.ClampToUint32(lineNum * 80), // Rough estimate
+					EndByte:   valueobject.ClampToUint32(lineNum*80 + len(word)),
 				})
 			}
 		}
@@ -894,8 +894,8 @@ func (f *FunctionChunker) extractPythonFunctionCalls(line string, lineNum int) [
 			if f.isValidFunctionName(funcName) {
 				calls = append(calls, outbound.FunctionCall{
 					Name:      funcName,
-					StartByte: uint32(lineNum * 80),
-					EndByte:   uint32(lineNum*80 + len(word)),
+					StartByte: valueobject.ClampToUint32(lineNum * 80),
+					EndByte:   valueobject.ClampToUint32(lineNum*80 + len(word)),
 				})
 			}
 		}
@@ -919,8 +919,8 @@ func (f *FunctionChunker) extractJSFunctionCalls(line string, lineNum int) []out
 			if f.isValidFunctionName(funcName) {
 				calls = append(calls, outbound.FunctionCall{
 					Name:      funcName,
-					StartByte: uint32(lineNum * 80),
-					EndByte:   uint32(lineNum*80 + len(word)),
+					StartByte: valueobject.ClampToUint32(lineNum * 80),
+					EndByte:   valueobject.ClampToUint32(lineNum*80 + len(word)),
 				})
 			}
 		}

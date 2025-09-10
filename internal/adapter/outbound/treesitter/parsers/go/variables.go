@@ -107,7 +107,7 @@ func parseGoVariableSpec(
 		}
 
 		variables = append(variables, outbound.SemanticCodeChunk{
-			ID:            utils.GenerateID(string(constructType), varName, nil),
+			ChunkID:       utils.GenerateID(string(constructType), varName, nil),
 			Type:          constructType,
 			Name:          varName,
 			QualifiedName: packageName + "." + varName,
@@ -184,7 +184,7 @@ func parseGoTypeSpec(
 	aliasedType := getAliasedType(parseTree, typeSpec)
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID("type", typeName, nil),
+		ChunkID:       utils.GenerateID("type", typeName, nil),
 		Type:          outbound.ConstructType,
 		Name:          typeName,
 		QualifiedName: packageName + "." + typeName,

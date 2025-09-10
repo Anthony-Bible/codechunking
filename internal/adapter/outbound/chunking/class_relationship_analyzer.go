@@ -310,7 +310,7 @@ func (c *ClassRelationshipAnalyzer) isMethodAlreadyAssociated(
 	methods []outbound.SemanticCodeChunk,
 ) bool {
 	for _, existingMethod := range methods {
-		if existingMethod.ID == method.ID {
+		if existingMethod.ID() == method.ID() {
 			return true
 		}
 	}
@@ -322,7 +322,7 @@ func (c *ClassRelationshipAnalyzer) isPropertyAlreadyAssociated(
 	properties []outbound.SemanticCodeChunk,
 ) bool {
 	for _, existingProperty := range properties {
-		if existingProperty.ID == property.ID {
+		if existingProperty.ID() == property.ID() {
 			return true
 		}
 	}

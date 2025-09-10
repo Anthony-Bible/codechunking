@@ -32,7 +32,7 @@ func Add(a int, b int) int {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "func:Add",
+					ChunkID:       "func:Add",
 					Type:          outbound.ConstructFunction,
 					Name:          "Add",
 					QualifiedName: "Add",
@@ -57,7 +57,7 @@ func (p *Point) String() string {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "method:Point:String",
+					ChunkID:       "method:Point:String",
 					Type:          outbound.ConstructMethod,
 					Name:          "String",
 					QualifiedName: "Point.String",
@@ -82,7 +82,7 @@ func (p Point) Distance() float64 {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "method:Point:Distance",
+					ChunkID:       "method:Point:Distance",
 					Type:          outbound.ConstructMethod,
 					Name:          "Distance",
 					QualifiedName: "Point.Distance",
@@ -111,7 +111,7 @@ func Sum(nums ...int) int {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "func:Sum",
+					ChunkID:       "func:Sum",
 					Type:          outbound.ConstructFunction,
 					Name:          "Sum",
 					QualifiedName: "Sum",
@@ -140,7 +140,7 @@ func Map[T any, R any](slice []T, fn func(T) R) []R {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "func:Map",
+					ChunkID:       "func:Map",
 					Type:          outbound.ConstructFunction,
 					Name:          "Map",
 					QualifiedName: "Map",
@@ -175,7 +175,7 @@ func Divide(a, b int) (int, int, error) {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "func:Divide",
+					ChunkID:       "func:Divide",
 					Type:          outbound.ConstructFunction,
 					Name:          "Divide",
 					QualifiedName: "Divide",
@@ -202,7 +202,7 @@ func main() {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "func:main",
+					ChunkID:       "func:main",
 					Type:          outbound.ConstructFunction,
 					Name:          "main",
 					QualifiedName: "main",
@@ -229,7 +229,7 @@ func Process(input <-chan int, output chan<- string) {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "func:Process",
+					ChunkID:       "func:Process",
 					Type:          outbound.ConstructFunction,
 					Name:          "Process",
 					QualifiedName: "Process",
@@ -259,7 +259,7 @@ func Handle(handler io.Reader) error {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "func:Handle",
+					ChunkID:       "func:Handle",
 					Type:          outbound.ConstructFunction,
 					Name:          "Handle",
 					QualifiedName: "Handle",
@@ -284,7 +284,7 @@ func Apply(value int, fn func(int) bool) bool {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "func:Apply",
+					ChunkID:       "func:Apply",
 					Type:          outbound.ConstructFunction,
 					Name:          "Apply",
 					QualifiedName: "Apply",
@@ -312,7 +312,7 @@ func helper(a int) int {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "func:helper",
+					ChunkID:       "func:helper",
 					Type:          outbound.ConstructFunction,
 					Name:          "helper",
 					QualifiedName: "helper",
@@ -354,12 +354,12 @@ func helper(a int) int {
 				}
 			}
 
-			assert.Equal(t, len(tt.expectedChunks), len(funcChunks))
+			assert.Len(t, funcChunks, len(tt.expectedChunks))
 
 			for i, expected := range tt.expectedChunks {
 				if i < len(funcChunks) {
 					actual := funcChunks[i]
-					assert.Equal(t, expected.ID, actual.ID)
+					assert.Equal(t, expected.ChunkID, actual.ChunkID)
 					assert.Equal(t, expected.Type, actual.Type)
 					assert.Equal(t, expected.Name, actual.Name)
 					assert.Equal(t, expected.QualifiedName, actual.QualifiedName)
@@ -409,7 +409,7 @@ type Person struct {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "struct:Person",
+					ChunkID:       "struct:Person",
 					Type:          outbound.ConstructStruct,
 					Name:          "Person",
 					QualifiedName: "Person",
@@ -434,7 +434,7 @@ type User struct {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "struct:User",
+					ChunkID:       "struct:User",
 					Type:          outbound.ConstructStruct,
 					Name:          "User",
 					QualifiedName: "User",
@@ -465,7 +465,7 @@ type Employee struct {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "struct:Address",
+					ChunkID:       "struct:Address",
 					Type:          outbound.ConstructStruct,
 					Name:          "Address",
 					QualifiedName: "Address",
@@ -477,7 +477,7 @@ type Employee struct {
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "struct:Employee",
+					ChunkID:       "struct:Employee",
 					Type:          outbound.ConstructStruct,
 					Name:          "Employee",
 					QualifiedName: "Employee",
@@ -500,7 +500,7 @@ type Container[T any] struct {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "struct:Container",
+					ChunkID:       "struct:Container",
 					Type:          outbound.ConstructStruct,
 					Name:          "Container",
 					QualifiedName: "Container",
@@ -530,7 +530,7 @@ type Company struct {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "struct:Company",
+					ChunkID:       "struct:Company",
 					Type:          outbound.ConstructStruct,
 					Name:          "Company",
 					QualifiedName: "Company",
@@ -554,7 +554,7 @@ type person struct {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "struct:person",
+					ChunkID:       "struct:person",
 					Type:          outbound.ConstructStruct,
 					Name:          "person",
 					QualifiedName: "person",
@@ -594,12 +594,12 @@ type person struct {
 				}
 			}
 
-			assert.Equal(t, len(tt.expectedChunks), len(structChunks))
+			assert.Len(t, structChunks, len(tt.expectedChunks))
 
 			for i, expected := range tt.expectedChunks {
 				if i < len(structChunks) {
 					actual := structChunks[i]
-					assert.Equal(t, expected.ID, actual.ID)
+					assert.Equal(t, expected.ChunkID, actual.ChunkID)
 					assert.Equal(t, expected.Type, actual.Type)
 					assert.Equal(t, expected.Name, actual.Name)
 					assert.Equal(t, expected.QualifiedName, actual.QualifiedName)
@@ -647,7 +647,7 @@ type Writer interface {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "interface:Writer",
+					ChunkID:       "interface:Writer",
 					Type:          outbound.ConstructInterface,
 					Name:          "Writer",
 					QualifiedName: "Writer",
@@ -672,7 +672,7 @@ type ReadWriter interface {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "interface:ReadWriter",
+					ChunkID:       "interface:ReadWriter",
 					Type:          outbound.ConstructInterface,
 					Name:          "ReadWriter",
 					QualifiedName: "ReadWriter",
@@ -695,7 +695,7 @@ type Comparable[T comparable] interface {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "interface:Comparable",
+					ChunkID:       "interface:Comparable",
 					Type:          outbound.ConstructInterface,
 					Name:          "Comparable",
 					QualifiedName: "Comparable",
@@ -719,7 +719,7 @@ type Any interface{}
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "interface:Any",
+					ChunkID:       "interface:Any",
 					Type:          outbound.ConstructInterface,
 					Name:          "Any",
 					QualifiedName: "Any",
@@ -742,7 +742,7 @@ type reader interface {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "interface:reader",
+					ChunkID:       "interface:reader",
 					Type:          outbound.ConstructInterface,
 					Name:          "reader",
 					QualifiedName: "reader",
@@ -782,12 +782,12 @@ type reader interface {
 				}
 			}
 
-			assert.Equal(t, len(tt.expectedChunks), len(interfaceChunks))
+			assert.Len(t, interfaceChunks, len(tt.expectedChunks))
 
 			for i, expected := range tt.expectedChunks {
 				if i < len(interfaceChunks) {
 					actual := interfaceChunks[i]
-					assert.Equal(t, expected.ID, actual.ID)
+					assert.Equal(t, expected.ChunkID, actual.ChunkID)
 					assert.Equal(t, expected.Type, actual.Type)
 					assert.Equal(t, expected.Name, actual.Name)
 					assert.Equal(t, expected.QualifiedName, actual.QualifiedName)
@@ -832,7 +832,7 @@ var name string
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "var:counter",
+					ChunkID:       "var:counter",
 					Type:          outbound.ConstructVariable,
 					Name:          "counter",
 					QualifiedName: "counter",
@@ -843,7 +843,7 @@ var name string
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "var:name",
+					ChunkID:       "var:name",
 					Type:          outbound.ConstructVariable,
 					Name:          "name",
 					QualifiedName: "name",
@@ -862,7 +862,7 @@ var a, b, c int
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "var:a",
+					ChunkID:       "var:a",
 					Type:          outbound.ConstructVariable,
 					Name:          "a",
 					QualifiedName: "a",
@@ -873,7 +873,7 @@ var a, b, c int
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "var:b",
+					ChunkID:       "var:b",
 					Type:          outbound.ConstructVariable,
 					Name:          "b",
 					QualifiedName: "b",
@@ -884,7 +884,7 @@ var a, b, c int
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "var:c",
+					ChunkID:       "var:c",
 					Type:          outbound.ConstructVariable,
 					Name:          "c",
 					QualifiedName: "c",
@@ -904,7 +904,7 @@ var initializedName string = "test"
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "var:initializedCounter",
+					ChunkID:       "var:initializedCounter",
 					Type:          outbound.ConstructVariable,
 					Name:          "initializedCounter",
 					QualifiedName: "initializedCounter",
@@ -915,7 +915,7 @@ var initializedName string = "test"
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "var:initializedName",
+					ChunkID:       "var:initializedName",
 					Type:          outbound.ConstructVariable,
 					Name:          "initializedName",
 					QualifiedName: "initializedName",
@@ -935,7 +935,7 @@ const defaultTimeout = time.Second * 30
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "const:maxRetries",
+					ChunkID:       "const:maxRetries",
 					Type:          outbound.ConstructConstant,
 					Name:          "maxRetries",
 					QualifiedName: "maxRetries",
@@ -946,7 +946,7 @@ const defaultTimeout = time.Second * 30
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "const:defaultTimeout",
+					ChunkID:       "const:defaultTimeout",
 					Type:          outbound.ConstructConstant,
 					Name:          "defaultTimeout",
 					QualifiedName: "defaultTimeout",
@@ -968,7 +968,7 @@ const (
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "const:MaxInt32",
+					ChunkID:       "const:MaxInt32",
 					Type:          outbound.ConstructConstant,
 					Name:          "MaxInt32",
 					QualifiedName: "MaxInt32",
@@ -979,7 +979,7 @@ const (
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "const:MinInt32",
+					ChunkID:       "const:MinInt32",
 					Type:          outbound.ConstructConstant,
 					Name:          "MinInt32",
 					QualifiedName: "MinInt32",
@@ -1002,7 +1002,7 @@ var (
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "var:x",
+					ChunkID:       "var:x",
 					Type:          outbound.ConstructVariable,
 					Name:          "x",
 					QualifiedName: "x",
@@ -1013,7 +1013,7 @@ var (
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "var:y",
+					ChunkID:       "var:y",
 					Type:          outbound.ConstructVariable,
 					Name:          "y",
 					QualifiedName: "y",
@@ -1024,7 +1024,7 @@ var (
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "var:z",
+					ChunkID:       "var:z",
 					Type:          outbound.ConstructVariable,
 					Name:          "z",
 					QualifiedName: "z",
@@ -1044,7 +1044,7 @@ const PublicConst = 42
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "var:PublicVar",
+					ChunkID:       "var:PublicVar",
 					Type:          outbound.ConstructVariable,
 					Name:          "PublicVar",
 					QualifiedName: "PublicVar",
@@ -1055,7 +1055,7 @@ const PublicConst = 42
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "const:PublicConst",
+					ChunkID:       "const:PublicConst",
 					Type:          outbound.ConstructConstant,
 					Name:          "PublicConst",
 					QualifiedName: "PublicConst",
@@ -1095,12 +1095,12 @@ const PublicConst = 42
 				}
 			}
 
-			assert.Equal(t, len(tt.expectedChunks), len(varConstChunks))
+			assert.Len(t, varConstChunks, len(tt.expectedChunks))
 
 			for i, expected := range tt.expectedChunks {
 				if i < len(varConstChunks) {
 					actual := varConstChunks[i]
-					assert.Equal(t, expected.ID, actual.ID)
+					assert.Equal(t, expected.ChunkID, actual.ChunkID)
 					assert.Equal(t, expected.Type, actual.Type)
 					assert.Equal(t, expected.Name, actual.Name)
 					assert.Equal(t, expected.QualifiedName, actual.QualifiedName)
@@ -1145,7 +1145,7 @@ func Add(a, b int) int {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "package:mathutils",
+					ChunkID:       "package:mathutils",
 					Type:          outbound.ConstructPackage,
 					Name:          "mathutils",
 					QualifiedName: "mathutils",
@@ -1168,7 +1168,7 @@ package osutils
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "package:osutils",
+					ChunkID:       "package:osutils",
 					Type:          outbound.ConstructPackage,
 					Name:          "osutils",
 					QualifiedName: "osutils",
@@ -1196,7 +1196,7 @@ func Reverse(s string) string {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "package:stringutils",
+					ChunkID:       "package:stringutils",
 					Type:          outbound.ConstructPackage,
 					Name:          "stringutils",
 					QualifiedName: "stringutils",
@@ -1235,12 +1235,12 @@ func Reverse(s string) string {
 				}
 			}
 
-			assert.Equal(t, len(tt.expectedChunks), len(packageChunks))
+			assert.Len(t, packageChunks, len(tt.expectedChunks))
 
 			for i, expected := range tt.expectedChunks {
 				if i < len(packageChunks) {
 					actual := packageChunks[i]
-					assert.Equal(t, expected.ID, actual.ID)
+					assert.Equal(t, expected.ChunkID, actual.ChunkID)
 					assert.Equal(t, expected.Type, actual.Type)
 					assert.Equal(t, expected.Name, actual.Name)
 					assert.Equal(t, expected.QualifiedName, actual.QualifiedName)
@@ -1283,7 +1283,7 @@ type Reader = io.Reader
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "type:MyInt",
+					ChunkID:       "type:MyInt",
 					Type:          outbound.ConstructType,
 					Name:          "MyInt",
 					QualifiedName: "MyInt",
@@ -1295,7 +1295,7 @@ type Reader = io.Reader
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "type:Reader",
+					ChunkID:       "type:Reader",
 					Type:          outbound.ConstructType,
 					Name:          "Reader",
 					QualifiedName: "Reader",
@@ -1321,7 +1321,7 @@ type Point struct {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "type:MyString",
+					ChunkID:       "type:MyString",
 					Type:          outbound.ConstructType,
 					Name:          "MyString",
 					QualifiedName: "MyString",
@@ -1343,7 +1343,7 @@ var bidirectionalChan chan bool
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ID:            "var:inputChan",
+					ChunkID:       "var:inputChan",
 					Type:          outbound.ConstructVariable,
 					Name:          "inputChan",
 					QualifiedName: "inputChan",
@@ -1354,7 +1354,7 @@ var bidirectionalChan chan bool
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "var:outputChan",
+					ChunkID:       "var:outputChan",
 					Type:          outbound.ConstructVariable,
 					Name:          "outputChan",
 					QualifiedName: "outputChan",
@@ -1365,7 +1365,7 @@ var bidirectionalChan chan bool
 					Language:      valueobject.Go,
 				},
 				{
-					ID:            "var:bidirectionalChan",
+					ChunkID:       "var:bidirectionalChan",
 					Type:          outbound.ConstructVariable,
 					Name:          "bidirectionalChan",
 					QualifiedName: "bidirectionalChan",
@@ -1396,12 +1396,12 @@ var bidirectionalChan chan bool
 
 			chunks := adapter.ExtractCodeChunks(domainTree, options)
 
-			assert.Equal(t, len(tt.expectedChunks), len(chunks))
+			assert.Len(t, chunks, len(tt.expectedChunks))
 
 			for i, expected := range tt.expectedChunks {
 				if i < len(chunks) {
 					actual := chunks[i]
-					assert.Equal(t, expected.ID, actual.ID)
+					assert.Equal(t, expected.ChunkID, actual.ChunkID)
 					assert.Equal(t, expected.Type, actual.Type)
 					assert.Equal(t, expected.Name, actual.Name)
 					assert.Equal(t, expected.QualifiedName, actual.QualifiedName)
@@ -1479,7 +1479,7 @@ const MaxValue = 100
 	chunks := adapter.ExtractCodeChunks(domainTree, options)
 
 	// Verify we have the expected number of chunks
-	assert.Equal(t, 6, len(chunks))
+	assert.Len(t, chunks, 6)
 
 	// Verify package chunk
 	packageChunk := findChunkByType(chunks, outbound.ConstructPackage)
@@ -1503,7 +1503,7 @@ const MaxValue = 100
 	functionChunk := findChunkByType(chunks, outbound.ConstructFunction)
 	assert.NotNil(t, functionChunk)
 	assert.Equal(t, "Add", functionChunk.Name)
-	assert.Equal(t, 2, len(functionChunk.Parameters))
+	assert.Len(t, functionChunk.Parameters, 2)
 
 	// Verify variable chunk
 	variableChunk := findChunkByType(chunks, outbound.ConstructVariable)

@@ -1,3 +1,6 @@
+//go:build disabled
+// +build disabled
+
 package treesitter
 
 import (

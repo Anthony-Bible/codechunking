@@ -69,11 +69,12 @@ func (p *GoParser) parseGoFunction(
 
 	// Find parameter list and return type
 	for _, child := range node.Children {
-		if child.Type == "parameter_list" {
+		switch child.Type {
+		case "parameter_list":
 			parameters = p.parseGoParameterList(child, parseTree)
-		} else if child.Type == "type_parameter_list" {
+		case "type_parameter_list":
 			genericParameters = p.parseGoGenericParameterList(child, parseTree)
-		} else if child.Type == "type_identifier" || child.Type == "pointer_type" || child.Type == "qualified_type" || child.Type == "tuple_type" {
+		case "type_identifier", "pointer_type", "qualified_type", "tuple_type":
 			returnType = p.parseGoReturnType(child, parseTree)
 		}
 	}
@@ -89,7 +90,7 @@ func (p *GoParser) parseGoFunction(
 	})
 
 	return outbound.SemanticCodeChunk{
-		ID:                id,
+		ChunkID:           id,
 		Name:              name,
 		QualifiedName:     qualifiedName,
 		Language:          parseTree.Language(),
@@ -179,7 +180,7 @@ func (p *GoParser) parseGoMethod(
 	})
 
 	return outbound.SemanticCodeChunk{
-		ID:                id,
+		ChunkID:           id,
 		Name:              name,
 		QualifiedName:     qualifiedName,
 		Language:          parseTree.Language(),
@@ -331,7 +332,7 @@ func (p *GoParser) extractPrecedingComments(node *valueobject.ParseNode, parseTr
 	return comments
 }
 
-// parseGoParameters parses parameter list from a method specification node
+// parseGoParameters parses parameter list from a method specification node.
 func parseGoParameters(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) []outbound.Parameter {
 	// Create a temporary parser to use the method
 	parser := &GoParser{}
@@ -354,7 +355,7 @@ func parseGoParameters(parseTree *valueobject.ParseTree, node *valueobject.Parse
 	return parameters
 }
 
-// parseGoReturnType extracts return type from a method specification node
+// parseGoReturnType extracts return type from a method specification node.
 func parseGoReturnType(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) string {
 	// Look for type information in the node
 	for _, child := range node.Children {

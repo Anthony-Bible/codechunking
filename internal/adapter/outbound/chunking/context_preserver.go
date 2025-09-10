@@ -498,8 +498,8 @@ func (c *ContextPreserver) extractGoFunctionCalls(line string, lineNum int) []ou
 			if c.isValidFunctionName(funcName) {
 				calls = append(calls, outbound.FunctionCall{
 					Name:      funcName,
-					StartByte: uint32(lineNum * 80), // Rough estimate
-					EndByte:   uint32(lineNum*80 + len(word)),
+					StartByte: valueobject.ClampToUint32(lineNum * 80), // Rough estimate
+					EndByte:   valueobject.ClampToUint32(lineNum*80 + len(word)),
 				})
 			}
 		}
@@ -523,8 +523,8 @@ func (c *ContextPreserver) extractPythonFunctionCalls(line string, lineNum int) 
 			if c.isValidFunctionName(funcName) {
 				calls = append(calls, outbound.FunctionCall{
 					Name:      funcName,
-					StartByte: uint32(lineNum * 80),
-					EndByte:   uint32(lineNum*80 + len(word)),
+					StartByte: valueobject.ClampToUint32(lineNum * 80),
+					EndByte:   valueobject.ClampToUint32(lineNum*80 + len(word)),
 				})
 			}
 		}
@@ -548,8 +548,8 @@ func (c *ContextPreserver) extractJSFunctionCalls(line string, lineNum int) []ou
 			if c.isValidFunctionName(funcName) {
 				calls = append(calls, outbound.FunctionCall{
 					Name:      funcName,
-					StartByte: uint32(lineNum * 80),
-					EndByte:   uint32(lineNum*80 + len(word)),
+					StartByte: valueobject.ClampToUint32(lineNum * 80),
+					EndByte:   valueobject.ClampToUint32(lineNum*80 + len(word)),
 				})
 			}
 		}

@@ -2,6 +2,7 @@ package pythonparser
 
 import (
 	"codechunking/internal/adapter/outbound/treesitter"
+	parsererrors "codechunking/internal/adapter/outbound/treesitter/errors"
 	"codechunking/internal/adapter/outbound/treesitter/utils"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/valueobject"
@@ -46,6 +47,11 @@ func NewPythonParser() (treesitter.ObservableTreeSitterParser, error) {
 // Parse implements the ObservableTreeSitterParser interface.
 func (o *ObservablePythonParser) Parse(ctx context.Context, source []byte) (*treesitter.ParseResult, error) {
 	start := time.Now()
+
+	// Validate source code for errors
+	if err := o.parser.validatePythonSource(ctx, source); err != nil {
+		return nil, err
+	}
 
 	// Create a minimal rootNode
 	rootNode := &valueobject.ParseNode{
@@ -312,6 +318,23 @@ func (p *PythonParser) validateInput(parseTree *valueobject.ParseTree) error {
 	if !p.IsSupported(parseTree.Language()) {
 		return fmt.Errorf("unsupported language: %s, expected: %s",
 			parseTree.Language().Name(), p.supportedLanguage.Name())
+	}
+
+	return nil
+}
+
+// validatePythonSource performs comprehensive validation of Python source code using the new error handling system.
+func (p *PythonParser) validatePythonSource(ctx context.Context, source []byte) error {
+	// Use the shared validation system with Python-specific limits
+	limits := parsererrors.DefaultValidationLimits()
+
+	// Create a validator registry with Python validator
+	registry := parsererrors.DefaultValidatorRegistry()
+	registry.RegisterValidator("Python", parsererrors.NewPythonValidator())
+
+	// Perform comprehensive validation
+	if err := parsererrors.ValidateSourceWithLanguage(ctx, source, "Python", limits, registry); err != nil {
+		return err
 	}
 
 	return nil

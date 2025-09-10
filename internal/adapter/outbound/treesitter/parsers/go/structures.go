@@ -112,7 +112,7 @@ func parseGoStruct(
 	}
 
 	return &outbound.SemanticCodeChunk{
-		ID:                utils.GenerateID("struct", structName, nil),
+		ChunkID:           utils.GenerateID("struct", structName, nil),
 		Type:              outbound.ConstructStruct,
 		Name:              structName,
 		QualifiedName:     packageName + "." + structName,
@@ -171,7 +171,7 @@ func parseGoInterface(
 	}
 
 	return &outbound.SemanticCodeChunk{
-		ID:                utils.GenerateID("interface", interfaceName, nil),
+		ChunkID:           utils.GenerateID("interface", interfaceName, nil),
 		Type:              outbound.ConstructInterface,
 		Name:              interfaceName,
 		QualifiedName:     packageName + "." + interfaceName,
@@ -279,7 +279,7 @@ func parseGoFieldDeclaration(
 		annotations := parseFieldTags(tag)
 
 		fields = append(fields, outbound.SemanticCodeChunk{
-			ID:            utils.GenerateID("field", fieldName, nil),
+			ChunkID:       utils.GenerateID("field", fieldName, nil),
 			Type:          outbound.ConstructField,
 			Name:          fieldName,
 			QualifiedName: packageName + "." + structName + "." + fieldName,
@@ -322,7 +322,7 @@ func parseGoInterfaceMethod(
 	returnType := parseGoReturnType(parseTree, methodSpec)
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID("method", methodName, nil),
+		ChunkID:       utils.GenerateID("method", methodName, nil),
 		Type:          outbound.ConstructMethod,
 		Name:          methodName,
 		QualifiedName: packageName + "." + interfaceName + "." + methodName,
@@ -351,7 +351,7 @@ func parseGoEmbeddedInterface(
 	content := parseTree.GetNodeText(embeddedType)
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID("interface", embeddedName, nil),
+		ChunkID:       utils.GenerateID("interface", embeddedName, nil),
 		Type:          outbound.ConstructInterface,
 		Name:          embeddedName,
 		QualifiedName: packageName + "." + interfaceName + "." + embeddedName,

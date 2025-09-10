@@ -11,12 +11,10 @@ import (
 )
 
 func TestLargeFileDetector_DetectFileSize_SmallFiles(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "small_files_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	smallFile := filepath.Join(tempDir, "small.txt")
-	err = os.WriteFile(smallFile, make([]byte, 1024*1024), 0o644) // 1MB file
+	err := os.WriteFile(smallFile, make([]byte, 1024*1024), 0o644) // 1MB file
 	require.NoError(t, err)
 
 	detector := NewDetector(DetectorConfig{})
@@ -29,12 +27,10 @@ func TestLargeFileDetector_DetectFileSize_SmallFiles(t *testing.T) {
 }
 
 func TestLargeFileDetector_DetectFileSize_LargeFiles(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "large_files_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	largeFile := filepath.Join(tempDir, "large.txt")
-	err = os.WriteFile(largeFile, make([]byte, 75*1024*1024), 0o644) // 75MB file
+	err := os.WriteFile(largeFile, make([]byte, 75*1024*1024), 0o644) // 75MB file
 	require.NoError(t, err)
 
 	detector := NewDetector(DetectorConfig{})
@@ -47,12 +43,10 @@ func TestLargeFileDetector_DetectFileSize_LargeFiles(t *testing.T) {
 }
 
 func TestLargeFileDetector_DetectFileSize_VeryLargeFiles(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "very_large_files_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	veryLargeFile := filepath.Join(tempDir, "very_large.txt")
-	err = os.WriteFile(veryLargeFile, make([]byte, 150*1024*1024), 0o644) // 150MB file
+	err := os.WriteFile(veryLargeFile, make([]byte, 150*1024*1024), 0o644) // 150MB file
 	require.NoError(t, err)
 
 	detector := NewDetector(DetectorConfig{})
@@ -160,12 +154,10 @@ func TestLargeFileDetector_ConfigureThresholds_CustomSizes(t *testing.T) {
 }
 
 func TestLargeFileDetector_ProcessingMode_Streaming(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "streaming_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	streamingFile := filepath.Join(tempDir, "streaming.txt")
-	err = os.WriteFile(streamingFile, make([]byte, 200*1024*1024), 0o644) // 200MB file
+	err := os.WriteFile(streamingFile, make([]byte, 200*1024*1024), 0o644) // 200MB file
 	require.NoError(t, err)
 
 	detector := NewDetector(DetectorConfig{})
@@ -188,12 +180,10 @@ func TestLargeFileDetector_ProcessingMode_Streaming(t *testing.T) {
 }
 
 func TestLargeFileDetector_ProcessingMode_Chunked(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "chunked_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	chunkedFile := filepath.Join(tempDir, "chunked.txt")
-	err = os.WriteFile(chunkedFile, make([]byte, 75*1024*1024), 0o644) // 75MB file
+	err := os.WriteFile(chunkedFile, make([]byte, 75*1024*1024), 0o644) // 75MB file
 	require.NoError(t, err)
 
 	detector := NewDetector(DetectorConfig{})
@@ -216,12 +206,10 @@ func TestLargeFileDetector_ProcessingMode_Chunked(t *testing.T) {
 }
 
 func TestLargeFileDetector_ProcessingMode_Memory(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "memory_test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	memoryFile := filepath.Join(tempDir, "memory.txt")
-	err = os.WriteFile(memoryFile, make([]byte, 10*1024*1024), 0o644) // 10MB file
+	err := os.WriteFile(memoryFile, make([]byte, 10*1024*1024), 0o644) // 10MB file
 	require.NoError(t, err)
 
 	detector := NewDetector(DetectorConfig{})

@@ -4,6 +4,7 @@ import (
 	"codechunking/internal/adapter/outbound/chunking"
 	"codechunking/internal/adapter/outbound/embeddings/simple"
 	ts "codechunking/internal/adapter/outbound/treesitter"
+	_ "codechunking/internal/adapter/outbound/treesitter/parsers/go" // Import to register Go parser
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
@@ -100,7 +101,7 @@ func runChunk(filePath, langName, outPath string) error {
 	}
 
 	// Extract functions
-	traverser := ts.NewSemanticTraverserAdapter(factory)
+	traverser := ts.NewSemanticTraverserAdapter()
 	extractOpts := outbound.SemanticExtractionOptions{
 		IncludePrivate:       true,
 		IncludeComments:      false,
@@ -174,7 +175,7 @@ func runChunk(filePath, langName, outPath string) error {
 	if outPath == "" {
 		fmt.Println(string(data))
 	} else {
-		if err := os.WriteFile(outPath, data, 0o644); err != nil {
+		if err := os.WriteFile(outPath, data, 0o600); err != nil {
 			return fmt.Errorf("write output: %w", err)
 		}
 		slogger.InfoNoCtx("Wrote chunk output", slogger.Fields{"path": outPath})

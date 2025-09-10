@@ -838,8 +838,8 @@ func (m *MockChunker) Chunk(ctx context.Context, nodes []*SyntaxNode) ([]outboun
 	lang, _ := valueobject.NewLanguage(valueobject.LanguageGo)
 	chunks := make([]outbound.EnhancedCodeChunk, chunkCount)
 	for i := range chunkCount {
-		startPos := valueobject.Position{Row: uint32(i * 10), Column: 0}
-		endPos := valueobject.Position{Row: uint32((i + 1) * 10), Column: 0}
+		startPos := valueobject.Position{Row: valueobject.ClampToUint32(i * 10), Column: 0}
+		endPos := valueobject.Position{Row: valueobject.ClampToUint32((i + 1) * 10), Column: 0}
 
 		chunks[i] = outbound.EnhancedCodeChunk{
 			ID:            fmt.Sprintf("chunk_%d", i),

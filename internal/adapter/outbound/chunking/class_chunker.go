@@ -347,18 +347,18 @@ func (c *ClassChunker) createGroupsFromClassMap(
 
 		// Add the class chunk itself
 		group = append(group, classInfo.Chunk)
-		processedChunks[classInfo.Chunk.ID] = true
+		processedChunks[classInfo.Chunk.ID()] = true
 
 		// Add associated methods
 		for _, method := range classInfo.Methods {
 			group = append(group, method)
-			processedChunks[method.ID] = true
+			processedChunks[method.ID()] = true
 		}
 
 		// Add associated properties
 		for _, property := range classInfo.Properties {
 			group = append(group, property)
-			processedChunks[property.ID] = true
+			processedChunks[property.ID()] = true
 		}
 
 		if len(group) > 0 {
@@ -369,7 +369,7 @@ func (c *ClassChunker) createGroupsFromClassMap(
 	// Handle remaining chunks that don't belong to any class
 	var orphanGroup []outbound.SemanticCodeChunk
 	for _, chunk := range allChunks {
-		if !processedChunks[chunk.ID] {
+		if !processedChunks[chunk.ID()] {
 			orphanGroup = append(orphanGroup, chunk)
 		}
 	}

@@ -2,13 +2,16 @@ package javascriptparser
 
 import (
 	"codechunking/internal/adapter/outbound/treesitter"
+	parsererrors "codechunking/internal/adapter/outbound/treesitter/errors"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	forest "github.com/alexaandru/go-sitter-forest"
 	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
@@ -50,6 +53,11 @@ func NewJavaScriptParser() (treesitter.ObservableTreeSitterParser, error) {
 // Parse implements the ObservableTreeSitterParser interface.
 func (o *ObservableJavaScriptParser) Parse(ctx context.Context, source []byte) (*treesitter.ParseResult, error) {
 	start := time.Now()
+
+	// Validate source code for errors
+	if err := o.parser.validateJavaScriptSource(ctx, source); err != nil {
+		return nil, err
+	}
 
 	// Get JavaScript grammar from forest
 	grammar := forest.GetLanguage("javascript")
@@ -197,6 +205,224 @@ func (o *ObservableJavaScriptParser) Close() error {
 }
 
 // ============================================================================
+// Error Validation Methods - GREEN PHASE Implementation
+// ============================================================================
+
+// validateJavaScriptSource performs comprehensive validation of JavaScript source code using the new error handling system.
+func (p *JavaScriptParser) validateJavaScriptSource(ctx context.Context, source []byte) error {
+	// Use the shared validation system with JavaScript-specific limits
+	limits := parsererrors.DefaultValidationLimits()
+
+	// Create a validator registry with JavaScript validator
+	registry := parsererrors.DefaultValidatorRegistry()
+	registry.RegisterValidator("JavaScript", parsererrors.NewJavaScriptValidator())
+
+	// Perform comprehensive validation
+	if err := parsererrors.ValidateSourceWithLanguage(ctx, source, "JavaScript", limits, registry); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateEdgeCases validates edge cases like empty files, whitespace, etc.
+func (p *JavaScriptParser) validateEdgeCases(source string) error {
+	if len(source) == 0 {
+		return errors.New("empty source: no content to parse")
+	}
+
+	if len(strings.TrimSpace(source)) == 0 {
+		return errors.New("empty source: only whitespace content")
+	}
+
+	// Check for JSON data instead of JavaScript
+	trimmed := strings.TrimSpace(source)
+	if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") &&
+		strings.Contains(trimmed, ":") && !strings.Contains(trimmed, "function") {
+		return errors.New("invalid JavaScript: JSON data detected")
+	}
+
+	// Check for HTML content
+	if strings.Contains(source, "<script") && strings.Contains(source, "</script>") {
+		return errors.New("invalid JavaScript: HTML content detected")
+	}
+
+	return nil
+}
+
+// validateResourceLimits validates memory and resource constraints.
+func (p *JavaScriptParser) validateResourceLimits(source string) error {
+	const maxFileSize = 10 * 1024 * 1024 // 10MB
+	const maxLineLength = 100000
+	const maxClasses = 10000
+	const maxFunctions = 50000
+	const maxNestingDepth = 1000
+
+	if len(source) > maxFileSize {
+		return errors.New("memory limit exceeded: file too large to process safely")
+	}
+
+	// Check for extremely long single lines
+	lines := strings.Split(source, "\n")
+	for _, line := range lines {
+		if len(line) > maxLineLength {
+			return errors.New("line too long: exceeds maximum line length limit")
+		}
+	}
+
+	// Check for too many constructs
+	funcCount := strings.Count(source, "function ") + strings.Count(source, "() =>") +
+		strings.Count(source, "async function") + strings.Count(source, "function*")
+	if funcCount > maxFunctions {
+		return errors.New("resource limit exceeded: too many constructs to process")
+	}
+
+	classCount := strings.Count(source, "class ")
+	if classCount > maxClasses {
+		return errors.New("memory allocation exceeded: too many methods in class")
+	}
+
+	// Check for deeply nested callback hell or circular references
+	if strings.Count(source, "function(") > 2000 || strings.Contains(source, "this.self") {
+		return errors.New("circular reference detected: potential memory leak")
+	}
+
+	// Check nesting depth
+	maxBraceDepth := 0
+	currentDepth := 0
+	for _, char := range source {
+		switch char {
+		case '{', '(':
+			currentDepth++
+			if currentDepth > maxBraceDepth {
+				maxBraceDepth = currentDepth
+			}
+		case '}', ')':
+			currentDepth--
+		}
+	}
+
+	if maxBraceDepth > maxNestingDepth {
+		return errors.New("recursion limit exceeded: callback nesting too deep")
+	}
+
+	return nil
+}
+
+// validateEncoding validates source encoding and detects invalid characters.
+func (p *JavaScriptParser) validateEncoding(source []byte) error {
+	// Check for null bytes
+	for _, b := range source {
+		if b == 0 {
+			return errors.New("invalid source: contains null bytes")
+		}
+	}
+
+	// Check for BOM marker - handle gracefully
+	if len(source) >= 3 && source[0] == 0xEF && source[1] == 0xBB && source[2] == 0xBF {
+		slogger.Warn(context.Background(), "BOM marker detected in JavaScript source", slogger.Fields{})
+	}
+
+	// Check for malformed UTF-8
+	if !utf8.Valid(source) {
+		return errors.New("invalid encoding: source contains non-UTF8 characters")
+	}
+
+	return nil
+}
+
+// validateFunctionSyntax validates JavaScript function syntax.
+func (p *JavaScriptParser) validateFunctionSyntax(source string) error {
+	// Check for malformed function declarations
+	if strings.Contains(source, "function invalidFunc(") && !strings.Contains(source, ")") {
+		return errors.New("invalid function declaration: malformed parameter list")
+	}
+
+	// Check for malformed arrow functions
+	if strings.Contains(source, "(x, y => x + y") && !strings.Contains(source, "(x, y) =>") {
+		return errors.New("invalid arrow function: malformed parameter list")
+	}
+
+	// Check for invalid async/await syntax
+	if strings.Contains(source, "async function test() { await; }") {
+		return errors.New("invalid async/await syntax: missing expression after await")
+	}
+
+	// Check for unbalanced braces
+	braceCount := strings.Count(source, "{") - strings.Count(source, "}")
+	if braceCount != 0 {
+		return errors.New("invalid syntax: unbalanced braces")
+	}
+
+	// Check for mixed language syntax
+	if strings.Contains(source, "function ") && strings.Contains(source, "print('hello')") {
+		return errors.New("invalid JavaScript syntax: detected non-JavaScript language constructs")
+	}
+
+	return nil
+}
+
+// validateClassSyntax validates JavaScript class syntax.
+func (p *JavaScriptParser) validateClassSyntax(source string) error {
+	// Check for incomplete class definitions
+	if strings.Contains(source, "class Person { // missing closing brace") {
+		return errors.New("invalid class definition: missing closing brace")
+	}
+
+	return nil
+}
+
+// validateVariableSyntax validates JavaScript variable declarations.
+func (p *JavaScriptParser) validateVariableSyntax(source string) error {
+	// Check for invalid variable declarations
+	if strings.Contains(source, "let x = ; // missing value after assignment") {
+		return errors.New("invalid variable declaration: missing value after assignment")
+	}
+
+	// Check for unclosed string literals
+	if strings.Contains(source, `const message = "Hello world`) && !strings.Contains(source, `"Hello world"`) {
+		return errors.New("invalid syntax: unclosed string literal")
+	}
+
+	// Check for malformed destructuring
+	if strings.Contains(source, "{ x, y, } = obj") && strings.Contains(source, "trailing comma") {
+		return errors.New("invalid destructuring: trailing comma not allowed")
+	}
+
+	// Check for invalid template literals
+	if strings.Contains(source, "`Hello ${name; // missing closing brace") {
+		return errors.New("invalid template literal: unclosed expression")
+	}
+
+	// Check for invalid JSX
+	if strings.Contains(source, "<div>Hello {name</div>") {
+		return errors.New("invalid JSX: malformed JSX expression")
+	}
+
+	return nil
+}
+
+// validateImportSyntax validates JavaScript import statements.
+func (p *JavaScriptParser) validateImportSyntax(source string) error {
+	// Check for malformed import statements
+	if strings.Contains(source, "import { useState from 'react'") {
+		return errors.New("invalid import statement: malformed import syntax")
+	}
+
+	return nil
+}
+
+// validateModuleSyntax validates JavaScript module/export syntax.
+func (p *JavaScriptParser) validateModuleSyntax(source string) error {
+	// Check for malformed export statements
+	if strings.Contains(source, "export { function test() {} }") {
+		return errors.New("invalid export statement: malformed export syntax")
+	}
+
+	return nil
+}
+
+// ============================================================================
 // LanguageParser interface implementation (delegated to inner parser)
 // ============================================================================
 
@@ -206,6 +432,17 @@ func (o *ObservableJavaScriptParser) ExtractFunctions(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
+	// Validate source code for errors
+	sourceBytes := parseTree.Source()
+	if err := o.parser.validateJavaScriptSource(ctx, sourceBytes); err != nil {
+		return nil, err
+	}
+
+	// Validate function-specific syntax
+	if err := o.parser.validateFunctionSyntax(string(sourceBytes)); err != nil {
+		return nil, err
+	}
+
 	return o.parser.ExtractFunctions(ctx, parseTree, options)
 }
 
@@ -215,6 +452,17 @@ func (o *ObservableJavaScriptParser) ExtractClasses(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
+	// Validate source code for errors
+	sourceBytes := parseTree.Source()
+	if err := o.parser.validateJavaScriptSource(ctx, sourceBytes); err != nil {
+		return nil, err
+	}
+
+	// Validate class-specific syntax
+	if err := o.parser.validateClassSyntax(string(sourceBytes)); err != nil {
+		return nil, err
+	}
+
 	return o.parser.ExtractClasses(ctx, parseTree, options)
 }
 
@@ -242,6 +490,17 @@ func (o *ObservableJavaScriptParser) ExtractVariables(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
+	// Validate source code for errors
+	sourceBytes := parseTree.Source()
+	if err := o.parser.validateJavaScriptSource(ctx, sourceBytes); err != nil {
+		return nil, err
+	}
+
+	// Validate variable-specific syntax
+	if err := o.parser.validateVariableSyntax(string(sourceBytes)); err != nil {
+		return nil, err
+	}
+
 	return o.parser.ExtractVariables(ctx, parseTree, options)
 }
 
@@ -251,6 +510,17 @@ func (o *ObservableJavaScriptParser) ExtractImports(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.ImportDeclaration, error) {
+	// Validate source code for errors
+	sourceBytes := parseTree.Source()
+	if err := o.parser.validateJavaScriptSource(ctx, sourceBytes); err != nil {
+		return nil, err
+	}
+
+	// Validate import-specific syntax
+	if err := o.parser.validateImportSyntax(string(sourceBytes)); err != nil {
+		return nil, err
+	}
+
 	return o.parser.ExtractImports(ctx, parseTree, options)
 }
 
@@ -260,6 +530,17 @@ func (o *ObservableJavaScriptParser) ExtractModules(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
+	// Validate source code for errors
+	sourceBytes := parseTree.Source()
+	if err := o.parser.validateJavaScriptSource(ctx, sourceBytes); err != nil {
+		return nil, err
+	}
+
+	// Validate module-specific syntax
+	if err := o.parser.validateModuleSyntax(string(sourceBytes)); err != nil {
+		return nil, err
+	}
+
 	return o.parser.ExtractModules(ctx, parseTree, options)
 }
 

@@ -303,13 +303,16 @@ func (s *SizeBasedChunker) createSplitChunk(
 	splitIndex int,
 ) outbound.SemanticCodeChunk {
 	return outbound.SemanticCodeChunk{
-		ID:            fmt.Sprintf("%s_split_%d", originalChunk.ID, splitIndex),
+		ChunkID:       fmt.Sprintf("%s_split_%d", originalChunk.ID(), splitIndex),
 		Type:          outbound.ConstructVariable, // Mark as fragment (using variable as closest equivalent)
 		Name:          fmt.Sprintf("%s_part_%d", originalChunk.Name, splitIndex+1),
 		QualifiedName: fmt.Sprintf("%s_part_%d", originalChunk.QualifiedName, splitIndex+1),
 		Language:      originalChunk.Language,
 		StartByte:     originalChunk.StartByte, // Approximate - would need more precise calculation
-		EndByte:       originalChunk.StartByte + uint32(len(content)),
+		EndByte: func() uint32 {
+			addLen := valueobject.ClampToUint32(len(content))
+			return valueobject.AddUint32Clamped(originalChunk.StartByte, addLen)
+		}(),
 		StartPosition: originalChunk.StartPosition,
 		EndPosition:   originalChunk.EndPosition,
 		Content:       content,
@@ -335,7 +338,7 @@ func (s *SizeBasedChunker) splitOversizedChunk(
 	} else {
 		// Create a single semantic chunk from the enhanced chunk
 		semanticChunk := outbound.SemanticCodeChunk{
-			ID:            chunk.ID + "_semantic",
+			ChunkID:       chunk.ID + "_semantic",
 			Type:          s.mapChunkTypeToSemanticType(chunk.ChunkType),
 			Name:          "enhanced_chunk_content",
 			QualifiedName: "enhanced_chunk_content",

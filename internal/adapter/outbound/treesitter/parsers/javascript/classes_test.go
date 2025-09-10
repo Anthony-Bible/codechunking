@@ -686,3 +686,236 @@ class IncompleteClass {
 		}
 	})
 }
+
+// TestJavaScriptClasses_ClassExpressions_RedPhase tests class expression detection.
+// This is a RED PHASE test that defines expected behavior for class expressions.
+// Currently FAILS because class expressions are not being detected (returns 0 classes).
+func TestJavaScriptClasses_ClassExpressions_RedPhase(t *testing.T) {
+	sourceCode := `// class_expressions_red.js
+
+// Variable-assigned class expression - should be detected as "MyClass" 
+const MyClass = class {
+	constructor(name) {
+		this.name = name;
+	}
+	
+	getName() {
+		return this.name;
+	}
+};
+
+// Named class expression - should be detected as "NamedClass"
+const NamedExpressionWrapper = class NamedClass {
+	static counter = 0;
+	
+	method() {
+		return 'hello';
+	}
+};
+
+// Function returning class - should be detected as mixin/class factory
+function createMixin() {
+	return class extends BaseClass {
+		mixinMethod() {
+			return 'mixin';
+		}
+	};
+}
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguageJavaScript)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
+
+	options := outbound.SemanticExtractionOptions{
+		IncludePrivate:  true,
+		IncludeTypeInfo: true,
+		MaxDepth:        10,
+	}
+
+	classes, err := adapter.ExtractClasses(ctx, parseTree, options)
+	require.NoError(t, err)
+
+	// RED PHASE: These assertions will FAIL until class expressions are properly supported
+	// Expected: 3 classes (MyClass, NamedClass, and function-returned class)
+	// Actual: Currently returns 0 classes
+	require.GreaterOrEqual(t, len(classes), 2, "Should find at least 2 class expressions")
+
+	myClass := findChunkByName(classes, "MyClass")
+	require.NotNil(t, myClass, "MyClass variable-assigned class expression should be found")
+	assert.Equal(t, outbound.ConstructClass, myClass.Type)
+
+	namedClass := findChunkByName(classes, "NamedClass")
+	require.NotNil(t, namedClass, "NamedClass expression should be found")
+	assert.Equal(t, outbound.ConstructClass, namedClass.Type)
+}
+
+// TestJavaScriptClasses_StaticMemberMetadata_RedPhase tests static member metadata extraction.
+// This is a RED PHASE test that defines expected behavior for static member metadata.
+// Currently FAILS because static_properties and static_methods metadata is missing/nil.
+func TestJavaScriptClasses_StaticMemberMetadata_RedPhase(t *testing.T) {
+	sourceCode := `// static_metadata_red.js
+
+class ApiService {
+	static baseURL = 'https://api.example.com';
+	static timeout = 5000;
+	static retries = 3;
+	
+	static async get(endpoint) {
+		return fetch(this.baseURL + endpoint);
+	}
+	
+	static post(endpoint, data) {
+		return this.makeRequest('POST', endpoint, data);
+	}
+	
+	static #privateStaticField = 'secret';
+	
+	static #privateMethod() {
+		return this.#privateStaticField;
+	}
+	
+	static getSecret() {
+		return this.#privateMethod();
+	}
+}
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguageJavaScript)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
+
+	options := outbound.SemanticExtractionOptions{
+		IncludePrivate:  true,
+		IncludeTypeInfo: true,
+		MaxDepth:        10,
+	}
+
+	classes, err := adapter.ExtractClasses(ctx, parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, classes, 1)
+
+	apiService := findChunkByName(classes, "ApiService")
+	require.NotNil(t, apiService, "ApiService class should be found")
+
+	// RED PHASE: These assertions will FAIL until static member metadata is properly extracted
+	// Expected: metadata contains arrays of static properties and methods
+	// Actual: Currently metadata["static_properties"] is nil, causing panic
+
+	// Test static properties metadata - currently missing
+	staticProps, exists := apiService.Metadata["static_properties"]
+	require.True(t, exists, "static_properties metadata should exist")
+	require.IsType(t, []string{}, staticProps, "static_properties should be []string")
+
+	staticPropsSlice := staticProps.([]string)
+	assert.Contains(t, staticPropsSlice, "baseURL", "Should detect baseURL static property")
+	assert.Contains(t, staticPropsSlice, "timeout", "Should detect timeout static property")
+	assert.Contains(t, staticPropsSlice, "retries", "Should detect retries static property")
+
+	// Test static methods metadata - currently missing
+	staticMethods, exists := apiService.Metadata["static_methods"]
+	require.True(t, exists, "static_methods metadata should exist")
+	require.IsType(t, []string{}, staticMethods, "static_methods should be []string")
+
+	staticMethodsSlice := staticMethods.([]string)
+	assert.Contains(t, staticMethodsSlice, "get", "Should detect get static method")
+	assert.Contains(t, staticMethodsSlice, "post", "Should detect post static method")
+	assert.Contains(t, staticMethodsSlice, "getSecret", "Should detect getSecret static method")
+
+	// Test private static members detection
+	hasPrivateStatic, exists := apiService.Metadata["has_private_static_members"]
+	require.True(t, exists, "has_private_static_members metadata should exist")
+	assert.True(t, hasPrivateStatic.(bool), "Should detect private static members")
+}
+
+// TestJavaScriptClasses_MixinFactoryDetection_RedPhase tests mixin factory function detection.
+// This is a RED PHASE test that defines expected behavior for functions returning classes.
+// Currently FAILS because functions returning classes are not detected as class-like constructs.
+func TestJavaScriptClasses_MixinFactoryDetection_RedPhase(t *testing.T) {
+	sourceCode := `// mixin_factory_red.js
+
+// Mixin factory function that returns a class - should be detected with returns_class metadata
+const Timestamped = (BaseClass) => class extends BaseClass {
+	constructor(...args) {
+		super(...args);
+		this.createdAt = new Date();
+		this.updatedAt = new Date();
+	}
+	
+	touch() {
+		this.updatedAt = new Date();
+	}
+};
+
+// Another mixin pattern
+function Serializable(BaseClass) {
+	return class extends BaseClass {
+		toJSON() {
+			return JSON.stringify(this);
+		}
+		
+		static fromJSON(json) {
+			return JSON.parse(json);
+		}
+	};
+}
+
+// Regular class using mixins
+class User extends Serializable(Timestamped(Object)) {
+	constructor(name) {
+		super();
+		this.name = name;
+	}
+}
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguageJavaScript)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	ctx := context.Background()
+	adapter := treesitter.NewSemanticTraverserAdapter()
+
+	options := outbound.SemanticExtractionOptions{
+		IncludePrivate:  true,
+		IncludeTypeInfo: true,
+		MaxDepth:        12,
+	}
+
+	classes, err := adapter.ExtractClasses(ctx, parseTree, options)
+	require.NoError(t, err)
+
+	// RED PHASE: These assertions will FAIL until mixin factory detection is implemented
+	// Expected: Functions returning classes should be detected as class-like constructs
+	// Actual: Currently mixin factories are not detected
+
+	// Should find User class plus mixin factory functions detected as class constructs
+	require.GreaterOrEqual(t, len(classes), 2, "Should find User class and mixin factories")
+
+	userClass := findChunkByName(classes, "User")
+	require.NotNil(t, userClass, "User class should be found")
+	assert.Equal(t, outbound.ConstructClass, userClass.Type)
+
+	// Test mixin chain detection - currently missing
+	mixinChain, exists := userClass.Metadata["mixin_chain"]
+	require.True(t, exists, "mixin_chain metadata should exist")
+	require.IsType(t, []string{}, mixinChain, "mixin_chain should be []string")
+
+	chainSlice := mixinChain.([]string)
+	assert.Contains(t, chainSlice, "Timestamped", "Should detect Timestamped in mixin chain")
+	assert.Contains(t, chainSlice, "Serializable", "Should detect Serializable in mixin chain")
+
+	// Test that mixin factory functions are detected as class-like constructs
+	timestampedMixin := findChunkByName(classes, "Timestamped")
+	require.NotNil(t, timestampedMixin, "Timestamped mixin factory should be detected")
+
+	returnsClass, exists := timestampedMixin.Metadata["returns_class"]
+	require.True(t, exists, "returns_class metadata should exist for mixin factory")
+	assert.True(t, returnsClass.(bool), "Mixin factory should have returns_class = true")
+}

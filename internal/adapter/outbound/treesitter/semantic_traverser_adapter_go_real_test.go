@@ -49,7 +49,7 @@ func main() {
 	require.NotNil(t, domainTree)
 
 	// Create the semantic traverser adapter (will use LanguageDispatcher → GoParser)
-	adapter := NewSemanticTraverserAdapter(factory)
+	adapter := NewSemanticTraverserAdapterWithFactory(factory)
 
 	options := outbound.SemanticExtractionOptions{
 		IncludePrivate:       true,

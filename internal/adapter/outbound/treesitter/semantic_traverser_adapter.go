@@ -5,9 +5,14 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -70,6 +75,11 @@ func (s *SemanticTraverserAdapter) extractSemanticChunks(
 	langParserExtractor func(LanguageParser) ([]outbound.SemanticCodeChunk, error),
 	legacyExtractor func() []outbound.SemanticCodeChunk,
 ) ([]outbound.SemanticCodeChunk, error) {
+	// Fix nil pointer panic: check parseTree before calling Language()
+	if parseTree == nil {
+		return nil, errors.New("parse tree cannot be nil")
+	}
+
 	slogger.Info(ctx, "Extracting "+extractionType+" from parse tree", slogger.Fields{
 		"language": parseTree.Language().Name(),
 	})
@@ -78,20 +88,36 @@ func (s *SemanticTraverserAdapter) extractSemanticChunks(
 		return nil, err
 	}
 
-	// Try to use language dispatcher if available
-	// if s.languageDispatcher != nil {
-	// 	parser, err := s.languageDispatcher.CreateParser(parseTree.Language())
-	// 	if err == nil {
-	// 		return langParserExtractor(parser)
-	// 	}
-	// 	slogger.Warn(
-	// 		ctx,
-	// 		"Tree-sitter language dispatcher unavailable, falling back to legacy implementation",
-	// 		slogger.Fields{
-	// 			"error": err.Error(),
-	// 		},
-	// 	)
-	// }
+	// Try to use parser factory directly if available
+	if s.parserFactory != nil {
+		slogger.Info(ctx, "Attempting to create parser from factory", slogger.Fields{
+			"language": parseTree.Language().Name(),
+		})
+		parser, err := s.parserFactory.CreateParser(ctx, parseTree.Language())
+		if err == nil {
+			slogger.Info(ctx, "Parser created successfully", slogger.Fields{
+				"parser_type": fmt.Sprintf("%T", parser),
+			})
+			// Cast to LanguageParser interface if possible
+			if langParser, ok := parser.(LanguageParser); ok {
+				slogger.Info(ctx, "Parser cast to LanguageParser successful, calling extractor", slogger.Fields{})
+				return langParserExtractor(langParser)
+			}
+			slogger.Warn(
+				ctx,
+				"Parser does not implement LanguageParser interface, falling back to legacy implementation",
+				slogger.Fields{
+					"parser_type": fmt.Sprintf("%T", parser),
+				},
+			)
+		} else {
+			slogger.Warn(ctx, "Failed to create parser from factory, falling back to legacy implementation", slogger.Fields{
+				"error": err.Error(),
+			})
+		}
+	} else {
+		slogger.Warn(ctx, "Parser factory is nil, falling back to legacy implementation", slogger.Fields{})
+	}
 
 	// Fallback to existing legacy implementation for backward compatibility
 	return legacyExtractor(), nil
@@ -105,6 +131,11 @@ func (s *SemanticTraverserAdapter) extractImports(
 	langParserExtractor func(LanguageParser) ([]outbound.ImportDeclaration, error),
 	legacyExtractor func() []outbound.ImportDeclaration,
 ) ([]outbound.ImportDeclaration, error) {
+	// Fix nil pointer panic: check parseTree before calling Language()
+	if parseTree == nil {
+		return nil, errors.New("parse tree cannot be nil")
+	}
+
 	slogger.Info(ctx, "Extracting imports from parse tree", slogger.Fields{
 		"language": parseTree.Language().Name(),
 	})
@@ -271,6 +302,11 @@ func (s *SemanticTraverserAdapter) ExtractComments(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
+	// Fix nil pointer panic: check parseTree before calling Language()
+	if parseTree == nil {
+		return nil, errors.New("parse tree cannot be nil")
+	}
+
 	slogger.Info(ctx, "Extracting comments from parse tree", slogger.Fields{
 		"language": parseTree.Language().Name(),
 	})
@@ -301,7 +337,14 @@ func (s *SemanticTraverserAdapter) ExtractImports(
 			return parser.ExtractImports(ctx, parseTree, options)
 		},
 		func() []outbound.ImportDeclaration {
-			return s.extractGoImports(ctx, parseTree, options)
+			switch parseTree.Language().Name() {
+			case valueobject.LanguageJavaScript:
+				return s.extractJavaScriptImports(ctx, parseTree, options)
+			case valueobject.LanguageGo:
+				return s.extractGoImports(ctx, parseTree, options)
+			default:
+				return []outbound.ImportDeclaration{}
+			}
 		},
 	)
 }
@@ -503,7 +546,7 @@ func (s *SemanticTraverserAdapter) extractGoImports(
 	return []outbound.ImportDeclaration{}
 }
 
-// extractJavaScriptFunctions implements a simple JavaScript function extraction directly
+// extractJavaScriptFunctions implements a simple JavaScript function extraction directly.
 func (s *SemanticTraverserAdapter) extractGoFunctions(
 	parseTree *valueobject.ParseTree,
 ) []outbound.SemanticCodeChunk {
@@ -543,7 +586,7 @@ func (s *SemanticTraverserAdapter) extractGoFunctions(
 	return chunks
 }
 
-// traverseGoAST recursively traverses the Go AST, calling visitFunc for each node
+// traverseGoAST recursively traverses the Go AST, calling visitFunc for each node.
 func (s *SemanticTraverserAdapter) traverseGoAST(
 	node *valueobject.ParseNode,
 	visitFunc func(*valueobject.ParseNode),
@@ -565,7 +608,7 @@ func (s *SemanticTraverserAdapter) traverseGoAST(
 	}
 }
 
-// extractGoFunctionFromNode extracts a Go function from an AST node
+// extractGoFunctionFromNode extracts a Go function from an AST node.
 func (s *SemanticTraverserAdapter) extractGoFunctionFromNode(
 	node *valueobject.ParseNode,
 	parseTree *valueobject.ParseTree,
@@ -611,7 +654,7 @@ func (s *SemanticTraverserAdapter) extractGoFunctionFromNode(
 	}
 
 	chunk := &outbound.SemanticCodeChunk{
-		ID:            id,
+		ChunkID:       id,
 		Name:          name,
 		QualifiedName: qualifiedName,
 		Language:      parseTree.Language(),
@@ -621,13 +664,13 @@ func (s *SemanticTraverserAdapter) extractGoFunctionFromNode(
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
 		ExtractedAt:   time.Now(),
-		Hash:          fmt.Sprintf("%d", hash),
+		Hash:          strconv.FormatUint(uint64(hash), 10),
 	}
 
 	return chunk
 }
 
-// extractGoFunctionName extracts the name of a Go function from an AST node
+// extractGoFunctionName extracts the name of a Go function from an AST node.
 func (s *SemanticTraverserAdapter) extractGoFunctionName(
 	node *valueobject.ParseNode,
 	parseTree *valueobject.ParseTree,
@@ -649,7 +692,7 @@ func (s *SemanticTraverserAdapter) extractGoFunctionName(
 	return ""
 }
 
-// extractGoPackageName extracts the package name from the parse tree
+// extractGoPackageName extracts the package name from the parse tree.
 func (s *SemanticTraverserAdapter) extractGoPackageName(parseTree *valueobject.ParseTree) string {
 	packageName := "main" // default fallback
 
@@ -713,7 +756,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 			hash := s.simpleHash(content)
 
 			chunk := outbound.SemanticCodeChunk{
-				ID:            fmt.Sprintf("func_%s_%d", name, hash),
+				ChunkID:       fmt.Sprintf("func_%s_%d", name, hash),
 				Name:          name,
 				QualifiedName: name,
 				Language:      parseTree.Language(),
@@ -724,7 +767,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 				StartPosition: node.StartPos,
 				EndPosition:   node.EndPos,
 				ExtractedAt:   time.Now(),
-				Hash:          fmt.Sprintf("%d", hash),
+				Hash:          strconv.FormatUint(uint64(hash), 10),
 			}
 			chunks = append(chunks, chunk)
 			slogger.Info(context.Background(), "Successfully extracted function chunk", slogger.Fields{
@@ -746,7 +789,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 				hash := s.simpleHash(content)
 
 				chunk := outbound.SemanticCodeChunk{
-					ID:            fmt.Sprintf("var_%s_%d", name, hash),
+					ChunkID:       fmt.Sprintf("var_%s_%d", name, hash),
 					Name:          name,
 					QualifiedName: name,
 					Language:      parseTree.Language(),
@@ -757,7 +800,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 					StartPosition: node.StartPos,
 					EndPosition:   node.EndPos,
 					ExtractedAt:   time.Now(),
-					Hash:          fmt.Sprintf("%d", hash),
+					Hash:          strconv.FormatUint(uint64(hash), 10),
 				}
 				chunks = append(chunks, chunk)
 			}
@@ -772,7 +815,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 	return chunks
 }
 
-// traverseJavaScriptAST recursively traverses the JavaScript AST
+// traverseJavaScriptAST recursively traverses the JavaScript AST.
 func (s *SemanticTraverserAdapter) traverseJavaScriptAST(
 	node *valueobject.ParseNode,
 	visitFunc func(*valueobject.ParseNode),
@@ -791,7 +834,7 @@ func (s *SemanticTraverserAdapter) traverseJavaScriptAST(
 	}
 }
 
-// extractJavaScriptFunctionName extracts the name of a JavaScript function
+// extractJavaScriptFunctionName extracts the name of a JavaScript function.
 func (s *SemanticTraverserAdapter) extractJavaScriptFunctionName(
 	node *valueobject.ParseNode,
 	parseTree *valueobject.ParseTree,
@@ -806,7 +849,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctionName(
 	return ""
 }
 
-// extractJavaScriptVariableName extracts the name of a JavaScript variable
+// extractJavaScriptVariableName extracts the name of a JavaScript variable.
 func (s *SemanticTraverserAdapter) extractJavaScriptVariableName(
 	node *valueobject.ParseNode,
 	parseTree *valueobject.ParseTree,
@@ -824,7 +867,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptVariableName(
 	return ""
 }
 
-// isJavaScriptFunctionExpression checks if a variable declarator contains a function expression
+// isJavaScriptFunctionExpression checks if a variable declarator contains a function expression.
 func (s *SemanticTraverserAdapter) isJavaScriptFunctionExpression(node *valueobject.ParseNode) bool {
 	if node.Type != "variable_declarator" {
 		return false
@@ -840,9 +883,494 @@ func (s *SemanticTraverserAdapter) isJavaScriptFunctionExpression(node *valueobj
 	return false
 }
 
-// simpleHash generates a simple hash for content
+// simpleHash generates a simple hash for content.
 func (s *SemanticTraverserAdapter) simpleHash(content string) uint32 {
 	h := fnv.New32a()
-	h.Write([]byte(content))
+	if _, err := h.Write([]byte(content)); err != nil {
+		// In the unlikely event of an error, return zero to avoid panics
+		return 0
+	}
 	return h.Sum32()
+}
+
+// extractJavaScriptImports implements JavaScript import extraction for the GREEN phase.
+func (s *SemanticTraverserAdapter) extractJavaScriptImports(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) []outbound.ImportDeclaration {
+	var imports []outbound.ImportDeclaration
+
+	content := string(parseTree.Source())
+	now := time.Now()
+
+	// Multi-line ES6 import pattern - handles imports across multiple lines
+	importPattern := regexp.MustCompile(
+		`(?s)import\s+(?:(?:\*\s+as\s+(\w+))|(?:\{([^}]+)\})|(\w+))\s+from\s+['"]([^'"]+)['"]`,
+	)
+
+	// Mixed imports pattern (default + named)
+	mixedImportPattern := regexp.MustCompile(`(?s)import\s+(\w+),\s*\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]`)
+
+	// Import assertion pattern
+	assertionPattern := regexp.MustCompile(
+		`(?s)import\s+(?:(?:\*\s+as\s+(\w+))|(?:\{([^}]+)\})|(\w+))\s+from\s+['"]([^'"]+)['"]\s+assert\s*\{\s*type:\s*['"](\w+)['"]`,
+	)
+
+	// Process import assertions first
+	assertionMatches := assertionPattern.FindAllStringSubmatch(content, -1)
+	for _, match := range assertionMatches {
+		var importedSymbols []string
+		var alias string
+		var isWildcard bool
+		aliases := make(map[string]string)
+
+		namespaceImport := match[1]
+		namedImports := match[2]
+		defaultImport := match[3]
+		path := match[4]
+		assertionType := match[5]
+
+		metadata := map[string]interface{}{
+			"import_type":       "es6",
+			"has_assertions":    true,
+			"assertion_type":    assertionType,
+			"import_style":      "default",
+			"path_type":         getPathType(path),
+			"relative_depth":    getRelativeDepth(path),
+			"is_scoped_package": strings.HasPrefix(path, "@"),
+		}
+
+		if namespaceImport != "" {
+			alias = namespaceImport
+			isWildcard = true
+			importedSymbols = append(importedSymbols, "*")
+			metadata["import_style"] = "namespace"
+		} else if namedImports != "" {
+			symbols := parseNamedImports(namedImports)
+			importedSymbols = append(importedSymbols, symbols.Names...)
+			aliases = symbols.Aliases
+			metadata["aliases"] = aliases
+			metadata["import_style"] = "named"
+		} else if defaultImport != "" {
+			alias = defaultImport
+			importedSymbols = append(importedSymbols, defaultImport)
+			metadata["import_style"] = "default"
+		}
+
+		startIndex := strings.Index(content, match[0])
+		endIndex := startIndex + len(match[0])
+		hash := generateHash(match[0])
+
+		imports = append(imports, outbound.ImportDeclaration{
+			Path:            path,
+			Alias:           alias,
+			IsWildcard:      isWildcard,
+			ImportedSymbols: importedSymbols,
+			StartByte:       valueobject.ClampToUint32(startIndex),
+			EndByte:         valueobject.ClampToUint32(endIndex),
+			StartPosition:   valueobject.Position{Row: 0, Column: valueobject.ClampToUint32(startIndex)},
+			EndPosition:     valueobject.Position{Row: 0, Column: valueobject.ClampToUint32(endIndex)},
+			Content:         match[0],
+			ExtractedAt:     now,
+			Hash:            hash,
+			Metadata:        metadata,
+		})
+	}
+
+	// Process mixed imports next (default + named)
+	mixedMatches := mixedImportPattern.FindAllStringSubmatch(content, -1)
+	for _, match := range mixedMatches {
+		defaultImport := match[1]
+		namedImports := match[2]
+		path := match[3]
+
+		var importedSymbols []string
+		aliases := make(map[string]string)
+
+		// Add default import
+		importedSymbols = append(importedSymbols, defaultImport)
+		aliases[defaultImport] = defaultImport
+
+		// Process named imports
+		namedParts := strings.Split(namedImports, ",")
+		for _, part := range namedParts {
+			part = strings.TrimSpace(part)
+			if aliasMatch := regexp.MustCompile(`(\w+)\s+as\s+(\w+)`).FindStringSubmatch(part); aliasMatch != nil {
+				importedSymbols = append(importedSymbols, aliasMatch[1])
+				aliases[aliasMatch[1]] = aliasMatch[2]
+			} else {
+				importedSymbols = append(importedSymbols, part)
+				aliases[part] = part
+			}
+		}
+
+		startInt := strings.Index(content, match[0])
+		startByte := valueobject.ClampToUint32(startInt)
+		endByte := valueobject.ClampToUint32(startInt + len(match[0]))
+		hash := sha256.Sum256([]byte(match[0]))
+		hashStr := hex.EncodeToString(hash[:])
+
+		metadata := map[string]interface{}{
+			"aliases":         aliases,
+			"import_style":    "mixed",
+			"import_type":     "es6",
+			"path_type":       s.determinePathType(path),
+			"is_mixed_import": true,
+		}
+
+		imports = append(imports, outbound.ImportDeclaration{
+			Path:            path,
+			Alias:           defaultImport,
+			ImportedSymbols: importedSymbols,
+			StartByte:       startByte,
+			EndByte:         endByte,
+			StartPosition:   valueobject.Position{Row: 0, Column: 0},
+			EndPosition:     valueobject.Position{Row: 0, Column: valueobject.ClampToUint32(len(match[0]))},
+			Content:         match[0],
+			ExtractedAt:     now,
+			Hash:            hashStr,
+			Metadata:        metadata,
+		})
+	}
+
+	// Process regular ES6 imports (but skip ones already processed as mixed)
+	importMatches := importPattern.FindAllStringSubmatch(content, -1)
+	for _, match := range importMatches {
+		// Skip if this was already processed as a mixed import
+		if mixedImportPattern.MatchString(match[0]) {
+			continue
+		}
+
+		path := match[4]
+		var importedSymbols []string
+		var importStyle string
+		var alias string
+		aliases := make(map[string]string)
+
+		if match[1] != "" {
+			// import * as name from 'path'
+			importedSymbols = []string{"*"}
+			aliases["*"] = match[1]
+			importStyle = "namespace"
+		} else if match[2] != "" {
+			// import { name1, name2 as alias } from 'path' (multi-line support)
+			namedImports := match[2]
+			// Clean up the named imports string - remove newlines and extra spaces
+			namedImports = regexp.MustCompile(`\s+`).ReplaceAllString(namedImports, " ")
+			namedImports = strings.TrimSpace(namedImports)
+
+			namedParts := strings.Split(namedImports, ",")
+			for _, part := range namedParts {
+				part = strings.TrimSpace(part)
+				if aliasMatch := regexp.MustCompile(`(\w+)\s+as\s+(\w+)`).FindStringSubmatch(part); aliasMatch != nil {
+					importedSymbols = append(importedSymbols, aliasMatch[1])
+					aliases[aliasMatch[1]] = aliasMatch[2]
+				} else if part != "" {
+					importedSymbols = append(importedSymbols, part)
+					aliases[part] = part
+				}
+			}
+			importStyle = "named"
+		} else if match[3] != "" {
+			// import name from 'path'
+			importedSymbols = []string{match[3]}
+			alias = match[3]
+			aliases[match[3]] = match[3]
+			importStyle = "default"
+		}
+
+		startInt := strings.Index(content, match[0])
+		startByte := valueobject.ClampToUint32(startInt)
+		endByte := valueobject.ClampToUint32(startInt + len(match[0]))
+		hash := sha256.Sum256([]byte(match[0]))
+		hashStr := hex.EncodeToString(hash[:])
+
+		metadata := map[string]interface{}{
+			"aliases":      aliases,
+			"import_style": importStyle,
+			"import_type":  "es6",
+			"path_type":    s.determinePathType(path),
+		}
+
+		imports = append(imports, outbound.ImportDeclaration{
+			Path:            path,
+			Alias:           alias,
+			ImportedSymbols: importedSymbols,
+			StartByte:       startByte,
+			EndByte:         endByte,
+			StartPosition:   valueobject.Position{Row: 0, Column: 0},
+			EndPosition:     valueobject.Position{Row: 0, Column: valueobject.ClampToUint32(len(match[0]))},
+			Content:         match[0],
+			ExtractedAt:     now,
+			Hash:            hashStr,
+			Metadata:        metadata,
+		})
+	}
+
+	slogger.Info(ctx, "JavaScript import extraction completed", slogger.Fields{
+		"extracted_count": len(imports),
+	})
+
+	return imports
+}
+
+// determinePathType categorizes import paths.
+func (s *SemanticTraverserAdapter) determinePathType(path string) string {
+	if strings.HasPrefix(path, "@") {
+		return "scoped-npm"
+	}
+	if strings.HasPrefix(path, ".") {
+		return "relative"
+	}
+	if strings.HasPrefix(path, "/") {
+		return "absolute"
+	}
+	if strings.Contains(path, "://") {
+		return "protocol"
+	}
+	return "npm"
+}
+
+// Helper functions for JavaScript import extraction
+
+type NamedImportSymbols struct {
+	Names   []string
+	Aliases map[string]string
+}
+
+func parseNamedImports(importClause string) NamedImportSymbols {
+	symbols := NamedImportSymbols{
+		Names:   []string{},
+		Aliases: make(map[string]string),
+	}
+
+	parts := strings.Split(importClause, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.Contains(part, "as") {
+			aliasParts := strings.Split(part, "as")
+			if len(aliasParts) == 2 {
+				name := strings.TrimSpace(aliasParts[0])
+				alias := strings.TrimSpace(aliasParts[1])
+				symbols.Names = append(symbols.Names, alias)
+				symbols.Aliases[alias] = name
+			}
+		} else {
+			symbols.Names = append(symbols.Names, part)
+		}
+	}
+
+	return symbols
+}
+
+func getPathType(path string) string {
+	if strings.HasPrefix(path, "@") {
+		return "scoped-npm"
+	}
+	if strings.HasPrefix(path, ".") {
+		return "relative"
+	}
+	if strings.HasPrefix(path, "/") {
+		return "absolute"
+	}
+	if strings.Contains(path, "://") {
+		return "protocol"
+	}
+	return "npm"
+}
+
+func getRelativeDepth(path string) int {
+	if !strings.HasPrefix(path, ".") {
+		return 0
+	}
+
+	depth := 0
+	parts := strings.Split(path, "/")
+	for _, part := range parts {
+		if part == ".." {
+			depth++
+		}
+	}
+	return depth
+}
+
+func generateHash(content string) string {
+	hash := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(hash[:])
+}
+
+// TreeSitterParseTreeConverter converts tree-sitter parse trees to domain objects.
+type TreeSitterParseTreeConverter struct{}
+
+// NewTreeSitterParseTreeConverter creates a new TreeSitterParseTreeConverter.
+func NewTreeSitterParseTreeConverter() *TreeSitterParseTreeConverter {
+	return &TreeSitterParseTreeConverter{}
+}
+
+// ConvertToDomain converts a tree-sitter parse tree to a domain parse tree.
+func (c *TreeSitterParseTreeConverter) ConvertToDomain(tree interface{}) (*valueobject.ParseTree, error) {
+	// For GREEN phase, implement minimal conversion
+	// In real implementation, this would convert from tree-sitter tree to our domain ParseTree
+	if tree == nil {
+		return nil, errors.New("tree cannot be nil")
+	}
+
+	// Handle ParseResult from stub parser
+	if parseResult, ok := tree.(*ParseResult); ok {
+		if parseResult.ParseTree == nil {
+			return nil, errors.New("parse result contains nil parse tree")
+		}
+		return c.convertTreeSitterTreeToDomain(parseResult.ParseTree)
+	}
+
+	// Handle direct ParseTree from treesitter package
+	if parseTree, ok := tree.(*ParseTree); ok {
+		return c.convertTreeSitterTreeToDomain(parseTree)
+	}
+
+	// For GREEN phase: assume we already have a domain ParseTree
+	// This is a minimal implementation to make tests pass
+	if domainTree, ok := tree.(*valueobject.ParseTree); ok {
+		return domainTree, nil
+	}
+
+	// For other cases, return an error for now
+	return nil, fmt.Errorf("unsupported tree type: %T", tree)
+}
+
+// convertTreeSitterTreeToDomain converts treesitter.ParseTree to valueobject.ParseTree.
+func (c *TreeSitterParseTreeConverter) convertTreeSitterTreeToDomain(
+	tsTree *ParseTree,
+) (*valueobject.ParseTree, error) {
+	if tsTree == nil {
+		return nil, errors.New("treesitter parse tree cannot be nil")
+	}
+
+	// Convert language string to valueobject.Language
+	language, err := valueobject.NewLanguage(tsTree.Language)
+	if err != nil {
+		return nil, fmt.Errorf("invalid language %s: %w", tsTree.Language, err)
+	}
+
+	// Convert root node
+	domainRootNode, err := c.convertParseNode(tsTree.RootNode)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert root node: %w", err)
+	}
+
+	// For GREEN phase: create a simple domain parse tree with proper constructor
+	ctx := context.Background()
+	metadata := valueobject.ParseMetadata{
+		// Use empty struct for GREEN phase - let constructor set defaults
+	}
+	domainTree, err := valueobject.NewParseTree(ctx, language, domainRootNode, []byte(tsTree.Source), metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create domain parse tree: %w", err)
+	}
+
+	return domainTree, nil
+}
+
+// convertParseNode converts treesitter.ParseNode to valueobject.ParseNode.
+func (c *TreeSitterParseTreeConverter) convertParseNode(tsNode *ParseNode) (*valueobject.ParseNode, error) {
+	if tsNode == nil {
+		return nil, nil // Null nodes are allowed
+	}
+
+	// Convert position structs
+	startPos := valueobject.Position{
+		Row:    tsNode.StartPoint.Row,
+		Column: tsNode.StartPoint.Column,
+	}
+	endPos := valueobject.Position{
+		Row:    tsNode.EndPoint.Row,
+		Column: tsNode.EndPoint.Column,
+	}
+
+	// Convert children recursively
+	var children []*valueobject.ParseNode
+	for _, childNode := range tsNode.Children {
+		domainChild, err := c.convertParseNode(childNode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert child node: %w", err)
+		}
+		if domainChild != nil {
+			children = append(children, domainChild)
+		}
+	}
+
+	// For GREEN phase: create a simple domain parse node using available constructor
+	// Use just the essential fields that should be available
+	domainNode := &valueobject.ParseNode{
+		Type:      tsNode.Type,
+		StartByte: tsNode.StartByte,
+		EndByte:   tsNode.EndByte,
+		StartPos:  startPos,
+		EndPos:    endPos,
+		Children:  children,
+	}
+
+	return domainNode, nil
+}
+
+// SemanticCodeChunkExtractor extracts semantic code chunks from domain parse trees.
+type SemanticCodeChunkExtractor struct{}
+
+// NewSemanticCodeChunkExtractor creates a new SemanticCodeChunkExtractor.
+func NewSemanticCodeChunkExtractor() *SemanticCodeChunkExtractor {
+	return &SemanticCodeChunkExtractor{}
+}
+
+// Extract extracts semantic code chunks from a domain parse tree.
+func (e *SemanticCodeChunkExtractor) Extract(
+	ctx context.Context,
+	domainTree *valueobject.ParseTree,
+) ([]outbound.SemanticCodeChunk, error) {
+	if domainTree == nil {
+		return []outbound.SemanticCodeChunk{}, nil
+	}
+
+	// For GREEN phase: use existing semantic traverser adapter
+	adapter := NewSemanticTraverserAdapter()
+
+	// Extract all types of chunks using default options
+	options := outbound.SemanticExtractionOptions{
+		IncludePrivate:       true,
+		IncludeComments:      false,
+		IncludeDocumentation: true,
+		IncludeTypeInfo:      true,
+		IncludeDependencies:  false,
+		IncludeMetadata:      false,
+		MaxDepth:             100,
+	}
+
+	var allChunks []outbound.SemanticCodeChunk
+
+	// Extract functions
+	if functions, err := adapter.ExtractFunctions(ctx, domainTree, options); err == nil {
+		allChunks = append(allChunks, functions...)
+	}
+
+	// Extract classes
+	if classes, err := adapter.ExtractClasses(ctx, domainTree, options); err == nil {
+		allChunks = append(allChunks, classes...)
+	}
+
+	// Extract interfaces
+	if interfaces, err := adapter.ExtractInterfaces(ctx, domainTree, options); err == nil {
+		allChunks = append(allChunks, interfaces...)
+	}
+
+	// Extract variables
+	if variables, err := adapter.ExtractVariables(ctx, domainTree, options); err == nil {
+		allChunks = append(allChunks, variables...)
+	}
+
+	// Extract modules
+	if modules, err := adapter.ExtractModules(ctx, domainTree, options); err == nil {
+		allChunks = append(allChunks, modules...)
+	}
+
+	return allChunks, nil
 }

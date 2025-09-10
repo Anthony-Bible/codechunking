@@ -107,7 +107,7 @@ func extractPythonFunction(
 	}
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID("function", name, nil),
+		ChunkID:       utils.GenerateID("function", name, nil),
 		Type:          constructType,
 		Name:          name,
 		QualifiedName: qualifiedName,
@@ -413,7 +413,7 @@ func parsePythonMethod(
 	isAsync := isAsyncFunction(node)
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID("method", methodName, nil),
+		ChunkID:       utils.GenerateID("method", methodName, nil),
 		Type:          outbound.ConstructMethod,
 		Name:          methodName,
 		QualifiedName: qualifyName(moduleName, className, methodName),

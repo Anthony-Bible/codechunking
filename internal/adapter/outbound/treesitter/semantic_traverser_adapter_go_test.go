@@ -316,7 +316,7 @@ func testGoFunctionExtraction(
 
 	// Create adapter
 	parserFactory := &ParserFactoryImpl{}
-	adapter := NewSemanticTraverserAdapter(parserFactory)
+	adapter := NewSemanticTraverserAdapterWithFactory(parserFactory)
 
 	// Extract functions
 	result, err := adapter.ExtractFunctions(context.Background(), parseTree, options)
@@ -639,7 +639,7 @@ func testGoStructExtraction(
 
 	// Create adapter
 	parserFactory := &ParserFactoryImpl{}
-	adapter := NewSemanticTraverserAdapter(parserFactory)
+	adapter := NewSemanticTraverserAdapterWithFactory(parserFactory)
 
 	// Extract structs (via ExtractClasses which handles structs in Go)
 	result, err := adapter.ExtractClasses(context.Background(), parseTree, options)
@@ -883,7 +883,7 @@ func testGoInterfaceExtraction(
 
 	// Create adapter
 	parserFactory := &ParserFactoryImpl{}
-	adapter := NewSemanticTraverserAdapter(parserFactory)
+	adapter := NewSemanticTraverserAdapterWithFactory(parserFactory)
 
 	// Extract interfaces
 	result, err := adapter.ExtractInterfaces(context.Background(), parseTree, options)
@@ -1147,7 +1147,7 @@ func testGoVariableExtraction(
 
 	parseTree := createRealParseTreeFromSource(t, language, sourceCode)
 	parserFactory := &ParserFactoryImpl{}
-	adapter := NewSemanticTraverserAdapter(parserFactory)
+	adapter := NewSemanticTraverserAdapterWithFactory(parserFactory)
 
 	result, err := adapter.ExtractVariables(context.Background(), parseTree, options)
 	require.NoError(t, err)
@@ -1170,7 +1170,7 @@ func testGoImportExtraction(
 
 	parseTree := createRealParseTreeFromSource(t, language, sourceCode)
 	parserFactory := &ParserFactoryImpl{}
-	adapter := NewSemanticTraverserAdapter(parserFactory)
+	adapter := NewSemanticTraverserAdapterWithFactory(parserFactory)
 
 	result, err := adapter.ExtractImports(context.Background(), parseTree, options)
 	require.NoError(t, err)
@@ -1193,7 +1193,7 @@ func testGoPackageExtraction(
 
 	parseTree := createRealParseTreeFromSource(t, language, sourceCode)
 	parserFactory := &ParserFactoryImpl{}
-	adapter := NewSemanticTraverserAdapter(parserFactory)
+	adapter := NewSemanticTraverserAdapterWithFactory(parserFactory)
 
 	result, err := adapter.ExtractModules(context.Background(), parseTree, options)
 	require.NoError(t, err)

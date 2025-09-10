@@ -51,9 +51,9 @@ func (o *ObservablePythonParser) Parse(ctx context.Context, source []byte) (*tre
 	rootNode := &valueobject.ParseNode{
 		Type:      "module",
 		StartByte: 0,
-		EndByte:   uint32(len(source)),
+		EndByte:   valueobject.ClampToUint32(len(source)),
 		StartPos:  valueobject.Position{Row: 0, Column: 0},
-		EndPos:    valueobject.Position{Row: 0, Column: uint32(len(source))},
+		EndPos:    valueobject.Position{Row: 0, Column: valueobject.ClampToUint32(len(source))},
 		Children:  nil,
 	}
 

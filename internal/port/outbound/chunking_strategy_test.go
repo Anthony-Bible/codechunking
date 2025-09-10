@@ -1149,7 +1149,7 @@ func createTestEnhancedCodeChunk(name string, chunkType ChunkType, strategy Chun
 
 func createTestSemanticCodeChunk(name string, constructType SemanticConstructType) SemanticCodeChunk {
 	return SemanticCodeChunk{
-		ID:            generateTestID(),
+		ChunkID:       generateTestID(),
 		Type:          constructType,
 		Name:          name,
 		QualifiedName: "test.package." + name,

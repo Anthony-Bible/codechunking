@@ -57,23 +57,23 @@ class SimpleClass {
 				classMethods = append(classMethods, fn)
 			}
 		}
-		assert.Equal(t, 3, len(classMethods))
+		assert.Len(t, classMethods, 3)
 
 		constructor := classMethods[0]
 		assert.Equal(t, "constructor", constructor.Name)
 		assert.Equal(t, outbound.ConstructMethod, constructor.Type)
-		assert.Equal(t, 1, len(constructor.Parameters))
+		assert.Len(t, constructor.Parameters, 1)
 		assert.Equal(t, "name", constructor.Parameters[0].Name)
 
 		getNameMethod := classMethods[1]
 		assert.Equal(t, "getName", getNameMethod.Name)
 		assert.Equal(t, outbound.ConstructMethod, getNameMethod.Type)
-		assert.Equal(t, 0, len(getNameMethod.Parameters))
+		assert.Empty(t, getNameMethod.Parameters)
 
 		setNameMethod := classMethods[2]
 		assert.Equal(t, "setName", setNameMethod.Name)
 		assert.Equal(t, outbound.ConstructMethod, setNameMethod.Type)
-		assert.Equal(t, 1, len(setNameMethod.Parameters))
+		assert.Len(t, setNameMethod.Parameters, 1)
 		assert.Equal(t, "name", setNameMethod.Parameters[0].Name)
 	})
 
@@ -110,9 +110,10 @@ class ChildClass extends ParentClass {
 
 		var parentClass, childClass outbound.SemanticCodeChunk
 		for _, class := range classes {
-			if class.Name == "ParentClass" {
+			switch class.Name {
+			case "ParentClass":
 				parentClass = class
-			} else if class.Name == "ChildClass" {
+			case "ChildClass":
 				childClass = class
 			}
 		}
@@ -132,7 +133,7 @@ class ChildClass extends ParentClass {
 				childClassMethods = append(childClassMethods, fn)
 			}
 		}
-		assert.Equal(t, 2, len(childClassMethods))
+		assert.Len(t, childClassMethods, 2)
 	})
 
 	t.Run("Static methods and properties", func(t *testing.T) {
@@ -180,7 +181,7 @@ class StaticClass {
 				classMethods = append(classMethods, fn)
 			}
 		}
-		assert.Equal(t, 3, len(classMethods))
+		assert.Len(t, classMethods, 3)
 
 		staticMethod := classMethods[0]
 		assert.Equal(t, "staticMethod", staticMethod.Name)
@@ -232,7 +233,7 @@ class GetterSetterClass {
 				classMethods = append(classMethods, fn)
 			}
 		}
-		assert.Equal(t, 2, len(classMethods))
+		assert.Len(t, classMethods, 2)
 
 		getter := classMethods[0]
 		assert.Equal(t, "value", getter.Name)
@@ -241,7 +242,7 @@ class GetterSetterClass {
 		setter := classMethods[1]
 		assert.Equal(t, "value", setter.Name)
 		assert.Equal(t, outbound.ConstructMethod, setter.Type)
-		assert.Equal(t, 1, len(setter.Parameters))
+		assert.Len(t, setter.Parameters, 1)
 		assert.Equal(t, "newValue", setter.Parameters[0].Name)
 	})
 
@@ -283,7 +284,7 @@ class PrivateClass {
 				classMethods = append(classMethods, fn)
 			}
 		}
-		assert.Equal(t, 2, len(classMethods))
+		assert.Len(t, classMethods, 2)
 
 		privateMethod := classMethods[0]
 		assert.Equal(t, "#privateMethod", privateMethod.Name)
@@ -317,7 +318,7 @@ class DecoratedClass {
 		class := classes[0]
 		assert.Equal(t, "DecoratedClass", class.Name)
 		assert.Equal(t, outbound.ConstructClass, class.Type)
-		assert.Equal(t, 2, len(class.Annotations))
+		assert.Len(t, class.Annotations, 2)
 
 		decorator1 := class.Annotations[0]
 		assert.Equal(t, "decorator", decorator1.Name)
@@ -411,15 +412,16 @@ class OuterClass {
 		var innerClassMethods, nestedClassMethods []outbound.SemanticCodeChunk
 		for _, fn := range functions {
 			if fn.ParentChunk != nil {
-				if fn.ParentChunk.Name == "InnerClass" {
+				switch fn.ParentChunk.Name {
+				case "InnerClass":
 					innerClassMethods = append(innerClassMethods, fn)
-				} else if fn.ParentChunk.Name == "NestedClass" {
+				case "NestedClass":
 					nestedClassMethods = append(nestedClassMethods, fn)
 				}
 			}
 		}
-		assert.Equal(t, 1, len(innerClassMethods))
-		assert.Equal(t, 1, len(nestedClassMethods))
+		assert.Len(t, innerClassMethods, 1)
+		assert.Len(t, nestedClassMethods, 1)
 	})
 
 	t.Run("Class expressions", func(t *testing.T) {
@@ -448,9 +450,10 @@ const NamedClass = class NamedClassExpression {
 
 		var anonymousClass, namedClass outbound.SemanticCodeChunk
 		for _, class := range classes {
-			if class.Name == "" {
+			switch class.Name {
+			case "":
 				anonymousClass = class
-			} else if class.Name == "NamedClassExpression" {
+			case "NamedClassExpression":
 				namedClass = class
 			}
 		}
@@ -466,15 +469,16 @@ const NamedClass = class NamedClassExpression {
 		var anonymousClassMethods, namedClassMethods []outbound.SemanticCodeChunk
 		for _, fn := range functions {
 			if fn.ParentChunk != nil {
-				if fn.ParentChunk.Name == "" {
+				switch fn.ParentChunk.Name {
+				case "":
 					anonymousClassMethods = append(anonymousClassMethods, fn)
-				} else if fn.ParentChunk.Name == "NamedClassExpression" {
+				case "NamedClassExpression":
 					namedClassMethods = append(namedClassMethods, fn)
 				}
 			}
 		}
-		assert.Equal(t, 2, len(anonymousClassMethods))
-		assert.Equal(t, 2, len(namedClassMethods))
+		assert.Len(t, anonymousClassMethods, 2)
+		assert.Len(t, namedClassMethods, 2)
 	})
 }
 
@@ -504,7 +508,7 @@ function regularFunction(a, b, c) {
 		fn := functions[0]
 		assert.Equal(t, "regularFunction", fn.Name)
 		assert.Equal(t, outbound.ConstructFunction, fn.Type)
-		assert.Equal(t, 3, len(fn.Parameters))
+		assert.Len(t, fn.Parameters, 3)
 	})
 
 	t.Run("Function expressions", func(t *testing.T) {
@@ -530,13 +534,13 @@ const namedExprFunction = function named(a, b) {
 		require.Len(t, functions, 2)
 
 		anonymousExpr := functions[0]
-		assert.Equal(t, "", anonymousExpr.Name)
+		assert.Empty(t, anonymousExpr.Name)
 		assert.Equal(t, outbound.ConstructFunction, anonymousExpr.Type)
 
 		namedExpr := functions[1]
 		assert.Equal(t, "named", namedExpr.Name)
 		assert.Equal(t, outbound.ConstructFunction, namedExpr.Type)
-		assert.Equal(t, 2, len(namedExpr.Parameters))
+		assert.Len(t, namedExpr.Parameters, 2)
 	})
 
 	t.Run("Arrow functions with various syntaxes", func(t *testing.T) {
@@ -564,10 +568,10 @@ const arrow4 = (a, b) => {
 			assert.Equal(t, outbound.ConstructFunction, fn.Type)
 		}
 
-		assert.Equal(t, 2, len(functions[0].Parameters))
-		assert.Equal(t, 1, len(functions[1].Parameters))
-		assert.Equal(t, 0, len(functions[2].Parameters))
-		assert.Equal(t, 2, len(functions[3].Parameters))
+		assert.Len(t, functions[0].Parameters, 2)
+		assert.Len(t, functions[1].Parameters, 1)
+		assert.Empty(t, functions[2].Parameters)
+		assert.Len(t, functions[3].Parameters, 2)
 	})
 
 	t.Run("Async functions", func(t *testing.T) {
@@ -598,7 +602,7 @@ const asyncArrow = async () => {
 		assert.True(t, asyncFn.IsAsync)
 
 		asyncArrow := functions[1]
-		assert.Equal(t, "", asyncArrow.Name)
+		assert.Empty(t, asyncArrow.Name)
 		assert.Equal(t, outbound.ConstructFunction, asyncArrow.Type)
 		assert.True(t, asyncArrow.IsAsync)
 	})
@@ -632,7 +636,7 @@ const generatorArrow = function* () {
 		assert.True(t, generatorFn.IsGeneric)
 
 		generatorArrow := functions[1]
-		assert.Equal(t, "", generatorArrow.Name)
+		assert.Empty(t, generatorArrow.Name)
 		assert.Equal(t, outbound.ConstructFunction, generatorArrow.Type)
 		assert.True(t, generatorArrow.IsGeneric)
 	})
@@ -686,11 +690,11 @@ async function* asyncGeneratorFunction() {
 		require.Len(t, functions, 2)
 
 		iife1 := functions[0]
-		assert.Equal(t, "", iife1.Name)
+		assert.Empty(t, iife1.Name)
 		assert.Equal(t, outbound.ConstructFunction, iife1.Type)
 
 		iife2 := functions[1]
-		assert.Equal(t, "", iife2.Name)
+		assert.Empty(t, iife2.Name)
 		assert.Equal(t, outbound.ConstructFunction, iife2.Type)
 	})
 
@@ -719,15 +723,15 @@ const higherOrderArrow = (fn) => (a, b) => fn(a, b);
 		hof1 := functions[0]
 		assert.Equal(t, "higherOrder", hof1.Name)
 		assert.Equal(t, outbound.ConstructFunction, hof1.Type)
-		assert.Equal(t, 1, len(hof1.Parameters))
+		assert.Len(t, hof1.Parameters, 1)
 
 		hof2 := functions[1]
-		assert.Equal(t, "", hof2.Name)
+		assert.Empty(t, hof2.Name)
 		assert.Equal(t, outbound.ConstructFunction, hof2.Type)
-		assert.Equal(t, 2, len(hof2.Parameters))
+		assert.Len(t, hof2.Parameters, 2)
 
 		hof3 := functions[2]
-		assert.Equal(t, "", hof3.Name)
+		assert.Empty(t, hof3.Name)
 		assert.Equal(t, outbound.ConstructFunction, hof3.Type)
 	})
 
@@ -752,7 +756,7 @@ function complexParams(a, b = 10, ...rest, {prop1, prop2: p2, prop3 = "default"}
 		fn := functions[0]
 		assert.Equal(t, "complexParams", fn.Name)
 		assert.Equal(t, outbound.ConstructFunction, fn.Type)
-		assert.Equal(t, 4, len(fn.Parameters))
+		assert.Len(t, fn.Parameters, 4)
 
 		param1 := fn.Parameters[0]
 		assert.Equal(t, "a", param1.Name)
@@ -764,7 +768,7 @@ function complexParams(a, b = 10, ...rest, {prop1, prop2: p2, prop3 = "default"}
 		assert.Equal(t, "rest", param3.Name)
 
 		param4 := fn.Parameters[3]
-		assert.Equal(t, "", param4.Name)
+		assert.Empty(t, param4.Name)
 	})
 
 	t.Run("Function hoisting detection", func(t *testing.T) {
@@ -798,7 +802,7 @@ const notHoisted = function() {
 		assert.Equal(t, outbound.ConstructFunction, hoistedFn.Type)
 
 		notHoistedFn := functions[1]
-		assert.Equal(t, "", notHoistedFn.Name)
+		assert.Empty(t, notHoistedFn.Name)
 		assert.Equal(t, outbound.ConstructFunction, notHoistedFn.Type)
 	})
 }
@@ -874,7 +878,7 @@ class DecoratedMethodClass {
 		method := functions[0]
 		assert.Equal(t, "methodWithDecorators", method.Name)
 		assert.Equal(t, outbound.ConstructMethod, method.Type)
-		assert.Equal(t, 2, len(method.Annotations))
+		assert.Len(t, method.Annotations, 2)
 
 		decorator1 := method.Annotations[0]
 		assert.Equal(t, "log", decorator1.Name)
@@ -1240,7 +1244,7 @@ import { name1, name2 as alias2, name3 } from 'module';
 
 		import1 := imports[0]
 		assert.Equal(t, "module", import1.Path)
-		assert.Equal(t, "", import1.Alias)
+		assert.Empty(t, import1.Alias)
 	})
 
 	t.Run("Default imports", func(t *testing.T) {
@@ -1446,7 +1450,7 @@ define(['module1'], function(mod1) {
 		require.Len(t, exports, 1)
 
 		export1 := exports[0]
-		assert.Equal(t, "", export1.Name)
+		assert.Empty(t, export1.Name)
 		assert.Equal(t, outbound.ConstructModule, export1.Type)
 	})
 }
@@ -1623,9 +1627,10 @@ const instance = new Child();
 
 		var parentMethod, childMethod outbound.SemanticCodeChunk
 		for _, fn := range functions {
-			if fn.Name == "parentMethod" {
+			switch fn.Name {
+			case "parentMethod":
 				parentMethod = fn
-			} else if fn.Name == "childMethod" {
+			case "childMethod":
 				childMethod = fn
 			}
 		}
@@ -1664,7 +1669,7 @@ const instance = new ConstructorFunction("test");
 		constructor := functions[0]
 		assert.Equal(t, "ConstructorFunction", constructor.Name)
 		assert.Equal(t, outbound.ConstructFunction, constructor.Type)
-		assert.Equal(t, 1, len(constructor.Parameters))
+		assert.Len(t, constructor.Parameters, 1)
 
 		getNameMethod := functions[1]
 		assert.Equal(t, "getName", getNameMethod.Name)
@@ -1726,7 +1731,7 @@ const obj = {
 		setterMethod := methods[6]
 		assert.Equal(t, "setterMethod", setterMethod.Name)
 		assert.Equal(t, outbound.ConstructMethod, setterMethod.Type)
-		assert.Equal(t, 1, len(setterMethod.Parameters))
+		assert.Len(t, setterMethod.Parameters, 1)
 	})
 
 	t.Run("Callback function identification", func(t *testing.T) {
@@ -1761,15 +1766,15 @@ const callbacks = [
 		require.Len(t, callbacks, 4)
 
 		cb1 := callbacks[1]
-		assert.Equal(t, "", cb1.Name)
+		assert.Empty(t, cb1.Name)
 		assert.Equal(t, outbound.ConstructFunction, cb1.Type)
 
 		cb2 := callbacks[2]
-		assert.Equal(t, "", cb2.Name)
+		assert.Empty(t, cb2.Name)
 		assert.Equal(t, outbound.ConstructFunction, cb2.Type)
 
 		cb3 := callbacks[3]
-		assert.Equal(t, "", cb3.Name)
+		assert.Empty(t, cb3.Name)
 		assert.Equal(t, outbound.ConstructFunction, cb3.Type)
 	})
 
@@ -1813,7 +1818,7 @@ const asyncArrow = async () => {
 		assert.True(t, asyncFn1.IsAsync)
 
 		asyncFn2 := asyncFunctions[2]
-		assert.Equal(t, "", asyncFn2.Name)
+		assert.Empty(t, asyncFn2.Name)
 		assert.Equal(t, outbound.ConstructFunction, asyncFn2.Type)
 		assert.True(t, asyncFn2.IsAsync)
 	})
@@ -1851,11 +1856,11 @@ const handlers = {
 		require.Len(t, eventHandlers, 4)
 
 		handler1 := eventHandlers[1]
-		assert.Equal(t, "", handler1.Name)
+		assert.Empty(t, handler1.Name)
 		assert.Equal(t, outbound.ConstructFunction, handler1.Type)
 
 		handler2 := eventHandlers[2]
-		assert.Equal(t, "", handler2.Name)
+		assert.Empty(t, handler2.Name)
 		assert.Equal(t, outbound.ConstructFunction, handler2.Type)
 
 		handler3 := eventHandlers[3]
@@ -1921,7 +1926,7 @@ const closure = outerFunction("outer");
 		closure := closures[1]
 		assert.Equal(t, "innerFunction", closure.Name)
 		assert.Equal(t, outbound.ConstructFunction, closure.Type)
-		assert.Equal(t, 1, len(closure.Parameters))
+		assert.Len(t, closure.Parameters, 1)
 		assert.Equal(t, "innerVar", closure.Parameters[0].Name)
 	})
 }
@@ -2128,7 +2133,7 @@ function add(a, b) {
 		fn := functions[0]
 		assert.Equal(t, "add", fn.Name)
 		assert.Equal(t, outbound.ConstructFunction, fn.Type)
-		assert.Equal(t, 2, len(fn.Parameters))
+		assert.Len(t, fn.Parameters, 2)
 	})
 
 	t.Run("JSDoc class documentation", func(t *testing.T) {
@@ -2190,7 +2195,7 @@ class Person {
 		constructor := classMethods[0]
 		assert.Equal(t, "constructor", constructor.Name)
 		assert.Equal(t, outbound.ConstructMethod, constructor.Type)
-		assert.Equal(t, 2, len(constructor.Parameters))
+		assert.Len(t, constructor.Parameters, 2)
 
 		getNameMethod := classMethods[1]
 		assert.Equal(t, "getName", getNameMethod.Name)
@@ -2224,7 +2229,7 @@ function typedFunction(str, num, bool, strArray, obj, fn) {}
 		fn := functions[0]
 		assert.Equal(t, "typedFunction", fn.Name)
 		assert.Equal(t, outbound.ConstructFunction, fn.Type)
-		assert.Equal(t, 6, len(fn.Parameters))
+		assert.Len(t, fn.Parameters, 6)
 
 		assert.Equal(t, "str", fn.Parameters[0].Name)
 		assert.Equal(t, "string", fn.Parameters[0].Type)
@@ -2324,7 +2329,7 @@ function exampleFunction(param) {
 		fn := functions[0]
 		assert.Equal(t, "exampleFunction", fn.Name)
 		assert.Equal(t, outbound.ConstructFunction, fn.Type)
-		assert.Equal(t, 1, len(fn.Parameters))
+		assert.Len(t, fn.Parameters, 1)
 	})
 }
 
@@ -2419,7 +2424,7 @@ export default ExampleClass;
 				classMethods = append(classMethods, fn)
 			}
 		}
-		assert.Equal(t, 4, len(classMethods))
+		assert.Len(t, classMethods, 4)
 
 		var standaloneFunctions []outbound.SemanticCodeChunk
 		for _, fn := range functions {
@@ -2433,7 +2438,7 @@ export default ExampleClass;
 		assert.Equal(t, "exampleFunction", fn.Name)
 		assert.Equal(t, outbound.ConstructFunction, fn.Type)
 		assert.True(t, fn.IsAsync)
-		assert.Equal(t, 1, len(fn.Parameters))
+		assert.Len(t, fn.Parameters, 1)
 
 		imports, err := adapter.ExtractImports(ctx, domainTree, options)
 		require.NoError(t, err)

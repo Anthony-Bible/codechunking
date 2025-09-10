@@ -60,12 +60,13 @@ func extractModuleLevelVariables(
 	for _, child := range rootNode.Children {
 		switch child.Type {
 		case "expression_statement":
-			variable := extractVariableFromExpressionStatement(parseTree, child, moduleName, options, now)
-			if variable != nil {
-				variables = append(variables, *variable)
-			}
+			vars := extractVariablesFromExpressionStatement(parseTree, child, moduleName, options, now)
+			variables = append(variables, vars...)
 		case "assignment":
-			variable := extractVariableFromAssignment(parseTree, child, moduleName, options, now)
+			vars := extractVariablesFromAssignment(parseTree, child, moduleName, options, now)
+			variables = append(variables, vars...)
+		case "annotated_assignment":
+			variable := extractVariableFromAnnotatedAssignment(parseTree, child, moduleName, options, now)
 			if variable != nil {
 				variables = append(variables, *variable)
 			}
@@ -75,14 +76,14 @@ func extractModuleLevelVariables(
 	return variables
 }
 
-// extractVariableFromExpressionStatement extracts a variable from an expression statement.
-func extractVariableFromExpressionStatement(
+// extractVariablesFromExpressionStatement extracts variables from an expression statement.
+func extractVariablesFromExpressionStatement(
 	parseTree *valueobject.ParseTree,
 	node *valueobject.ParseNode,
 	moduleName string,
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
-) *outbound.SemanticCodeChunk {
+) []outbound.SemanticCodeChunk {
 	if node == nil {
 		return nil
 	}
@@ -90,20 +91,29 @@ func extractVariableFromExpressionStatement(
 	// Look for assignment within the expression statement
 	assignmentNode := findChildByType(node, "assignment")
 	if assignmentNode != nil {
-		return extractVariableFromAssignment(parseTree, assignmentNode, moduleName, options, now)
+		return extractVariablesFromAssignment(parseTree, assignmentNode, moduleName, options, now)
+	}
+
+	// Look for annotated assignment within the expression statement
+	annotatedAssignmentNode := findChildByType(node, "annotated_assignment")
+	if annotatedAssignmentNode != nil {
+		variable := extractVariableFromAnnotatedAssignment(parseTree, annotatedAssignmentNode, moduleName, options, now)
+		if variable != nil {
+			return []outbound.SemanticCodeChunk{*variable}
+		}
 	}
 
 	return nil
 }
 
-// extractVariableFromAssignment extracts a variable from an assignment node.
-func extractVariableFromAssignment(
+// extractVariablesFromAssignment extracts variables from an assignment node.
+func extractVariablesFromAssignment(
 	parseTree *valueobject.ParseTree,
 	assignmentNode *valueobject.ParseNode,
 	moduleName string,
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
-) *outbound.SemanticCodeChunk {
+) []outbound.SemanticCodeChunk {
 	if assignmentNode == nil {
 		return nil
 	}
@@ -114,9 +124,55 @@ func extractVariableFromAssignment(
 		return nil
 	}
 
-	// For now, handle single variable assignment
-	// Multiple assignment (x, y = 1, 2) would need special handling
-	varName := variables[0]
+	content := parseTree.GetNodeText(assignmentNode)
+	returnType := extractTypeAnnotationFromAssignment(parseTree, assignmentNode)
+
+	var chunks []outbound.SemanticCodeChunk
+	for _, varName := range variables {
+		// Determine if it's a constant (all uppercase) or variable
+		constructType := outbound.ConstructVariable
+		if strings.ToUpper(varName) == varName {
+			constructType = outbound.ConstructConstant
+		}
+
+		chunk := outbound.SemanticCodeChunk{
+			ChunkID:       utils.GenerateID("variable", varName, nil),
+			Type:          constructType,
+			Name:          varName,
+			QualifiedName: qualifyName(moduleName, varName),
+			Language:      parseTree.Language(),
+			StartByte:     assignmentNode.StartByte,
+			EndByte:       assignmentNode.EndByte,
+			Content:       content,
+			Visibility:    getPythonVisibility(varName),
+			ReturnType:    returnType,
+			ExtractedAt:   now,
+			Hash:          utils.GenerateHash(content),
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	return chunks
+}
+
+// extractVariableFromAnnotatedAssignment extracts a variable from an annotated assignment node.
+func extractVariableFromAnnotatedAssignment(
+	parseTree *valueobject.ParseTree,
+	assignmentNode *valueobject.ParseNode,
+	moduleName string,
+	options outbound.SemanticExtractionOptions,
+	now time.Time,
+) *outbound.SemanticCodeChunk {
+	if assignmentNode == nil {
+		return nil
+	}
+
+	// Extract variable name from the annotated assignment
+	varName := extractVariableNameFromAnnotatedAssignment(parseTree, assignmentNode)
+	if varName == "" {
+		return nil
+	}
+
 	content := parseTree.GetNodeText(assignmentNode)
 
 	// Determine if it's a constant (all uppercase) or variable
@@ -125,11 +181,11 @@ func extractVariableFromAssignment(
 		constructType = outbound.ConstructConstant
 	}
 
-	// Extract type annotation if present
-	returnType := extractTypeAnnotationFromAssignment(parseTree, assignmentNode)
+	// Extract type annotation
+	returnType := extractTypeAnnotationFromAnnotatedAssignment(parseTree, assignmentNode)
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID("variable", varName, nil),
+		ChunkID:       utils.GenerateID("variable", varName, nil),
 		Type:          constructType,
 		Name:          varName,
 		QualifiedName: qualifyName(moduleName, varName),
@@ -142,6 +198,34 @@ func extractVariableFromAssignment(
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(content),
 	}
+}
+
+// extractVariableNameFromAnnotatedAssignment extracts the variable name from an annotated assignment.
+func extractVariableNameFromAnnotatedAssignment(
+	parseTree *valueobject.ParseTree,
+	assignmentNode *valueobject.ParseNode,
+) string {
+	// Look for the left side of annotated assignment (target)
+	for _, child := range assignmentNode.Children {
+		if child.Type == "identifier" {
+			return parseTree.GetNodeText(child)
+		}
+	}
+	return ""
+}
+
+// extractTypeAnnotationFromAnnotatedAssignment extracts type annotation from annotated assignment.
+func extractTypeAnnotationFromAnnotatedAssignment(
+	parseTree *valueobject.ParseTree,
+	assignmentNode *valueobject.ParseNode,
+) string {
+	// Look for type annotation in annotated assignment
+	for _, child := range assignmentNode.Children {
+		if child.Type == "type" || child.Type == "type_annotation" {
+			return parseTree.GetNodeText(child)
+		}
+	}
+	return ""
 }
 
 // extractVariableNamesFromAssignment extracts variable names from an assignment.
@@ -246,24 +330,22 @@ func extractInstanceVariables(
 	// Look for self.variable assignments
 	for _, child := range bodyNode.Children {
 		if child.Type == "expression_statement" {
-			variable := extractInstanceVariableFromStatement(parseTree, child, className, moduleName, options, now)
-			if variable != nil {
-				variables = append(variables, *variable)
-			}
+			vars := extractInstanceVariablesFromStatement(parseTree, child, className, moduleName, options, now)
+			variables = append(variables, vars...)
 		}
 	}
 
 	return variables
 }
 
-// extractInstanceVariableFromStatement extracts instance variable from a statement.
-func extractInstanceVariableFromStatement(
+// extractInstanceVariablesFromStatement extracts instance variables from a statement.
+func extractInstanceVariablesFromStatement(
 	parseTree *valueobject.ParseTree,
 	node *valueobject.ParseNode,
 	className, moduleName string,
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
-) *outbound.SemanticCodeChunk {
+) []outbound.SemanticCodeChunk {
 	if node == nil {
 		return nil
 	}
@@ -280,30 +362,33 @@ func extractInstanceVariableFromStatement(
 		return nil
 	}
 
-	// Extract the attribute name
-	identifierNode := findChildByType(attributeNode, "identifier")
-	if identifierNode == nil {
+	// Extract the attribute names
+	varNames := extractVariableNamesFromAssignment(parseTree, assignmentNode)
+	if len(varNames) == 0 {
 		return nil
 	}
 
-	varName := parseTree.GetNodeText(identifierNode)
 	content := parseTree.GetNodeText(assignmentNode)
-
-	// Extract type annotation if present
 	returnType := extractTypeAnnotationFromAssignment(parseTree, assignmentNode)
 
-	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID("instance_var", varName, nil),
-		Type:          outbound.ConstructVariable,
-		Name:          varName,
-		QualifiedName: qualifyName(moduleName, className, varName),
-		Language:      parseTree.Language(),
-		StartByte:     assignmentNode.StartByte,
-		EndByte:       assignmentNode.EndByte,
-		Content:       content,
-		Visibility:    getPythonVisibility(varName),
-		ReturnType:    returnType,
-		ExtractedAt:   now,
-		Hash:          utils.GenerateHash(content),
+	var chunks []outbound.SemanticCodeChunk
+	for _, varName := range varNames {
+		chunk := outbound.SemanticCodeChunk{
+			ChunkID:       utils.GenerateID("instance_var", varName, nil),
+			Type:          outbound.ConstructVariable,
+			Name:          varName,
+			QualifiedName: qualifyName(moduleName, className, varName),
+			Language:      parseTree.Language(),
+			StartByte:     assignmentNode.StartByte,
+			EndByte:       assignmentNode.EndByte,
+			Content:       content,
+			Visibility:    getPythonVisibility(varName),
+			ReturnType:    returnType,
+			ExtractedAt:   now,
+			Hash:          utils.GenerateHash(content),
+		}
+		chunks = append(chunks, chunk)
 	}
+
+	return chunks
 }

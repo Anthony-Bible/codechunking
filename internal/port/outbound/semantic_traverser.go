@@ -64,7 +64,7 @@ type SemanticTraverser interface {
 
 // SemanticCodeChunk represents a semantic unit of code extracted from a parse tree.
 type SemanticCodeChunk struct {
-	ID                string                 `json:"id"`
+	ChunkID           string                 `json:"id"`
 	Type              SemanticConstructType  `json:"type"`
 	Name              string                 `json:"name"`
 	QualifiedName     string                 `json:"qualified_name"`
@@ -93,6 +93,11 @@ type SemanticCodeChunk struct {
 	Metadata          map[string]interface{} `json:"metadata,omitempty"`
 	ExtractedAt       time.Time              `json:"extracted_at"`
 	Hash              string                 `json:"hash"`
+}
+
+// ID returns the unique identifier for this semantic code chunk.
+func (s SemanticCodeChunk) ID() string {
+	return s.ChunkID
 }
 
 // SemanticConstructType represents the type of semantic construct.

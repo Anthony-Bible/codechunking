@@ -90,15 +90,15 @@ func (adapter *JavaScriptTreeSitterAdapter) convertTreeSitterNode(
 ) *valueobject.ParseNode {
 	node := &valueobject.ParseNode{
 		Type:      tsNode.Type(),
-		StartByte: uint32(tsNode.StartByte()),
-		EndByte:   uint32(tsNode.EndByte()),
+		StartByte: valueobject.ClampUintToUint32(tsNode.StartByte()),
+		EndByte:   valueobject.ClampUintToUint32(tsNode.EndByte()),
 		StartPos: valueobject.Position{
-			Row:    uint32(tsNode.StartPoint().Row),
-			Column: uint32(tsNode.StartPoint().Column),
+			Row:    valueobject.ClampUintToUint32(tsNode.StartPoint().Row),
+			Column: valueobject.ClampUintToUint32(tsNode.StartPoint().Column),
 		},
 		EndPos: valueobject.Position{
-			Row:    uint32(tsNode.EndPoint().Row),
-			Column: uint32(tsNode.EndPoint().Column),
+			Row:    valueobject.ClampUintToUint32(tsNode.EndPoint().Row),
+			Column: valueobject.ClampUintToUint32(tsNode.EndPoint().Column),
 		},
 		Children: make([]*valueobject.ParseNode, 0),
 	}

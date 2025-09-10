@@ -1680,7 +1680,7 @@ func (m *BasicMockSemanticTraverser) ExtractClasses(
 		now := time.Now()
 		return []SemanticCodeChunk{
 			{
-				ID:            "class_validclass",
+				ChunkID:       "class_validclass",
 				Type:          ConstructClass,
 				Name:          "ValidClass",
 				QualifiedName: "ValidClass",
@@ -1692,7 +1692,7 @@ func (m *BasicMockSemanticTraverser) ExtractClasses(
 				Visibility:    Public,
 				ChildChunks: []SemanticCodeChunk{
 					{
-						ID:          "method_valid_method",
+						ChunkID:     "method_valid_method",
 						Type:        ConstructMethod,
 						Name:        "valid_method",
 						Content:     "def valid_method(self):\n    return \"working\"",
@@ -1737,7 +1737,7 @@ func (m *BasicMockSemanticTraverser) ExtractModules(
 		now := time.Now()
 		return []SemanticCodeChunk{
 			{
-				ID:            "module_syntax_error",
+				ChunkID:       "module_syntax_error",
 				Type:          ConstructModule,
 				Name:          "syntax_error_module",
 				QualifiedName: "syntax_error_module",
@@ -1875,7 +1875,7 @@ func getMockFunctions(language valueobject.Language) []SemanticCodeChunk {
 	case valueobject.LanguageGo:
 		return []SemanticCodeChunk{
 			{
-				ID:            "func_simple",
+				ChunkID:       "func_simple",
 				Type:          ConstructFunction,
 				Name:          "simpleFunction",
 				QualifiedName: "main.simpleFunction",
@@ -1891,7 +1891,7 @@ func getMockFunctions(language valueobject.Language) []SemanticCodeChunk {
 				Hash:          generateHash("simpleFunction"),
 			},
 			{
-				ID:            "func_add",
+				ChunkID:       "func_add",
 				Type:          ConstructFunction,
 				Name:          "add",
 				QualifiedName: "main.add",
@@ -1911,7 +1911,7 @@ func getMockFunctions(language valueobject.Language) []SemanticCodeChunk {
 				Hash:        generateHash("add"),
 			},
 			{
-				ID:            "func_divide",
+				ChunkID:       "func_divide",
 				Type:          ConstructFunction,
 				Name:          "divide",
 				QualifiedName: "main.divide",
@@ -1929,7 +1929,7 @@ func getMockFunctions(language valueobject.Language) []SemanticCodeChunk {
 				Hash:        generateHash("divide"),
 			},
 			{
-				ID:            "func_sum",
+				ChunkID:       "func_sum",
 				Type:          ConstructFunction,
 				Name:          "sum",
 				QualifiedName: "main.sum",
@@ -1946,7 +1946,7 @@ func getMockFunctions(language valueobject.Language) []SemanticCodeChunk {
 				Hash:        generateHash("sum"),
 			},
 			{
-				ID:            "func_generic",
+				ChunkID:       "func_generic",
 				Type:          ConstructFunction,
 				Name:          "genericFunction",
 				QualifiedName: "main.genericFunction",
@@ -1971,7 +1971,7 @@ func getMockFunctions(language valueobject.Language) []SemanticCodeChunk {
 	case valueobject.LanguagePython:
 		return []SemanticCodeChunk{
 			{
-				ID:            "func_simple_py",
+				ChunkID:       "func_simple_py",
 				Type:          ConstructFunction,
 				Name:          "simple_function",
 				QualifiedName: "simple_function",
@@ -1985,7 +1985,7 @@ func getMockFunctions(language valueobject.Language) []SemanticCodeChunk {
 				Hash:          generateHash("simple_function"),
 			},
 			{
-				ID:            "func_static_py",
+				ChunkID:       "func_static_py",
 				Type:          ConstructFunction,
 				Name:          "static_method",
 				QualifiedName: "static_method",
@@ -2008,7 +2008,7 @@ func getMockFunctions(language valueobject.Language) []SemanticCodeChunk {
 				Hash:        generateHash("static_method"),
 			},
 			{
-				ID:            "func_async_py",
+				ChunkID:       "func_async_py",
 				Type:          ConstructAsyncFunction,
 				Name:          "async_function",
 				QualifiedName: "async_function",
@@ -2027,7 +2027,7 @@ func getMockFunctions(language valueobject.Language) []SemanticCodeChunk {
 				Hash:          generateHash("async_function"),
 			},
 			{
-				ID:            "func_private_py",
+				ChunkID:       "func_private_py",
 				Type:          ConstructFunction,
 				Name:          "_private_function",
 				QualifiedName: "_private_function",
@@ -2044,7 +2044,7 @@ func getMockFunctions(language valueobject.Language) []SemanticCodeChunk {
 	case valueobject.LanguageJavaScript:
 		return []SemanticCodeChunk{
 			{
-				ID:            "func_regular_js",
+				ChunkID:       "func_regular_js",
 				Type:          ConstructFunction,
 				Name:          "regularFunction",
 				QualifiedName: "regularFunction",
@@ -2061,7 +2061,7 @@ func getMockFunctions(language valueobject.Language) []SemanticCodeChunk {
 				Hash:        generateHash("regularFunction"),
 			},
 			{
-				ID:            "func_arrow_js",
+				ChunkID:       "func_arrow_js",
 				Type:          ConstructFunction,
 				Name:          "arrowFunction",
 				QualifiedName: "arrowFunction",
@@ -2078,7 +2078,7 @@ func getMockFunctions(language valueobject.Language) []SemanticCodeChunk {
 				Hash:        generateHash("arrowFunction"),
 			},
 			{
-				ID:            "func_async_js",
+				ChunkID:       "func_async_js",
 				Type:          ConstructAsyncFunction,
 				Name:          "asyncFunction",
 				QualifiedName: "asyncFunction",
@@ -2108,7 +2108,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 	case valueobject.LanguageGo:
 		return []SemanticCodeChunk{
 			{
-				ID:            "struct_user",
+				ChunkID:       "struct_user",
 				Type:          ConstructStruct,
 				Name:          "User",
 				QualifiedName: "main.User",
@@ -2120,7 +2120,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Visibility:    Public,
 				ChildChunks: []SemanticCodeChunk{
 					{
-						ID:          "method_getdisplayname",
+						ChunkID:     "method_getdisplayname",
 						Type:        ConstructMethod,
 						Name:        "GetDisplayName",
 						Content:     "func (u *User) GetDisplayName() string {\n\treturn fmt.Sprintf(\"%s (%s)\", u.Name, u.Email)\n}",
@@ -2129,7 +2129,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("GetDisplayName"),
 					},
 					{
-						ID:          "method_setemail",
+						ChunkID:     "method_setemail",
 						Type:        ConstructMethod,
 						Name:        "SetEmail",
 						Content:     "func (u *User) SetEmail(email string) error {\n\tif email == \"\" {\n\t\treturn fmt.Errorf(\"email cannot be empty\")\n\t}\n\tu.Email = email\n\treturn nil\n}",
@@ -2142,7 +2142,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Hash:        generateHash("User"),
 			},
 			{
-				ID:            "struct_admin",
+				ChunkID:       "struct_admin",
 				Type:          ConstructStruct,
 				Name:          "Admin",
 				QualifiedName: "main.Admin",
@@ -2153,7 +2153,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Visibility:    Public,
 				ChildChunks: []SemanticCodeChunk{
 					{
-						ID:          "method_haspermission",
+						ChunkID:     "method_haspermission",
 						Type:        ConstructMethod,
 						Name:        "HasPermission",
 						Content:     "func (a *Admin) HasPermission(permission string) bool {\n\tfor _, p := range a.Permissions {\n\t\tif p == permission {\n\t\t\treturn true\n\t\t}\n\t}\n\treturn false\n}",
@@ -2169,7 +2169,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 	case valueobject.LanguagePython:
 		return []SemanticCodeChunk{
 			{
-				ID:            "class_animal",
+				ChunkID:       "class_animal",
 				Type:          ConstructClass,
 				Name:          "Animal",
 				QualifiedName: "Animal",
@@ -2181,7 +2181,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Visibility:    Public,
 				ChildChunks: []SemanticCodeChunk{
 					{
-						ID:          "method_init_animal",
+						ChunkID:     "method_init_animal",
 						Type:        ConstructMethod,
 						Name:        "__init__",
 						Content:     "def __init__(self, name: str, species: str):\n    self.name = name\n    self.species = species",
@@ -2190,7 +2190,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("__init__"),
 					},
 					{
-						ID:          "method_make_sound",
+						ChunkID:     "method_make_sound",
 						Type:        ConstructMethod,
 						Name:        "make_sound",
 						Content:     "def make_sound(self) -> str:\n    \"\"\"Make a sound - to be overridden.\"\"\"\n    return \"Generic animal sound\"",
@@ -2199,7 +2199,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("make_sound"),
 					},
 					{
-						ID:          "method_get_info",
+						ChunkID:     "method_get_info",
 						Type:        ConstructMethod,
 						Name:        "get_info",
 						Content:     "def get_info(self) -> str:\n    \"\"\"Get animal information.\"\"\"\n    return f\"{self.name} is a {self.species}\"",
@@ -2212,7 +2212,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Hash:        generateHash("Animal"),
 			},
 			{
-				ID:            "class_dog",
+				ChunkID:       "class_dog",
 				Type:          ConstructClass,
 				Name:          "Dog",
 				QualifiedName: "Dog",
@@ -2224,7 +2224,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Visibility:    Public,
 				ChildChunks: []SemanticCodeChunk{
 					{
-						ID:          "method_init_dog",
+						ChunkID:     "method_init_dog",
 						Type:        ConstructMethod,
 						Name:        "__init__",
 						Content:     "def __init__(self, name: str, breed: str):\n    super().__init__(name, \"dog\")\n    self.breed = breed",
@@ -2233,7 +2233,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("__init__"),
 					},
 					{
-						ID:          "method_make_sound_dog",
+						ChunkID:     "method_make_sound_dog",
 						Type:        ConstructMethod,
 						Name:        "make_sound",
 						Content:     "def make_sound(self) -> str:\n    \"\"\"Dogs bark.\"\"\"\n    return \"Woof!\"",
@@ -2242,7 +2242,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("make_sound"),
 					},
 					{
-						ID:          "method_fetch",
+						ChunkID:     "method_fetch",
 						Type:        ConstructMethod,
 						Name:        "fetch",
 						Content:     "def fetch(self, item: str) -> str:\n    \"\"\"Dogs can fetch things.\"\"\"\n    return f\"{self.name} fetched the {item}\"",
@@ -2255,7 +2255,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Hash:        generateHash("Dog"),
 			},
 			{
-				ID:            "class_point",
+				ChunkID:       "class_point",
 				Type:          ConstructClass,
 				Name:          "Point",
 				QualifiedName: "Point",
@@ -2270,7 +2270,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				},
 				ChildChunks: []SemanticCodeChunk{
 					{
-						ID:          "method_distance",
+						ChunkID:     "method_distance",
 						Type:        ConstructMethod,
 						Name:        "distance_from_origin",
 						Content:     "def distance_from_origin(self) -> float:\n    \"\"\"Calculate distance from origin.\"\"\"\n    return (self.x ** 2 + self.y ** 2) ** 0.5",
@@ -2286,7 +2286,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 	case valueobject.LanguageJavaScript:
 		return []SemanticCodeChunk{
 			{
-				ID:            "class_eventemitter",
+				ChunkID:       "class_eventemitter",
 				Type:          ConstructClass,
 				Name:          "EventEmitter",
 				QualifiedName: "EventEmitter",
@@ -2298,7 +2298,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Visibility:    Public,
 				ChildChunks: []SemanticCodeChunk{
 					{
-						ID:          "method_constructor_ee",
+						ChunkID:     "method_constructor_ee",
 						Type:        ConstructMethod,
 						Name:        "constructor",
 						Content:     "constructor() {\n    this.events = new Map();\n}",
@@ -2307,7 +2307,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("constructor"),
 					},
 					{
-						ID:          "method_on",
+						ChunkID:     "method_on",
 						Type:        ConstructMethod,
 						Name:        "on",
 						Content:     "on(event, callback) {\n    if (!this.events.has(event)) {\n        this.events.set(event, []);\n    }\n    this.events.get(event).push(callback);\n}",
@@ -2316,7 +2316,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("on"),
 					},
 					{
-						ID:          "method_emit",
+						ChunkID:     "method_emit",
 						Type:        ConstructMethod,
 						Name:        "emit",
 						Content:     "emit(event, ...args) {\n    const listeners = this.events.get(event);\n    if (listeners) {\n        listeners.forEach(callback => callback(...args));\n    }\n}",
@@ -2329,7 +2329,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Hash:        generateHash("EventEmitter"),
 			},
 			{
-				ID:            "class_calculator",
+				ChunkID:       "class_calculator",
 				Type:          ConstructClass,
 				Name:          "Calculator",
 				QualifiedName: "Calculator",
@@ -2340,7 +2340,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Visibility:    Public,
 				ChildChunks: []SemanticCodeChunk{
 					{
-						ID:          "method_constructor_calc",
+						ChunkID:     "method_constructor_calc",
 						Type:        ConstructMethod,
 						Name:        "constructor",
 						Content:     "constructor(precision = 2) {\n    this.#precision = precision;\n}",
@@ -2349,7 +2349,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("constructor"),
 					},
 					{
-						ID:          "method_add",
+						ChunkID:     "method_add",
 						Type:        ConstructMethod,
 						Name:        "add",
 						Content:     "add(a, b) {\n    return this.#round(a + b);\n}",
@@ -2358,7 +2358,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("add"),
 					},
 					{
-						ID:          "method_subtract",
+						ChunkID:     "method_subtract",
 						Type:        ConstructMethod,
 						Name:        "subtract",
 						Content:     "subtract(a, b) {\n    return this.#round(a - b);\n}",
@@ -2367,7 +2367,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("subtract"),
 					},
 					{
-						ID:          "method_round",
+						ChunkID:     "method_round",
 						Type:        ConstructMethod,
 						Name:        "#round",
 						Content:     "#round(value) {\n    return Math.round(value * Math.pow(10, this.#precision)) / Math.pow(10, this.#precision);\n}",
@@ -2376,7 +2376,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("#round"),
 					},
 					{
-						ID:          "method_createbasic",
+						ChunkID:     "method_createbasic",
 						Type:        ConstructMethod,
 						Name:        "createBasic",
 						Content:     "static createBasic() {\n    return new Calculator(2);\n}",
@@ -2386,7 +2386,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("createBasic"),
 					},
 					{
-						ID:          "method_createprecise",
+						ChunkID:     "method_createprecise",
 						Type:        ConstructMethod,
 						Name:        "createPrecise",
 						Content:     "static createPrecise() {\n    return new Calculator(10);\n}",
@@ -2403,7 +2403,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 	case valueobject.LanguageTypeScript:
 		return []SemanticCodeChunk{
 			{
-				ID:            "class_animal_ts",
+				ChunkID:       "class_animal_ts",
 				Type:          ConstructClass,
 				Name:          "Animal",
 				QualifiedName: "Animal",
@@ -2415,7 +2415,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Visibility:    Public,
 				ChildChunks: []SemanticCodeChunk{
 					{
-						ID:          "method_constructor_animal_ts",
+						ChunkID:     "method_constructor_animal_ts",
 						Type:        ConstructMethod,
 						Name:        "constructor",
 						Content:     "constructor(name: string, age: number) {\n    this.name = name;\n    this.age = age;\n}",
@@ -2424,7 +2424,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("constructor"),
 					},
 					{
-						ID:          "method_makesound_abstract",
+						ChunkID:     "method_makesound_abstract",
 						Type:        ConstructMethod,
 						Name:        "makeSound",
 						Content:     "abstract makeSound(): string;",
@@ -2434,7 +2434,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("makeSound"),
 					},
 					{
-						ID:          "method_getinfo_ts",
+						ChunkID:     "method_getinfo_ts",
 						Type:        ConstructMethod,
 						Name:        "getInfo",
 						Content:     "getInfo(): string {\n    return `${this.name} is ${this.age} years old`;\n}",
@@ -2447,7 +2447,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Hash:        generateHash("Animal"),
 			},
 			{
-				ID:            "class_duck_ts",
+				ChunkID:       "class_duck_ts",
 				Type:          ConstructClass,
 				Name:          "Duck",
 				QualifiedName: "Duck",
@@ -2458,7 +2458,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Visibility:    Public,
 				ChildChunks: []SemanticCodeChunk{
 					{
-						ID:          "method_constructor_duck",
+						ChunkID:     "method_constructor_duck",
 						Type:        ConstructMethod,
 						Name:        "constructor",
 						Content:     "constructor(name: string, age: number) {\n    super(name, age);\n}",
@@ -2467,7 +2467,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("constructor"),
 					},
 					{
-						ID:          "method_makesound_duck",
+						ChunkID:     "method_makesound_duck",
 						Type:        ConstructMethod,
 						Name:        "makeSound",
 						Content:     "makeSound(): string {\n    return \"Quack!\";\n}",
@@ -2476,7 +2476,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("makeSound"),
 					},
 					{
-						ID:          "method_fly_duck",
+						ChunkID:     "method_fly_duck",
 						Type:        ConstructMethod,
 						Name:        "fly",
 						Content:     "fly(): void {\n    this.altitude = 100;\n    console.log(`${this.name} is flying at ${this.altitude} feet`);\n}",
@@ -2485,7 +2485,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("fly"),
 					},
 					{
-						ID:          "method_swim_duck",
+						ChunkID:     "method_swim_duck",
 						Type:        ConstructMethod,
 						Name:        "swim",
 						Content:     "swim(): void {\n    this.depth = 5;\n    console.log(`${this.name} is swimming at ${this.depth} feet deep`);\n}",
@@ -2498,7 +2498,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Hash:        generateHash("Duck"),
 			},
 			{
-				ID:            "class_singleton_ts",
+				ChunkID:       "class_singleton_ts",
 				Type:          ConstructClass,
 				Name:          "Singleton",
 				QualifiedName: "Singleton",
@@ -2513,7 +2513,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 				Visibility: Public,
 				ChildChunks: []SemanticCodeChunk{
 					{
-						ID:          "method_constructor_singleton",
+						ChunkID:     "method_constructor_singleton",
 						Type:        ConstructMethod,
 						Name:        "constructor",
 						Content:     "private constructor(data: T) {\n    this.data = data;\n}",
@@ -2522,7 +2522,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("constructor"),
 					},
 					{
-						ID:          "method_getinstance",
+						ChunkID:     "method_getinstance",
 						Type:        ConstructMethod,
 						Name:        "getInstance",
 						Content:     "public static getInstance<T>(data: T): Singleton<T> {\n    if (!Singleton.instance) {\n        Singleton.instance = new Singleton(data);\n    }\n    return Singleton.instance;\n}",
@@ -2532,7 +2532,7 @@ func getMockClasses(language valueobject.Language) []SemanticCodeChunk {
 						Hash:        generateHash("getInstance"),
 					},
 					{
-						ID:          "method_getdata",
+						ChunkID:     "method_getdata",
 						Type:        ConstructMethod,
 						Name:        "getData",
 						Content:     "public getData(): T {\n    return this.data;\n}",
@@ -2558,7 +2558,7 @@ func getMockModules(language valueobject.Language) []SemanticCodeChunk {
 	case valueobject.LanguageGo:
 		return []SemanticCodeChunk{
 			{
-				ID:            "package_calculator",
+				ChunkID:       "package_calculator",
 				Type:          ConstructPackage,
 				Name:          "calculator",
 				QualifiedName: "calculator",
@@ -2575,7 +2575,7 @@ func getMockModules(language valueobject.Language) []SemanticCodeChunk {
 	case valueobject.LanguagePython:
 		return []SemanticCodeChunk{
 			{
-				ID:            "module_math_utilities",
+				ChunkID:       "module_math_utilities",
 				Type:          ConstructModule,
 				Name:          "math_utilities",
 				QualifiedName: "math_utilities",
@@ -2592,7 +2592,7 @@ func getMockModules(language valueobject.Language) []SemanticCodeChunk {
 	case valueobject.LanguageJavaScript:
 		return []SemanticCodeChunk{
 			{
-				ID:            "module_userutils",
+				ChunkID:       "module_userutils",
 				Type:          ConstructModule,
 				Name:          "UserUtils",
 				QualifiedName: "UserUtils",
@@ -2609,7 +2609,7 @@ func getMockModules(language valueobject.Language) []SemanticCodeChunk {
 	case valueobject.LanguageTypeScript:
 		return []SemanticCodeChunk{
 			{
-				ID:            "module_apiclient",
+				ChunkID:       "module_apiclient",
 				Type:          ConstructModule,
 				Name:          "ApiClient",
 				QualifiedName: "ApiClient",

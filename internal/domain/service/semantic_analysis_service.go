@@ -190,7 +190,7 @@ func (s *SemanticAnalysisService) applyBusinessRules(
 		// Business rule: Filter by minimum size if specified
 		if options.MinChunkSize > 0 && len(chunk.Content) < options.MinChunkSize {
 			slogger.Debug(ctx, "Chunk filtered due to minimum size rule", slogger.Fields{
-				"chunk_id":     chunk.ID,
+				"chunk_id":     chunk.ID(),
 				"chunk_size":   len(chunk.Content),
 				"min_required": options.MinChunkSize,
 			})
@@ -200,7 +200,7 @@ func (s *SemanticAnalysisService) applyBusinessRules(
 		// Business rule: Skip empty or trivial chunks
 		if len(chunk.Content) == 0 || len(chunk.Name) == 0 {
 			slogger.Debug(ctx, "Skipping empty or trivial chunk", slogger.Fields{
-				"chunk_id": chunk.ID,
+				"chunk_id": chunk.ID(),
 			})
 			continue
 		}

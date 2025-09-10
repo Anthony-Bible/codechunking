@@ -51,7 +51,7 @@ func extractMainModule(
 	source := parseTree.Source()
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID("module", moduleName, nil),
+		ChunkID:       utils.GenerateID("module", moduleName, nil),
 		Type:          outbound.ConstructModule,
 		Name:          moduleName,
 		QualifiedName: moduleName,

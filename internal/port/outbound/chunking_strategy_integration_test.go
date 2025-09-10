@@ -365,7 +365,7 @@ func TestChunkingStrategy_SemanticTraverserIntegration(t *testing.T) {
 		semanticTraverser := &MockSemanticTraverser{
 			ExpectedFunctions: []SemanticCodeChunk{
 				{
-					ID:       "func1",
+					ChunkID:  "func1",
 					Name:     "ProcessData",
 					Type:     ConstructFunction,
 					Language: createTestLanguage(),

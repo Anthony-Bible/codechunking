@@ -113,7 +113,7 @@ func processFunctionDeclaration(
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID(string(funcType), name, nil),
+		ChunkID:       utils.GenerateID(string(funcType), name, nil),
 		Type:          funcType,
 		Name:          name,
 		QualifiedName: qualifiedName,
@@ -166,7 +166,7 @@ func processFunctionExpression(
 	}
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID(string(funcType), name, nil),
+		ChunkID:       utils.GenerateID(string(funcType), name, nil),
 		Type:          funcType,
 		Name:          name,
 		QualifiedName: qualifiedName,
@@ -208,7 +208,7 @@ func processArrowFunction(
 	}
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID(string(outbound.ConstructLambda), name, nil),
+		ChunkID:       utils.GenerateID(string(outbound.ConstructLambda), name, nil),
 		Type:          outbound.ConstructLambda,
 		Name:          name,
 		QualifiedName: qualifiedName,
@@ -258,7 +258,7 @@ func processMethodDefinition(
 	}
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID(string(funcType), name, nil),
+		ChunkID:       utils.GenerateID(string(funcType), name, nil),
 		Type:          funcType,
 		Name:          name,
 		QualifiedName: qualifiedName,
@@ -299,7 +299,7 @@ func processGeneratorFunction(
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID(string(outbound.ConstructGenerator), name, nil),
+		ChunkID:       utils.GenerateID(string(outbound.ConstructGenerator), name, nil),
 		Type:          outbound.ConstructGenerator,
 		Name:          name,
 		QualifiedName: qualifiedName,

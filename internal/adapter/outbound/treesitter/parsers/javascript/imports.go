@@ -5,11 +5,14 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"regexp"
 	"strings"
 	"time"
 )
 
-// extractJavaScriptImports extracts import declarations from JavaScript code using real AST analysis.
+// extractJavaScriptImports extracts import declarations from JavaScript code using regex patterns.
 func extractJavaScriptImports(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
@@ -20,8 +23,80 @@ func extractJavaScriptImports(
 	var imports []outbound.ImportDeclaration
 	now := time.Now()
 
-	// Traverse the AST to find all import-related constructs
-	imports = append(imports, traverseForImports(parseTree, parseTree.RootNode(), now)...)
+	// Get the full source code text
+	source := string(parseTree.Source())
+
+	slogger.Info(ctx, "Source code to parse", slogger.Fields{
+		"source_length":  len(source),
+		"source_preview": source[:min(200, len(source))],
+	})
+
+	// ES6 import patterns
+	importPatterns := []string{
+		`import\s+(?:\*\s+as\s+(\w+)|{([^}]+)}|(\w+))\s+from\s+['"]([^'"]+)['"]`,
+		`import\s+['"]([^'"]+)['"]`,
+		`import\s+(?:\*\s+as\s+(\w+)|{([^}]+)}|(\w+))\s+from\s+['"]([^'"]+)['"]\s+assert\s+{[^}]+}`,
+	}
+
+	for _, pattern := range importPatterns {
+		re := regexp.MustCompile(pattern)
+		matches := re.FindAllStringSubmatch(source, -1)
+
+		for _, match := range matches {
+			startIndex := strings.Index(source, match[0])
+			endIndex := startIndex + len(match[0])
+
+			declaration := createImportDeclaration(source, match, startIndex, endIndex, now, "es6")
+			if declaration.Path != "" {
+				imports = append(imports, declaration)
+			}
+		}
+	}
+
+	// CommonJS require patterns
+	requirePatterns := []string{
+		`(?:const|var|let)\s+({[^}]+}|[\w$]+)\s*=\s*require\(['"]([^'"]+)['"]\)`,
+		`if\s*\([^)]*\)\s*{[^}]*require\(['"]([^'"]+)['"]\)[^}]*}`,
+		`try\s*{[^}]*require\(['"]([^'"]+)['"]\)[^}]*}\s*catch\s*{`,
+	}
+
+	for _, pattern := range requirePatterns {
+		re := regexp.MustCompile(pattern)
+		matches := re.FindAllStringSubmatch(source, -1)
+
+		for _, match := range matches {
+			startIndex := strings.Index(source, match[0])
+			endIndex := startIndex + len(match[0])
+
+			declaration := createImportDeclaration(source, match, startIndex, endIndex, now, "commonjs")
+			if declaration.Path != "" {
+				imports = append(imports, declaration)
+			}
+		}
+	}
+
+	// Dynamic import patterns
+	dynamicImportPatterns := []string{
+		`import\(['"][^'"]+['"]\)`,
+		`import\([^)]+\)`,
+		`await\s+import\(['"][^'"]+['"]\)`,
+	}
+
+	for _, pattern := range dynamicImportPatterns {
+		re := regexp.MustCompile(pattern)
+		matches := re.FindAllStringIndex(source, -1)
+
+		for _, match := range matches {
+			startIndex := match[0]
+			endIndex := match[1]
+			content := source[startIndex:endIndex]
+
+			declaration := createDynamicImportDeclaration(source, content, startIndex, endIndex, now)
+			if declaration.Path != "" {
+				imports = append(imports, declaration)
+			}
+		}
+	}
 
 	slogger.Debug(ctx, "JavaScript import extraction completed", slogger.Fields{
 		"imports_count": len(imports),
@@ -30,211 +105,227 @@ func extractJavaScriptImports(
 	return imports, nil
 }
 
-// traverseForImports recursively traverses the AST to find import declarations.
-func traverseForImports(
+// ExtractJavaScriptImports extracts import declarations from JavaScript code using regex patterns.
+// This is a public wrapper for the private extractJavaScriptImports function.
+func ExtractJavaScriptImports(
+	ctx context.Context,
 	parseTree *valueobject.ParseTree,
-	node *valueobject.ParseNode,
-	now time.Time,
-) []outbound.ImportDeclaration {
-	if node == nil {
-		return nil
-	}
-
-	var imports []outbound.ImportDeclaration
-
-	// Process current node if it's an import-like construct
-	if imp := processImportNode(parseTree, node, now); imp != nil {
-		imports = append(imports, *imp)
-	}
-
-	// Recursively process children
-	for _, child := range node.Children {
-		imports = append(imports, traverseForImports(parseTree, child, now)...)
-	}
-
-	return imports
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.ImportDeclaration, error) {
+	return extractJavaScriptImports(ctx, parseTree, options)
 }
 
-// processImportNode processes a single node if it represents an import construct.
-func processImportNode(
-	parseTree *valueobject.ParseTree,
-	node *valueobject.ParseNode,
+func createImportDeclaration(
+	source string,
+	match []string,
+	startByte, endByte int,
 	now time.Time,
-) *outbound.ImportDeclaration {
-	switch node.Type {
-	case "import_statement":
-		return parseES6Import(parseTree, node, now)
-	case "variable_declarator":
-		// Check if this is a require() statement
-		return parseCommonJSRequire(parseTree, node, now)
-	case "call_expression":
-		// Check for dynamic import() calls
-		return parseDynamicImport(parseTree, node, now)
-	default:
-		return nil
-	}
-}
-
-// parseES6Import parses ES6 import statements.
-func parseES6Import(
-	parseTree *valueobject.ParseTree,
-	node *valueobject.ParseNode,
-	now time.Time,
-) *outbound.ImportDeclaration {
-	// Get import source
-	var source string
-	if sourceNode := findChildByType(node, "string"); sourceNode != nil {
-		source = strings.Trim(parseTree.GetNodeText(sourceNode), `"'`)
-	}
-
-	if source == "" {
-		return nil
-	}
-
-	// Parse imported symbols
+	importType string,
+) outbound.ImportDeclaration {
+	var path, alias string
 	var importedSymbols []string
-	var alias string
 	var isWildcard bool
+	metadata := make(map[string]interface{})
 
-	// Handle default imports (import React from 'react')
-	if defaultNode := findChildByType(node, "import_default_specifier"); defaultNode != nil {
-		if identifierNode := findChildByType(defaultNode, "identifier"); identifierNode != nil {
-			name := parseTree.GetNodeText(identifierNode)
-			importedSymbols = append(importedSymbols, name)
+	// Extract path (always the last non-empty group)
+	for i := len(match) - 1; i >= 0; i-- {
+		if match[i] != "" && (strings.Contains(match[i], "'") || strings.Contains(match[i], "\"")) {
+			path = strings.Trim(match[i], `"'`)
+			break
+		}
+		if match[i] != "" && !strings.Contains(match[0], match[i]) {
+			path = match[i]
+			break
 		}
 	}
 
-	// Handle named imports (import { useState, useEffect } from 'react')
-	if namedImportsNode := findChildByType(node, "import_clause"); namedImportsNode != nil {
-		if namedSpecifiersNode := findChildByType(namedImportsNode, "named_imports"); namedSpecifiersNode != nil {
-			// Find all import specifiers
-			for _, child := range namedSpecifiersNode.Children {
-				if child.Type == "import_specifier" {
-					if identifierNode := findChildByType(child, "identifier"); identifierNode != nil {
-						name := parseTree.GetNodeText(identifierNode)
-						importedSymbols = append(importedSymbols, name)
-					}
-				}
-			}
-		}
-	}
-
-	// Handle namespace imports (import * as React from 'react')
-	if namespaceNode := findChildByType(node, "namespace_import"); namespaceNode != nil {
-		if identifierNode := findChildByType(namespaceNode, "identifier"); identifierNode != nil {
-			alias = parseTree.GetNodeText(identifierNode)
+	// Handle different import styles
+	switch importType {
+	case "es6":
+		if len(match) > 4 && match[1] != "" {
+			// Namespace import
+			alias = match[1]
 			isWildcard = true
 			importedSymbols = append(importedSymbols, "*")
+			metadata["import_style"] = "namespace"
+		} else if len(match) > 4 && match[2] != "" {
+			// Named imports
+			symbols := parseNamedImports(match[2])
+			importedSymbols = append(importedSymbols, symbols.Names...)
+			metadata["aliases"] = symbols.Aliases
+			metadata["import_style"] = "named"
+		} else if len(match) > 4 && match[3] != "" {
+			// Default import
+			alias = match[3]
+			importedSymbols = append(importedSymbols, alias)
+			metadata["import_style"] = "default"
+		} else if len(match) > 1 && !strings.Contains(match[0], "{") && !strings.Contains(match[0], "*") {
+			// Side-effect import
+			metadata["import_style"] = "side-effect"
+			metadata["has_side_effects"] = true
 		}
+		metadata["import_type"] = "es6"
+	case "commonjs":
+		if len(match) > 2 {
+			if strings.HasPrefix(match[1], "{") {
+				// Destructuring require
+				symbols := parseNamedImports(strings.Trim(match[1], "{}"))
+				importedSymbols = append(importedSymbols, symbols.Names...)
+				metadata["aliases"] = symbols.Aliases
+				metadata["import_style"] = "named"
+				metadata["has_nested_destructuring"] = strings.Contains(match[1], "{") &&
+					strings.Count(match[1], "{") > 1
+			} else {
+				// Simple require
+				alias = match[1]
+				importedSymbols = append(importedSymbols, alias)
+				metadata["import_style"] = "default"
+			}
+			path = match[2]
+		} else {
+			path = match[1]
+		}
+		metadata["import_type"] = "commonjs"
+		metadata["is_conditional"] = strings.Contains(match[0], "if")
+		metadata["condition_type"] = "if"
 	}
 
-	return &outbound.ImportDeclaration{
-		Path:            source,
+	// Add path metadata
+	metadata["path_type"] = getPathType(path)
+	metadata["relative_depth"] = getRelativeDepth(path)
+	metadata["is_scoped_package"] = strings.HasPrefix(path, "@")
+
+	// Add assertion metadata if present
+	metadata["has_assertions"] = strings.Contains(match[0], "assert")
+	if strings.Contains(match[0], "json") {
+		metadata["assertion_type"] = "json"
+	}
+
+	content := source[startByte:endByte]
+	hash := generateHash(content)
+
+	return outbound.ImportDeclaration{
+		Path:            path,
 		Alias:           alias,
 		IsWildcard:      isWildcard,
 		ImportedSymbols: importedSymbols,
-		StartByte:       node.StartByte,
-		EndByte:         node.EndByte,
-		Content:         parseTree.GetNodeText(node),
+		StartByte:       valueobject.ClampToUint32(startByte),
+		EndByte:         valueobject.ClampToUint32(endByte),
+		StartPosition:   valueobject.Position{Row: 0, Column: valueobject.ClampToUint32(startByte)},
+		EndPosition:     valueobject.Position{Row: 0, Column: valueobject.ClampToUint32(endByte)},
+		Content:         content,
 		ExtractedAt:     now,
+		Hash:            hash,
+		Metadata:        metadata,
 	}
 }
 
-// parseCommonJSRequire parses CommonJS require statements.
-func parseCommonJSRequire(
-	parseTree *valueobject.ParseTree,
-	node *valueobject.ParseNode,
+func createDynamicImportDeclaration(
+	source, content string,
+	startByte, endByte int,
 	now time.Time,
-) *outbound.ImportDeclaration {
-	// Look for require() call in variable declarator
-	var source string
-	callNode := findChildByType(node, "call_expression")
-	if callNode == nil {
-		return nil
+) outbound.ImportDeclaration {
+	metadata := make(map[string]interface{})
+	metadata["import_type"] = "dynamic"
+	metadata["is_dynamic"] = true
+
+	// Extract path from import()
+	path := ""
+	re := regexp.MustCompile(`import\(['"]([^'"]+)['"]\)`)
+	if matches := re.FindStringSubmatch(content); len(matches) > 1 {
+		path = matches[1]
 	}
 
-	// Check if this is a require call
-	functionNode := findChildByType(callNode, "identifier")
-	if functionNode == nil {
-		return nil
-	}
+	// Handle template literal paths
+	hasTemplate := strings.Contains(content, "+") || strings.Contains(content, "`")
+	metadata["has_template_path"] = hasTemplate
 
-	functionName := parseTree.GetNodeText(functionNode)
-	if functionName != "require" {
-		return nil
-	}
+	// Add path metadata
+	metadata["path_type"] = getPathType(path)
+	metadata["relative_depth"] = getRelativeDepth(path)
+	metadata["is_scoped_package"] = strings.HasPrefix(path, "@")
 
-	// Extract the module path
-	argsNode := findChildByType(callNode, "arguments")
-	if argsNode == nil {
-		return nil
-	}
+	hash := generateHash(content)
 
-	stringNode := findChildByType(argsNode, "string")
-	if stringNode != nil {
-		source = strings.Trim(parseTree.GetNodeText(stringNode), `"'`)
-	}
-
-	if source == "" {
-		return nil
-	}
-
-	// Get variable name (the thing being assigned to)
-	var importedSymbols []string
-	var alias string
-	if identifierNode := findChildByType(node, "identifier"); identifierNode != nil {
-		alias = parseTree.GetNodeText(identifierNode)
-		importedSymbols = append(importedSymbols, alias)
-	}
-
-	return &outbound.ImportDeclaration{
-		Path:            source,
-		Alias:           alias,
-		IsWildcard:      false,
-		ImportedSymbols: importedSymbols,
-		StartByte:       node.StartByte,
-		EndByte:         node.EndByte,
-		Content:         parseTree.GetNodeText(node),
-		ExtractedAt:     now,
+	return outbound.ImportDeclaration{
+		Path:          path,
+		StartByte:     valueobject.ClampToUint32(startByte),
+		EndByte:       valueobject.ClampToUint32(endByte),
+		StartPosition: valueobject.Position{Row: 0, Column: valueobject.ClampToUint32(startByte)},
+		EndPosition:   valueobject.Position{Row: 0, Column: valueobject.ClampToUint32(endByte)},
+		Content:       content,
+		ExtractedAt:   now,
+		Hash:          hash,
+		Metadata:      metadata,
 	}
 }
 
-// parseDynamicImport parses dynamic import() calls.
-func parseDynamicImport(
-	parseTree *valueobject.ParseTree,
-	node *valueobject.ParseNode,
-	now time.Time,
-) *outbound.ImportDeclaration {
-	// Check if this is import() call
-	if funcNode := findChildByType(node, "import"); funcNode == nil {
-		return nil
+type NamedImportSymbols struct {
+	Names   []string
+	Aliases map[string]string
+}
+
+func parseNamedImports(importClause string) NamedImportSymbols {
+	symbols := NamedImportSymbols{
+		Names:   []string{},
+		Aliases: make(map[string]string),
 	}
 
-	// Look for import() call arguments
-	var source string
-	if argsNode := findChildByType(node, "arguments"); argsNode != nil {
-		if stringNode := findChildByType(argsNode, "string"); stringNode != nil {
-			source = strings.Trim(parseTree.GetNodeText(stringNode), `"'`)
+	parts := strings.Split(importClause, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.Contains(part, "as") {
+			aliasParts := strings.Split(part, "as")
+			if len(aliasParts) == 2 {
+				name := strings.TrimSpace(aliasParts[0])
+				alias := strings.TrimSpace(aliasParts[1])
+				symbols.Names = append(symbols.Names, alias)
+				symbols.Aliases[alias] = name
+			}
+		} else {
+			symbols.Names = append(symbols.Names, part)
 		}
 	}
 
-	if source == "" {
-		return nil
-	}
-
-	return &outbound.ImportDeclaration{
-		Path:        source,
-		IsWildcard:  false,
-		StartByte:   node.StartByte,
-		EndByte:     node.EndByte,
-		Content:     parseTree.GetNodeText(node),
-		ExtractedAt: now,
-	}
+	return symbols
 }
 
-// Helper methods for parsing imports
+func getPathType(path string) string {
+	if strings.HasPrefix(path, "@") {
+		return "scoped-npm"
+	}
+	if strings.HasPrefix(path, ".") {
+		return "relative"
+	}
+	if strings.HasPrefix(path, "/") {
+		return "absolute"
+	}
+	if strings.Contains(path, "://") {
+		return "protocol"
+	}
+	return "npm"
+}
 
-// findChildByType finds the first child node with the specified type.
+func getRelativeDepth(path string) int {
+	if !strings.HasPrefix(path, ".") {
+		return 0
+	}
+
+	depth := 0
+	parts := strings.Split(path, "/")
+	for _, part := range parts {
+		if part == ".." {
+			depth++
+		}
+	}
+	return depth
+}
+
+func generateHash(content string) string {
+	hash := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(hash[:])
+}
+
 func findChildByType(node *valueobject.ParseNode, nodeType string) *valueobject.ParseNode {
 	if node == nil {
 		return nil
@@ -248,7 +339,6 @@ func findChildByType(node *valueobject.ParseNode, nodeType string) *valueobject.
 	return nil
 }
 
-// findChildrenByType finds all child nodes with the specified type.
 func findChildrenByType(node *valueobject.ParseNode, nodeType string) []*valueobject.ParseNode {
 	if node == nil {
 		return nil
@@ -263,9 +353,9 @@ func findChildrenByType(node *valueobject.ParseNode, nodeType string) []*valueob
 	return matches
 }
 
-// findParentByType finds the parent node with the specified type (simplified implementation).
-func findParentByType(node *valueobject.ParseNode, nodeType string) *valueobject.ParseNode {
-	// This is a simplified implementation - in a real scenario, we'd need to traverse up the tree
-	// For now, return nil as this is minimal GREEN PHASE implementation
-	return nil
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

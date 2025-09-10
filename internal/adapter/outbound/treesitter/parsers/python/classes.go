@@ -58,7 +58,7 @@ func (p *PythonClassParser) ParsePythonClass(
 	content := parseTree.GetNodeText(node)
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID("class", className, nil),
+		ChunkID:       utils.GenerateID("class", className, nil),
 		Type:          outbound.ConstructClass,
 		Name:          className,
 		QualifiedName: qualifyName(moduleName, className),
@@ -483,7 +483,7 @@ func extractClassVariableFromAssignment(
 	returnType := extractTypeAnnotation(parseTree, assignmentNode)
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID("class_var", varName, nil),
+		ChunkID:       utils.GenerateID("class_var", varName, nil),
 		Type:          constructType,
 		Name:          varName,
 		QualifiedName: qualifyName(moduleName, className, varName),
@@ -529,7 +529,7 @@ func extractClassVariableFromAnnotatedAssignment(
 	returnType := extractTypeAnnotation(parseTree, assignmentNode)
 
 	return &outbound.SemanticCodeChunk{
-		ID:            utils.GenerateID("class_var", varName, nil),
+		ChunkID:       utils.GenerateID("class_var", varName, nil),
 		Type:          constructType,
 		Name:          varName,
 		QualifiedName: qualifyName(moduleName, className, varName),

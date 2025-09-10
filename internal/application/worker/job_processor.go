@@ -340,11 +340,12 @@ func (p *DefaultJobProcessor) isMemoryPressureHigh() bool {
 
 	// Safe conversion with bounds checking
 	const bytesPerMB = 1024 * 1024
-	if m.Alloc > math.MaxInt64/bytesPerMB {
-		// Handle overflow case - if Alloc is too large to convert safely
-		return true
+	allocMB := m.Alloc / bytesPerMB
+	var currentMemoryMB int
+	if allocMB > uint64(math.MaxInt) {
+		currentMemoryMB = math.MaxInt
+	} else {
+		currentMemoryMB = int(allocMB)
 	}
-
-	currentMemoryMB := int(m.Alloc / bytesPerMB)
 	return currentMemoryMB > p.config.MaxMemoryMB
 }

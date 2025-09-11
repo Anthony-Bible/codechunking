@@ -10,6 +10,17 @@ import (
 	"time"
 )
 
+// ObservableGoParser delegation methods for import extraction
+
+// ExtractImports extracts import declarations from a Go parse tree.
+func (o *ObservableGoParser) ExtractImports(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.ImportDeclaration, error) {
+	return o.parser.ExtractImports(ctx, parseTree, options)
+}
+
 // ExtractImports extracts import declarations from a Go parse tree.
 func (p *GoParser) ExtractImports(
 	ctx context.Context,

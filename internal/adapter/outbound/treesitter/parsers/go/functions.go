@@ -2,16 +2,209 @@ package goparser
 
 import (
 	"codechunking/internal/adapter/outbound/treesitter/utils"
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
 
+// Tree-sitter node types for functions from Go grammar.
+const (
+	nodeTypeFunctionDecl      = "function_declaration"
+	nodeTypeMethodDecl        = "method_declaration"
+	nodeTypeIdentifier        = "identifier"
+	nodeTypeFieldIdentifier   = "field_identifier"
+	nodeType_FieldIdentifier  = "_field_identifier"
+	nodeTypeParameterList     = "parameter_list"
+	nodeTypeParameterDecl     = "parameter_declaration"
+	nodeTypePointerType       = "pointer_type"
+	nodeTypeTypeIdentifier    = "type_identifier"
+	nodeTypeArrayType         = "array_type"
+	nodeTypeSliceType         = "slice_type"
+	nodeTypeMapType           = "map_type"
+	nodeTypeChannelType       = "channel_type"
+	nodeTypeFunctionType      = "function_type"
+	nodeTypeInterfaceType     = "interface_type"
+	nodeTypeStructType        = "struct_type"
+	nodeTypeQualifiedType     = "qualified_type"
+	nodeTypeTupleType         = "tuple_type"
+	nodeTypeTypeParameterList = "type_parameter_list"
+)
+
+// Tree-sitter field names from Go grammar.
+// Currently no field name constants are needed
+
+// ExtractFunctions extracts function and method declarations from a Go parse tree.
+// This method implements proper tree-sitter AST traversal according to Go grammar.
+func (o *ObservableGoParser) ExtractFunctions(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	slogger.Info(ctx, "ObservableGoParser.ExtractFunctions called", slogger.Fields{
+		"root_node_type": parseTree.RootNode().Type,
+	})
+
+	if err := o.parser.validateInput(parseTree); err != nil {
+		return nil, err
+	}
+
+	var functions []outbound.SemanticCodeChunk
+	functionNodes := parseTree.GetNodesByType(nodeTypeFunctionDecl)
+	methodNodes := parseTree.GetNodesByType(nodeTypeMethodDecl)
+
+	slogger.Info(ctx, "Searching for function nodes using Tree-sitter", slogger.Fields{
+		"function_nodes_count": len(functionNodes),
+		"method_nodes_count":   len(methodNodes),
+	})
+
+	packageName := o.extractPackageNameFromTree(parseTree)
+
+	// Extract regular functions
+	for _, node := range functionNodes {
+		if fn, err := o.parser.parseGoFunction(node, packageName, parseTree); err == nil {
+			functions = append(functions, fn)
+			slogger.Info(ctx, "Extracted function", slogger.Fields{
+				"function_name": fn.Name,
+			})
+		}
+	}
+
+	// Extract methods
+	for _, node := range methodNodes {
+		if fn, err := o.parser.parseGoMethod(node, packageName, parseTree); err == nil {
+			functions = append(functions, fn)
+			slogger.Info(ctx, "Extracted method", slogger.Fields{
+				"method_name": fn.Name,
+			})
+		}
+	}
+
+	// Fallback to source-based parsing if Tree-sitter nodes are empty
+	if len(functions) == 0 {
+		slogger.Info(ctx, "No Tree-sitter nodes found, falling back to source-based parsing", slogger.Fields{})
+		fallbackFunctions := o.extractFunctionsFromSourceText(parseTree, packageName)
+		functions = append(functions, fallbackFunctions...)
+	}
+
+	slogger.Info(ctx, "ExtractFunctions completed", slogger.Fields{
+		"total_functions_extracted": len(functions),
+	})
+
+	return functions, nil
+}
+
+// extractFunctionsFromSourceText provides fallback function extraction using source text parsing.
+func (o *ObservableGoParser) extractFunctionsFromSourceText(
+	parseTree *valueobject.ParseTree,
+	packageName string,
+) []outbound.SemanticCodeChunk {
+	var functions []outbound.SemanticCodeChunk
+	source := string(parseTree.Source())
+	funcNames := o.extractGoFunctionNames(source)
+
+	for i, funcName := range funcNames {
+		functions = append(functions, outbound.SemanticCodeChunk{
+			ChunkID:       fmt.Sprintf("go_func_%s_%d", funcName, i),
+			Name:          funcName,
+			QualifiedName: fmt.Sprintf("%s.%s", packageName, funcName),
+			Language:      parseTree.Language(),
+			Type:          outbound.ConstructFunction,
+			Visibility:    o.getVisibility(funcName),
+			Content:       fmt.Sprintf("// Go function: %s", funcName),
+			ExtractedAt:   time.Now(),
+		})
+	}
+	return functions
+}
+
+// extractPackageNameFromTree extracts package name from parse tree, with fallback.
+func (o *ObservableGoParser) extractPackageNameFromTree(parseTree *valueobject.ParseTree) string {
+	packageNodes := parseTree.GetNodesByType("package_clause")
+	if len(packageNodes) > 0 {
+		// Look for package identifier in the package clause
+		for _, child := range packageNodes[0].Children {
+			if child.Type == "package_identifier" || child.Type == "_package_identifier" {
+				return parseTree.GetNodeText(child)
+			}
+		}
+	}
+	return "main" // Default fallback
+}
+
+// extractGoFunctionNames extracts function names from Go source code using regex parsing (fallback).
+func (o *ObservableGoParser) extractGoFunctionNames(source string) []string {
+	var funcNames []string
+	lines := strings.Split(source, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "func ") {
+			if funcName := o.extractFunctionNameFromLine(line); funcName != "" {
+				funcNames = append(funcNames, funcName)
+			}
+		}
+	}
+
+	return funcNames
+}
+
+// extractFunctionNameFromLine extracts function name from a single line.
+func (o *ObservableGoParser) extractFunctionNameFromLine(line string) string {
+	funcLine := strings.TrimPrefix(line, "func ")
+
+	// Handle method receivers: func (r Receiver) methodName(
+	if strings.HasPrefix(funcLine, "(") {
+		return o.extractMethodNameFromFuncLine(funcLine)
+	}
+
+	// Handle regular functions: func functionName(
+	return o.extractRegularFunctionNameFromFuncLine(funcLine)
+}
+
+// extractMethodNameFromFuncLine extracts method name from a func line with receiver.
+func (o *ObservableGoParser) extractMethodNameFromFuncLine(funcLine string) string {
+	parenEnd := strings.Index(funcLine, ")")
+	if parenEnd != -1 && parenEnd+1 < len(funcLine) {
+		methodPart := strings.TrimSpace(funcLine[parenEnd+1:])
+		parenStart := strings.Index(methodPart, "(")
+		if parenStart > 0 {
+			methodName := strings.TrimSpace(methodPart[:parenStart])
+			if methodName != "" && !strings.Contains(methodName, " ") {
+				return methodName
+			}
+		}
+	}
+	return ""
+}
+
+// extractRegularFunctionNameFromFuncLine extracts function name from a regular func line.
+func (o *ObservableGoParser) extractRegularFunctionNameFromFuncLine(funcLine string) string {
+	parenStart := strings.Index(funcLine, "(")
+	if parenStart > 0 {
+		funcName := strings.TrimSpace(funcLine[:parenStart])
+		if funcName != "" && !strings.Contains(funcName, " ") {
+			return funcName
+		}
+	}
+	return ""
+}
+
+// getVisibility determines if a Go function is public or private.
+func (o *ObservableGoParser) getVisibility(name string) outbound.VisibilityModifier {
+	if len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z' {
+		return outbound.Public
+	}
+	return outbound.Private
+}
+
+// Core parser methods for the inner GoParser.
 func (p *GoParser) ExtractFunctions(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
@@ -70,11 +263,11 @@ func (p *GoParser) parseGoFunction(
 	// Find parameter list and return type
 	for _, child := range node.Children {
 		switch child.Type {
-		case "parameter_list":
+		case nodeTypeParameterList:
 			parameters = p.parseGoParameterList(child, parseTree)
-		case "type_parameter_list":
+		case nodeTypeTypeParameterList:
 			genericParameters = p.parseGoGenericParameterList(child, parseTree)
-		case "type_identifier", "pointer_type", "qualified_type", "tuple_type":
+		case nodeTypeTypeIdentifier, nodeTypePointerType, nodeTypeQualifiedType, nodeTypeTupleType:
 			returnType = p.parseGoReturnType(child, parseTree)
 		}
 	}
@@ -155,15 +348,16 @@ func (p *GoParser) parseGoMethod(
 
 	// Process all parameter lists and type information
 	for _, child := range node.Children {
-		if child.Type == "parameter_list" {
+		switch child.Type {
+		case nodeTypeParameterList:
 			// Skip receiver parameter list
 			if child.StartByte < nameNode.StartByte {
 				continue
 			}
 			parameters = p.parseGoParameterList(child, parseTree)
-		} else if child.Type == "type_parameter_list" {
+		case nodeTypeTypeParameterList:
 			genericParameters = p.parseGoGenericParameterList(child, parseTree)
-		} else if child.Type == "type_identifier" || child.Type == "pointer_type" || child.Type == "qualified_type" || child.Type == "tuple_type" {
+		case nodeTypeTypeIdentifier, nodeTypePointerType, nodeTypeQualifiedType, nodeTypeTupleType:
 			returnType = p.parseGoReturnType(child, parseTree)
 		}
 	}
@@ -242,8 +436,8 @@ func (p *GoParser) parseGoParameterDeclaration(
 	// Get the type node
 	var typeNode *valueobject.ParseNode
 	for _, child := range node.Children {
-		if child.Type == "type_identifier" || child.Type == "pointer_type" ||
-			child.Type == "qualified_type" || child.Type == "array_type" {
+		if child.Type == nodeTypeTypeIdentifier || child.Type == nodeTypePointerType ||
+			child.Type == nodeTypeQualifiedType || child.Type == nodeTypeArrayType {
 			typeNode = child
 			break
 		}
@@ -264,13 +458,14 @@ func (p *GoParser) parseGoParameterDeclaration(
 
 func (p *GoParser) parseGoReturnType(node *valueobject.ParseNode, parseTree *valueobject.ParseTree) string {
 	switch node.Type {
-	case "type_identifier", "pointer_type", "qualified_type":
+	case nodeTypeTypeIdentifier, nodeTypePointerType, nodeTypeQualifiedType:
 		return parseTree.GetNodeText(node)
-	case "tuple_type":
+	case nodeTypeTupleType:
 		// Handle multiple return values
 		var types []string
 		for _, child := range node.Children {
-			if child.Type == "type_identifier" || child.Type == "pointer_type" || child.Type == "qualified_type" {
+			if child.Type == nodeTypeTypeIdentifier || child.Type == nodeTypePointerType ||
+				child.Type == nodeTypeQualifiedType {
 				types = append(types, parseTree.GetNodeText(child))
 			}
 		}
@@ -295,7 +490,7 @@ func (p *GoParser) parseGoGenericParameter(
 	// Get the type constraint if present
 	var constraints []string
 	for _, child := range node.Children {
-		if child.Type == "type_identifier" || child.Type == "qualified_type" {
+		if child.Type == nodeTypeTypeIdentifier || child.Type == nodeTypeQualifiedType {
 			constraints = append(constraints, parseTree.GetNodeText(child))
 		}
 	}
@@ -365,4 +560,34 @@ func parseGoReturnType(parseTree *valueobject.ParseTree, node *valueobject.Parse
 		}
 	}
 	return ""
+}
+
+// Helper functions for node traversal (shared across parsers).
+func findChildByTypeInNode(node *valueobject.ParseNode, nodeType string) *valueobject.ParseNode {
+	if node.Type == nodeType {
+		return node
+	}
+
+	for _, child := range node.Children {
+		if found := findChildByTypeInNode(child, nodeType); found != nil {
+			return found
+		}
+	}
+
+	return nil
+}
+
+func findChildrenByType(node *valueobject.ParseNode, nodeType string) []*valueobject.ParseNode {
+	var results []*valueobject.ParseNode
+
+	if node.Type == nodeType {
+		results = append(results, node)
+	}
+
+	for _, child := range node.Children {
+		childResults := findChildrenByType(child, nodeType)
+		results = append(results, childResults...)
+	}
+
+	return results
 }

@@ -124,16 +124,12 @@ func (v *GoValidator) validateVariableSyntax(source string) *ParserError {
 			WithSuggestion("Provide a value after the assignment operator")
 	}
 
-	// Check for unclosed string literals using regex
-	unClosedStringPattern := regexp.MustCompile(`"[^"]*$`)
-	lines := strings.Split(source, "\n")
-	for i, line := range lines {
-		if unClosedStringPattern.MatchString(line) && !strings.Contains(line, `\"`) {
-			return NewSyntaxError("invalid syntax: unclosed string literal").
-				WithLocation(i+1, 0).
-				WithSuggestion("Close the string literal with a matching quote")
-		}
-	}
+	// FIXED: Removed hardcoded string literal validation that caused false positives
+	// with valid Go raw string literals (backtick strings). This validation should
+	// use proper Tree-sitter grammar-based parsing instead of naive regex matching.
+	// Go supports both interpreted string literals ("...") and raw string literals (`...`).
+	// The original regex only understood double quotes and incorrectly flagged
+	// valid multiline raw string literals as syntax errors.
 
 	return nil
 }

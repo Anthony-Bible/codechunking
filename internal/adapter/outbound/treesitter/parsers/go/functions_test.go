@@ -617,15 +617,15 @@ func createMockParseTreeFromSource(
 				StartByte: startByte,
 				EndByte:   lineEndByte,
 			})
-		case strings.HasPrefix(trimmedLine, "func ") && strings.Contains(line, "("):
-			children = append(children, &valueobject.ParseNode{
-				Type:      "function_declaration",
-				StartByte: startByte,
-				EndByte:   lineEndByte,
-			})
 		case strings.HasPrefix(trimmedLine, "func ("):
 			children = append(children, &valueobject.ParseNode{
 				Type:      "method_declaration",
+				StartByte: startByte,
+				EndByte:   lineEndByte,
+			})
+		case strings.HasPrefix(trimmedLine, "func ") && strings.Contains(line, "("):
+			children = append(children, &valueobject.ParseNode{
+				Type:      "function_declaration",
 				StartByte: startByte,
 				EndByte:   lineEndByte,
 			})

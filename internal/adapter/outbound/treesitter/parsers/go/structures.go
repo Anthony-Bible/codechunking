@@ -2,6 +2,7 @@ package goparser
 
 import (
 	"codechunking/internal/adapter/outbound/treesitter/utils"
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -371,10 +372,29 @@ func getFieldType(
 	parseTree *valueobject.ParseTree,
 	fieldDecl *valueobject.ParseNode,
 ) string {
-	typeNode := getParameterType(fieldDecl)
-	if typeNode != nil {
-		return parseTree.GetNodeText(typeNode)
+	if fieldDecl == nil {
+		return ""
 	}
+
+	// Look for various type nodes
+	typeNodes := []string{
+		"type_identifier",
+		"pointer_type",
+		"array_type",
+		"slice_type",
+		"map_type",
+		"channel_type",
+		"function_type",
+		"interface_type",
+		"struct_type",
+	}
+
+	for _, typeNodeName := range typeNodes {
+		if typeNode := findChildByTypeInNode(fieldDecl, typeNodeName); typeNode != nil {
+			return parseTree.GetNodeText(typeNode)
+		}
+	}
+
 	return ""
 }
 
@@ -422,34 +442,6 @@ func parseFieldTags(tag string) []outbound.Annotation {
 	return annotations
 }
 
-// getParameterType gets the type node from a parameter-like declaration.
-func getParameterType(decl *valueobject.ParseNode) *valueobject.ParseNode {
-	if decl == nil {
-		return nil
-	}
-
-	// Look for various type nodes
-	typeNodes := []string{
-		"type_identifier",
-		"pointer_type",
-		"array_type",
-		"slice_type",
-		"map_type",
-		"channel_type",
-		"function_type",
-		"interface_type",
-		"struct_type",
-	}
-
-	for _, typeNode := range typeNodes {
-		if node := findChildByTypeInNode(decl, typeNode); node != nil {
-			return node
-		}
-	}
-
-	return nil
-}
-
 // getVisibility determines if a name is public or private in Go.
 func getVisibility(name string) outbound.VisibilityModifier {
 	if len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z' {
@@ -490,4 +482,46 @@ func extractPackageNameFromTree(parseTree *valueobject.ParseTree) string {
 	}
 
 	return parseTree.GetNodeText(packageIdentifiers[0])
+}
+
+// ============================================================================
+// ObservableGoParser delegation methods for struct/interface extraction
+// ============================================================================
+
+// ExtractClasses implements the LanguageParser interface for ObservableGoParser.
+// Delegates to the proper tree-sitter implementation in the inner GoParser.
+func (o *ObservableGoParser) ExtractClasses(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	slogger.Info(ctx, "ObservableGoParser.ExtractClasses called", slogger.Fields{
+		"language": parseTree.Language().String(),
+	})
+
+	if err := o.parser.validateInput(parseTree); err != nil {
+		return nil, err
+	}
+
+	// Delegate to the inner parser's proper tree-sitter implementation
+	return o.parser.ExtractClasses(ctx, parseTree, options)
+}
+
+// ExtractInterfaces implements the LanguageParser interface for ObservableGoParser.
+// Delegates to the proper tree-sitter implementation in the inner GoParser.
+func (o *ObservableGoParser) ExtractInterfaces(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	slogger.Info(ctx, "ObservableGoParser.ExtractInterfaces called", slogger.Fields{
+		"language": parseTree.Language().String(),
+	})
+
+	if err := o.parser.validateInput(parseTree); err != nil {
+		return nil, err
+	}
+
+	// Delegate to the inner parser's proper tree-sitter implementation
+	return o.parser.ExtractInterfaces(ctx, parseTree, options)
 }

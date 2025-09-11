@@ -9,6 +9,17 @@ import (
 	"time"
 )
 
+// ObservableGoParser delegation methods for variable extraction
+
+// ExtractVariables extracts variable and constant declarations from a Go parse tree.
+func (o *ObservableGoParser) ExtractVariables(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return o.parser.ExtractVariables(ctx, parseTree, options)
+}
+
 // ExtractVariables extracts variable and constant declarations from a Go parse tree.
 func (p *GoParser) ExtractVariables(
 	ctx context.Context,
@@ -205,10 +216,29 @@ func getVariableType(
 	parseTree *valueobject.ParseTree,
 	varSpec *valueobject.ParseNode,
 ) string {
-	typeNode := getParameterType(varSpec)
-	if typeNode != nil {
-		return parseTree.GetNodeText(typeNode)
+	if varSpec == nil {
+		return ""
 	}
+
+	// Look for various type nodes
+	typeNodes := []string{
+		"type_identifier",
+		"pointer_type",
+		"array_type",
+		"slice_type",
+		"map_type",
+		"channel_type",
+		"function_type",
+		"interface_type",
+		"struct_type",
+	}
+
+	for _, typeNodeName := range typeNodes {
+		if typeNode := findChildByTypeInNode(varSpec, typeNodeName); typeNode != nil {
+			return parseTree.GetNodeText(typeNode)
+		}
+	}
+
 	return ""
 }
 

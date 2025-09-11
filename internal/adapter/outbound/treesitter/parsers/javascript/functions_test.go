@@ -2,6 +2,7 @@ package javascriptparser
 
 import (
 	"codechunking/internal/adapter/outbound/treesitter"
+	"codechunking/internal/adapter/outbound/treesitter/parsers/testhelpers"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -93,7 +94,7 @@ const modulePattern = (function() {
 	assert.True(t, iifeFound, "Should identify IIFE patterns")
 
 	// Test module pattern methods
-	incrementFunc := findChunkByName(functions, "increment")
+	incrementFunc := testhelpers.FindChunkByName(functions, "increment")
 	assert.NotNil(t, incrementFunc, "Should find increment method in IIFE module pattern")
 	if incrementFunc != nil {
 		assert.Equal(t, outbound.ConstructMethod, incrementFunc.Type)
@@ -190,41 +191,41 @@ function* outerGenerator() {
 	assert.GreaterOrEqual(t, len(functions), 8)
 
 	// Test outer function
-	outerFunc := findChunkByName(functions, "outerFunction")
+	outerFunc := testhelpers.FindChunkByName(functions, "outerFunction")
 	require.NotNil(t, outerFunc, "Should find outer function")
 	assert.Equal(t, outbound.ConstructFunction, outerFunc.Type)
 
 	// Test nested function
-	innerFunc := findChunkByName(functions, "innerFunction")
+	innerFunc := testhelpers.FindChunkByName(functions, "innerFunction")
 	require.NotNil(t, innerFunc, "Should find inner function")
 	assert.Equal(t, outbound.ConstructFunction, innerFunc.Type)
 
 	// Test deeply nested function
-	deepFunc := findChunkByName(functions, "deeplyNestedFunction")
+	deepFunc := testhelpers.FindChunkByName(functions, "deeplyNestedFunction")
 	require.NotNil(t, deepFunc, "Should find deeply nested function")
 	assert.Equal(t, outbound.ConstructFunction, deepFunc.Type)
 
 	// Test nested arrow functions
-	arrowInnerFunc := findChunkByName(functions, "arrowInner")
+	arrowInnerFunc := testhelpers.FindChunkByName(functions, "arrowInner")
 	assert.NotNil(t, arrowInnerFunc, "Should find nested arrow function")
 
-	nestedArrowFunc := findChunkByName(functions, "nestedArrow")
+	nestedArrowFunc := testhelpers.FindChunkByName(functions, "nestedArrow")
 	assert.NotNil(t, nestedArrowFunc, "Should find nested arrow function")
 
 	// Test calculator pattern functions
-	addFunc := findChunkByName(functions, "add")
+	addFunc := testhelpers.FindChunkByName(functions, "add")
 	require.NotNil(t, addFunc, "Should find add function")
 	assert.Equal(t, outbound.ConstructClosure, addFunc.Type)
 
-	subtractFunc := findChunkByName(functions, "subtract")
+	subtractFunc := testhelpers.FindChunkByName(functions, "subtract")
 	require.NotNil(t, subtractFunc, "Should find subtract function")
 
 	// Test nested generators
-	outerGenFunc := findChunkByName(functions, "outerGenerator")
+	outerGenFunc := testhelpers.FindChunkByName(functions, "outerGenerator")
 	require.NotNil(t, outerGenFunc, "Should find outer generator")
 	assert.Equal(t, outbound.ConstructGenerator, outerGenFunc.Type)
 
-	innerGenFunc := findChunkByName(functions, "innerGenerator")
+	innerGenFunc := testhelpers.FindChunkByName(functions, "innerGenerator")
 	require.NotNil(t, innerGenFunc, "Should find inner generator")
 	assert.Equal(t, outbound.ConstructGenerator, innerGenFunc.Type)
 }
@@ -350,17 +351,17 @@ const PromiseBuilder = {
 	assert.GreaterOrEqual(t, len(functions), 12)
 
 	// Test class methods that return 'this'
-	addMethod := findChunkByName(functions, "add")
+	addMethod := testhelpers.FindChunkByName(functions, "add")
 	require.NotNil(t, addMethod, "Should find add method")
 	assert.Equal(t, outbound.ConstructMethod, addMethod.Type)
 	assert.Contains(t, addMethod.Metadata, "returns_this")
 
-	multiplyMethod := findChunkByName(functions, "multiply")
+	multiplyMethod := testhelpers.FindChunkByName(functions, "multiply")
 	require.NotNil(t, multiplyMethod, "Should find multiply method")
 	assert.Equal(t, outbound.ConstructMethod, multiplyMethod.Type)
 
 	// Test terminal method (doesn't return this)
-	resultMethod := findChunkByName(functions, "result")
+	resultMethod := testhelpers.FindChunkByName(functions, "result")
 	require.NotNil(t, resultMethod, "Should find result method")
 	assert.Equal(t, outbound.ConstructMethod, resultMethod.Type)
 
@@ -369,10 +370,10 @@ const PromiseBuilder = {
 	assert.NotNil(t, chainAddFunc, "Should find chain add function")
 
 	// Test promise builder methods
-	thenMethod := findChunkByName(functions, "then")
+	thenMethod := testhelpers.FindChunkByName(functions, "then")
 	assert.NotNil(t, thenMethod, "Should find then method")
 
-	buildMethod := findChunkByName(functions, "build")
+	buildMethod := testhelpers.FindChunkByName(functions, "build")
 	assert.NotNil(t, buildMethod, "Should find build method")
 }
 
@@ -496,21 +497,21 @@ function processUserData(userId, callback) {
 	assert.True(t, mapCallbackFound, "Should find map callback function")
 
 	// Test event handler functions
-	setupFunc := findChunkByName(functions, "setupEventHandlers")
+	setupFunc := testhelpers.FindChunkByName(functions, "setupEventHandlers")
 	require.NotNil(t, setupFunc, "Should find setupEventHandlers function")
 
 	// Test async callback pattern
-	fetchFunc := findChunkByName(functions, "fetchWithCallback")
+	fetchFunc := testhelpers.FindChunkByName(functions, "fetchWithCallback")
 	require.NotNil(t, fetchFunc, "Should find fetchWithCallback function")
 	assert.Len(t, fetchFunc.Parameters, 3, "Should have url, onSuccess, onError parameters")
 
 	// Test higher-order function
-	createProcessorFunc := findChunkByName(functions, "createProcessor")
+	createProcessorFunc := testhelpers.FindChunkByName(functions, "createProcessor")
 	require.NotNil(t, createProcessorFunc, "Should find createProcessor function")
 	assert.Len(t, createProcessorFunc.Parameters, 2, "Should have beforeProcess, afterProcess parameters")
 
 	// Test nested callback pattern
-	processUserDataFunc := findChunkByName(functions, "processUserData")
+	processUserDataFunc := testhelpers.FindChunkByName(functions, "processUserData")
 	require.NotNil(t, processUserDataFunc, "Should find processUserData function")
 	assert.Len(t, processUserDataFunc.Parameters, 2, "Should have userId, callback parameters")
 }

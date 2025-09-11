@@ -1,6 +1,7 @@
 package pythonparser
 
 import (
+	"codechunking/internal/adapter/outbound/treesitter/parsers/testhelpers"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -111,7 +112,7 @@ class Calculator:
 	require.Len(t, functions, 4)
 
 	// Test regular function
-	addFunc := findChunkByName(functions, "add")
+	addFunc := testhelpers.FindChunkByName(functions, "add")
 	require.NotNil(t, addFunc, "Should find 'add' function")
 	assert.Equal(t, outbound.ConstructFunction, addFunc.Type)
 	assert.Equal(t, "add", addFunc.Name)
@@ -121,7 +122,7 @@ class Calculator:
 	assert.Len(t, addFunc.Parameters, 2)
 
 	// Test async function
-	fetchFunc := findChunkByName(functions, "fetch_data")
+	fetchFunc := testhelpers.FindChunkByName(functions, "fetch_data")
 	require.NotNil(t, fetchFunc, "Should find 'fetch_data' function")
 	assert.Equal(t, outbound.ConstructFunction, fetchFunc.Type)
 	assert.True(t, fetchFunc.IsAsync)
@@ -130,14 +131,14 @@ class Calculator:
 	assert.Equal(t, "str", fetchFunc.Parameters[0].Type)
 
 	// Test variadic function
-	processFunc := findChunkByName(functions, "process_data")
+	processFunc := testhelpers.FindChunkByName(functions, "process_data")
 	require.NotNil(t, processFunc, "Should find 'process_data' function")
 	assert.Len(t, processFunc.Parameters, 2)
 	assert.True(t, processFunc.Parameters[0].IsVariadic) // *args
 	assert.True(t, processFunc.Parameters[1].IsVariadic) // **kwargs
 
 	// Test method
-	methodFunc := findChunkByName(functions, "multiply")
+	methodFunc := testhelpers.FindChunkByName(functions, "multiply")
 	require.NotNil(t, methodFunc, "Should find 'multiply' method")
 	assert.Equal(t, outbound.ConstructMethod, methodFunc.Type)
 	assert.Equal(t, "Calculator.multiply", methodFunc.QualifiedName)
@@ -211,7 +212,7 @@ class GenericContainer:
 	require.Len(t, classes, 4)
 
 	// Test base class
-	animalClass := findChunkByName(classes, "Animal")
+	animalClass := testhelpers.FindChunkByName(classes, "Animal")
 	require.NotNil(t, animalClass, "Should find 'Animal' class")
 	assert.Equal(t, outbound.ConstructClass, animalClass.Type)
 	assert.Equal(t, "Animal", animalClass.Name)
@@ -220,7 +221,7 @@ class GenericContainer:
 	assert.Empty(t, animalClass.Dependencies) // No inheritance dependencies
 
 	// Test inheritance
-	dogClass := findChunkByName(classes, "Dog")
+	dogClass := testhelpers.FindChunkByName(classes, "Dog")
 	require.NotNil(t, dogClass, "Should find 'Dog' class")
 	assert.Equal(t, "models.Dog", dogClass.QualifiedName)
 	// Check inheritance through dependencies
@@ -228,11 +229,11 @@ class GenericContainer:
 	assert.Len(t, dogClass.Annotations, 1) // @dataclass decorator
 
 	// Test Cat class with private attribute convention
-	catClass := findChunkByName(classes, "Cat")
+	catClass := testhelpers.FindChunkByName(classes, "Cat")
 	require.NotNil(t, catClass, "Should find 'Cat' class")
 
 	// Test generic container
-	containerClass := findChunkByName(classes, "GenericContainer")
+	containerClass := testhelpers.FindChunkByName(classes, "GenericContainer")
 	require.NotNil(t, containerClass, "Should find 'GenericContainer' class")
 }
 
@@ -347,7 +348,7 @@ def process():
 	assert.GreaterOrEqual(t, len(variables), 6)
 
 	// Test module-level constant
-	apiVar := findChunkByName(variables, "API_VERSION")
+	apiVar := testhelpers.FindChunkByName(variables, "API_VERSION")
 	require.NotNil(t, apiVar, "Should find 'API_VERSION' variable")
 	assert.Equal(t, outbound.ConstructConstant, apiVar.Type)
 	assert.Equal(t, "API_VERSION", apiVar.Name)
@@ -355,25 +356,25 @@ def process():
 	assert.Equal(t, "str", apiVar.ReturnType)
 
 	// Test annotated variable
-	timeoutVar := findChunkByName(variables, "connection_timeout")
+	timeoutVar := testhelpers.FindChunkByName(variables, "connection_timeout")
 	require.NotNil(t, timeoutVar, "Should find 'connection_timeout' variable")
 	assert.Equal(t, outbound.ConstructVariable, timeoutVar.Type)
 	assert.Equal(t, "float", timeoutVar.ReturnType)
 
 	// Test multiple assignment variables
-	xVar := findChunkByName(variables, "x")
+	xVar := testhelpers.FindChunkByName(variables, "x")
 	require.NotNil(t, xVar, "Should find 'x' variable")
-	yVar := findChunkByName(variables, "y")
+	yVar := testhelpers.FindChunkByName(variables, "y")
 	require.NotNil(t, yVar, "Should find 'y' variable")
-	zVar := findChunkByName(variables, "z")
+	zVar := testhelpers.FindChunkByName(variables, "z")
 	require.NotNil(t, zVar, "Should find 'z' variable")
 
 	// Test class variables
-	defaultThemeVar := findChunkByName(variables, "default_theme")
+	defaultThemeVar := testhelpers.FindChunkByName(variables, "default_theme")
 	require.NotNil(t, defaultThemeVar, "Should find 'default_theme' class variable")
 	assert.Equal(t, outbound.Public, defaultThemeVar.Visibility)
 
-	privateKeyVar := findChunkByName(variables, "_private_key")
+	privateKeyVar := testhelpers.FindChunkByName(variables, "_private_key")
 	require.NotNil(t, privateKeyVar, "Should find '_private_key' class variable")
 	assert.Equal(t, outbound.Private, privateKeyVar.Visibility)
 }
@@ -514,7 +515,7 @@ class Serializable(Protocol):
 	require.Len(t, interfaces, 3) // Drawable Protocol, Shape ABC, Serializable Protocol
 
 	// Test Protocol
-	drawableInterface := findChunkByName(interfaces, "Drawable")
+	drawableInterface := testhelpers.FindChunkByName(interfaces, "Drawable")
 	require.NotNil(t, drawableInterface, "Should find 'Drawable' protocol")
 	assert.Equal(t, outbound.ConstructInterface, drawableInterface.Type)
 	assert.Equal(t, "Drawable", drawableInterface.Name)
@@ -522,14 +523,14 @@ class Serializable(Protocol):
 	assert.Len(t, drawableInterface.Annotations, 1) // @runtime_checkable
 
 	// Test ABC
-	shapeInterface := findChunkByName(interfaces, "Shape")
+	shapeInterface := testhelpers.FindChunkByName(interfaces, "Shape")
 	require.NotNil(t, shapeInterface, "Should find 'Shape' ABC")
 	assert.Equal(t, outbound.ConstructInterface, shapeInterface.Type)
 	// Check ABC inheritance through dependencies
 	assert.GreaterOrEqual(t, len(shapeInterface.Dependencies), 1, "Should have ABC dependency")
 
 	// Test simple Protocol
-	serializableInterface := findChunkByName(interfaces, "Serializable")
+	serializableInterface := testhelpers.FindChunkByName(interfaces, "Serializable")
 	require.NotNil(t, serializableInterface, "Should find 'Serializable' protocol")
 }
 
@@ -640,9 +641,9 @@ __private_var = "private"
 	require.NoError(t, err)
 
 	// Should only include public functions
-	publicFuncFound := findChunkByName(functions, "public_function") != nil
-	privateFuncFound := findChunkByName(functions, "_private_function") != nil
-	dunderFuncFound := findChunkByName(functions, "__dunder_method__") != nil
+	publicFuncFound := testhelpers.FindChunkByName(functions, "public_function") != nil
+	privateFuncFound := testhelpers.FindChunkByName(functions, "_private_function") != nil
+	dunderFuncFound := testhelpers.FindChunkByName(functions, "__dunder_method__") != nil
 
 	assert.True(t, publicFuncFound, "Should include public function")
 	assert.False(t, privateFuncFound, "Should exclude private function when IncludePrivate=false")
@@ -657,9 +658,9 @@ __private_var = "private"
 	require.NoError(t, err)
 
 	// Should include all functions
-	assert.NotNil(t, findChunkByName(allFunctions, "public_function"))
-	assert.NotNil(t, findChunkByName(allFunctions, "_private_function"))
-	assert.NotNil(t, findChunkByName(allFunctions, "__dunder_method__"))
+	assert.NotNil(t, testhelpers.FindChunkByName(allFunctions, "public_function"))
+	assert.NotNil(t, testhelpers.FindChunkByName(allFunctions, "_private_function"))
+	assert.NotNil(t, testhelpers.FindChunkByName(allFunctions, "__dunder_method__"))
 }
 
 // Helper functions for testing (these will fail in RED phase)
@@ -782,16 +783,6 @@ func safeUintToUint32(val uint) uint32 {
 		return ^uint32(0) // Return max uint32 if overflow would occur
 	}
 	return uint32(val) // #nosec G115 - bounds checked above
-}
-
-// findChunkByName finds a semantic chunk by name.
-func findChunkByName(chunks []outbound.SemanticCodeChunk, name string) *outbound.SemanticCodeChunk {
-	for i, chunk := range chunks {
-		if chunk.Name == name {
-			return &chunks[i]
-		}
-	}
-	return nil
 }
 
 // findImportByModule finds an import declaration by module name.

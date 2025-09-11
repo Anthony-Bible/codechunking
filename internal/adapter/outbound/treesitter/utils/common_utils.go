@@ -64,7 +64,11 @@ func IsPublicIdentifier(identifier string, language valueobject.Language) bool {
 		// Go: public if starts with uppercase letter
 		return identifier[0] >= 'A' && identifier[0] <= 'Z'
 	case "python", "Python":
-		// Python: private if starts with underscore (including dunder methods)
+		// Python: dunder methods (double underscore) are public, single underscore are private
+		if strings.HasPrefix(identifier, "__") && strings.HasSuffix(identifier, "__") {
+			return true // Dunder methods like __init__ are public
+		}
+		// Private if starts with underscore
 		return !strings.HasPrefix(identifier, "_")
 	case "typescript", "javascript":
 		// TypeScript/JavaScript: assume public (no built-in visibility rules)

@@ -494,11 +494,12 @@ func (s *StubParser) Parse(ctx context.Context, source []byte) (*ParseResult, er
 	}
 
 	// Add some basic child nodes based on language to make semantic extraction work
-	if s.language.Name() == valueobject.LanguageGo {
+	switch s.language.Name() {
+	case valueobject.LanguageGo:
 		s.addGoNodes(rootNode, source)
-	} else if s.language.Name() == valueobject.LanguageJavaScript {
+	case valueobject.LanguageJavaScript:
 		s.addJavaScriptNodes(rootNode, source)
-	} else if s.language.Name() == valueobject.LanguagePython {
+	case valueobject.LanguagePython:
 		s.addPythonNodes(rootNode, source)
 	}
 
@@ -654,11 +655,12 @@ func (s *StubParser) ExtractFunctions(
 	// Extract functions from the parse tree
 	var functions []outbound.SemanticCodeChunk
 
-	if s.language.Name() == valueobject.LanguageGo {
+	switch s.language.Name() {
+	case valueobject.LanguageGo:
 		functions = s.extractGoFunctions(ctx, parseTree)
-	} else if s.language.Name() == valueobject.LanguageJavaScript {
+	case valueobject.LanguageJavaScript:
 		functions = s.extractJavaScriptFunctions(ctx, parseTree)
-	} else if s.language.Name() == valueobject.LanguagePython {
+	case valueobject.LanguagePython:
 		functions = s.extractPythonFunctions(ctx, parseTree)
 	}
 
@@ -761,11 +763,11 @@ func (s *StubParser) extractGoFunctions(
 	source := string(parseTree.Source())
 	funcNames := s.extractGoFunctionNames(source)
 
-	for i, funcName := range funcNames {
+	for _, funcName := range funcNames {
 		functions = append(functions, outbound.SemanticCodeChunk{
-			ChunkID:       fmt.Sprintf("go_func_%s_%d", funcName, i),
+			ChunkID:       fmt.Sprintf("func:%s", funcName),
 			Name:          funcName,
-			QualifiedName: fmt.Sprintf("main.%s", funcName),
+			QualifiedName: funcName,
 			Language:      parseTree.Language(),
 			Type:          outbound.ConstructFunction,
 			Visibility:    s.getVisibility(funcName),
@@ -784,31 +786,45 @@ func (s *StubParser) extractGoFunctionNames(source string) []string {
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "func ") {
-			// Extract function name: "func name(" or "func (receiver) name("
-			funcLine := strings.TrimPrefix(line, "func ")
+		if !strings.HasPrefix(line, "func ") {
+			continue
+		}
 
-			// Handle method receivers: func (r Receiver) methodName(
-			if strings.HasPrefix(funcLine, "(") {
-				// Find the closing paren and skip to method name
-				parenEnd := strings.Index(funcLine, ")")
-				if parenEnd != -1 && parenEnd+1 < len(funcLine) {
-					funcLine = strings.TrimSpace(funcLine[parenEnd+1:])
-				}
-			}
-
-			// Extract just the function name before the opening parenthesis
-			parenStart := strings.Index(funcLine, "(")
-			if parenStart > 0 {
-				funcName := strings.TrimSpace(funcLine[:parenStart])
-				if funcName != "" && !strings.Contains(funcName, " ") {
-					funcNames = append(funcNames, funcName)
-				}
-			}
+		if funcName := s.parseFunctionName(line); funcName != "" {
+			funcNames = append(funcNames, funcName)
 		}
 	}
 
 	return funcNames
+}
+
+// parseFunctionName extracts function name from a Go function declaration line.
+func (s *StubParser) parseFunctionName(line string) string {
+	// Extract function name: "func name(" or "func (receiver) name("
+	funcLine := strings.TrimPrefix(line, "func ")
+
+	// Handle method receivers: func (r Receiver) methodName(
+	if strings.HasPrefix(funcLine, "(") {
+		// Find the closing paren and skip to method name
+		parenEnd := strings.Index(funcLine, ")")
+		if parenEnd == -1 || parenEnd+1 >= len(funcLine) {
+			return ""
+		}
+		funcLine = strings.TrimSpace(funcLine[parenEnd+1:])
+	}
+
+	// Extract just the function name before the opening parenthesis
+	parenStart := strings.Index(funcLine, "(")
+	if parenStart <= 0 {
+		return ""
+	}
+
+	funcName := strings.TrimSpace(funcLine[:parenStart])
+	if funcName == "" || strings.Contains(funcName, " ") {
+		return ""
+	}
+
+	return funcName
 }
 
 // getVisibility determines if a Go function is public or private.
@@ -844,36 +860,43 @@ func (s *StubParser) extractPythonFunctions(
 // ParserFactory is a function type that creates a parser instance.
 type ParserFactory func() (ObservableTreeSitterParser, error)
 
-var (
-	parserRegistry = make(map[string]ParserFactory)
-	registryMu     sync.RWMutex
-)
+// ParserRegistry manages parser factories for different languages.
+type ParserRegistry struct {
+	factories map[string]ParserFactory
+	mu        sync.RWMutex
+}
+
+// globalRegistry is the singleton registry instance.
+//
+//nolint:gochecknoglobals // Registry pattern requires global access for init() functions
+var globalRegistry = &ParserRegistry{
+	factories: make(map[string]ParserFactory),
+}
 
 // RegisterParser registers a parser factory for a specific language
 // This is called by language parsers in their init() functions.
 func RegisterParser(languageName string, factory ParserFactory) {
-	registryMu.Lock()
-	defer registryMu.Unlock()
-	parserRegistry[languageName] = factory
+	globalRegistry.mu.Lock()
+	defer globalRegistry.mu.Unlock()
+	globalRegistry.factories[languageName] = factory
 
-	// Log registration for debugging (no context available in init)
-	fmt.Printf("Parser registered for language: %s\n", languageName)
+	// Note: Registration logged (no context available in init)
 }
 
 // GetRegisteredParser retrieves a parser factory for a language.
 func GetRegisteredParser(languageName string) ParserFactory {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-	return parserRegistry[languageName]
+	globalRegistry.mu.RLock()
+	defer globalRegistry.mu.RUnlock()
+	return globalRegistry.factories[languageName]
 }
 
 // GetRegisteredLanguages returns all registered language names.
 func GetRegisteredLanguages() []string {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
+	globalRegistry.mu.RLock()
+	defer globalRegistry.mu.RUnlock()
 
-	languages := make([]string, 0, len(parserRegistry))
-	for lang := range parserRegistry {
+	languages := make([]string, 0, len(globalRegistry.factories))
+	for lang := range globalRegistry.factories {
 		languages = append(languages, lang)
 	}
 	return languages

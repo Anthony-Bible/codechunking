@@ -2,6 +2,7 @@ package javascriptparser
 
 import (
 	"codechunking/internal/adapter/outbound/treesitter"
+	"codechunking/internal/adapter/outbound/treesitter/parsers/testhelpers"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -140,7 +141,7 @@ class Cat extends Animal {
 	require.Len(t, classes, 3, "Should find exactly 3 class declarations")
 
 	// Test base Animal class
-	animalClass := findChunkByName(classes, "Animal")
+	animalClass := testhelpers.FindChunkByName(classes, "Animal")
 	require.NotNil(t, animalClass, "Animal class should be detected")
 	assert.Equal(t, outbound.ConstructClass, animalClass.Type)
 	assert.Equal(t, "Animal", animalClass.Name)
@@ -148,7 +149,7 @@ class Cat extends Animal {
 	assert.Empty(t, animalClass.Dependencies, "Animal should have no inheritance dependencies")
 
 	// Test Dog class with inheritance
-	dogClass := findChunkByName(classes, "Dog")
+	dogClass := testhelpers.FindChunkByName(classes, "Dog")
 	require.NotNil(t, dogClass, "Dog class should be detected")
 	assert.Equal(t, outbound.ConstructClass, dogClass.Type)
 	assert.Equal(t, "Dog", dogClass.Name)
@@ -157,7 +158,7 @@ class Cat extends Animal {
 	assert.Equal(t, "inheritance", dogClass.Dependencies[0].Type)
 
 	// Test Cat class with private members
-	catClass := findChunkByName(classes, "Cat")
+	catClass := testhelpers.FindChunkByName(classes, "Cat")
 	require.NotNil(t, catClass, "Cat class should be detected")
 	assert.Equal(t, outbound.ConstructClass, catClass.Type)
 
@@ -248,19 +249,19 @@ const IIFEClass = (function() {
 	require.Len(t, classes, 4, "Should find exactly 4 class expressions")
 
 	// Test anonymous class assigned to variable
-	myClass := findChunkByName(classes, "MyClass")
+	myClass := testhelpers.FindChunkByName(classes, "MyClass")
 	require.NotNil(t, myClass, "MyClass variable-assigned class expression should be found")
 	assert.Equal(t, outbound.ConstructClass, myClass.Type)
 	assert.Equal(t, "MyClass", myClass.Name)
 
 	// Test named class expression
-	namedClass := findChunkByName(classes, "NamedClass")
+	namedClass := testhelpers.FindChunkByName(classes, "NamedClass")
 	require.NotNil(t, namedClass, "NamedClass expression should be found")
 	assert.Equal(t, outbound.ConstructClass, namedClass.Type)
 	assert.Equal(t, "NamedClass", namedClass.Name)
 
 	// Test class expression with inheritance
-	extendedClass := findChunkByName(classes, "ExtendedClass")
+	extendedClass := testhelpers.FindChunkByName(classes, "ExtendedClass")
 	require.NotNil(t, extendedClass, "ExtendedClass should be found")
 	assert.Equal(t, outbound.ConstructClass, extendedClass.Type)
 	assert.Len(t, extendedClass.Dependencies, 1, "Should have inheritance dependency")
@@ -365,12 +366,12 @@ class User extends withValidation(Serializable(Timestamped(Entity)), {
 	require.GreaterOrEqual(t, len(classes), 3, "Should find Entity, User, and mixin factories")
 
 	// Test base Entity class
-	entityClass := findChunkByName(classes, "Entity")
+	entityClass := testhelpers.FindChunkByName(classes, "Entity")
 	require.NotNil(t, entityClass, "Entity class should be found")
 	assert.Equal(t, outbound.ConstructClass, entityClass.Type)
 
 	// Test User class with complex mixin chain
-	userClass := findChunkByName(classes, "User")
+	userClass := testhelpers.FindChunkByName(classes, "User")
 	require.NotNil(t, userClass, "User class should be found")
 	assert.Equal(t, outbound.ConstructClass, userClass.Type)
 
@@ -385,14 +386,14 @@ class User extends withValidation(Serializable(Timestamped(Entity)), {
 	assert.Contains(t, chainSlice, "withValidation", "Should detect withValidation in mixin chain")
 
 	// Test that mixin factory functions are detected as class-like constructs
-	timestampedMixin := findChunkByName(classes, "Timestamped")
+	timestampedMixin := testhelpers.FindChunkByName(classes, "Timestamped")
 	require.NotNil(t, timestampedMixin, "Timestamped mixin factory should be detected")
 
 	returnsClass, exists := timestampedMixin.Metadata["returns_class"]
 	require.True(t, exists, "returns_class metadata should exist for mixin factory")
 	assert.True(t, returnsClass.(bool), "Mixin factory should have returns_class = true")
 
-	serializableMixin := findChunkByName(classes, "Serializable")
+	serializableMixin := testhelpers.FindChunkByName(classes, "Serializable")
 	require.NotNil(t, serializableMixin, "Serializable mixin factory should be detected")
 
 	returnsClassSerial, exists := serializableMixin.Metadata["returns_class"]
@@ -509,7 +510,7 @@ class Singleton {
 	require.Len(t, classes, 3, "Should find exactly 3 classes")
 
 	// Test MathUtils class with comprehensive static member metadata
-	mathUtilsClass := findChunkByName(classes, "MathUtils")
+	mathUtilsClass := testhelpers.FindChunkByName(classes, "MathUtils")
 	require.NotNil(t, mathUtilsClass, "MathUtils class should be found")
 
 	// RED PHASE: These metadata assertions will FAIL until properly implemented
@@ -540,7 +541,7 @@ class Singleton {
 	assert.True(t, hasPrivateStatic.(bool), "Should detect private static members")
 
 	// Test DatabaseConnection with static initialization block
-	dbClass := findChunkByName(classes, "DatabaseConnection")
+	dbClass := testhelpers.FindChunkByName(classes, "DatabaseConnection")
 	require.NotNil(t, dbClass, "DatabaseConnection class should be found")
 
 	hasStaticInit, exists := dbClass.Metadata["has_static_init_block"]
@@ -548,7 +549,7 @@ class Singleton {
 	assert.True(t, hasStaticInit.(bool), "Should detect static initialization block")
 
 	// Test Singleton pattern detection
-	singletonClass := findChunkByName(classes, "Singleton")
+	singletonClass := testhelpers.FindChunkByName(classes, "Singleton")
 	require.NotNil(t, singletonClass, "Singleton class should be found")
 
 	designPattern, exists := singletonClass.Metadata["design_pattern"]
@@ -880,7 +881,7 @@ class DatabaseManager {
 	require.GreaterOrEqual(t, len(classes), 6, "Should find all classes and mixin factories")
 
 	// Test Entity base class with static members
-	entityClass := findChunkByName(classes, "Entity")
+	entityClass := testhelpers.FindChunkByName(classes, "Entity")
 	require.NotNil(t, entityClass, "Entity class should be found")
 
 	staticProps, exists := entityClass.Metadata["static_properties"]
@@ -895,7 +896,7 @@ class DatabaseManager {
 	assert.Contains(t, staticMethodsSlice, "findById", "Should detect findById static method")
 
 	// Test User class with complex mixin chain
-	userClass := findChunkByName(classes, "User")
+	userClass := testhelpers.FindChunkByName(classes, "User")
 	require.NotNil(t, userClass, "User class should be found")
 
 	mixinChain, exists := userClass.Metadata["mixin_chain"]
@@ -909,7 +910,7 @@ class DatabaseManager {
 	assert.True(t, hasPrivateMembers.(bool), "User should have private members")
 
 	// Test ConfigManager class expression with static init block
-	configClass := findChunkByName(classes, "ConfigManager")
+	configClass := testhelpers.FindChunkByName(classes, "ConfigManager")
 	require.NotNil(t, configClass, "ConfigManager class should be found")
 
 	hasStaticInit, exists := configClass.Metadata["has_static_init_block"]
@@ -917,7 +918,7 @@ class DatabaseManager {
 	assert.True(t, hasStaticInit.(bool), "ConfigManager should have static initialization block")
 
 	// Test DatabaseManager singleton pattern detection
-	dbManagerClass := findChunkByName(classes, "DatabaseManager")
+	dbManagerClass := testhelpers.FindChunkByName(classes, "DatabaseManager")
 	require.NotNil(t, dbManagerClass, "DatabaseManager class should be found")
 
 	designPattern, exists := dbManagerClass.Metadata["design_pattern"]
@@ -925,14 +926,14 @@ class DatabaseManager {
 	assert.Equal(t, "singleton", designPattern.(string), "Should detect singleton pattern")
 
 	// Test mixin factory detection
-	timestampedMixin := findChunkByName(classes, "Timestamped")
+	timestampedMixin := testhelpers.FindChunkByName(classes, "Timestamped")
 	require.NotNil(t, timestampedMixin, "Timestamped mixin should be detected")
 
 	returnsClass, exists := timestampedMixin.Metadata["returns_class"]
 	require.True(t, exists, "returns_class should exist for mixin")
 	assert.True(t, returnsClass.(bool), "Mixin should have returns_class = true")
 
-	cacheableMixin := findChunkByName(classes, "Cacheable")
+	cacheableMixin := testhelpers.FindChunkByName(classes, "Cacheable")
 	require.NotNil(t, cacheableMixin, "Cacheable mixin should be detected")
 
 	returnsClassCache, exists := cacheableMixin.Metadata["returns_class"]

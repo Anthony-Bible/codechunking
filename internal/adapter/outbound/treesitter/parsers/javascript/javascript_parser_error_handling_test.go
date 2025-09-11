@@ -113,8 +113,10 @@ func TestJavaScriptParser_ErrorHandling_TreeSitterErrors(t *testing.T) {
 
 			if tt.shouldFail {
 				assert.Error(t, err, "Expected tree-sitter error for: %s", tt.name)
-				assert.Contains(t, err.Error(), strings.Split(tt.expectedError, ":")[0],
-					"Error should contain expected error type")
+				if err != nil {
+					assert.Contains(t, err.Error(), strings.Split(tt.expectedError, ":")[0],
+						"Error should contain expected error type")
+				}
 			} else {
 				assert.NoError(t, err, "Valid operation should not cause errors")
 			}
@@ -250,8 +252,10 @@ func TestJavaScriptParser_ErrorHandling_InvalidSyntax(t *testing.T) {
 
 			if tt.shouldFail {
 				assert.Error(t, err, "Expected error for invalid syntax")
-				assert.Contains(t, err.Error(), strings.Split(tt.expectedError, ":")[0],
-					"Error should contain expected error type")
+				if err != nil {
+					assert.Contains(t, err.Error(), strings.Split(tt.expectedError, ":")[0],
+						"Error should contain expected error type")
+				}
 			} else {
 				assert.NoError(t, err, "Valid syntax should not cause errors")
 			}

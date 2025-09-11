@@ -2,6 +2,7 @@ package javascriptparser
 
 import (
 	"codechunking/internal/adapter/outbound/treesitter"
+	"codechunking/internal/adapter/outbound/treesitter/parsers/testhelpers"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -101,7 +102,7 @@ export var exportedVar = 'var export';
 	assert.GreaterOrEqual(t, len(variables), 15)
 
 	// Test var declaration
-	globalVarChunk := findChunkByName(variables, "globalVar")
+	globalVarChunk := testhelpers.FindChunkByName(variables, "globalVar")
 	require.NotNil(t, globalVarChunk, "Should find 'globalVar' variable")
 	assert.Equal(t, outbound.ConstructVariable, globalVarChunk.Type)
 	assert.Equal(t, "globalVar", globalVarChunk.Name)
@@ -110,43 +111,43 @@ export var exportedVar = 'var export';
 	assert.Equal(t, "var", globalVarChunk.Metadata["declaration_type"])
 
 	// Test let declaration
-	blockScopedChunk := findChunkByName(variables, "blockScoped")
+	blockScopedChunk := testhelpers.FindChunkByName(variables, "blockScoped")
 	require.NotNil(t, blockScopedChunk, "Should find 'blockScoped' variable")
 	assert.Equal(t, outbound.ConstructVariable, blockScopedChunk.Type)
 	assert.Equal(t, "let", blockScopedChunk.Metadata["declaration_type"])
 
 	// Test const declaration
-	constantChunk := findChunkByName(variables, "CONSTANT")
+	constantChunk := testhelpers.FindChunkByName(variables, "CONSTANT")
 	require.NotNil(t, constantChunk, "Should find 'CONSTANT' variable")
 	assert.Equal(t, outbound.ConstructConstant, constantChunk.Type)
 	assert.Equal(t, "const", constantChunk.Metadata["declaration_type"])
 
 	// Test destructured variables
-	firstChunk := findChunkByName(variables, "first")
+	firstChunk := testhelpers.FindChunkByName(variables, "first")
 	assert.NotNil(t, firstChunk, "Should find destructured 'first' variable")
 	if firstChunk != nil {
 		assert.Contains(t, firstChunk.Metadata, "is_destructured")
 		assert.True(t, firstChunk.Metadata["is_destructured"].(bool))
 	}
 
-	nameChunk := findChunkByName(variables, "name")
+	nameChunk := testhelpers.FindChunkByName(variables, "name")
 	assert.NotNil(t, nameChunk, "Should find destructured 'name' variable")
 
 	// Test class fields
-	publicFieldChunk := findChunkByName(variables, "publicField")
+	publicFieldChunk := testhelpers.FindChunkByName(variables, "publicField")
 	assert.NotNil(t, publicFieldChunk, "Should find 'publicField' class field")
 	if publicFieldChunk != nil {
 		assert.Equal(t, outbound.ConstructProperty, publicFieldChunk.Type)
 		assert.Equal(t, outbound.Public, publicFieldChunk.Visibility)
 	}
 
-	privateFieldChunk := findChunkByName(variables, "#privateField")
+	privateFieldChunk := testhelpers.FindChunkByName(variables, "#privateField")
 	assert.NotNil(t, privateFieldChunk, "Should find private field")
 	if privateFieldChunk != nil {
 		assert.Equal(t, outbound.Private, privateFieldChunk.Visibility)
 	}
 
-	staticFieldChunk := findChunkByName(variables, "staticField")
+	staticFieldChunk := testhelpers.FindChunkByName(variables, "staticField")
 	assert.NotNil(t, staticFieldChunk, "Should find static field")
 	if staticFieldChunk != nil {
 		assert.True(t, staticFieldChunk.IsStatic)
@@ -231,7 +232,7 @@ class NotHoistedClass {
 	require.NoError(t, err)
 
 	// Test hoisted var
-	hoistedVarChunk := findChunkByName(variables, "hoistedVar")
+	hoistedVarChunk := testhelpers.FindChunkByName(variables, "hoistedVar")
 	assert.NotNil(t, hoistedVarChunk, "Should find hoisted var")
 	if hoistedVarChunk != nil {
 		assert.Contains(t, hoistedVarChunk.Metadata, "is_hoisted")
@@ -239,7 +240,7 @@ class NotHoistedClass {
 	}
 
 	// Test non-hoisted let
-	notYetDefinedChunk := findChunkByName(variables, "notYetDefined")
+	notYetDefinedChunk := testhelpers.FindChunkByName(variables, "notYetDefined")
 	assert.NotNil(t, notYetDefinedChunk, "Should find let variable")
 	if notYetDefinedChunk != nil {
 		assert.Contains(t, notYetDefinedChunk.Metadata, "temporal_dead_zone")
@@ -247,7 +248,7 @@ class NotHoistedClass {
 	}
 
 	// Test function expressions (should be variables, not hoisted functions)
-	notHoistedChunk := findChunkByName(variables, "notHoisted")
+	notHoistedChunk := testhelpers.FindChunkByName(variables, "notHoisted")
 	assert.NotNil(t, notHoistedChunk, "Should find function expression variable")
 	if notHoistedChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, notHoistedChunk.Type)
@@ -388,7 +389,7 @@ function createClosure(outerParam) {
 	require.NoError(t, err)
 
 	// Test global variables
-	globalVarChunk := findChunkByName(variables, "globalVar")
+	globalVarChunk := testhelpers.FindChunkByName(variables, "globalVar")
 	assert.NotNil(t, globalVarChunk, "Should find global var")
 	if globalVarChunk != nil {
 		assert.Contains(t, globalVarChunk.Metadata, "scope")
@@ -396,7 +397,7 @@ function createClosure(outerParam) {
 	}
 
 	// Test private variables in module pattern
-	privateCounterChunk := findChunkByName(variables, "privateCounter")
+	privateCounterChunk := testhelpers.FindChunkByName(variables, "privateCounter")
 	assert.NotNil(t, privateCounterChunk, "Should find private counter")
 	if privateCounterChunk != nil {
 		assert.Equal(t, outbound.Private, privateCounterChunk.Visibility)
@@ -405,19 +406,19 @@ function createClosure(outerParam) {
 	}
 
 	// Test class properties with different visibility
-	publicPropChunk := findChunkByName(variables, "publicProp")
+	publicPropChunk := testhelpers.FindChunkByName(variables, "publicProp")
 	assert.NotNil(t, publicPropChunk, "Should find public property")
 	if publicPropChunk != nil {
 		assert.Equal(t, outbound.Public, publicPropChunk.Visibility)
 	}
 
-	privatePropChunk := findChunkByName(variables, "#privateProp")
+	privatePropChunk := testhelpers.FindChunkByName(variables, "#privateProp")
 	assert.NotNil(t, privatePropChunk, "Should find private property")
 	if privatePropChunk != nil {
 		assert.Equal(t, outbound.Private, privatePropChunk.Visibility)
 	}
 
-	staticPropChunk := findChunkByName(variables, "staticProp")
+	staticPropChunk := testhelpers.FindChunkByName(variables, "staticProp")
 	assert.NotNil(t, staticPropChunk, "Should find static property")
 	if staticPropChunk != nil {
 		assert.True(t, staticPropChunk.IsStatic)
@@ -425,7 +426,7 @@ function createClosure(outerParam) {
 	}
 
 	// Test block-scoped variables
-	blockLetChunk := findChunkByName(variables, "blockLet")
+	blockLetChunk := testhelpers.FindChunkByName(variables, "blockLet")
 	assert.NotNil(t, blockLetChunk, "Should find block-scoped let")
 	if blockLetChunk != nil {
 		assert.Contains(t, blockLetChunk.Metadata, "scope")
@@ -433,14 +434,14 @@ function createClosure(outerParam) {
 	}
 
 	// Test loop variables
-	loopIChunk := findChunkByName(variables, "i")
+	loopIChunk := testhelpers.FindChunkByName(variables, "i")
 	assert.NotNil(t, loopIChunk, "Should find loop variable i")
 	if loopIChunk != nil {
 		assert.Contains(t, loopIChunk.Metadata, "loop_variable")
 		assert.True(t, loopIChunk.Metadata["loop_variable"].(bool))
 	}
 
-	loopJChunk := findChunkByName(variables, "j")
+	loopJChunk := testhelpers.FindChunkByName(variables, "j")
 	assert.NotNil(t, loopJChunk, "Should find loop variable j")
 	if loopJChunk != nil {
 		assert.Contains(t, loopJChunk.Metadata, "loop_variable")
@@ -549,38 +550,38 @@ const computedObject = {
 	require.NoError(t, err)
 
 	// Test primitive type inference
-	stringVarChunk := findChunkByName(variables, "stringVar")
+	stringVarChunk := testhelpers.FindChunkByName(variables, "stringVar")
 	assert.NotNil(t, stringVarChunk, "Should find string variable")
 	if stringVarChunk != nil {
 		assert.Equal(t, "string", stringVarChunk.ReturnType)
 	}
 
-	numberVarChunk := findChunkByName(variables, "numberVar")
+	numberVarChunk := testhelpers.FindChunkByName(variables, "numberVar")
 	assert.NotNil(t, numberVarChunk, "Should find number variable")
 	if numberVarChunk != nil {
 		assert.Equal(t, "number", numberVarChunk.ReturnType)
 	}
 
-	booleanVarChunk := findChunkByName(variables, "booleanVar")
+	booleanVarChunk := testhelpers.FindChunkByName(variables, "booleanVar")
 	assert.NotNil(t, booleanVarChunk, "Should find boolean variable")
 	if booleanVarChunk != nil {
 		assert.Equal(t, "boolean", booleanVarChunk.ReturnType)
 	}
 
 	// Test complex type inference
-	arrayVarChunk := findChunkByName(variables, "arrayVar")
+	arrayVarChunk := testhelpers.FindChunkByName(variables, "arrayVar")
 	assert.NotNil(t, arrayVarChunk, "Should find array variable")
 	if arrayVarChunk != nil {
 		assert.Equal(t, "Array<number>", arrayVarChunk.ReturnType)
 	}
 
-	objectVarChunk := findChunkByName(variables, "objectVar")
+	objectVarChunk := testhelpers.FindChunkByName(variables, "objectVar")
 	assert.NotNil(t, objectVarChunk, "Should find object variable")
 	if objectVarChunk != nil {
 		assert.Equal(t, "Object", objectVarChunk.ReturnType)
 	}
 
-	functionVarChunk := findChunkByName(variables, "functionVar")
+	functionVarChunk := testhelpers.FindChunkByName(variables, "functionVar")
 	assert.NotNil(t, functionVarChunk, "Should find function variable")
 	if functionVarChunk != nil {
 		assert.Equal(t, "Function", functionVarChunk.ReturnType)
@@ -588,7 +589,7 @@ const computedObject = {
 	}
 
 	// Test instance type inference
-	userInstanceChunk := findChunkByName(variables, "userInstance")
+	userInstanceChunk := testhelpers.FindChunkByName(variables, "userInstance")
 	assert.NotNil(t, userInstanceChunk, "Should find user instance")
 	if userInstanceChunk != nil {
 		assert.Equal(t, "User", userInstanceChunk.ReturnType)
@@ -597,14 +598,14 @@ const computedObject = {
 	}
 
 	// Test Promise type
-	promiseVarChunk := findChunkByName(variables, "promiseVar")
+	promiseVarChunk := testhelpers.FindChunkByName(variables, "promiseVar")
 	assert.NotNil(t, promiseVarChunk, "Should find promise variable")
 	if promiseVarChunk != nil {
 		assert.Equal(t, "Promise<string>", promiseVarChunk.ReturnType)
 	}
 
 	// Test complex nested object
-	nestedObjectChunk := findChunkByName(variables, "nestedObject")
+	nestedObjectChunk := testhelpers.FindChunkByName(variables, "nestedObject")
 	assert.NotNil(t, nestedObjectChunk, "Should find nested object")
 	if nestedObjectChunk != nil {
 		assert.Equal(t, "Object", nestedObjectChunk.ReturnType)

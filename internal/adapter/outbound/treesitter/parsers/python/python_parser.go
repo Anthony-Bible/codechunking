@@ -223,6 +223,11 @@ func (p *PythonParser) ExtractFunctions(
 		return nil, err
 	}
 
+	// Validate source syntax for function extraction
+	if err := p.validatePythonSource(ctx, parseTree.Source()); err != nil {
+		return nil, err
+	}
+
 	return extractPythonFunctions(ctx, parseTree, options)
 }
 
@@ -237,6 +242,11 @@ func (p *PythonParser) ExtractClasses(
 	})
 
 	if err := p.validateInput(parseTree); err != nil {
+		return nil, err
+	}
+
+	// Validate source syntax for class extraction
+	if err := p.validatePythonSource(ctx, parseTree.Source()); err != nil {
 		return nil, err
 	}
 
@@ -274,6 +284,11 @@ func (p *PythonParser) ExtractVariables(
 		return nil, err
 	}
 
+	// Validate source syntax for variable extraction
+	if err := p.validatePythonSource(ctx, parseTree.Source()); err != nil {
+		return nil, err
+	}
+
 	return extractPythonVariables(ctx, parseTree, options)
 }
 
@@ -286,6 +301,11 @@ func (p *PythonParser) ExtractImports(
 	slogger.Info(ctx, "Extracting Python imports", slogger.Fields{})
 
 	if err := p.validateInput(parseTree); err != nil {
+		return nil, err
+	}
+
+	// Validate source syntax for import extraction
+	if err := p.validatePythonSource(ctx, parseTree.Source()); err != nil {
 		return nil, err
 	}
 

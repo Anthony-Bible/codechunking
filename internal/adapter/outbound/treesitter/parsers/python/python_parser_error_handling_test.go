@@ -140,8 +140,10 @@ func TestPythonParser_ErrorHandling_InvalidSyntax(t *testing.T) {
 
 			if tt.shouldFail {
 				assert.Error(t, err, "Expected error for invalid syntax")
-				assert.Contains(t, err.Error(), strings.Split(tt.expectedError, ":")[0],
-					"Error should contain expected error type")
+				if err != nil {
+					assert.Contains(t, err.Error(), strings.Split(tt.expectedError, ":")[0],
+						"Error should contain expected error type")
+				}
 			} else {
 				assert.NoError(t, err, "Valid syntax should not cause errors")
 			}
@@ -317,9 +319,12 @@ func TestPythonParser_ErrorHandling_MemoryExhaustion(t *testing.T) {
 			// Check if it's a timeout or expected memory error
 			if ctx.Err() == context.DeadlineExceeded {
 				assert.Contains(t, opErr.Error(), "timeout", "Should indicate timeout")
-			} else {
-				assert.Contains(t, opErr.Error(), strings.Split(tt.expectedError, ":")[0],
-					"Should contain expected error type")
+			} else if opErr != nil && tt.expectedError != "" {
+				errorParts := strings.Split(tt.expectedError, ":")
+				if len(errorParts) > 0 {
+					assert.Contains(t, opErr.Error(), errorParts[0],
+						"Should contain expected error type")
+				}
 			}
 		})
 	}

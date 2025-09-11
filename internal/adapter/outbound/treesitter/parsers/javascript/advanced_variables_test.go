@@ -2,6 +2,7 @@ package javascriptparser
 
 import (
 	"codechunking/internal/adapter/outbound/treesitter"
+	"codechunking/internal/adapter/outbound/treesitter/parsers/testhelpers"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -62,7 +63,7 @@ const bigIntConstructor = BigInt(456);
 	require.NoError(t, err)
 
 	// Should find template literal variables
-	templateVarChunk := findChunkByName(variables, "templateVar")
+	templateVarChunk := testhelpers.FindChunkByName(variables, "templateVar")
 	assert.NotNil(t, templateVarChunk, "Should find template literal variable")
 	if templateVarChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, templateVarChunk.Type)
@@ -71,7 +72,7 @@ const bigIntConstructor = BigInt(456);
 	}
 
 	// Should find symbol variables
-	symbolVarChunk := findChunkByName(variables, "symbolVar")
+	symbolVarChunk := testhelpers.FindChunkByName(variables, "symbolVar")
 	assert.NotNil(t, symbolVarChunk, "Should find symbol variable")
 	if symbolVarChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, symbolVarChunk.Type)
@@ -80,7 +81,7 @@ const bigIntConstructor = BigInt(456);
 	}
 
 	// Should find computed property object
-	computedObjectChunk := findChunkByName(variables, "computedObject")
+	computedObjectChunk := testhelpers.FindChunkByName(variables, "computedObject")
 	assert.NotNil(t, computedObjectChunk, "Should find computed property object")
 	if computedObjectChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, computedObjectChunk.Type)
@@ -89,14 +90,14 @@ const bigIntConstructor = BigInt(456);
 	}
 
 	// Should find Map/Set variables
-	mapVarChunk := findChunkByName(variables, "mapVar")
+	mapVarChunk := testhelpers.FindChunkByName(variables, "mapVar")
 	assert.NotNil(t, mapVarChunk, "Should find Map variable")
 	if mapVarChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, mapVarChunk.Type)
 		assert.Equal(t, "Map", mapVarChunk.ReturnType)
 	}
 
-	setVarChunk := findChunkByName(variables, "setVar")
+	setVarChunk := testhelpers.FindChunkByName(variables, "setVar")
 	assert.NotNil(t, setVarChunk, "Should find Set variable")
 	if setVarChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, setVarChunk.Type)
@@ -104,7 +105,7 @@ const bigIntConstructor = BigInt(456);
 	}
 
 	// Should find BigInt variables
-	bigIntChunk := findChunkByName(variables, "bigIntLiteral")
+	bigIntChunk := testhelpers.FindChunkByName(variables, "bigIntLiteral")
 	assert.NotNil(t, bigIntChunk, "Should find BigInt literal")
 	if bigIntChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, bigIntChunk.Type)
@@ -163,38 +164,38 @@ const {
 	require.NoError(t, err)
 
 	// Should find nested destructured variables
-	firstNameChunk := findChunkByName(variables, "firstName")
+	firstNameChunk := testhelpers.FindChunkByName(variables, "firstName")
 	assert.NotNil(t, firstNameChunk, "Should find nested destructured firstName variable")
 	if firstNameChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, firstNameChunk.Type)
 	}
 
-	ageChunk := findChunkByName(variables, "age")
+	ageChunk := testhelpers.FindChunkByName(variables, "age")
 	assert.NotNil(t, ageChunk, "Should find nested destructured age variable")
 	if ageChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, ageChunk.Type)
 	}
 
-	themeChunk := findChunkByName(variables, "theme")
+	themeChunk := testhelpers.FindChunkByName(variables, "theme")
 	assert.NotNil(t, themeChunk, "Should find nested destructured theme variable")
 	if themeChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, themeChunk.Type)
 	}
 
-	secondUserChunk := findChunkByName(variables, "secondUser")
+	secondUserChunk := testhelpers.FindChunkByName(variables, "secondUser")
 	assert.NotNil(t, secondUserChunk, "Should find secondUser variable")
 	if secondUserChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, secondUserChunk.Type)
 	}
 
 	// Should find rest element variables
-	headChunk := findChunkByName(variables, "head")
+	headChunk := testhelpers.FindChunkByName(variables, "head")
 	assert.NotNil(t, headChunk, "Should find head variable")
 	if headChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, headChunk.Type)
 	}
 
-	tailChunk := findChunkByName(variables, "tail")
+	tailChunk := testhelpers.FindChunkByName(variables, "tail")
 	assert.NotNil(t, tailChunk, "Should find tail rest variable")
 	if tailChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, tailChunk.Type)
@@ -203,13 +204,13 @@ const {
 	}
 
 	// Should find rest properties variables
-	typeChunk := findChunkByName(variables, "type")
+	typeChunk := testhelpers.FindChunkByName(variables, "type")
 	assert.NotNil(t, typeChunk, "Should find type variable")
 	if typeChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, typeChunk.Type)
 	}
 
-	payloadChunk := findChunkByName(variables, "payload")
+	payloadChunk := testhelpers.FindChunkByName(variables, "payload")
 	assert.NotNil(t, payloadChunk, "Should find payload rest variable")
 	if payloadChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, payloadChunk.Type)
@@ -218,7 +219,7 @@ const {
 	}
 
 	// Should find default value variables
-	timeoutChunk := findChunkByName(variables, "timeout")
+	timeoutChunk := testhelpers.FindChunkByName(variables, "timeout")
 	assert.NotNil(t, timeoutChunk, "Should find timeout variable with default")
 	if timeoutChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, timeoutChunk.Type)
@@ -226,7 +227,7 @@ const {
 		assert.True(t, timeoutChunk.Metadata["has_default"].(bool))
 	}
 
-	retriesChunk := findChunkByName(variables, "retries")
+	retriesChunk := testhelpers.FindChunkByName(variables, "retries")
 	assert.NotNil(t, retriesChunk, "Should find retries variable with default")
 	if retriesChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, retriesChunk.Type)
@@ -235,7 +236,7 @@ const {
 	}
 
 	// Should find complex nested destructured variables with defaults
-	userNameChunk := findChunkByName(variables, "userName")
+	userNameChunk := testhelpers.FindChunkByName(variables, "userName")
 	assert.NotNil(t, userNameChunk, "Should find userName variable with default")
 	if userNameChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, userNameChunk.Type)
@@ -243,7 +244,7 @@ const {
 		assert.True(t, userNameChunk.Metadata["has_default"].(bool))
 	}
 
-	languageChunk := findChunkByName(variables, "language")
+	languageChunk := testhelpers.FindChunkByName(variables, "language")
 	assert.NotNil(t, languageChunk, "Should find language variable with default")
 	if languageChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, languageChunk.Type)
@@ -251,7 +252,7 @@ const {
 		assert.True(t, languageChunk.Metadata["has_default"].(bool))
 	}
 
-	emailChunk := findChunkByName(variables, "email")
+	emailChunk := testhelpers.FindChunkByName(variables, "email")
 	assert.NotNil(t, emailChunk, "Should find email variable with default")
 	if emailChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, emailChunk.Type)
@@ -259,7 +260,7 @@ const {
 		assert.True(t, emailChunk.Metadata["has_default"].(bool))
 	}
 
-	smsChunk := findChunkByName(variables, "sms")
+	smsChunk := testhelpers.FindChunkByName(variables, "sms")
 	assert.NotNil(t, smsChunk, "Should find sms variable with default")
 	if smsChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, smsChunk.Type)
@@ -316,53 +317,53 @@ const utilsNamespace = utils;
 	require.NoError(t, err)
 
 	// Should find original variables before export aliases
-	originalNameChunk := findChunkByName(variables, "originalName")
+	originalNameChunk := testhelpers.FindChunkByName(variables, "originalName")
 	assert.NotNil(t, originalNameChunk, "Should find originalName variable")
 	if originalNameChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, originalNameChunk.Type)
 	}
 
-	renamedVariableChunk := findChunkByName(variables, "renamedVariable")
+	renamedVariableChunk := testhelpers.FindChunkByName(variables, "renamedVariable")
 	assert.NotNil(t, renamedVariableChunk, "Should find renamedVariable variable")
 	if renamedVariableChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, renamedVariableChunk.Type)
 	}
 
 	// Should find dynamic import variables
-	modulePromiseChunk := findChunkByName(variables, "modulePromise")
+	modulePromiseChunk := testhelpers.FindChunkByName(variables, "modulePromise")
 	assert.NotNil(t, modulePromiseChunk, "Should find modulePromise variable")
 	if modulePromiseChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, modulePromiseChunk.Type)
 	}
 
 	// Should find destructured dynamic import variables
-	defaultComponentChunk := findChunkByName(variables, "DefaultComponent")
+	defaultComponentChunk := testhelpers.FindChunkByName(variables, "DefaultComponent")
 	assert.NotNil(t, defaultComponentChunk, "Should find DefaultComponent variable")
 	if defaultComponentChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, defaultComponentChunk.Type)
 	}
 
-	namedExportChunk := findChunkByName(variables, "namedExport")
+	namedExportChunk := testhelpers.FindChunkByName(variables, "namedExport")
 	assert.NotNil(t, namedExportChunk, "Should find namedExport variable")
 	if namedExportChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, namedExportChunk.Type)
 	}
 
 	// Should find import meta variables
-	metaUrlChunk := findChunkByName(variables, "metaUrl")
+	metaUrlChunk := testhelpers.FindChunkByName(variables, "metaUrl")
 	assert.NotNil(t, metaUrlChunk, "Should find metaUrl variable")
 	if metaUrlChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, metaUrlChunk.Type)
 	}
 
-	importUrlChunk := findChunkByName(variables, "importUrl")
+	importUrlChunk := testhelpers.FindChunkByName(variables, "importUrl")
 	assert.NotNil(t, importUrlChunk, "Should find importUrl variable")
 	if importUrlChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, importUrlChunk.Type)
 	}
 
 	// Should find namespace import variables
-	utilsNamespaceChunk := findChunkByName(variables, "utilsNamespace")
+	utilsNamespaceChunk := testhelpers.FindChunkByName(variables, "utilsNamespace")
 	assert.NotNil(t, utilsNamespaceChunk, "Should find utilsNamespace variable")
 	if utilsNamespaceChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, utilsNamespaceChunk.Type)
@@ -434,7 +435,7 @@ const resolvedValue = await promiseVar;
 	require.NoError(t, err)
 
 	// Should find generator instance variable
-	genInstanceChunk := findChunkByName(variables, "genInstance")
+	genInstanceChunk := testhelpers.FindChunkByName(variables, "genInstance")
 	assert.NotNil(t, genInstanceChunk, "Should find genInstance variable")
 	if genInstanceChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, genInstanceChunk.Type)
@@ -443,7 +444,7 @@ const resolvedValue = await promiseVar;
 	}
 
 	// Should find async result variable
-	asyncResultChunk := findChunkByName(variables, "asyncResult")
+	asyncResultChunk := testhelpers.FindChunkByName(variables, "asyncResult")
 	assert.NotNil(t, asyncResultChunk, "Should find asyncResult variable")
 	if asyncResultChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, asyncResultChunk.Type)
@@ -452,7 +453,7 @@ const resolvedValue = await promiseVar;
 	}
 
 	// Should find async generator instance variable
-	asyncGenInstanceChunk := findChunkByName(variables, "asyncGenInstance")
+	asyncGenInstanceChunk := testhelpers.FindChunkByName(variables, "asyncGenInstance")
 	assert.NotNil(t, asyncGenInstanceChunk, "Should find asyncGenInstance variable")
 	if asyncGenInstanceChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, asyncGenInstanceChunk.Type)
@@ -461,7 +462,7 @@ const resolvedValue = await promiseVar;
 	}
 
 	// Should find async arrow function variable
-	processDataChunk := findChunkByName(variables, "processData")
+	processDataChunk := testhelpers.FindChunkByName(variables, "processData")
 	assert.NotNil(t, processDataChunk, "Should find processData variable")
 	if processDataChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, processDataChunk.Type)
@@ -470,7 +471,7 @@ const resolvedValue = await promiseVar;
 	}
 
 	// Should find for-await loop variable
-	itemChunk := findChunkByName(variables, "item")
+	itemChunk := testhelpers.FindChunkByName(variables, "item")
 	assert.NotNil(t, itemChunk, "Should find item variable from for-await loop")
 	if itemChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, itemChunk.Type)
@@ -479,7 +480,7 @@ const resolvedValue = await promiseVar;
 	}
 
 	// Should find promise variable
-	promiseVarChunk := findChunkByName(variables, "promiseVar")
+	promiseVarChunk := testhelpers.FindChunkByName(variables, "promiseVar")
 	assert.NotNil(t, promiseVarChunk, "Should find promiseVar variable")
 	if promiseVarChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, promiseVarChunk.Type)
@@ -487,7 +488,7 @@ const resolvedValue = await promiseVar;
 	}
 
 	// Should find resolved promise value variable
-	resolvedValueChunk := findChunkByName(variables, "resolvedValue")
+	resolvedValueChunk := testhelpers.FindChunkByName(variables, "resolvedValue")
 	assert.NotNil(t, resolvedValueChunk, "Should find resolvedValue variable")
 	if resolvedValueChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, resolvedValueChunk.Type)
@@ -558,56 +559,56 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 	require.NoError(t, err)
 
 	// Should find unicode identifier variables
-	alphaChunk := findChunkByName(variables, "α")
+	alphaChunk := testhelpers.FindChunkByName(variables, "α")
 	assert.NotNil(t, alphaChunk, "Should find unicode identifier α")
 	if alphaChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, alphaChunk.Type)
 	}
 
-	betaChunk := findChunkByName(variables, "β")
+	betaChunk := testhelpers.FindChunkByName(variables, "β")
 	assert.NotNil(t, betaChunk, "Should find unicode identifier β")
 	if betaChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, betaChunk.Type)
 	}
 
-	underscoreGammaChunk := findChunkByName(variables, "_γ")
+	underscoreGammaChunk := testhelpers.FindChunkByName(variables, "_γ")
 	assert.NotNil(t, underscoreGammaChunk, "Should find unicode identifier _γ")
 	if underscoreGammaChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, underscoreGammaChunk.Type)
 	}
 
-	deltaChunk := findChunkByName(variables, "Δ")
+	deltaChunk := testhelpers.FindChunkByName(variables, "Δ")
 	assert.NotNil(t, deltaChunk, "Should find unicode identifier Δ")
 	if deltaChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, deltaChunk.Type)
 	}
 
-	piValueChunk := findChunkByName(variables, "π_value")
+	piValueChunk := testhelpers.FindChunkByName(variables, "π_value")
 	assert.NotNil(t, piValueChunk, "Should find unicode identifier π_value")
 	if piValueChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, piValueChunk.Type)
 	}
 
-	chineseVarChunk := findChunkByName(variables, "中文变量")
+	chineseVarChunk := testhelpers.FindChunkByName(variables, "中文变量")
 	assert.NotNil(t, chineseVarChunk, "Should find Chinese identifier 中文变量")
 	if chineseVarChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, chineseVarChunk.Type)
 	}
 
-	dollarSpecialChunk := findChunkByName(variables, "$special")
+	dollarSpecialChunk := testhelpers.FindChunkByName(variables, "$special")
 	assert.NotNil(t, dollarSpecialChunk, "Should find dollar identifier $special")
 	if dollarSpecialChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, dollarSpecialChunk.Type)
 	}
 
-	unicodeAChunk := findChunkByName(variables, "A")
+	unicodeAChunk := testhelpers.FindChunkByName(variables, "A")
 	assert.NotNil(t, unicodeAChunk, "Should find unicode escape sequence identifier A")
 	if unicodeAChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, unicodeAChunk.Type)
 	}
 
 	// Should find optional chaining variables
-	userChunk := findChunkByName(variables, "user")
+	userChunk := testhelpers.FindChunkByName(variables, "user")
 	assert.NotNil(t, userChunk, "Should find optional chaining user variable")
 	if userChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, userChunk.Type)
@@ -615,7 +616,7 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 		assert.True(t, userChunk.Metadata["has_optional_chaining"].(bool))
 	}
 
-	nameChunk := findChunkByName(variables, "name")
+	nameChunk := testhelpers.FindChunkByName(variables, "name")
 	assert.NotNil(t, nameChunk, "Should find optional chaining name variable")
 	if nameChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, nameChunk.Type)
@@ -623,7 +624,7 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 		assert.True(t, nameChunk.Metadata["has_optional_chaining"].(bool))
 	}
 
-	valueChunk := findChunkByName(variables, "value")
+	valueChunk := testhelpers.FindChunkByName(variables, "value")
 	assert.NotNil(t, valueChunk, "Should find optional chaining value variable")
 	if valueChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, valueChunk.Type)
@@ -631,7 +632,7 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 		assert.True(t, valueChunk.Metadata["has_optional_chaining"].(bool))
 	}
 
-	resultChunk := findChunkByName(variables, "result")
+	resultChunk := testhelpers.FindChunkByName(variables, "result")
 	assert.NotNil(t, resultChunk, "Should find optional chaining result variable")
 	if resultChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, resultChunk.Type)
@@ -640,7 +641,7 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 	}
 
 	// Should find nullish coalescing variables
-	fallbackValueChunk := findChunkByName(variables, "fallbackValue")
+	fallbackValueChunk := testhelpers.FindChunkByName(variables, "fallbackValue")
 	assert.NotNil(t, fallbackValueChunk, "Should find nullish coalescing fallbackValue variable")
 	if fallbackValueChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, fallbackValueChunk.Type)
@@ -648,7 +649,7 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 		assert.True(t, fallbackValueChunk.Metadata["has_nullish_coalescing"].(bool))
 	}
 
-	userNameChunk := findChunkByName(variables, "userName")
+	userNameChunk := testhelpers.FindChunkByName(variables, "userName")
 	assert.NotNil(t, userNameChunk, "Should find nullish coalescing userName variable")
 	if userNameChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, userNameChunk.Type)
@@ -656,7 +657,7 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 		assert.True(t, userNameChunk.Metadata["has_nullish_coalescing"].(bool))
 	}
 
-	configChunk := findChunkByName(variables, "config")
+	configChunk := testhelpers.FindChunkByName(variables, "config")
 	assert.NotNil(t, configChunk, "Should find nullish coalescing config variable")
 	if configChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, configChunk.Type)
@@ -664,7 +665,7 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 		assert.True(t, configChunk.Metadata["has_nullish_coalescing"].(bool))
 	}
 
-	nestedResultChunk := findChunkByName(variables, "nestedResult")
+	nestedResultChunk := testhelpers.FindChunkByName(variables, "nestedResult")
 	assert.NotNil(t, nestedResultChunk, "Should find nullish coalescing nestedResult variable")
 	if nestedResultChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, nestedResultChunk.Type)
@@ -673,7 +674,7 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 	}
 
 	// Should find private class field variables
-	privateFieldChunk := findChunkByName(variables, "#privateField")
+	privateFieldChunk := testhelpers.FindChunkByName(variables, "#privateField")
 	assert.NotNil(t, privateFieldChunk, "Should find private class field #privateField")
 	if privateFieldChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, privateFieldChunk.Type)
@@ -681,7 +682,7 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 		assert.True(t, privateFieldChunk.Metadata["is_private"].(bool))
 	}
 
-	anotherPrivateChunk := findChunkByName(variables, "#anotherPrivate")
+	anotherPrivateChunk := testhelpers.FindChunkByName(variables, "#anotherPrivate")
 	assert.NotNil(t, anotherPrivateChunk, "Should find private class field #anotherPrivate")
 	if anotherPrivateChunk != nil {
 		assert.Equal(t, outbound.ConstructProperty, anotherPrivateChunk.Type)
@@ -690,7 +691,7 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 	}
 
 	// Should find variables with complex initializers
-	complexArrayChunk := findChunkByName(variables, "complexArray")
+	complexArrayChunk := testhelpers.FindChunkByName(variables, "complexArray")
 	assert.NotNil(t, complexArrayChunk, "Should find complexArray variable")
 	if complexArrayChunk != nil {
 		assert.Equal(t, outbound.ConstructVariable, complexArrayChunk.Type)
@@ -698,7 +699,7 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 		assert.True(t, complexArrayChunk.Metadata["has_complex_initializer"].(bool))
 	}
 
-	complexObjectChunk := findChunkByName(variables, "complexObject")
+	complexObjectChunk := testhelpers.FindChunkByName(variables, "complexObject")
 	assert.NotNil(t, complexObjectChunk, "Should find complexObject variable")
 	if complexObjectChunk != nil {
 		assert.Equal(t, outbound.ConstructVariable, complexObjectChunk.Type)

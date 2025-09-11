@@ -1,6 +1,7 @@
 package pythonparser
 
 import (
+	"codechunking/internal/adapter/outbound/treesitter/parsers/testhelpers"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -158,7 +159,7 @@ class Serializable(ABC):
 
 	require.Len(t, interfaces, 3, "Should find exactly three interfaces")
 
-	drawable := findChunkByName(interfaces, "Drawable")
+	drawable := testhelpers.FindChunkByName(interfaces, "Drawable")
 	assert.NotNil(t, drawable, "Should find Drawable interface")
 	if drawable != nil {
 		assert.Equal(t, "Drawable", drawable.Name, "Interface name should match")
@@ -174,7 +175,7 @@ class Serializable(ABC):
 		}
 	}
 
-	shape := findChunkByName(interfaces, "Shape")
+	shape := testhelpers.FindChunkByName(interfaces, "Shape")
 	assert.NotNil(t, shape, "Should find Shape interface")
 	if shape != nil {
 		assert.Equal(t, "Shape", shape.Name, "Interface name should match")
@@ -201,7 +202,7 @@ class Serializable(ABC):
 		}
 	}
 
-	serializable := findChunkByName(interfaces, "Serializable")
+	serializable := testhelpers.FindChunkByName(interfaces, "Serializable")
 	assert.NotNil(t, serializable, "Should find Serializable interface")
 	if serializable != nil {
 		assert.Equal(t, "Serializable", serializable.Name, "Interface name should match")
@@ -250,7 +251,7 @@ class ABCProtocol(ABC, Protocol):
 
 	require.Len(t, interfaces, 3, "Should find three interfaces")
 
-	iface1 := findChunkByName(interfaces, "MyProtocol")
+	iface1 := testhelpers.FindChunkByName(interfaces, "MyProtocol")
 	assert.NotNil(t, iface1, "Should find MyProtocol interface")
 	if iface1 != nil {
 		assert.Equal(t, outbound.ConstructInterface, iface1.Type, "Should be interface type")
@@ -261,7 +262,7 @@ class ABCProtocol(ABC, Protocol):
 		require.Len(t, children, 1, "Should have one method")
 	}
 
-	iface2 := findChunkByName(interfaces, "AnotherProtocol")
+	iface2 := testhelpers.FindChunkByName(interfaces, "AnotherProtocol")
 	assert.NotNil(t, iface2, "Should find AnotherProtocol interface")
 	if iface2 != nil {
 		assert.Equal(t, outbound.ConstructInterface, iface2.Type, "Should be interface type")
@@ -273,7 +274,7 @@ class ABCProtocol(ABC, Protocol):
 		require.Len(t, children, 1, "Should have one method")
 	}
 
-	iface3 := findChunkByName(interfaces, "ABCProtocol")
+	iface3 := testhelpers.FindChunkByName(interfaces, "ABCProtocol")
 	assert.NotNil(t, iface3, "Should find ABCProtocol interface")
 	if iface3 != nil {
 		assert.Equal(t, outbound.ConstructInterface, iface3.Type, "Should be identified as interface")
@@ -319,7 +320,7 @@ class AnotherMixed(BaseClass, ABC, Protocol):
 
 	require.Len(t, interfaces, 2, "Should find two mixed interfaces")
 
-	iface1 := findChunkByName(interfaces, "MixedInterface")
+	iface1 := testhelpers.FindChunkByName(interfaces, "MixedInterface")
 	assert.NotNil(t, iface1, "Should find MixedInterface")
 	if iface1 != nil {
 		assert.Equal(
@@ -349,7 +350,7 @@ class AnotherMixed(BaseClass, ABC, Protocol):
 		}
 	}
 
-	iface2 := findChunkByName(interfaces, "AnotherMixed")
+	iface2 := testhelpers.FindChunkByName(interfaces, "AnotherMixed")
 	assert.NotNil(t, iface2, "Should find AnotherMixed")
 	if iface2 != nil {
 		assert.Equal(t, outbound.ConstructInterface, iface2.Type, "Should be identified as interface")
@@ -476,7 +477,7 @@ def outer_function():
 
 	require.Len(t, interfaces, 3, "Should find three protocols")
 
-	nested := findChunkByName(interfaces, "NestedProtocol")
+	nested := testhelpers.FindChunkByName(interfaces, "NestedProtocol")
 	assert.NotNil(t, nested, "Should find NestedProtocol")
 	if nested != nil {
 		assert.Equal(
@@ -487,7 +488,7 @@ def outer_function():
 		)
 	}
 
-	deep := findChunkByName(interfaces, "DeeplyNestedProtocol")
+	deep := testhelpers.FindChunkByName(interfaces, "DeeplyNestedProtocol")
 	assert.NotNil(t, deep, "Should find DeeplyNestedProtocol")
 	if deep != nil {
 		assert.Equal(
@@ -498,7 +499,7 @@ def outer_function():
 		)
 	}
 
-	local := findChunkByName(interfaces, "LocalProtocol")
+	local := testhelpers.FindChunkByName(interfaces, "LocalProtocol")
 	assert.NotNil(t, local, "Should find LocalProtocol")
 	if local != nil {
 		assert.Equal(
@@ -553,7 +554,7 @@ class ProtocolWithDocstring(Protocol):
 
 	require.Len(t, interfaces, 6, "Should find six interfaces")
 
-	runtime := findChunkByName(interfaces, "RuntimeProtocol")
+	runtime := testhelpers.FindChunkByName(interfaces, "RuntimeProtocol")
 	assert.NotNil(t, runtime, "Should find RuntimeProtocol")
 	if runtime != nil {
 		assert.Contains(t, runtime.Annotations, "runtime_checkable", "Should be marked as runtime_checkable")
@@ -570,7 +571,7 @@ class ProtocolWithDocstring(Protocol):
 		}
 	}
 
-	private := findChunkByName(interfaces, "_PrivateProtocol")
+	private := testhelpers.FindChunkByName(interfaces, "_PrivateProtocol")
 	assert.NotNil(t, private, "Should find _PrivateProtocol")
 	if private != nil {
 		// Note: In Python, the concept of "private" is by convention only (leading underscore)
@@ -578,28 +579,28 @@ class ProtocolWithDocstring(Protocol):
 		assert.Equal(t, "_PrivateProtocol", private.Name, "Should preserve private naming convention")
 	}
 
-	generic := findChunkByName(interfaces, "GenericProtocol")
+	generic := testhelpers.FindChunkByName(interfaces, "GenericProtocol")
 	assert.NotNil(t, generic, "Should find GenericProtocol")
 	if generic != nil {
 		// The base class information would be in Dependencies
 		assert.Contains(t, generic.Dependencies, "Protocol[T, U]", "Should preserve generic type parameters")
 	}
 
-	empty1 := findChunkByName(interfaces, "EmptyProtocol")
+	empty1 := testhelpers.FindChunkByName(interfaces, "EmptyProtocol")
 	assert.NotNil(t, empty1, "Should find EmptyProtocol")
 	if empty1 != nil {
 		children := empty1.ChildChunks
 		assert.Empty(t, children, "Empty protocol should have no methods")
 	}
 
-	empty2 := findChunkByName(interfaces, "EmptyProtocolWithEllipsis")
+	empty2 := testhelpers.FindChunkByName(interfaces, "EmptyProtocolWithEllipsis")
 	assert.NotNil(t, empty2, "Should find EmptyProtocolWithEllipsis")
 	if empty2 != nil {
 		children := empty2.ChildChunks
 		assert.Empty(t, children, "Empty protocol with ellipsis should have no methods")
 	}
 
-	withDocstring := findChunkByName(interfaces, "ProtocolWithDocstring")
+	withDocstring := testhelpers.FindChunkByName(interfaces, "ProtocolWithDocstring")
 	assert.NotNil(t, withDocstring, "Should find ProtocolWithDocstring")
 	if withDocstring != nil {
 		assert.Equal(

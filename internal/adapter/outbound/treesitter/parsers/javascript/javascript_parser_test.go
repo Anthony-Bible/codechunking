@@ -2,6 +2,7 @@ package javascriptparser
 
 import (
 	"codechunking/internal/adapter/outbound/treesitter"
+	"codechunking/internal/adapter/outbound/treesitter/parsers/testhelpers"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -127,7 +128,7 @@ const power = (base, exponent) => {
 	require.Len(t, functions, 5)
 
 	// Test regular function declaration
-	addFunc := findChunkByName(functions, "add")
+	addFunc := testhelpers.FindChunkByName(functions, "add")
 	require.NotNil(t, addFunc, "Should find 'add' function")
 	assert.Equal(t, outbound.ConstructFunction, addFunc.Type)
 	assert.Equal(t, "add", addFunc.Name)
@@ -139,25 +140,25 @@ const power = (base, exponent) => {
 	assert.Equal(t, "b", addFunc.Parameters[1].Name)
 
 	// Test function with JSDoc documentation
-	multiplyFunc := findChunkByName(functions, "multiply")
+	multiplyFunc := testhelpers.FindChunkByName(functions, "multiply")
 	require.NotNil(t, multiplyFunc, "Should find 'multiply' function")
 	assert.Contains(t, multiplyFunc.Documentation, "Multiply two numbers")
 	assert.Contains(t, multiplyFunc.Documentation, "@param {number} x")
 	assert.Contains(t, multiplyFunc.Documentation, "@returns {number}")
 
 	// Test function expression
-	subtractFunc := findChunkByName(functions, "subtract")
+	subtractFunc := testhelpers.FindChunkByName(functions, "subtract")
 	require.NotNil(t, subtractFunc, "Should find 'subtract' function")
 	assert.Equal(t, outbound.ConstructFunction, subtractFunc.Type)
 	assert.Equal(t, "subtract", subtractFunc.Name)
 
 	// Test arrow function (single expression)
-	divideFunc := findChunkByName(functions, "divide")
+	divideFunc := testhelpers.FindChunkByName(functions, "divide")
 	require.NotNil(t, divideFunc, "Should find 'divide' arrow function")
 	assert.Equal(t, outbound.ConstructLambda, divideFunc.Type)
 
 	// Test arrow function (block body)
-	powerFunc := findChunkByName(functions, "power")
+	powerFunc := testhelpers.FindChunkByName(functions, "power")
 	require.NotNil(t, powerFunc, "Should find 'power' arrow function")
 	assert.Equal(t, outbound.ConstructLambda, powerFunc.Type)
 }
@@ -215,7 +216,7 @@ const asyncMethod = {
 	require.Len(t, functions, 4)
 
 	// Test async function
-	fetchFunc := findChunkByName(functions, "fetchData")
+	fetchFunc := testhelpers.FindChunkByName(functions, "fetchData")
 	require.NotNil(t, fetchFunc, "Should find 'fetchData' async function")
 	assert.Equal(t, outbound.ConstructAsyncFunction, fetchFunc.Type)
 	assert.True(t, fetchFunc.IsAsync)
@@ -223,19 +224,19 @@ const asyncMethod = {
 	assert.Equal(t, "url", fetchFunc.Parameters[0].Name)
 
 	// Test async arrow function
-	arrowFunc := findChunkByName(functions, "asyncArrow")
+	arrowFunc := testhelpers.FindChunkByName(functions, "asyncArrow")
 	require.NotNil(t, arrowFunc, "Should find 'asyncArrow' async function")
 	assert.True(t, arrowFunc.IsAsync)
 	assert.Equal(t, outbound.ConstructLambda, arrowFunc.Type)
 
 	// Test async generator
-	generatorFunc := findChunkByName(functions, "asyncGenerator")
+	generatorFunc := testhelpers.FindChunkByName(functions, "asyncGenerator")
 	require.NotNil(t, generatorFunc, "Should find 'asyncGenerator' function")
 	assert.Equal(t, outbound.ConstructGenerator, generatorFunc.Type)
 	assert.True(t, generatorFunc.IsAsync)
 
 	// Test async method in object
-	methodFunc := findChunkByName(functions, "processData")
+	methodFunc := testhelpers.FindChunkByName(functions, "processData")
 	require.NotNil(t, methodFunc, "Should find 'processData' method")
 	assert.Equal(t, outbound.ConstructMethod, methodFunc.Type)
 	assert.True(t, methodFunc.IsAsync)
@@ -299,25 +300,25 @@ class NumberGenerator {
 	require.Len(t, functions, 4)
 
 	// Test simple generator
-	simpleGen := findChunkByName(functions, "simpleGenerator")
+	simpleGen := testhelpers.FindChunkByName(functions, "simpleGenerator")
 	require.NotNil(t, simpleGen, "Should find 'simpleGenerator' function")
 	assert.Equal(t, outbound.ConstructGenerator, simpleGen.Type)
 	assert.False(t, simpleGen.IsAsync)
 
 	// Test parameterized generator
-	fibGen := findChunkByName(functions, "fibonacciGenerator")
+	fibGen := testhelpers.FindChunkByName(functions, "fibonacciGenerator")
 	require.NotNil(t, fibGen, "Should find 'fibonacciGenerator' function")
 	assert.Equal(t, outbound.ConstructGenerator, fibGen.Type)
 	assert.Len(t, fibGen.Parameters, 1)
 	assert.Equal(t, "n", fibGen.Parameters[0].Name)
 
 	// Test generator expression
-	genExpr := findChunkByName(functions, "generatorExpression")
+	genExpr := testhelpers.FindChunkByName(functions, "generatorExpression")
 	require.NotNil(t, genExpr, "Should find generator expression")
 	assert.Equal(t, outbound.ConstructGenerator, genExpr.Type)
 
 	// Test generator method
-	rangeMethod := findChunkByName(functions, "range")
+	rangeMethod := testhelpers.FindChunkByName(functions, "range")
 	require.NotNil(t, rangeMethod, "Should find 'range' generator method")
 	assert.Equal(t, outbound.ConstructGenerator, rangeMethod.Type)
 	assert.Len(t, rangeMethod.Parameters, 2)
@@ -395,26 +396,26 @@ function counter() {
 	assert.GreaterOrEqual(t, len(functions), 6)
 
 	// Test higher-order function that returns a function
-	createMultiplierFunc := findChunkByName(functions, "createMultiplier")
+	createMultiplierFunc := testhelpers.FindChunkByName(functions, "createMultiplier")
 	require.NotNil(t, createMultiplierFunc, "Should find 'createMultiplier' function")
 	assert.Equal(t, outbound.ConstructFunction, createMultiplierFunc.Type)
 	assert.Len(t, createMultiplierFunc.Parameters, 1)
 	assert.Equal(t, "factor", createMultiplierFunc.Parameters[0].Name)
 
 	// Test arrow function with closure
-	memoizeFunc := findChunkByName(functions, "memoize")
+	memoizeFunc := testhelpers.FindChunkByName(functions, "memoize")
 	require.NotNil(t, memoizeFunc, "Should find 'memoize' function")
 	assert.Equal(t, outbound.ConstructLambda, memoizeFunc.Type)
 
 	// Test function with rest parameters
-	composeFunc := findChunkByName(functions, "compose")
+	composeFunc := testhelpers.FindChunkByName(functions, "compose")
 	require.NotNil(t, composeFunc, "Should find 'compose' function")
 	assert.Len(t, composeFunc.Parameters, 1)
 	assert.Equal(t, "functions", composeFunc.Parameters[0].Name)
 	assert.True(t, composeFunc.Parameters[0].IsVariadic)
 
 	// Test closure-returning function
-	counterFunc := findChunkByName(functions, "counter")
+	counterFunc := testhelpers.FindChunkByName(functions, "counter")
 	require.NotNil(t, counterFunc, "Should find 'counter' function")
 	assert.Equal(t, outbound.ConstructClosure, counterFunc.Type)
 }
@@ -523,9 +524,9 @@ class TestClass {
 	require.NoError(t, err)
 
 	// Should only include public functions
-	publicFuncFound := findChunkByName(functions, "publicFunction") != nil
-	privateFuncFound := findChunkByName(functions, "_privateFunction") != nil
-	veryPrivateFuncFound := findChunkByName(functions, "__veryPrivateFunction") != nil
+	publicFuncFound := testhelpers.FindChunkByName(functions, "publicFunction") != nil
+	privateFuncFound := testhelpers.FindChunkByName(functions, "_privateFunction") != nil
+	veryPrivateFuncFound := testhelpers.FindChunkByName(functions, "__veryPrivateFunction") != nil
 
 	assert.True(t, publicFuncFound, "Should include public function")
 	assert.False(t, privateFuncFound, "Should exclude private function when IncludePrivate=false")
@@ -540,9 +541,9 @@ class TestClass {
 	require.NoError(t, err)
 
 	// Should include all functions
-	assert.NotNil(t, findChunkByName(allFunctions, "publicFunction"))
-	assert.NotNil(t, findChunkByName(allFunctions, "_privateFunction"))
-	assert.NotNil(t, findChunkByName(allFunctions, "__veryPrivateFunction"))
+	assert.NotNil(t, testhelpers.FindChunkByName(allFunctions, "publicFunction"))
+	assert.NotNil(t, testhelpers.FindChunkByName(allFunctions, "_privateFunction"))
+	assert.NotNil(t, testhelpers.FindChunkByName(allFunctions, "__veryPrivateFunction"))
 }
 
 // Helper functions for testing
@@ -611,14 +612,4 @@ func createRealParseTreeFromSource(
 	require.NoError(t, err, "Failed to create domain parse tree")
 
 	return domainParseTree
-}
-
-// findChunkByName finds a semantic chunk by name.
-func findChunkByName(chunks []outbound.SemanticCodeChunk, name string) *outbound.SemanticCodeChunk {
-	for i, chunk := range chunks {
-		if chunk.Name == name {
-			return &chunks[i]
-		}
-	}
-	return nil
 }

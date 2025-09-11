@@ -2,6 +2,7 @@ package goparser
 
 import (
 	"codechunking/internal/adapter/outbound/treesitter"
+	"codechunking/internal/adapter/outbound/treesitter/parsers/testhelpers"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -1482,36 +1483,36 @@ const MaxValue = 100
 	assert.Len(t, chunks, 6)
 
 	// Verify package chunk
-	packageChunk := findChunkByType(chunks, outbound.ConstructPackage)
+	packageChunk := testhelpers.FindChunkByType(chunks, outbound.ConstructPackage)
 	assert.NotNil(t, packageChunk)
 	assert.Equal(t, outbound.ConstructPackage, packageChunk.Type)
 	assert.Equal(t, "example", packageChunk.Name)
 	assert.Equal(t, "Package example demonstrates various Go constructs", packageChunk.Documentation)
 
 	// Verify struct chunk
-	structChunk := findChunkByType(chunks, outbound.ConstructStruct)
+	structChunk := testhelpers.FindChunkByType(chunks, outbound.ConstructStruct)
 	assert.NotNil(t, structChunk)
 	assert.Equal(t, "Person", structChunk.Name)
 
 	// Verify method chunk
-	methodChunk := findChunkByType(chunks, outbound.ConstructMethod)
+	methodChunk := testhelpers.FindChunkByType(chunks, outbound.ConstructMethod)
 	assert.NotNil(t, methodChunk)
 	assert.Equal(t, "String", methodChunk.Name)
 	assert.Equal(t, "Person.String", methodChunk.QualifiedName)
 
 	// Verify function chunk
-	functionChunk := findChunkByType(chunks, outbound.ConstructFunction)
+	functionChunk := testhelpers.FindChunkByType(chunks, outbound.ConstructFunction)
 	assert.NotNil(t, functionChunk)
 	assert.Equal(t, "Add", functionChunk.Name)
 	assert.Len(t, functionChunk.Parameters, 2)
 
 	// Verify variable chunk
-	variableChunk := findChunkByType(chunks, outbound.ConstructVariable)
+	variableChunk := testhelpers.FindChunkByType(chunks, outbound.ConstructVariable)
 	assert.NotNil(t, variableChunk)
 	assert.Equal(t, "counter", variableChunk.Name)
 
 	// Verify constant chunk
-	constantChunk := findChunkByType(chunks, outbound.ConstructConstant)
+	constantChunk := testhelpers.FindChunkByType(chunks, outbound.ConstructConstant)
 	assert.NotNil(t, constantChunk)
 	assert.Equal(t, "MaxValue", constantChunk.Name)
 }
@@ -1577,29 +1578,4 @@ func TestGoParserErrorHandling(t *testing.T) {
 			}
 		})
 	}
-}
-
-func findChunkByType(
-	chunks []outbound.SemanticCodeChunk,
-	chunkType outbound.SemanticConstructType,
-) *outbound.SemanticCodeChunk {
-	for _, chunk := range chunks {
-		if chunk.Type == chunkType {
-			return &chunk
-		}
-	}
-	return nil
-}
-
-func findChunksByType(
-	chunks []outbound.SemanticCodeChunk,
-	chunkType outbound.SemanticConstructType,
-) []outbound.SemanticCodeChunk {
-	var result []outbound.SemanticCodeChunk
-	for _, chunk := range chunks {
-		if chunk.Type == chunkType {
-			result = append(result, chunk)
-		}
-	}
-	return result
 }

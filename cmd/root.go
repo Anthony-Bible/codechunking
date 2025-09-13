@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/config"
 	"errors"
 	"fmt"
@@ -81,14 +82,26 @@ func initConfig() {
 	// Set defaults
 	setDefaults(v)
 
+	// Log config loading details
+	var searchPaths []string
+	var configFile string
+
 	// Set config file
 	if cmdConfig.cfgFile != "" {
 		v.SetConfigFile(cmdConfig.cfgFile)
+		configFile = cmdConfig.cfgFile
+		slogger.InfoNoCtx("Loading specified config file", slogger.Fields{
+			"config_file": configFile,
+		})
 	} else {
 		v.SetConfigName("config")
 		v.SetConfigType("yaml")
 		v.AddConfigPath("./configs")
 		v.AddConfigPath(".")
+		searchPaths = []string{"./configs/config.yaml", "./config.yaml"}
+		slogger.InfoNoCtx("Searching for config file in default paths", slogger.Fields{
+			"search_paths": searchPaths,
+		})
 	}
 
 	// Environment variables
@@ -102,11 +115,12 @@ func initConfig() {
 
 	// Read configuration
 	if err := v.ReadInConfig(); err != nil {
-		var configFileNotFoundError viper.ConfigFileNotFoundError
-		if errors.As(err, &configFileNotFoundError) {
-			fmt.Fprintf(os.Stderr, "Error reading config file: %v\n", err)
-		}
-		// Config file not found; use defaults and environment
+		handleConfigError(err, configFile, searchPaths)
+	} else {
+		// Successfully loaded config file
+		slogger.InfoNoCtx("Successfully loaded config file", slogger.Fields{
+			"config_file": v.ConfigFileUsed(),
+		})
 	}
 
 	// Load configuration
@@ -191,4 +205,40 @@ func GetConfig() *config.Config {
 // SetTestConfig sets the configuration for testing purposes.
 func SetTestConfig(c *config.Config) {
 	cmdConfig.cfg = c
+}
+
+// handleConfigError handles configuration file loading errors with detailed logging.
+func handleConfigError(err error, configFile string, searchPaths []string) {
+	var configFileNotFoundError viper.ConfigFileNotFoundError
+	if errors.As(err, &configFileNotFoundError) {
+		handleConfigNotFound(err, searchPaths)
+		return
+	}
+
+	slogger.ErrorNoCtx("Error reading config file", slogger.Fields{
+		"config_file": configFile,
+		"error":       err.Error(),
+	})
+	fmt.Fprintf(os.Stderr, "Error reading config file: %v\n", err)
+}
+
+// handleConfigNotFound handles the specific case when config file is not found.
+func handleConfigNotFound(err error, searchPaths []string) {
+	if cmdConfig.cfgFile != "" {
+		slogger.WarnNoCtx(
+			"Specified config file not found, using defaults and environment variables",
+			slogger.Fields{
+				"specified_file": cmdConfig.cfgFile,
+				"error":          err.Error(),
+			},
+		)
+		return
+	}
+
+	slogger.WarnNoCtx(
+		"Config file not found in search paths, using defaults and environment variables",
+		slogger.Fields{
+			"searched_paths": searchPaths,
+		},
+	)
 }

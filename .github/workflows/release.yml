@@ -69,7 +69,7 @@ jobs:
           if [ "${{ matrix.os }}" = "windows" ]; then
             binary_name="${binary_name}.exe"
           fi
-          CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o "$binary_name" main.go
+          CGO_ENABLED=1 go build -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o "$binary_name" main.go
           tar czf "${binary_name}.tar.gz" "$binary_name"
       
       - name: Upload Release Asset

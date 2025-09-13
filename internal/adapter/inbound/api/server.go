@@ -20,6 +20,7 @@ type Server struct {
 	routeRegistry   *RouteRegistry
 	healthService   inbound.HealthService
 	repoService     inbound.RepositoryService
+	searchService   inbound.SearchService
 	errorHandler    ErrorHandler
 	listener        net.Listener
 	isRunning       bool
@@ -33,6 +34,7 @@ type ServerBuilder struct {
 	config        *config.Config
 	healthService inbound.HealthService
 	repoService   inbound.RepositoryService
+	searchService inbound.SearchService
 	errorHandler  ErrorHandler
 	middleware    []MiddlewareFunc
 }
@@ -57,6 +59,12 @@ func (b *ServerBuilder) WithHealthService(service inbound.HealthService) *Server
 // WithRepositoryService sets the repository service.
 func (b *ServerBuilder) WithRepositoryService(service inbound.RepositoryService) *ServerBuilder {
 	b.repoService = service
+	return b
+}
+
+// WithSearchService sets the search service.
+func (b *ServerBuilder) WithSearchService(service inbound.SearchService) *ServerBuilder {
+	b.searchService = service
 	return b
 }
 
@@ -128,6 +136,14 @@ func (b *ServerBuilder) buildServer() *Server {
 	// Register API routes
 	registry.RegisterAPIRoutes(healthHandler, repositoryHandler)
 
+	// Register search route if search service is provided
+	if b.searchService != nil {
+		searchHandler := NewSearchHandler(b.searchService, b.errorHandler)
+		if err := registry.RegisterRoute("POST /search", http.HandlerFunc(searchHandler.Search)); err != nil {
+			panic(fmt.Errorf("failed to register search route: %w", err))
+		}
+	}
+
 	// Build ServeMux
 	mux := registry.BuildServeMux()
 
@@ -158,6 +174,7 @@ func (b *ServerBuilder) buildServer() *Server {
 		routeRegistry:   registry,
 		healthService:   b.healthService,
 		repoService:     b.repoService,
+		searchService:   b.searchService,
 		errorHandler:    b.errorHandler,
 		middleware:      middlewareMap,
 		middlewareCount: middlewareCount,
@@ -204,8 +221,9 @@ func (s *Server) Start(ctx context.Context) error {
 		return errors.New("server is already running")
 	}
 
-	// Create listener
-	listener, err := net.Listen("tcp", s.httpServer.Addr)
+	// Create listener using ListenConfig
+	lc := &net.ListenConfig{}
+	listener, err := lc.Listen(ctx, "tcp", s.httpServer.Addr)
 	if err != nil {
 		return fmt.Errorf("failed to start server: %w", err)
 	}

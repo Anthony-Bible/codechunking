@@ -125,7 +125,7 @@ jobs:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
         run: |
-          CGO_ENABLED=0 go build -o bin/codechunking-${{ matrix.os }}-${{ matrix.arch }} main.go
+          CGO_ENABLED=1 go build -o bin/codechunking-${{ matrix.os }}-${{ matrix.arch }} main.go
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v3

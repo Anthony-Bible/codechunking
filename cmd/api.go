@@ -23,7 +23,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -407,7 +406,7 @@ Configuration is loaded from config files and environment variables.`,
 
 func runAPIServer(_ *cobra.Command, _ []string) {
 	// Load configuration
-	cfg := config.New(viper.GetViper())
+	cfg := GetConfig()
 
 	// Create service factory
 	serviceFactory := NewServiceFactory(cfg)

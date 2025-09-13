@@ -12,11 +12,15 @@ import (
 	"codechunking/internal/application/service"
 	"codechunking/internal/application/worker"
 	"codechunking/internal/config"
+	"codechunking/internal/port/inbound"
 	"context"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -45,15 +49,36 @@ Configuration is loaded from config files and environment variables.`,
 
 // runWorkerService starts and runs the worker service.
 func runWorkerService() {
-	// Load configuration
-	cfg := config.New(viper.GetViper())
+	cfg := GetConfig()
 
 	slogger.InfoNoCtx("Starting worker service", slogger.Fields{
 		"concurrency": cfg.Worker.Concurrency,
 		"queue_group": cfg.Worker.QueueGroup,
 	})
 
-	// Initialize database connection using the same pattern as API command
+	dbPool, err := setupDatabaseConnection(cfg)
+	if err != nil {
+		slogger.ErrorNoCtx("Failed to create database connection pool", slogger.Fields{"error": err.Error()})
+		return
+	}
+	defer dbPool.Close()
+
+	workerService, err := createWorkerService(cfg, dbPool)
+	if err != nil {
+		slogger.ErrorNoCtx("Failed to create worker service", slogger.Fields{"error": err.Error()})
+		return
+	}
+
+	if err := startWorkerService(workerService); err != nil {
+		slogger.ErrorNoCtx("Failed to start worker service", slogger.Fields{"error": err.Error()})
+		return
+	}
+
+	waitForShutdownAndStop(workerService)
+}
+
+// setupDatabaseConnection initializes the database connection with defaults.
+func setupDatabaseConnection(cfg *config.Config) (*pgxpool.Pool, error) {
 	dbConfig := repository.DatabaseConfig{
 		Host:           cfg.Database.Host,
 		Port:           cfg.Database.Port,
@@ -79,13 +104,11 @@ func runWorkerService() {
 		dbConfig.SSLMode = "disable"
 	}
 
-	dbPool, err := repository.NewDatabaseConnection(dbConfig)
-	if err != nil {
-		slogger.ErrorNoCtx("Failed to create database connection pool", slogger.Fields{"error": err.Error()})
-		return
-	}
-	defer dbPool.Close()
+	return repository.NewDatabaseConnection(dbConfig)
+}
 
+// createWorkerService creates and configures the worker service with all dependencies.
+func createWorkerService(cfg *config.Config, dbPool *pgxpool.Pool) (inbound.WorkerService, error) {
 	// Create repository implementations
 	repoRepository := repository.NewPostgreSQLRepositoryRepository(dbPool)
 	indexingJobRepository := repository.NewPostgreSQLIndexingJobRepository(dbPool)
@@ -93,7 +116,7 @@ func runWorkerService() {
 	// Create git client implementation
 	gitClient := gitclient.NewAuthenticatedGitClient()
 
-	// Create job processor (simplified for GREEN phase)
+	// Create job processor
 	jobProcessorConfig := worker.JobProcessorConfig{
 		WorkspaceDir:      "/tmp/codechunking-workspace",
 		MaxConcurrentJobs: cfg.Worker.Concurrency,
@@ -102,27 +125,26 @@ func runWorkerService() {
 
 	jobProcessor := worker.NewDefaultJobProcessor(
 		jobProcessorConfig,
-		indexingJobRepository, // IndexingJobRepository (first param)
-		repoRepository,        // RepositoryRepository (second param)
-		gitClient,             // GitClient (third param)
-		nil,                   // CodeParser will be injected in Phase 4.2+
-		nil,                   // EmbeddingGenerator will be injected in Phase 4.2+
+		indexingJobRepository,
+		repoRepository,
+		gitClient,
+		nil, // CodeParser will be injected in Phase 4.2+
+		nil, // EmbeddingGenerator will be injected in Phase 4.2+
 	)
 
-	// Create consumer configuration
+	// Create consumer
 	consumerConfig := messaging.ConsumerConfig{
-		Subject:     "indexing.job",
-		QueueGroup:  cfg.Worker.QueueGroup,
-		DurableName: "indexing-consumer",
-		AckWait:     30 * time.Second,
-		MaxDeliver:  3,
+		Subject:       "indexing.job",
+		QueueGroup:    cfg.Worker.QueueGroup,
+		DurableName:   "indexing-consumer",
+		AckWait:       30 * time.Second,
+		MaxDeliver:    3,
+		MaxAckPending: 100,
 	}
 
-	// Create consumer (simplified for GREEN phase)
 	consumer, err := messaging.NewNATSConsumer(consumerConfig, cfg.NATS, jobProcessor)
 	if err != nil {
-		slogger.ErrorNoCtx("Failed to create consumer", slogger.Fields{"error": err.Error()})
-		return
+		return nil, err
 	}
 
 	// Create worker service
@@ -134,27 +156,52 @@ func runWorkerService() {
 		RestartDelay:        5 * time.Second,
 		MaxRestartAttempts:  3,
 		ShutdownTimeout:     30 * time.Second,
+		ConsumerStopTimeout: 5 * time.Second,
 	}
 
 	workerService := service.NewDefaultWorkerService(workerServiceConfig, cfg.NATS, jobProcessor)
 
 	// Add consumer to service
 	if err := workerService.AddConsumer(consumer); err != nil {
-		slogger.ErrorNoCtx("Failed to add consumer", slogger.Fields{"error": err.Error()})
-		return
+		return nil, err
 	}
 
-	// Start worker service
+	return workerService, nil
+}
+
+// startWorkerService starts the worker service.
+func startWorkerService(workerService inbound.WorkerService) error {
 	ctx := context.Background()
 	if err := workerService.Start(ctx); err != nil {
-		slogger.ErrorNoCtx("Failed to start worker service", slogger.Fields{"error": err.Error()})
-		return
+		return err
 	}
 
 	slogger.InfoNoCtx("Worker service started successfully", nil)
+	return nil
+}
 
-	// Keep running (simplified for GREEN phase)
-	select {}
+// waitForShutdownAndStop waits for shutdown signal and stops the service gracefully.
+func waitForShutdownAndStop(workerService inbound.WorkerService) {
+	// Set up signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Wait for shutdown signal
+	sig := <-sigChan
+	slogger.InfoNoCtx("Received shutdown signal, initiating graceful shutdown", slogger.Fields{
+		"signal": sig.String(),
+	})
+
+	// Create context with timeout for graceful shutdown
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Stop worker service gracefully
+	if err := workerService.Stop(shutdownCtx); err != nil {
+		slogger.ErrorNoCtx("Error during worker service shutdown", slogger.Fields{"error": err.Error()})
+	} else {
+		slogger.InfoNoCtx("Worker service shutdown completed successfully", nil)
+	}
 }
 
 func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for command registration

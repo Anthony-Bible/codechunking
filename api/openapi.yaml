@@ -368,6 +368,90 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /search:
+    post:
+      summary: Semantic code search
+      description: |
+        Performs semantic search across indexed code chunks using natural language queries.
+        Returns relevant code snippets ranked by similarity score with filtering options.
+      operationId: searchCode
+      tags:
+        - Search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+            examples:
+              basic_search:
+                summary: Basic semantic search
+                value:
+                  query: "implement authentication middleware"
+                  limit: 10
+              filtered_search:
+                summary: Search with filters
+                value:
+                  query: "database connection pooling"
+                  limit: 20
+                  repository_ids: ["123e4567-e89b-12d3-a456-426614174000"]
+                  languages: ["go", "python"]
+                  file_types: [".go", ".py"]
+                  similarity_threshold: 0.8
+                  sort: "similarity:desc"
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+              example:
+                results:
+                  - chunk_id: "chunk-uuid-1"
+                    content: "func authenticateUser(token string) (*User, error) {\n\t// Implementation\n}"
+                    similarity_score: 0.95
+                    repository:
+                      id: "123e4567-e89b-12d3-a456-426614174000"
+                      name: "auth-service"
+                      url: "https://github.com/example/auth-service"
+                    file_path: "/middleware/auth.go"
+                    language: "go"
+                    start_line: 15
+                    end_line: 25
+                pagination:
+                  limit: 10
+                  offset: 0
+                  total: 42
+                  has_more: true
+                search_metadata:
+                  query: "implement authentication middleware"
+                  execution_time_ms: 150
+        '400':
+          description: Invalid search request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "INVALID_QUERY"
+                message: "Query cannot be empty or whitespace only"
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "VALIDATION_ERROR"
+                message: "limit must be between 1 and 100"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   schemas:
     HealthResponse:
@@ -650,3 +734,200 @@ components:
           type: string
           format: date-time
           description: Error occurrence timestamp
+
+    SearchRequest:
+      type: object
+      description: Semantic search request for code chunks
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 500
+          pattern: '^.*\S.*$'
+          description: Natural language search query
+          example: "implement authentication middleware"
+        limit:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+          default: 10
+          description: Maximum number of results to return
+        offset:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 10000
+          default: 0
+          description: Number of results to skip for pagination
+        repository_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            minLength: 36
+            maxLength: 36
+            pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          minItems: 0
+          maxItems: 50
+          description: Filter by specific repository IDs
+        languages:
+          type: array
+          items:
+            type: string
+            enum: ["go", "python", "javascript", "typescript", "java", "rust", "cpp", "c", "php", "ruby"]
+            minLength: 1
+            maxLength: 20
+          minItems: 0
+          maxItems: 10
+          description: Filter by programming languages
+        file_types:
+          type: array
+          items:
+            type: string
+            pattern: '^\.[a-zA-Z0-9]+$'
+            minLength: 2
+            maxLength: 10
+          minItems: 0
+          maxItems: 20
+          description: Filter by file extensions
+        similarity_threshold:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.7
+          description: Minimum similarity score for results
+        sort:
+          type: string
+          enum: ["similarity:desc", "similarity:asc", "file_path:asc", "file_path:desc"]
+          default: "similarity:desc"
+          description: Sort order for results
+
+    SearchResponse:
+      type: object
+      description: Semantic search response with results and metadata
+      required:
+        - results
+        - pagination
+        - search_metadata
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+          minItems: 0
+          maxItems: 100
+          description: Array of matching code chunks
+        pagination:
+          $ref: '#/components/schemas/PaginationResponse'
+        search_metadata:
+          $ref: '#/components/schemas/SearchMetadata'
+
+    SearchResult:
+      type: object
+      description: Individual search result containing code chunk information
+      required:
+        - chunk_id
+        - content
+        - similarity_score
+        - repository
+        - file_path
+        - language
+        - start_line
+        - end_line
+      properties:
+        chunk_id:
+          type: string
+          format: uuid
+          minLength: 36
+          maxLength: 36
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          description: Unique identifier for the code chunk
+        content:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          description: The actual code content
+        similarity_score:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Semantic similarity score (0.0 to 1.0)
+        repository:
+          $ref: '#/components/schemas/RepositoryInfo'
+        file_path:
+          type: string
+          pattern: '^/.*$'
+          minLength: 1
+          maxLength: 500
+          description: Relative path to the source file
+        language:
+          type: string
+          enum: ["go", "python", "javascript", "typescript", "java", "rust", "cpp", "c", "php", "ruby"]
+          minLength: 1
+          maxLength: 20
+          description: Programming language of the code chunk
+        start_line:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1000000
+          description: Starting line number in the source file
+        end_line:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 1000000
+          description: Ending line number in the source file
+
+    RepositoryInfo:
+      type: object
+      description: Basic repository information for search results
+      required:
+        - id
+        - name
+        - url
+      properties:
+        id:
+          type: string
+          format: uuid
+          minLength: 36
+          maxLength: 36
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          description: Repository unique identifier
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: '^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$'
+          description: Repository name (org/repo format)
+        url:
+          type: string
+          format: url
+          minLength: 1
+          maxLength: 500
+          pattern: '^https?://(github\.com|gitlab\.com|bitbucket\.org)/.+$'
+          description: Repository URL
+
+    SearchMetadata:
+      type: object
+      description: Search execution metadata
+      required:
+        - query
+        - execution_time_ms
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: The original search query
+        execution_time_ms:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 30000
+          description: Search execution time in milliseconds

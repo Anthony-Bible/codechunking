@@ -41,3 +41,8 @@ type IndexingJobMapper interface {
 	EntityToDTO(entity *entity.IndexingJob) dto.IndexingJobResponse
 	EntitiesToDTOs(entities []*entity.IndexingJob) []dto.IndexingJobResponse
 }
+
+// SearchService defines the inbound port for search operations.
+type SearchService interface {
+	Search(ctx context.Context, request dto.SearchRequestDTO) (*dto.SearchResponseDTO, error)
+}

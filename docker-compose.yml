@@ -54,6 +54,47 @@ services:
     profiles:
       - tools
 
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: codechunking-api
+    depends_on:
+      - postgres
+      - nats
+    environment:
+      - CODECHUNK_DATABASE_HOST=postgres
+      - CODECHUNK_DATABASE_USER=dev
+      - CODECHUNK_DATABASE_PASSWORD=dev
+      - CODECHUNK_NATS_URL=nats://nats:4222
+      # Set if you plan to enable embeddings/search now; otherwise omit
+      # - CODECHUNK_GEMINI_API_KEY=your-api-key
+    ports:
+      - "8080:8080"
+    command: ["api", "--config", "configs/config.dev.yaml"]
+    restart: unless-stopped
+    networks:
+      - codechunking-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: codechunking-worker
+    depends_on:
+      - postgres
+      - nats
+    environment:
+      - CODECHUNK_DATABASE_HOST=postgres
+      - CODECHUNK_DATABASE_USER=dev
+      - CODECHUNK_DATABASE_PASSWORD=dev
+      - CODECHUNK_NATS_URL=nats://nats:4222
+      # - CODECHUNK_GEMINI_API_KEY=your-api-key
+    command: ["worker", "--config", "configs/config.dev.yaml"]
+    restart: unless-stopped
+    networks:
+      - codechunking-network
+
 volumes:
   postgres_data:
   nats_data:

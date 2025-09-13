@@ -211,7 +211,7 @@ func (n *NATSMessagePublisher) PublishIndexingJob(
 		return nil
 	}
 
-	_, err = n.js.PublishAsync("indexing.job", data, nats.Context(ctx))
+	_, err = n.js.PublishAsync("indexing.job", data)
 	if err != nil {
 		n.updateMetrics(false, time.Since(start))
 		return fmt.Errorf("failed to publish message: %w", err)

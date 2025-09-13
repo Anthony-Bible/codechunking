@@ -1,6 +1,8 @@
 # CodeChunking
 
-A production-grade code chunking and retrieval system for semantic code search using Go, PostgreSQL with pgvector, NATS JetStream, and Google Gemini. Built with hexagonal architecture and comprehensive monitoring, security, and performance optimization.
+A production-grade semantic code search system using Go, PostgreSQL with pgvector, NATS JetStream, and Google Gemini. Built with hexagonal architecture and comprehensive TDD methodology.
+
+🎉 **MVP Status: COMPLETE** - Full semantic search functionality with natural language queries!
 
 ## Features
 
@@ -8,7 +10,9 @@ A production-grade code chunking and retrieval system for semantic code search u
 - **Repository Indexing**: Clone and index Git repositories automatically
 - **Intelligent Code Chunking**: Parse code into semantic units using tree-sitter
 - **Vector Embeddings**: Generate embeddings with Google Gemini API
-- **Similarity Search**: Fast vector search using PostgreSQL with pgvector
+- **Semantic Code Search**: Natural language queries with POST /search endpoint ✨
+- **Advanced Filtering**: Filter by repository, language, file type, and similarity threshold
+- **Pagination & Sorting**: Full pagination with multiple sorting options (similarity, file path)
 - **Asynchronous Processing**: Scalable job processing with NATS JetStream
 
 ### Production Features
@@ -41,6 +45,183 @@ The system follows hexagonal architecture (ports and adapters) principles:
 └── docker/              # Docker configurations
 ```
 
+## Data Flow Architecture
+
+The following diagram illustrates how repositories are processed, chunked, stored, and retrieved:
+
+```mermaid
+graph TB
+    %% User Interface Layer
+    subgraph "Client Layer"
+        USER[User/CLI]
+        API_CLIENT[API Client]
+    end
+
+    %% API Layer
+    subgraph "API Layer (Inbound Adapters)"
+        API_SERVER[API Server :8080]
+        REPO_HANDLER[Repository Handler]
+        SEARCH_HANDLER[Search Handler]
+        HEALTH[Health Check]
+    end
+
+    %% Application Layer
+    subgraph "Application Layer"
+        REPO_SERVICE[Repository Service]
+        SEARCH_SERVICE[Search Service]
+        WORKER_SERVICE[Worker Service]
+        JOB_PROCESSOR[Job Processor]
+    end
+
+    %% Domain Layer
+    subgraph "Domain Layer"
+        REPO_ENTITY[Repository Entity]
+        JOB_ENTITY[IndexingJob Entity]
+        ALERT_ENTITY[Alert Entity]
+        ERROR_ENTITY[ClassifiedError Entity]
+    end
+
+    %% Message Queue
+    subgraph "Messaging (NATS JetStream)"
+        NATS_PUBLISHER[Message Publisher]
+        NATS_STREAM[INDEXING Stream]
+        NATS_CONSUMER[Message Consumer]
+    end
+
+    %% Processing Pipeline
+    subgraph "Background Processing Pipeline"
+        GIT_CLONE[Git Repository<br/>Clone]
+        TS_PARSER[Tree-sitter<br/>Parser Pool]
+
+        subgraph "Language Parsers"
+            GO_PARSER[Go Parser]
+            PY_PARSER[Python Parser]
+        end
+
+        CHUNKER[Function/Class<br/>Chunker]
+        SEMANTIC_ANALYZER[Semantic Analysis<br/>Service]
+    end
+
+    %% Embedding & Storage
+    subgraph "Embedding & Vector Storage"
+        GEMINI_CLIENT[Google Gemini<br/>Embedding Client]
+        BATCH_PROCESSOR[Parallel Batch<br/>Processor]
+        RETRY_LOGIC[Retry Logic &<br/>Circuit Breaker]
+    end
+
+    %% Data Storage
+    subgraph "Data Storage (Outbound Adapters)"
+        POSTGRES[(PostgreSQL<br/>Database)]
+        PGVECTOR[(pgvector<br/>Extension)]
+
+        subgraph "Database Tables"
+            REPO_TABLE[(repositories)]
+            CHUNKS_TABLE[(code_chunks)]
+            EMBED_TABLE[(embeddings)]
+            EMBED_PART[(embeddings_partitioned)]
+            JOBS_TABLE[(indexing_jobs)]
+        end
+    end
+
+    %% Request Flow - Repository Creation
+    USER -->|POST /repositories| API_SERVER
+    API_SERVER --> REPO_HANDLER
+    REPO_HANDLER --> REPO_SERVICE
+    REPO_SERVICE --> REPO_ENTITY
+    REPO_SERVICE -->|Save Repository| POSTGRES
+    REPO_SERVICE -->|Publish Job| NATS_PUBLISHER
+    NATS_PUBLISHER --> NATS_STREAM
+
+    %% Background Processing Flow
+    NATS_STREAM --> NATS_CONSUMER
+    NATS_CONSUMER --> WORKER_SERVICE
+    WORKER_SERVICE --> JOB_PROCESSOR
+
+    JOB_PROCESSOR --> GIT_CLONE
+    GIT_CLONE --> TS_PARSER
+    TS_PARSER --> GO_PARSER
+    TS_PARSER --> PY_PARSER
+
+    GO_PARSER --> CHUNKER
+    PY_PARSER --> CHUNKER
+    CHUNKER --> SEMANTIC_ANALYZER
+
+    SEMANTIC_ANALYZER --> BATCH_PROCESSOR
+    BATCH_PROCESSOR --> GEMINI_CLIENT
+    GEMINI_CLIENT -.->|Retry on Failure| RETRY_LOGIC
+    RETRY_LOGIC -.-> GEMINI_CLIENT
+
+    GEMINI_CLIENT --> POSTGRES
+    JOB_PROCESSOR -->|Update Job Status| POSTGRES
+
+    %% Search Flow
+    USER -->|POST /search| API_SERVER
+    API_SERVER --> SEARCH_HANDLER
+    SEARCH_HANDLER --> SEARCH_SERVICE
+    SEARCH_SERVICE -->|Generate Query Embedding| GEMINI_CLIENT
+    SEARCH_SERVICE -->|Vector Similarity Search| PGVECTOR
+    PGVECTOR -->|cosine distance <=>| EMBED_TABLE
+    PGVECTOR -->|Partitioned Search| EMBED_PART
+    SEARCH_SERVICE -->|Retrieve Chunks| POSTGRES
+    SEARCH_SERVICE -->|Format Results| SEARCH_HANDLER
+
+    %% Data Relationships
+    POSTGRES --> REPO_TABLE
+    POSTGRES --> CHUNKS_TABLE
+    POSTGRES --> EMBED_TABLE
+    POSTGRES --> EMBED_PART
+    POSTGRES --> JOBS_TABLE
+    PGVECTOR -.->|Vector Operations| EMBED_TABLE
+    PGVECTOR -.->|HNSW Indexing| EMBED_PART
+
+    %% Health Monitoring
+    USER -->|GET /health| HEALTH
+    HEALTH -.->|Check Status| POSTGRES
+    HEALTH -.->|Check Status| NATS_STREAM
+
+    %% Error Handling
+    JOB_PROCESSOR -.->|Classification| ERROR_ENTITY
+    ERROR_ENTITY -.->|Aggregation| ALERT_ENTITY
+    ALERT_ENTITY -.->|Notifications| USER
+
+    %% Styling
+    classDef userLayer fill:#e1f5fe
+    classDef apiLayer fill:#f3e5f5
+    classDef appLayer fill:#e8f5e8
+    classDef domainLayer fill:#fff3e0
+    classDef messageLayer fill:#fce4ec
+    classDef processLayer fill:#f1f8e9
+    classDef storageLayer fill:#e0f2f1
+    classDef embedLayer fill:#fff8e1
+
+    class USER,API_CLIENT userLayer
+    class API_SERVER,REPO_HANDLER,SEARCH_HANDLER,HEALTH apiLayer
+    class REPO_SERVICE,SEARCH_SERVICE,WORKER_SERVICE,JOB_PROCESSOR appLayer
+    class REPO_ENTITY,JOB_ENTITY,ALERT_ENTITY,ERROR_ENTITY domainLayer
+    class NATS_PUBLISHER,NATS_STREAM,NATS_CONSUMER messageLayer
+    class GIT_CLONE,TS_PARSER,GO_PARSER,PY_PARSER,CHUNKER,SEMANTIC_ANALYZER processLayer
+    class POSTGRES,PGVECTOR,REPO_TABLE,CHUNKS_TABLE,EMBED_TABLE,EMBED_PART,JOBS_TABLE storageLayer
+    class GEMINI_CLIENT,BATCH_PROCESSOR,RETRY_LOGIC embedLayer
+```
+
+### Key Data Flow Stages
+
+1. **Repository Submission**: User submits repository URL via REST API
+2. **Job Creation**: Repository entity created, indexing job queued to NATS JetStream
+3. **Background Processing**: Worker clones repository and parses code with Tree-sitter
+4. **Semantic Chunking**: Code parsed into semantic units (functions, classes, methods)
+5. **Embedding Generation**: Google Gemini API generates 768-dimensional embeddings
+6. **Vector Storage**: Embeddings stored in PostgreSQL with pgvector HNSW indexing
+7. **Search & Retrieval**: Vector similarity search enables semantic code search
+
+### Processing Capabilities
+
+- **Multi-Language Support**: Go and Python parsers with extensible architecture
+- **Intelligent Chunking**: Function-level, class-level, and adaptive chunking strategies
+- **Fault Tolerance**: Circuit breakers, retry logic, and comprehensive error handling
+- **Scalable Processing**: Parallel batch processing with configurable worker pools
+- **Performance Optimization**: HNSW indexing, connection pooling, and caching
+
 ## Prerequisites
 
 - Go 1.24 or higher
@@ -56,7 +237,7 @@ The system follows hexagonal architecture (ports and adapters) principles:
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/codechunking.git
+git clone https://github.com/Anthony-Bible/codechunking.git
 cd codechunking
 ```
 
@@ -88,7 +269,7 @@ make dev-worker
 ### Using Go
 
 ```bash
-go install github.com/yourusername/codechunking@latest
+go install github.com/Anthony-Bible/codechunking@latest
 ```
 
 ### Using Docker
@@ -100,7 +281,7 @@ docker pull yourusername/codechunking:latest
 ### From source
 
 ```bash
-git clone https://github.com/yourusername/codechunking.git
+git clone https://github.com/Anthony-Bible/codechunking.git
 cd codechunking
 make build
 ```
@@ -141,11 +322,17 @@ curl http://localhost:8080/health
 # Returns health status with NATS monitoring, response time metrics
 ```
 
-#### Search code (planned feature)
+#### Search code semantically ✨
 ```bash
-curl -X POST http://localhost:8080/api/v1/search \
+curl -X POST http://localhost:8080/search \
   -H "Content-Type: application/json" \
-  -d '{"query": "implement authentication"}'
+  -d '{
+    "query": "implement authentication middleware",
+    "limit": 10,
+    "similarity_threshold": 0.7,
+    "languages": ["go"],
+    "sort": "similarity:desc"
+  }'
 ```
 
 ## Configuration
@@ -254,6 +441,21 @@ make migrate-down
 ```bash
 docker-compose up -d
 ```
+
+This brings up PostgreSQL (with pgvector), NATS (with monitoring), the API on `localhost:8080`, and the worker.
+
+Quick verify:
+
+```bash
+curl http://localhost:8080/health
+curl -X POST http://localhost:8080/repositories \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://github.com/example/repo", "name": "example"}'
+```
+
+Notes:
+- The app reads env via `CODECHUNK_` variables. Compose sets DB and NATS. Add `CODECHUNK_GEMINI_API_KEY` in `docker-compose.yml` if enabling embeddings/search.
+- Routes are mounted at `/`, e.g. `/repositories` (no `/api/v1` prefix in current code).
 
 ### Kubernetes (Production)
 
@@ -378,7 +580,7 @@ database:
 
 - **TDD Methodology**: Use red-green-refactor cycle with specialized agents
 - Follow Go best practices and idioms
-- Maintain test coverage above 80% (currently 68+ passing tests)
+- Maintain test coverage above 80% (currently 100+ passing tests across all layers)
 - Update documentation for new features
 - **Use conventional commit messages** (required)
 - Run `make lint` and `make fmt` before committing
@@ -444,21 +646,29 @@ git submodule update --remote wiki
 
 ## Current Status
 
-✅ **Phases 2.1-2.4 Complete** (68+ passing tests):
-- Production-ready NATS/JetStream integration
-- Advanced health monitoring with caching
-- Comprehensive security validation framework
-- Structured logging with correlation tracking
-- Circuit breaker patterns and connection resilience
+🎉 **MVP COMPLETE** - All core phases delivered (100+ passing tests):
+- ✅ **Phase 2**: Production-ready API with repository management
+- ✅ **Phase 3**: Asynchronous processing with NATS JetStream
+- ✅ **Phase 4**: Intelligent code chunking with tree-sitter
+- ✅ **Phase 5**: Vector embeddings with Google Gemini
+- ✅ **Phase 6**: Vector storage and retrieval with pgvector
+- ✅ **Phase 7.1**: **Semantic search API** with natural language queries ✨
 
-## Roadmap
+**Key MVP Features Delivered:**
+- Complete semantic code search with POST /search endpoint
+- Advanced filtering (repository, language, file type, similarity threshold)
+- Pagination and sorting capabilities
+- Comprehensive TDD implementation with 50+ passing tests
+- Production-ready error handling and validation
+- Full OpenAPI documentation
 
-- [ ] Semantic search API implementation (`/search` endpoint)
-- [ ] Support for more programming languages
-- [ ] Incremental repository updates
+## Post-MVP Roadmap
+
+- [ ] Support for more programming languages (Python, JavaScript, etc.)
+- [ ] Incremental repository updates and webhooks
 - [ ] Web UI for search interface
 - [ ] GitHub/GitLab webhooks for auto-indexing
 - [ ] Multi-model embedding support
 - [ ] Distributed worker scaling
-- [ ] Query result caching
-- [ ] Fine-tuned ranking algorithms
+- [ ] Query result caching and performance optimization
+- [ ] Fine-tuned ranking algorithms and hybrid search

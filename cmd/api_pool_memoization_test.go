@@ -364,6 +364,11 @@ func TestServiceFactory_MemoizedDatabasePool_IntegrationWithBuildDependencies(t 
 				MaxConnections: 10,
 				SSLMode:        "disable",
 			},
+			NATS: config.NATSConfig{
+				URL:           "nats://localhost:4222",
+				MaxReconnects: 5,
+				ReconnectWait: 2000000000, // 2s in nanoseconds
+			},
 		}
 		serviceFactory := NewServiceFactory(cfg)
 
@@ -402,6 +407,11 @@ func TestServiceFactory_MemoizedDatabasePool_IntegrationWithBuildDependencies(t 
 				MaxConnections: 10,
 				SSLMode:        "disable",
 			},
+			NATS: config.NATSConfig{
+				URL:           "nats://localhost:4222",
+				MaxReconnects: 5,
+				ReconnectWait: 2000000000, // 2s in nanoseconds
+			},
 		}
 		serviceFactory := NewServiceFactory(cfg)
 
@@ -433,6 +443,11 @@ func TestServiceFactory_MemoizedDatabasePool_IntegrationWithBuildDependencies(t 
 				Password:       "dev",
 				MaxConnections: 10,
 				SSLMode:        "disable",
+			},
+			NATS: config.NATSConfig{
+				URL:           "nats://localhost:4222",
+				MaxReconnects: 5,
+				ReconnectWait: 2000000000, // 2s in nanoseconds
 			},
 		}
 		serviceFactory := NewServiceFactory(cfg)

@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"codechunking/internal/adapter/outbound/messaging"
 	"codechunking/internal/adapter/outbound/mock"
 	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/config"
 	"codechunking/internal/port/outbound"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,6 +28,11 @@ func TestServiceFactory_BuildDependencies_Success(t *testing.T) {
 			MaxConnections: 10,
 			SSLMode:        "disable",
 		},
+		NATS: config.NATSConfig{
+			URL:           "nats://localhost:4222",
+			MaxReconnects: 5,
+			ReconnectWait: 2 * time.Second,
+		},
 	}
 	serviceFactory := NewServiceFactory(cfg)
 
@@ -45,8 +52,8 @@ func TestServiceFactory_BuildDependencies_Success(t *testing.T) {
 	_, ok = indexingJobRepo.(*repository.PostgreSQLIndexingJobRepository)
 	assert.True(t, ok, "indexingJobRepo should be PostgreSQLIndexingJobRepository")
 
-	_, ok = messagePublisher.(*mock.MessagePublisher)
-	assert.True(t, ok, "messagePublisher should be MockMessagePublisher")
+	_, ok = messagePublisher.(*messaging.NATSMessagePublisher)
+	assert.True(t, ok, "messagePublisher should be NATSMessagePublisher")
 }
 
 // TestServiceFactory_BuildDependencies_DatabaseError tests that buildDependencies handles
@@ -63,6 +70,11 @@ func TestServiceFactory_BuildDependencies_DatabaseError(t *testing.T) {
 			MaxConnections: 10,
 			SSLMode:        "disable",
 		},
+		NATS: config.NATSConfig{
+			URL:           "nats://localhost:4222",
+			MaxReconnects: 5,
+			ReconnectWait: 2 * time.Second,
+		},
 	}
 	serviceFactory := NewServiceFactory(cfg)
 
@@ -76,8 +88,8 @@ func TestServiceFactory_BuildDependencies_DatabaseError(t *testing.T) {
 	assert.NotNil(t, messagePublisher, "messagePublisher should always be returned, even on database error")
 
 	// Verify message publisher type is correct
-	_, ok := messagePublisher.(*mock.MessagePublisher)
-	assert.True(t, ok, "messagePublisher should be MockMessagePublisher even when database fails")
+	_, ok := messagePublisher.(*messaging.NATSMessagePublisher)
+	assert.True(t, ok, "messagePublisher should be NATSMessagePublisher even when database fails")
 }
 
 // TestServiceFactory_BuildDependencies_ReturnTypes tests that buildDependencies returns
@@ -93,6 +105,11 @@ func TestServiceFactory_BuildDependencies_ReturnTypes(t *testing.T) {
 			Password:       "dev",
 			MaxConnections: 10,
 			SSLMode:        "disable",
+		},
+		NATS: config.NATSConfig{
+			URL:           "nats://localhost:4222",
+			MaxReconnects: 5,
+			ReconnectWait: 2 * time.Second,
 		},
 	}
 	serviceFactory := NewServiceFactory(cfg)
@@ -155,7 +172,14 @@ func TestServiceFactory_BuildDependencies_ErrorPropagation(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Arrange
-			cfg := &config.Config{Database: tc.config}
+			cfg := &config.Config{
+				Database: tc.config,
+				NATS: config.NATSConfig{
+					URL:           "nats://localhost:4222",
+					MaxReconnects: 5,
+					ReconnectWait: 2 * time.Second,
+				},
+			}
 			serviceFactory := NewServiceFactory(cfg)
 
 			// Act

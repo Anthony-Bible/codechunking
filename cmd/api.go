@@ -7,7 +7,7 @@ package cmd
 import (
 	"codechunking/internal/adapter/inbound/api"
 	"codechunking/internal/adapter/inbound/service"
-	"codechunking/internal/adapter/outbound/mock"
+	"codechunking/internal/adapter/outbound/messaging"
 	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/registry"
@@ -15,6 +15,7 @@ import (
 	"codechunking/internal/port/inbound"
 	"codechunking/internal/port/outbound"
 	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"sync"
@@ -164,25 +165,27 @@ func (sf *ServiceFactory) Close() error {
 // Returns:
 //   - RepositoryRepository: PostgreSQL-backed repository for repository entities (nil on DB error)
 //   - IndexingJobRepository: PostgreSQL-backed repository for indexing jobs (nil on DB error)
-//   - MessagePublisher: Mock message publisher for async job publishing (never nil)
+//   - MessagePublisher: NATS message publisher for async job publishing (nil on NATS error)
 //   - error: Database connection error, if any
 //
 // Error Handling Strategy:
 //   - If database connection fails, repositories are returned as nil but MessagePublisher is always provided
 //   - This allows callers to implement different strategies: graceful degradation (health service)
 //     or fail-fast (repository service)
-//   - The MessagePublisher uses a mock implementation since it doesn't depend on database connectivity
+//   - The MessagePublisher uses NATS JetStream for real message queue functionality
 func (sf *ServiceFactory) buildDependencies() (outbound.RepositoryRepository, outbound.IndexingJobRepository, outbound.MessagePublisher, error) {
-	// Always create message publisher first - it's independent of database connectivity
-	// and needed by both health and repository services for async job publishing
-	messagePublisher := mock.NewMockMessagePublisher()
+	// Create NATS message publisher with configuration
+	messagePublisher, err := sf.createMessagePublisher()
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	// Use memoized database pool instead of creating new one
-	dbPool, err := sf.GetDatabasePool()
-	if err != nil {
+	dbPool, dbErr := sf.GetDatabasePool()
+	if dbErr != nil {
 		// Return nil repositories but preserve messagePublisher - allows callers to decide
 		// whether to fail fast (repository service) or degrade gracefully (health service)
-		return nil, nil, messagePublisher, err
+		return nil, nil, messagePublisher, dbErr
 	}
 
 	// Create PostgreSQL-backed repositories using the established connection pool
@@ -229,10 +232,26 @@ func (sf *ServiceFactory) CreateHealthService() inbound.HealthService {
 //   - A fully functional RepositoryService with database connectivity
 //   - Never returns on database errors - calls log.Fatalf instead
 func (sf *ServiceFactory) CreateRepositoryService() inbound.RepositoryService {
+	// Log database configuration for debugging
+	slogger.InfoNoCtx("Attempting to create repository service with database config", slogger.Fields{
+		"database_host":            sf.config.Database.Host,
+		"database_port":            sf.config.Database.Port,
+		"database_name":            sf.config.Database.Name,
+		"database_user":            sf.config.Database.User,
+		"database_sslmode":         sf.config.Database.SSLMode,
+		"database_max_connections": sf.config.Database.MaxConnections,
+	})
+
 	repositoryRepo, indexingJobRepo, messagePublisher, err := sf.buildDependencies()
 	if err != nil {
 		// Fail-fast approach: repository service cannot function without database
-		slogger.ErrorNoCtx("Failed to create database connection", slogger.Field("error", err))
+		slogger.ErrorNoCtx("Failed to create database connection", slogger.Fields{
+			"error":         err.Error(),
+			"database_host": sf.config.Database.Host,
+			"database_port": sf.config.Database.Port,
+			"database_name": sf.config.Database.Name,
+			"database_user": sf.config.Database.User,
+		})
 		os.Exit(1)
 	}
 
@@ -272,6 +291,33 @@ func (sf *ServiceFactory) createDatabasePool() (*pgxpool.Pool, error) {
 	}
 
 	return repository.NewDatabaseConnection(dbConfig)
+}
+
+// createMessagePublisher creates a NATS message publisher.
+func (sf *ServiceFactory) createMessagePublisher() (outbound.MessagePublisher, error) {
+	// Create NATS message publisher with configuration
+	natsPublisher, err := messaging.NewNATSMessagePublisher(sf.config.NATS)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get concrete type to call setup methods
+	concretePublisher, ok := natsPublisher.(*messaging.NATSMessagePublisher)
+	if !ok {
+		return nil, errors.New("failed to cast to NATSMessagePublisher")
+	}
+
+	// Connect to NATS server
+	if err := concretePublisher.Connect(); err != nil {
+		return nil, err
+	}
+
+	// Ensure required streams exist
+	if err := concretePublisher.EnsureStream(); err != nil {
+		return nil, err
+	}
+
+	return natsPublisher, nil
 }
 
 // CreateErrorHandler creates an error handler instance.

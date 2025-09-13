@@ -8,6 +8,7 @@ import (
 	"codechunking/internal/adapter/inbound/messaging"
 	"codechunking/internal/adapter/outbound/gitclient"
 	"codechunking/internal/adapter/outbound/repository"
+	"codechunking/internal/adapter/outbound/treesitter"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/service"
 	"codechunking/internal/application/worker"
@@ -116,6 +117,13 @@ func createWorkerService(cfg *config.Config, dbPool *pgxpool.Pool) (inbound.Work
 	// Create git client implementation
 	gitClient := gitclient.NewAuthenticatedGitClient()
 
+	// Create code parser implementation
+	codeParser, err := treesitter.NewTreeSitterCodeParser(context.Background())
+	if err != nil {
+		slogger.ErrorNoCtx("Failed to create TreeSitter code parser", slogger.Fields{"error": err.Error()})
+		return nil, err
+	}
+
 	// Create job processor
 	jobProcessorConfig := worker.JobProcessorConfig{
 		WorkspaceDir:      "/tmp/codechunking-workspace",
@@ -128,8 +136,8 @@ func createWorkerService(cfg *config.Config, dbPool *pgxpool.Pool) (inbound.Work
 		indexingJobRepository,
 		repoRepository,
 		gitClient,
-		nil, // CodeParser will be injected in Phase 4.2+
-		nil, // EmbeddingGenerator will be injected in Phase 4.2+
+		codeParser, // Now using real TreeSitter CodeParser
+		nil,        // EmbeddingGenerator will be injected in Phase 4.2+
 	)
 
 	// Create consumer

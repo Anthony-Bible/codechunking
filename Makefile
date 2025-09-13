@@ -69,12 +69,12 @@ test-all: test test-integration test-coverage
 
 ## build: Build the binary
 build:
-	CGO_ENABLED=0 $(GO_CMD) build -o bin/$(BINARY_NAME) main.go
+	CGO_ENABLED=1 $(GO_CMD) build -o bin/$(BINARY_NAME) main.go
 	@echo "Binary built: bin/$(BINARY_NAME)"
 
 ## build-linux: Build for Linux
 build-linux:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO_CMD) build -o bin/$(BINARY_NAME)-linux-amd64 main.go
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 $(GO_CMD) build -o bin/$(BINARY_NAME)-linux-amd64 main.go
 	@echo "Linux binary built: bin/$(BINARY_NAME)-linux-amd64"
 
 ## build-docker: Build Docker images

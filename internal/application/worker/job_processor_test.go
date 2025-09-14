@@ -324,6 +324,118 @@ func (m *MockEmbeddingService) EstimateTokenCount(ctx context.Context, text stri
 	return args.Int(0), args.Error(1)
 }
 
+// MockChunkStorageRepository mocks the chunk storage repository interface.
+type MockChunkStorageRepository struct {
+	mock.Mock
+}
+
+func (m *MockChunkStorageRepository) SaveChunk(ctx context.Context, chunk *outbound.CodeChunk) error {
+	args := m.Called(ctx, chunk)
+	return args.Error(0)
+}
+
+func (m *MockChunkStorageRepository) SaveChunks(ctx context.Context, chunks []outbound.CodeChunk) error {
+	args := m.Called(ctx, chunks)
+	return args.Error(0)
+}
+
+func (m *MockChunkStorageRepository) GetChunk(ctx context.Context, id uuid.UUID) (*outbound.CodeChunk, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.CodeChunk), args.Error(1)
+}
+
+func (m *MockChunkStorageRepository) GetChunksForRepository(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+) ([]outbound.CodeChunk, error) {
+	args := m.Called(ctx, repositoryID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]outbound.CodeChunk), args.Error(1)
+}
+
+func (m *MockChunkStorageRepository) DeleteChunksForRepository(ctx context.Context, repositoryID uuid.UUID) error {
+	args := m.Called(ctx, repositoryID)
+	return args.Error(0)
+}
+
+func (m *MockChunkStorageRepository) CountChunksForRepository(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+) (int, error) {
+	args := m.Called(ctx, repositoryID)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockChunkStorageRepository) SaveEmbedding(ctx context.Context, embedding *outbound.Embedding) error {
+	args := m.Called(ctx, embedding)
+	return args.Error(0)
+}
+
+func (m *MockChunkStorageRepository) SaveEmbeddings(ctx context.Context, embeddings []outbound.Embedding) error {
+	args := m.Called(ctx, embeddings)
+	return args.Error(0)
+}
+
+func (m *MockChunkStorageRepository) GetEmbedding(ctx context.Context, chunkID uuid.UUID) (*outbound.Embedding, error) {
+	args := m.Called(ctx, chunkID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.Embedding), args.Error(1)
+}
+
+func (m *MockChunkStorageRepository) GetEmbeddingsForRepository(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+) ([]outbound.Embedding, error) {
+	args := m.Called(ctx, repositoryID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]outbound.Embedding), args.Error(1)
+}
+
+func (m *MockChunkStorageRepository) DeleteEmbeddingsForRepository(ctx context.Context, repositoryID uuid.UUID) error {
+	args := m.Called(ctx, repositoryID)
+	return args.Error(0)
+}
+
+func (m *MockChunkStorageRepository) SearchSimilar(
+	ctx context.Context,
+	query []float64,
+	limit int,
+	threshold float64,
+) ([]outbound.EmbeddingSearchResult, error) {
+	args := m.Called(ctx, query, limit, threshold)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]outbound.EmbeddingSearchResult), args.Error(1)
+}
+
+func (m *MockChunkStorageRepository) SaveChunkWithEmbedding(
+	ctx context.Context,
+	chunk *outbound.CodeChunk,
+	embedding *outbound.Embedding,
+) error {
+	args := m.Called(ctx, chunk, embedding)
+	return args.Error(0)
+}
+
+func (m *MockChunkStorageRepository) SaveChunksWithEmbeddings(
+	ctx context.Context,
+	chunks []outbound.CodeChunk,
+	embeddings []outbound.Embedding,
+) error {
+	args := m.Called(ctx, chunks, embeddings)
+	return args.Error(0)
+}
+
 // StreamingProcessingConfig holds configuration for streaming processing.
 type StreamingProcessingConfig struct {
 	MaxConcurrency     int
@@ -386,6 +498,7 @@ func (suite *JobProcessorTestSuite) SetupTest() {
 		gitClient:        &MockEnhancedGitClient{},
 		codeParser:       &MockCodeParser{},
 		embeddingService: &MockEmbeddingService{},
+		chunkStorageRepo: &MockChunkStorageRepository{},
 		activeJobs:       make(map[string]*JobExecution),
 	}
 }
@@ -521,11 +634,12 @@ func (suite *JobProcessorTestSuite) TestProcessJob_ConcurrentJobs_ExceedsLimit()
 	}
 
 	processor := &DefaultJobProcessor{
-		config:          config,
-		activeJobs:      make(map[string]*JobExecution),
-		indexingJobRepo: &MockIndexingJobRepository{},
-		gitClient:       &MockEnhancedGitClient{},
-		codeParser:      &MockCodeParser{},
+		config:           config,
+		activeJobs:       make(map[string]*JobExecution),
+		indexingJobRepo:  &MockIndexingJobRepository{},
+		gitClient:        &MockEnhancedGitClient{},
+		codeParser:       &MockCodeParser{},
+		chunkStorageRepo: &MockChunkStorageRepository{},
 	}
 
 	messages := []messaging.EnhancedIndexingJobMessage{
@@ -571,11 +685,12 @@ func (suite *JobProcessorTestSuite) TestProcessJob_JobTimeout_Enforcement() {
 	}
 
 	processor := &DefaultJobProcessor{
-		config:          config,
-		activeJobs:      make(map[string]*JobExecution),
-		indexingJobRepo: &MockIndexingJobRepository{},
-		gitClient:       &MockEnhancedGitClient{},
-		codeParser:      &MockCodeParser{},
+		config:           config,
+		activeJobs:       make(map[string]*JobExecution),
+		indexingJobRepo:  &MockIndexingJobRepository{},
+		gitClient:        &MockEnhancedGitClient{},
+		codeParser:       &MockCodeParser{},
+		chunkStorageRepo: &MockChunkStorageRepository{},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -634,11 +749,12 @@ func (suite *JobProcessorTestSuite) TestProcessJob_MemoryLimit_Enforcement() {
 	}
 
 	processor := &DefaultJobProcessor{
-		config:          config,
-		activeJobs:      make(map[string]*JobExecution),
-		indexingJobRepo: &MockIndexingJobRepository{},
-		gitClient:       &MockEnhancedGitClient{},
-		codeParser:      &MockCodeParser{},
+		config:           config,
+		activeJobs:       make(map[string]*JobExecution),
+		indexingJobRepo:  &MockIndexingJobRepository{},
+		gitClient:        &MockEnhancedGitClient{},
+		codeParser:       &MockCodeParser{},
+		chunkStorageRepo: &MockChunkStorageRepository{},
 	}
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -720,11 +836,12 @@ func (suite *JobProcessorTestSuite) TestProcessJob_EnhancedGitClient_Integration
 		Return(&outbound.CloneResult{}, nil)
 
 	processor := &DefaultJobProcessor{
-		config:          suite.processor.config,
-		activeJobs:      make(map[string]*JobExecution),
-		indexingJobRepo: &MockIndexingJobRepository{},
-		gitClient:       mockGitClient,
-		codeParser:      &MockCodeParser{},
+		config:           suite.processor.config,
+		activeJobs:       make(map[string]*JobExecution),
+		indexingJobRepo:  &MockIndexingJobRepository{},
+		gitClient:        mockGitClient,
+		codeParser:       &MockCodeParser{},
+		chunkStorageRepo: &MockChunkStorageRepository{},
 	}
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -815,11 +932,12 @@ func (suite *JobProcessorTestSuite) TestProcessJob_IntegrationFailure_ErrorPropa
 		Return(errors.New("git clone failed"))
 
 	processor := &DefaultJobProcessor{
-		config:          suite.processor.config,
-		activeJobs:      make(map[string]*JobExecution),
-		indexingJobRepo: &MockIndexingJobRepository{},
-		gitClient:       mockGitClient,
-		codeParser:      &MockCodeParser{},
+		config:           suite.processor.config,
+		activeJobs:       make(map[string]*JobExecution),
+		indexingJobRepo:  &MockIndexingJobRepository{},
+		gitClient:        mockGitClient,
+		codeParser:       &MockCodeParser{},
+		chunkStorageRepo: &MockChunkStorageRepository{},
 	}
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -977,11 +1095,12 @@ func (suite *JobProcessorTestSuite) TestProcessJob_RetryLogic_WithBackoff() {
 	}
 
 	processor := &DefaultJobProcessor{
-		config:          config,
-		activeJobs:      make(map[string]*JobExecution),
-		indexingJobRepo: &MockIndexingJobRepository{},
-		gitClient:       &MockEnhancedGitClient{},
-		codeParser:      &MockCodeParser{},
+		config:           config,
+		activeJobs:       make(map[string]*JobExecution),
+		indexingJobRepo:  &MockIndexingJobRepository{},
+		gitClient:        &MockEnhancedGitClient{},
+		codeParser:       &MockCodeParser{},
+		chunkStorageRepo: &MockChunkStorageRepository{},
 	}
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1043,11 +1162,12 @@ func (suite *JobProcessorTestSuite) TestProcessJob_IndexingJobRepo_PersistenceOp
 	mockIndexingJobRepo.On("Delete", mock.Anything, mock.Anything).Return(nil)
 
 	processor := &DefaultJobProcessor{
-		config:          suite.processor.config,
-		activeJobs:      make(map[string]*JobExecution),
-		indexingJobRepo: mockIndexingJobRepo,
-		gitClient:       &MockEnhancedGitClient{},
-		codeParser:      &MockCodeParser{},
+		config:           suite.processor.config,
+		activeJobs:       make(map[string]*JobExecution),
+		indexingJobRepo:  mockIndexingJobRepo,
+		gitClient:        &MockEnhancedGitClient{},
+		codeParser:       &MockCodeParser{},
+		chunkStorageRepo: &MockChunkStorageRepository{},
 	}
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1073,12 +1193,13 @@ func (suite *JobProcessorTestSuite) TestProcessJob_RepositoryRepo_MetadataUpdate
 	mockRepositoryRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
 
 	processor := &DefaultJobProcessor{
-		config:          suite.processor.config,
-		activeJobs:      make(map[string]*JobExecution),
-		indexingJobRepo: &MockIndexingJobRepository{},
-		repositoryRepo:  mockRepositoryRepo,
-		gitClient:       &MockEnhancedGitClient{},
-		codeParser:      &MockCodeParser{},
+		config:           suite.processor.config,
+		activeJobs:       make(map[string]*JobExecution),
+		indexingJobRepo:  &MockIndexingJobRepository{},
+		repositoryRepo:   mockRepositoryRepo,
+		gitClient:        &MockEnhancedGitClient{},
+		codeParser:       &MockCodeParser{},
+		chunkStorageRepo: &MockChunkStorageRepository{},
 	}
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1113,11 +1234,12 @@ func (suite *JobProcessorTestSuite) TestProcessJob_DatabaseFailure_Handling() {
 	mockIndexingJobRepo.On("Save", mock.Anything, mock.Anything).Return(errors.New("database error"))
 
 	processor := &DefaultJobProcessor{
-		config:          suite.processor.config,
-		activeJobs:      make(map[string]*JobExecution),
-		indexingJobRepo: mockIndexingJobRepo,
-		gitClient:       &MockEnhancedGitClient{},
-		codeParser:      &MockCodeParser{},
+		config:           suite.processor.config,
+		activeJobs:       make(map[string]*JobExecution),
+		indexingJobRepo:  mockIndexingJobRepo,
+		gitClient:        &MockEnhancedGitClient{},
+		codeParser:       &MockCodeParser{},
+		chunkStorageRepo: &MockChunkStorageRepository{},
 	}
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1147,11 +1269,12 @@ func (suite *JobProcessorTestSuite) TestJobProcessor_WorkspaceDir_Management() {
 	}
 
 	processor := &DefaultJobProcessor{
-		config:          config,
-		activeJobs:      make(map[string]*JobExecution),
-		indexingJobRepo: &MockIndexingJobRepository{},
-		gitClient:       &MockEnhancedGitClient{},
-		codeParser:      &MockCodeParser{},
+		config:           config,
+		activeJobs:       make(map[string]*JobExecution),
+		indexingJobRepo:  &MockIndexingJobRepository{},
+		gitClient:        &MockEnhancedGitClient{},
+		codeParser:       &MockCodeParser{},
+		chunkStorageRepo: &MockChunkStorageRepository{},
 	}
 
 	err := processor.Cleanup()
@@ -1168,11 +1291,12 @@ func (suite *JobProcessorTestSuite) TestJobProcessor_ResourceLimits_Enforcement(
 	}
 
 	processor := &DefaultJobProcessor{
-		config:          config,
-		activeJobs:      make(map[string]*JobExecution),
-		indexingJobRepo: &MockIndexingJobRepository{},
-		gitClient:       &MockEnhancedGitClient{},
-		codeParser:      &MockCodeParser{},
+		config:           config,
+		activeJobs:       make(map[string]*JobExecution),
+		indexingJobRepo:  &MockIndexingJobRepository{},
+		gitClient:        &MockEnhancedGitClient{},
+		codeParser:       &MockCodeParser{},
+		chunkStorageRepo: &MockChunkStorageRepository{},
 	}
 
 	message := messaging.EnhancedIndexingJobMessage{

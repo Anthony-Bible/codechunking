@@ -53,27 +53,45 @@ func runChunk(filePath, langName, outPath string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	enhanced, lang, err := parseAndChunkSource(ctx, filePath, langName)
+	if err != nil {
+		return err
+	}
+
+	outList, err := generateEmbeddings(ctx, enhanced)
+	if err != nil {
+		return err
+	}
+
+	return outputResults(filePath, lang, outList, len(enhanced), outPath)
+}
+
+// parseAndChunkSource handles file reading, parsing, function extraction, and chunking.
+func parseAndChunkSource(
+	ctx context.Context,
+	filePath, langName string,
+) ([]outbound.EnhancedCodeChunk, valueobject.Language, error) {
 	// Read file content
 	src, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("read file: %w", err)
+		return nil, valueobject.Language{}, fmt.Errorf("read file: %w", err)
 	}
 
 	// Prepare language
 	lang, err := valueobject.NewLanguage(langName)
 	if err != nil {
-		return fmt.Errorf("language: %w", err)
+		return nil, valueobject.Language{}, fmt.Errorf("language: %w", err)
 	}
 
 	// Build parser factory and parser
 	factory, err := ts.NewTreeSitterParserFactory(ctx)
 	if err != nil {
-		return fmt.Errorf("init parser factory: %w", err)
+		return nil, valueobject.Language{}, fmt.Errorf("init parser factory: %w", err)
 	}
 
 	parser, err := factory.CreateParser(ctx, lang)
 	if err != nil {
-		return fmt.Errorf("create parser: %w", err)
+		return nil, valueobject.Language{}, fmt.Errorf("create parser: %w", err)
 	}
 
 	// Parse source
@@ -88,16 +106,16 @@ func runChunk(filePath, langName, outPath string) error {
 	}
 	pr, err := parser.ParseSource(ctx, lang, src, parseOpts)
 	if err != nil {
-		return fmt.Errorf("parse source: %w", err)
+		return nil, valueobject.Language{}, fmt.Errorf("parse source: %w", err)
 	}
 	if pr == nil || pr.ParseTree == nil {
-		return errors.New("no parse tree produced")
+		return nil, valueobject.Language{}, errors.New("no parse tree produced")
 	}
 
 	// Convert to domain parse tree for traverser
 	domainTree, err := ts.ConvertPortParseTreeToDomain(pr.ParseTree)
 	if err != nil {
-		return fmt.Errorf("convert parse tree: %w", err)
+		return nil, valueobject.Language{}, fmt.Errorf("convert parse tree: %w", err)
 	}
 
 	// Extract functions
@@ -110,7 +128,7 @@ func runChunk(filePath, langName, outPath string) error {
 	}
 	funcs, err := traverser.ExtractFunctions(ctx, domainTree, extractOpts)
 	if err != nil {
-		return fmt.Errorf("extract functions: %w", err)
+		return nil, valueobject.Language{}, fmt.Errorf("extract functions: %w", err)
 	}
 
 	// Chunk by function
@@ -129,41 +147,56 @@ func runChunk(filePath, langName, outPath string) error {
 	}
 	enhanced, err := chunker.ChunkByFunction(ctx, funcs, cfg)
 	if err != nil {
-		return fmt.Errorf("chunking: %w", err)
+		return nil, valueobject.Language{}, fmt.Errorf("chunking: %w", err)
 	}
 
-	// Embed each chunk (stub)
+	return enhanced, lang, nil
+}
+
+// generateEmbeddings creates embeddings for all enhanced code chunks.
+func generateEmbeddings(ctx context.Context, enhanced []outbound.EnhancedCodeChunk) ([]chunkOut, error) {
 	embedder := simple.New()
-	type chunkOut struct {
-		outbound.EnhancedCodeChunk
-
-		Embedding      []float64 `json:"embedding"`
-		EmbeddingDim   int       `json:"embedding_dim"`
-		ContentPreview string    `json:"content_preview"`
-	}
-
 	outList := make([]chunkOut, 0, len(enhanced))
-	for _, ch := range enhanced {
-		vec, err := embedder.GenerateEmbedding(ctx, ch.Content)
+
+	for i := range enhanced {
+		ch := &enhanced[i]
+		// Create default embedding options
+		options := outbound.EmbeddingOptions{
+			TaskType: outbound.TaskTypeSemanticSimilarity,
+			Timeout:  30 * time.Second,
+		}
+
+		result, err := embedder.GenerateEmbedding(ctx, ch.Content, options)
 		if err != nil {
-			return fmt.Errorf("embed chunk %s: %w", ch.ID, err)
+			return nil, fmt.Errorf("embed chunk %s: %w", ch.ID, err)
 		}
 		preview := ch.Content
 		if len(preview) > 160 {
 			preview = preview[:160]
 		}
 		outList = append(outList, chunkOut{
-			EnhancedCodeChunk: ch,
-			Embedding:         vec,
-			EmbeddingDim:      len(vec),
+			EnhancedCodeChunk: *ch,
+			Embedding:         result.Vector,
+			EmbeddingDim:      len(result.Vector),
 			ContentPreview:    preview,
 		})
 	}
 
+	return outList, nil
+}
+
+// outputResults formats and writes the results to output.
+func outputResults(
+	filePath string,
+	lang valueobject.Language,
+	outList []chunkOut,
+	funcCount int,
+	outPath string,
+) error {
 	payload := map[string]any{
 		"file":                filePath,
 		"language":            lang.Name(),
-		"functions_extracted": len(funcs),
+		"functions_extracted": funcCount,
 		"chunks":              outList,
 	}
 
@@ -173,7 +206,8 @@ func runChunk(filePath, langName, outPath string) error {
 	}
 
 	if outPath == "" {
-		fmt.Println(string(data))
+		_, _ = os.Stdout.Write(data)
+		_, _ = os.Stdout.WriteString("\n")
 	} else {
 		if err := os.WriteFile(outPath, data, 0o600); err != nil {
 			return fmt.Errorf("write output: %w", err)
@@ -184,6 +218,15 @@ func runChunk(filePath, langName, outPath string) error {
 	return nil
 }
 
-func init() { //nolint:gochecknoinits
+// chunkOut represents the output structure for each code chunk.
+type chunkOut struct {
+	outbound.EnhancedCodeChunk
+
+	Embedding      []float64 `json:"embedding"`
+	EmbeddingDim   int       `json:"embedding_dim"`
+	ContentPreview string    `json:"content_preview"`
+}
+
+func init() { //nolint:gochecknoinits // required by cobra for command registration
 	rootCmd.AddCommand(newChunkCmd())
 }

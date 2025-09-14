@@ -113,6 +113,9 @@ func initConfig() {
 	// This ensures environment variables can override config file values for nested boolean pointers
 	bindMiddlewareEnvVars(v)
 
+	// Explicitly bind Gemini environment variables
+	bindGeminiEnvVars(v)
+
 	// Read configuration
 	if err := v.ReadInConfig(); err != nil {
 		handleConfigError(err, configFile, searchPaths)
@@ -161,6 +164,37 @@ func bindMiddlewareEnvVars(v *viper.Viper) {
 	}
 
 	for key, envVar := range middlewareEnvBindings {
+		if err := v.BindEnv(key, envVar); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to bind environment variable %s to %s: %v\n", envVar, key, err)
+		}
+	}
+}
+
+// bindGeminiEnvVars explicitly binds Gemini environment variables to Viper configuration keys.
+//
+// Problem Solved:
+//
+//	Ensures that Gemini API key environment variable is properly bound to the config,
+//	allowing environment variables to override config file values.
+//
+// Environment Variable Mappings:
+//   - CODECHUNK_GEMINI_API_KEY → gemini.api_key
+//
+// Usage:
+//
+//	Call this function after setting up basic Viper configuration (SetEnvPrefix, etc.)
+//	but before loading configuration with config.New().
+//
+// Error Handling:
+//
+//	Binding failures are logged as warnings but don't stop application startup,
+//	allowing the application to continue with config file values.
+func bindGeminiEnvVars(v *viper.Viper) {
+	geminiEnvBindings := map[string]string{
+		"gemini.api_key": "CODECHUNK_GEMINI_API_KEY",
+	}
+
+	for key, envVar := range geminiEnvBindings {
 		if err := v.BindEnv(key, envVar); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: Failed to bind environment variable %s to %s: %v\n", envVar, key, err)
 		}

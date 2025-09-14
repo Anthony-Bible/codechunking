@@ -419,19 +419,6 @@ type CodeParsingConfig struct {
 	ExcludeVendor    bool
 }
 
-// CodeChunk represents a parsed code chunk.
-type CodeChunk struct {
-	ID        string    `json:"id"`
-	FilePath  string    `json:"file_path"`
-	StartLine int       `json:"start_line"`
-	EndLine   int       `json:"end_line"`
-	Content   string    `json:"content"`
-	Language  string    `json:"language"`
-	Size      int       `json:"size"`
-	Hash      string    `json:"hash"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 // ====================== CACHING INTERFACES ======================
 
 // CacheStrategy represents different cache management strategies.

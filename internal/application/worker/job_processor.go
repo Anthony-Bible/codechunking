@@ -65,6 +65,7 @@ type DefaultJobProcessor struct {
 	gitClient        outbound.GitClient
 	codeParser       outbound.CodeParser
 	embeddingService outbound.EmbeddingService
+	chunkStorageRepo outbound.ChunkStorageRepository
 	activeJobs       map[string]*JobExecution
 	jobsMu           sync.RWMutex
 	semaphore        chan struct{}
@@ -80,6 +81,7 @@ func NewDefaultJobProcessor(
 	gitClient outbound.GitClient,
 	codeParser outbound.CodeParser,
 	embeddingService outbound.EmbeddingService,
+	chunkStorageRepo outbound.ChunkStorageRepository,
 ) inbound.JobProcessor {
 	// Ensure proper semaphore initialization
 	maxConcurrent := config.MaxConcurrentJobs
@@ -94,6 +96,7 @@ func NewDefaultJobProcessor(
 		gitClient:        gitClient,
 		codeParser:       codeParser,
 		embeddingService: embeddingService,
+		chunkStorageRepo: chunkStorageRepo,
 		activeJobs:       make(map[string]*JobExecution),
 		semaphore:        make(chan struct{}, maxConcurrent),
 	}
@@ -166,13 +169,15 @@ func (p *DefaultJobProcessor) ProcessJob(ctx context.Context, message messaging.
 		return err
 	}
 
-	if err := p.generateEmbeddings(jobCtx, message.MessageID, chunks); err != nil {
+	if err := p.generateEmbeddings(jobCtx, message.MessageID, message.RepositoryID, chunks); err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
 		return err
 	}
 
 	p.updateJobStatus(message.MessageID, jobStatusCompleted)
-	execution.Progress.Stage = jobStatusCompleted
+	if execution.Progress != nil {
+		execution.Progress.Stage = jobStatusCompleted
+	}
 
 	// Update metrics atomically
 	p.updateMetrics(int64(len(chunks)))
@@ -269,7 +274,12 @@ func (p *DefaultJobProcessor) parseCode(
 }
 
 // generateEmbeddings creates embeddings for code chunks.
-func (p *DefaultJobProcessor) generateEmbeddings(ctx context.Context, jobID string, chunks []outbound.CodeChunk) error {
+func (p *DefaultJobProcessor) generateEmbeddings(
+	ctx context.Context,
+	jobID string,
+	repositoryID uuid.UUID,
+	chunks []outbound.CodeChunk,
+) error {
 	p.jobsMu.RLock()
 	execution := p.activeJobs[jobID]
 	p.jobsMu.RUnlock()
@@ -277,6 +287,11 @@ func (p *DefaultJobProcessor) generateEmbeddings(ctx context.Context, jobID stri
 	// Check if execution exists (job may have been removed from activeJobs)
 	if execution == nil {
 		return fmt.Errorf("job execution not found for jobID: %s", jobID)
+	}
+
+	// Ensure Progress is initialized
+	if execution.Progress == nil {
+		execution.Progress = &JobProgress{}
 	}
 
 	atomic.AddInt64(&execution.Progress.ChunksGenerated, int64(len(chunks)))
@@ -295,7 +310,9 @@ func (p *DefaultJobProcessor) generateEmbeddings(ctx context.Context, jobID stri
 		default:
 		}
 
-		execution.Progress.CurrentFile = chunk.FilePath
+		if execution.Progress != nil {
+			execution.Progress.CurrentFile = chunk.FilePath
+		}
 		// Generate embedding using Gemini API
 		options := outbound.EmbeddingOptions{
 			Model:    "text-embedding-004",
@@ -308,13 +325,35 @@ func (p *DefaultJobProcessor) generateEmbeddings(ctx context.Context, jobID stri
 			return fmt.Errorf("failed to generate embedding for chunk %d: %w", i, err)
 		}
 
-		// Store the embedding (placeholder - should integrate with vector storage)
-		slogger.Debug(ctx, "Generated embedding", slogger.Fields{
+		// Parse chunk ID as UUID for database storage
+		chunkUUID, err := uuid.Parse(chunk.ID)
+		if err != nil {
+			return fmt.Errorf("invalid chunk ID format for chunk %d: %w", i, err)
+		}
+
+		// Create embedding struct for database storage
+		embedding := &outbound.Embedding{
+			ID:           uuid.New(),
+			ChunkID:      chunkUUID,
+			RepositoryID: repositoryID,
+			Vector:       result.Vector,
+			ModelVersion: "text-embedding-004",
+			CreatedAt:    time.Now().Format(time.RFC3339),
+		}
+
+		// Store chunk and embedding in database using transactional method
+		if err := p.chunkStorageRepo.SaveChunkWithEmbedding(ctx, &chunk, embedding); err != nil {
+			return fmt.Errorf("failed to store chunk and embedding for chunk %d: %w", i, err)
+		}
+
+		slogger.Debug(ctx, "Generated and stored embedding", slogger.Fields{
 			"chunk_id":    chunk.ID,
 			"dimensions":  result.Dimensions,
 			"vector_size": len(result.Vector),
 		})
-		atomic.AddInt64(&execution.Progress.EmbeddingsCreated, 1)
+		if execution.Progress != nil {
+			atomic.AddInt64(&execution.Progress.EmbeddingsCreated, 1)
+		}
 
 		// Log progress every 10 chunks
 		if (i+1)%10 == 0 || i == len(chunks)-1 {

@@ -1,6 +1,8 @@
 package messaging
 
 import (
+	"codechunking/internal/application/common/slogger"
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -159,10 +161,24 @@ func (n *NATSConsumer) startSubscription() error {
 		subjectToUse = n.config.Subject
 	}
 
+	slogger.Info(context.Background(), "Starting pull subscription", slogger.Fields{
+		"stream_name":    streamName,
+		"consumer_name":  consumerName,
+		"subject":        subjectToUse,
+		"actual_subject": n.actualSubject,
+	})
+
 	sub, err := n.jsContext.PullSubscribe(subjectToUse, consumerName, nats.Bind(streamName, consumerName))
 	if err != nil {
+		slogger.Error(context.Background(), "Failed to create pull subscription", slogger.Fields{
+			"error":         err.Error(),
+			"stream_name":   streamName,
+			"consumer_name": consumerName,
+			"subject":       subjectToUse,
+		})
 		return fmt.Errorf("failed to create pull subscription: %w", err)
 	}
+	slogger.Info(context.Background(), "Pull subscription created successfully", nil)
 
 	// Wrap the subscription to provide test-compatible behavior
 	n.subscription = &subscriptionWrapper{
@@ -171,6 +187,7 @@ func (n *NATSConsumer) startSubscription() error {
 	}
 
 	// Start message processing goroutine
+	slogger.Info(context.Background(), "Starting message processing loop", nil)
 	go n.messageProcessingLoop()
 
 	return nil

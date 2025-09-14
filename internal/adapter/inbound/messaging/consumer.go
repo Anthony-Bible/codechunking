@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/config"
 	"codechunking/internal/port/inbound"
 	"context"
@@ -103,15 +104,34 @@ func (n *NATSConsumer) Start(ctx context.Context) error {
 	}
 
 	// Establish NATS connection
+	slogger.Info(ctx, "Establishing NATS connection", slogger.Fields{
+		"nats_url": n.natsConfig.URL,
+		"subject":  n.config.Subject,
+	})
 	if err := n.establishConnection(ctx); err != nil {
+		slogger.Error(ctx, "Failed to establish NATS connection", slogger.Fields{
+			"error":    err.Error(),
+			"nats_url": n.natsConfig.URL,
+		})
 		return fmt.Errorf("failed to establish connection: %w", err)
 	}
+	slogger.Info(ctx, "NATS connection established successfully", slogger.Fields{
+		"nats_url": n.natsConfig.URL,
+	})
 
 	// Create JetStream context
+	slogger.Info(ctx, "Creating JetStream context", slogger.Fields{
+		"subject": n.config.Subject,
+	})
 	if err := n.createJetStreamContext(); err != nil {
+		slogger.Error(ctx, "Failed to create JetStream context", slogger.Fields{
+			"error":   err.Error(),
+			"subject": n.config.Subject,
+		})
 		n.cleanupResources()
 		return fmt.Errorf("failed to create JetStream context: %w", err)
 	}
+	slogger.Info(ctx, "JetStream context created successfully", nil)
 
 	// Initialize stream and consumer
 	if err := n.initializeStreamAndConsumer(); err != nil {
@@ -186,14 +206,34 @@ func (n *NATSConsumer) createJetStreamContext() error {
 // This ensures the messaging infrastructure is ready for message processing.
 func (n *NATSConsumer) initializeStreamAndConsumer() error {
 	// Ensure INDEXING stream exists
+	slogger.Info(context.Background(), "Ensuring INDEXING stream exists", slogger.Fields{
+		"subject": n.config.Subject,
+	})
 	if err := n.ensureStreamExists(); err != nil {
+		slogger.Error(context.Background(), "Failed to ensure stream exists", slogger.Fields{
+			"error":   err.Error(),
+			"subject": n.config.Subject,
+		})
 		return fmt.Errorf("failed to ensure stream exists: %w", err)
 	}
+	slogger.Info(context.Background(), "INDEXING stream verified successfully", nil)
 
 	// Create durable consumer
+	slogger.Info(context.Background(), "Creating durable consumer", slogger.Fields{
+		"durable_name": n.config.DurableName,
+		"subject":      n.config.Subject,
+	})
 	if err := n.createDurableConsumer(); err != nil {
+		slogger.Error(context.Background(), "Failed to create durable consumer", slogger.Fields{
+			"error":        err.Error(),
+			"durable_name": n.config.DurableName,
+			"subject":      n.config.Subject,
+		})
 		return fmt.Errorf("failed to create durable consumer: %w", err)
 	}
+	slogger.Info(context.Background(), "Durable consumer created successfully", slogger.Fields{
+		"durable_name": n.config.DurableName,
+	})
 
 	return nil
 }

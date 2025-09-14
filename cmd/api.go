@@ -7,15 +7,18 @@ package cmd
 import (
 	"codechunking/internal/adapter/inbound/api"
 	"codechunking/internal/adapter/inbound/service"
+	"codechunking/internal/adapter/outbound/gemini"
 	"codechunking/internal/adapter/outbound/messaging"
 	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/registry"
+	appservice "codechunking/internal/application/service"
 	"codechunking/internal/config"
 	"codechunking/internal/port/inbound"
 	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -320,6 +323,66 @@ func (sf *ServiceFactory) createMessagePublisher() (outbound.MessagePublisher, e
 	return natsPublisher, nil
 }
 
+// CreateSearchService creates a search service instance with full-stack dependencies.
+//
+// This method creates all required dependencies for semantic search functionality:
+//   - VectorStorageRepository: PostgreSQL-backed vector storage with pgvector
+//   - EmbeddingService: Google Gemini API client for generating embeddings
+//   - ChunkRepository: PostgreSQL-backed repository for retrieving code chunks
+//
+// Returns:
+//   - A fully functional SearchService with all dependencies wired up
+//   - Error if any dependency creation fails (database, Gemini API, etc.)
+func (sf *ServiceFactory) CreateSearchService() (inbound.SearchService, error) {
+	// Get database pool (memoized)
+	dbPool, err := sf.GetDatabasePool()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database pool: %w", err)
+	}
+
+	// Create vector storage repository
+	vectorRepo := repository.NewPostgreSQLVectorStorageRepository(dbPool)
+
+	// Create chunk repository
+	chunkRepo := repository.NewPostgreSQLChunkRepository(dbPool)
+
+	// Create Gemini embedding client
+	embeddingService, err := sf.createGeminiEmbeddingClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create embedding service: %w", err)
+	}
+
+	// Create search service - it already implements the inbound interface
+	searchService := appservice.NewSearchService(vectorRepo, embeddingService, chunkRepo)
+
+	return searchService, nil
+}
+
+// createGeminiEmbeddingClient creates a Gemini embedding client.
+func (sf *ServiceFactory) createGeminiEmbeddingClient() (outbound.EmbeddingService, error) {
+	// Check if API key is configured
+	if sf.config.Gemini.APIKey == "" {
+		return nil, errors.New("gemini API key not configured - set CODECHUNK_GEMINI_API_KEY environment variable")
+	}
+
+	// Convert config to gemini ClientConfig
+	geminiConfig := &gemini.ClientConfig{
+		APIKey:     sf.config.Gemini.APIKey,
+		Model:      sf.config.Gemini.Model,
+		MaxRetries: sf.config.Gemini.MaxRetries,
+		Timeout:    sf.config.Gemini.Timeout,
+		TaskType:   "RETRIEVAL_DOCUMENT", // Default for search functionality
+	}
+
+	// Create gemini client
+	geminiClient, err := gemini.NewClient(geminiConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
+	}
+
+	return geminiClient, nil
+}
+
 // CreateErrorHandler creates an error handler instance.
 func (sf *ServiceFactory) CreateErrorHandler() api.ErrorHandler {
 	return api.NewDefaultErrorHandler()
@@ -348,11 +411,27 @@ func (sf *ServiceFactory) CreateServer() (*api.Server, error) {
 	repositoryService := sf.CreateRepositoryService()
 	errorHandler := sf.CreateErrorHandler()
 
+	// Create search service
+	searchService, err := sf.CreateSearchService()
+	if err != nil {
+		slogger.ErrorNoCtx(
+			"Failed to create search service, continuing without search functionality",
+			slogger.Field("error", err.Error()),
+		)
+		// Continue without search service - the API will work but search endpoint will return 404
+		searchService = nil
+	}
+
 	// Use the new server builder for more flexible configuration
 	serverBuilder := api.NewServerBuilder(sf.config).
 		WithHealthService(healthService).
 		WithRepositoryService(repositoryService).
 		WithErrorHandler(errorHandler)
+
+	// Add search service if available
+	if searchService != nil {
+		serverBuilder = serverBuilder.WithSearchService(searchService)
+	}
 
 	// Add middleware based on environment/config
 	if sf.shouldEnableDefaultMiddleware() {
@@ -469,7 +548,7 @@ func runAPIServer(_ *cobra.Command, _ []string) {
 	defer startCancel()
 
 	if startErr := server.Start(startCtx); startErr != nil {
-		slogger.ErrorNoCtx("Failed to start server", slogger.Field("error", startErr))
+		slogger.ErrorNoCtx("Failed to start server", slogger.Field("error", startErr.Error()))
 		os.Exit(1) //nolint:gocritic // intentional exit without defer in error path
 	}
 

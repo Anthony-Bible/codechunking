@@ -6,6 +6,8 @@ package cmd
 
 import (
 	"codechunking/internal/adapter/inbound/messaging"
+	"codechunking/internal/adapter/outbound/embeddings/simple"
+	"codechunking/internal/adapter/outbound/gemini"
 	"codechunking/internal/adapter/outbound/gitclient"
 	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/adapter/outbound/treesitter"
@@ -14,6 +16,7 @@ import (
 	"codechunking/internal/application/worker"
 	"codechunking/internal/config"
 	"codechunking/internal/port/inbound"
+	"codechunking/internal/port/outbound"
 	"context"
 	"os"
 	"os/signal"
@@ -113,6 +116,7 @@ func createWorkerService(cfg *config.Config, dbPool *pgxpool.Pool) (inbound.Work
 	// Create repository implementations
 	repoRepository := repository.NewPostgreSQLRepositoryRepository(dbPool)
 	indexingJobRepository := repository.NewPostgreSQLIndexingJobRepository(dbPool)
+	chunkStorageRepository := repository.NewPostgreSQLChunkRepository(dbPool)
 
 	// Create git client implementation
 	gitClient := gitclient.NewAuthenticatedGitClient()
@@ -136,8 +140,9 @@ func createWorkerService(cfg *config.Config, dbPool *pgxpool.Pool) (inbound.Work
 		indexingJobRepository,
 		repoRepository,
 		gitClient,
-		codeParser, // Now using real TreeSitter CodeParser
-		nil,        // EmbeddingGenerator will be injected in Phase 4.2+
+		codeParser,               // Now using real TreeSitter CodeParser
+		createEmbeddingService(), // Using Gemini embedding service
+		chunkStorageRepository,   // Repository for storing chunks and embeddings
 	)
 
 	// Create consumer
@@ -210,6 +215,42 @@ func waitForShutdownAndStop(workerService inbound.WorkerService) {
 	} else {
 		slogger.InfoNoCtx("Worker service shutdown completed successfully", nil)
 	}
+}
+
+// createEmbeddingService creates an embedding service, preferring Gemini but falling back to simple generator.
+func createEmbeddingService() outbound.EmbeddingService {
+	// Try to create Gemini client first
+	geminiAPIKey := os.Getenv("GEMINI_API_KEY")
+	if geminiAPIKey == "" {
+		geminiAPIKey = os.Getenv("GOOGLE_API_KEY")
+	}
+
+	if geminiAPIKey != "" {
+		config := &gemini.ClientConfig{
+			APIKey:   geminiAPIKey,
+			Model:    "text-embedding-004",
+			TaskType: "RETRIEVAL_DOCUMENT",
+			Timeout:  30 * time.Second,
+		}
+
+		client, err := gemini.NewClient(config)
+		if err != nil {
+			slogger.ErrorNoCtx("Failed to create Gemini client, falling back to simple generator", slogger.Fields{
+				"error": err.Error(),
+			})
+		} else {
+			slogger.InfoNoCtx("Using Gemini embedding service", slogger.Fields{
+				"model": config.Model,
+			})
+			return client
+		}
+	} else {
+		slogger.WarnNoCtx("No Gemini API key found in environment (GEMINI_API_KEY or GOOGLE_API_KEY), falling back to simple generator", nil)
+	}
+
+	// Fall back to simple generator
+	slogger.InfoNoCtx("Using simple embedding generator (fallback)", nil)
+	return simple.New()
 }
 
 func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for command registration

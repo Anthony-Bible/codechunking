@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -66,22 +67,85 @@ func NewAuthenticatedGitClient() outbound.AuthenticatedGitClient {
 
 // Clone performs a basic git clone.
 func (c *AuthenticatedGitClientImpl) Clone(ctx context.Context, repoURL, targetPath string) error {
-	// Minimal implementation for GREEN phase - just simulate success
-	slogger.Info(ctx, "Simulating git clone", slogger.Fields{
+	// Execute real git clone command
+	cmd := exec.CommandContext(ctx, "git", "clone", repoURL, targetPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return &outbound.GitOperationError{
+			Type:    "clone_failed",
+			Message: fmt.Sprintf("git clone failed: %s", string(output)),
+		}
+	}
+
+	slogger.Info(ctx, "Git clone completed", slogger.Fields{
 		"repoURL":    repoURL,
 		"targetPath": targetPath,
 	})
 	return nil
 }
 
-// GetCommitHash returns a mock commit hash.
-func (c *AuthenticatedGitClientImpl) GetCommitHash(_ context.Context, _ string) (string, error) {
-	return "abc123def456789", nil
+// GetCommitHash returns the current commit hash from a git repository.
+func (c *AuthenticatedGitClientImpl) GetCommitHash(ctx context.Context, repoPath string) (string, error) {
+	if repoPath == "" {
+		return "", &outbound.GitOperationError{
+			Type:    "invalid_path",
+			Message: "Repository path cannot be empty",
+		}
+	}
+
+	// Check if the path exists and has a .git directory
+	gitDir := filepath.Join(repoPath, ".git")
+	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		return "", &outbound.GitOperationError{
+			Type:    "not_git_repository",
+			Message: "Path is not a git repository",
+		}
+	}
+
+	// Execute git rev-parse HEAD command
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "rev-parse", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", &outbound.GitOperationError{
+			Type:    "git_command_failed",
+			Message: fmt.Sprintf("Failed to get commit hash: %v", err),
+		}
+	}
+
+	commitHash := strings.TrimSpace(string(output))
+	return commitHash, nil
 }
 
-// GetBranch returns a mock branch name.
-func (c *AuthenticatedGitClientImpl) GetBranch(_ context.Context, _ string) (string, error) {
-	return DefaultBranch, nil
+// GetBranch returns the current branch name from a git repository.
+func (c *AuthenticatedGitClientImpl) GetBranch(ctx context.Context, repoPath string) (string, error) {
+	if repoPath == "" {
+		return "", &outbound.GitOperationError{
+			Type:    "invalid_path",
+			Message: "Repository path cannot be empty",
+		}
+	}
+
+	// Check if the path exists and has a .git directory
+	gitDir := filepath.Join(repoPath, ".git")
+	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+		return "", &outbound.GitOperationError{
+			Type:    "not_git_repository",
+			Message: "Path is not a git repository",
+		}
+	}
+
+	// Execute git branch --show-current command
+	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "branch", "--show-current")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", &outbound.GitOperationError{
+			Type:    "git_command_failed",
+			Message: fmt.Sprintf("Failed to get branch name: %v", err),
+		}
+	}
+
+	branchName := strings.TrimSpace(string(output))
+	return branchName, nil
 }
 
 // Enhanced GitClient methods (minimal implementation)
@@ -92,21 +156,68 @@ func (c *AuthenticatedGitClientImpl) CloneWithOptions(
 	repoURL, targetPath string,
 	opts valueobject.CloneOptions,
 ) (*outbound.CloneResult, error) {
+	startTime := time.Now()
+
+	// Build git clone command with options
+	args := []string{"clone"}
+	args = append(args, opts.ToGitArgs()...)
+	args = append(args, repoURL, targetPath)
+
 	slogger.Info(ctx, "Cloning with options", slogger.Fields{
 		"repoURL":    repoURL,
 		"targetPath": targetPath,
-		"shallow":    opts.IsShallowClone(),
-		"depth":      opts.Depth(),
+		"args":       args,
 	})
 
-	// Minimal implementation - return a basic result
+	// Execute git clone with options
+	cmd := exec.CommandContext(ctx, "git", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		err = c.handleCloneError(ctx, repoURL, targetPath, opts, string(output))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	cloneTime := time.Since(startTime)
+
+	// Get the actual commit hash and branch name from the cloned repository
+	commitHash, err := c.GetCommitHash(ctx, targetPath)
+	if err != nil {
+		// Fallback to a reasonable default rather than failing
+		commitHash = "unknown"
+	}
+
+	branchName := opts.Branch()
+	if branchName == "" {
+		// Only get actual branch name if no specific branch was requested
+		actualBranch, err := c.GetBranch(ctx, targetPath)
+		if err != nil {
+			branchName = "main"
+		} else {
+			branchName = actualBranch
+		}
+	}
+
+	// Calculate repository size by checking directory size
+	repoSize, err := c.calculateDirectorySize(targetPath)
+	if err != nil {
+		repoSize = DefaultRepositorySize
+	}
+
+	// Count files in the repository
+	fileCount, err := c.countFiles(targetPath)
+	if err != nil {
+		fileCount = DefaultFileCount
+	}
+
 	return &outbound.CloneResult{
 		OperationID:    uuid.New().String(),
-		CommitHash:     "abc123def456789",
-		BranchName:     opts.Branch(),
-		CloneTime:      DefaultCloneTimeMs * time.Millisecond,
-		RepositorySize: DefaultRepositorySize,
-		FileCount:      DefaultFileCount,
+		CommitHash:     commitHash,
+		BranchName:     branchName,
+		CloneTime:      cloneTime,
+		RepositorySize: repoSize,
+		FileCount:      fileCount,
 		CloneDepth:     opts.Depth(),
 	}, nil
 }
@@ -1864,4 +1975,67 @@ func (c *AuthenticatedGitClientImpl) generateCacheKey(
 	keyString := strings.Join(keyParts, ":")
 	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(keyString)))
 	return hash[:16]
+}
+
+// calculateDirectorySize calculates the total size of files in a directory.
+func (c *AuthenticatedGitClientImpl) calculateDirectorySize(dirPath string) (int64, error) {
+	var size int64
+	err := filepath.Walk(dirPath, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return nil
+	})
+	return size, err
+}
+
+// countFiles counts the number of files in a directory.
+func (c *AuthenticatedGitClientImpl) countFiles(dirPath string) (int, error) {
+	var count int
+	err := filepath.Walk(dirPath, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			count++
+		}
+		return nil
+	})
+	return count, err
+}
+
+// handleCloneError handles clone errors and attempts retry if appropriate.
+func (c *AuthenticatedGitClientImpl) handleCloneError(
+	ctx context.Context,
+	repoURL, targetPath string,
+	opts valueobject.CloneOptions,
+	output string,
+) error {
+	// If branch-specific clone failed, try without specifying branch
+	if strings.Contains(output, "Remote branch") && strings.Contains(output, "not found") {
+		// Retry without the branch specification
+		retryArgs := []string{"clone"}
+		if opts.IsShallowClone() && opts.Depth() > 0 {
+			retryArgs = append(retryArgs, fmt.Sprintf("--depth=%d", opts.Depth()))
+		}
+		retryArgs = append(retryArgs, repoURL, targetPath)
+
+		retryCmd := exec.CommandContext(ctx, "git", retryArgs...)
+		retryOutput, retryErr := retryCmd.CombinedOutput()
+		if retryErr != nil {
+			return &outbound.GitOperationError{
+				Type:    "clone_failed",
+				Message: fmt.Sprintf("git clone failed: %s", string(retryOutput)),
+			}
+		}
+		return nil
+	}
+
+	return &outbound.GitOperationError{
+		Type:    "clone_failed",
+		Message: fmt.Sprintf("git clone with options failed: %s", output),
+	}
 }

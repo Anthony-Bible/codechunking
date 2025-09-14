@@ -257,17 +257,71 @@ func (m *MockCodeParser) ParseDirectory(
 	return args.Get(0).([]outbound.CodeChunk), args.Error(1)
 }
 
-// MockEmbeddingGenerator mocks the embedding generator interface.
-type MockEmbeddingGenerator struct {
+// MockEmbeddingService mocks the embedding service interface.
+type MockEmbeddingService struct {
 	mock.Mock
 }
 
-func (m *MockEmbeddingGenerator) GenerateEmbedding(ctx context.Context, text string) ([]float64, error) {
-	args := m.Called(ctx, text)
+func (m *MockEmbeddingService) GenerateEmbedding(
+	ctx context.Context,
+	text string,
+	options outbound.EmbeddingOptions,
+) (*outbound.EmbeddingResult, error) {
+	args := m.Called(ctx, text, options)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]float64), args.Error(1)
+	return args.Get(0).(*outbound.EmbeddingResult), args.Error(1)
+}
+
+func (m *MockEmbeddingService) GenerateBatchEmbeddings(
+	ctx context.Context,
+	texts []string,
+	options outbound.EmbeddingOptions,
+) ([]*outbound.EmbeddingResult, error) {
+	args := m.Called(ctx, texts, options)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*outbound.EmbeddingResult), args.Error(1)
+}
+
+func (m *MockEmbeddingService) GenerateCodeChunkEmbedding(
+	ctx context.Context,
+	chunk *outbound.CodeChunk,
+	options outbound.EmbeddingOptions,
+) (*outbound.CodeChunkEmbedding, error) {
+	args := m.Called(ctx, chunk, options)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.CodeChunkEmbedding), args.Error(1)
+}
+
+func (m *MockEmbeddingService) ValidateApiKey(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+func (m *MockEmbeddingService) GetModelInfo(ctx context.Context) (*outbound.ModelInfo, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.ModelInfo), args.Error(1)
+}
+
+func (m *MockEmbeddingService) GetSupportedModels(ctx context.Context) ([]string, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *MockEmbeddingService) EstimateTokenCount(ctx context.Context, text string) (int, error) {
+	args := m.Called(ctx, text)
+	return args.Int(0), args.Error(1)
 }
 
 // StreamingProcessingConfig holds configuration for streaming processing.
@@ -326,13 +380,13 @@ func (suite *JobProcessorTestSuite) SetupTest() {
 	}
 
 	suite.processor = &DefaultJobProcessor{
-		config:             config,
-		indexingJobRepo:    &MockIndexingJobRepository{},
-		repositoryRepo:     &MockRepositoryRepository{},
-		gitClient:          &MockEnhancedGitClient{},
-		codeParser:         &MockCodeParser{},
-		embeddingGenerator: &MockEmbeddingGenerator{},
-		activeJobs:         make(map[string]*JobExecution),
+		config:           config,
+		indexingJobRepo:  &MockIndexingJobRepository{},
+		repositoryRepo:   &MockRepositoryRepository{},
+		gitClient:        &MockEnhancedGitClient{},
+		codeParser:       &MockCodeParser{},
+		embeddingService: &MockEmbeddingService{},
+		activeJobs:       make(map[string]*JobExecution),
 	}
 }
 
@@ -716,19 +770,28 @@ func (suite *JobProcessorTestSuite) TestProcessJob_TreeSitterParser_MultiLanguag
 	suite.Contains(err.Error(), "not implemented yet")
 }
 
-// TestProcessJob_EmbeddingGenerator_Integration tests embedding generator integration.
-func (suite *JobProcessorTestSuite) TestProcessJob_EmbeddingGenerator_Integration() {
-	mockEmbeddingGenerator := &MockEmbeddingGenerator{}
-	mockEmbeddingGenerator.On("GenerateEmbedding", mock.Anything, mock.Anything).
-		Return([]float64{0.1, 0.2, 0.3}, nil)
+// TestProcessJob_EmbeddingService_Integration tests embedding service integration.
+func (suite *JobProcessorTestSuite) TestProcessJob_EmbeddingService_Integration() {
+	mockEmbeddingService := &MockEmbeddingService{}
+
+	// Create a mock embedding result
+	mockResult := &outbound.EmbeddingResult{
+		Vector:     []float64{0.1, 0.2, 0.3},
+		Dimensions: 3,
+		Model:      "test-model",
+		TaskType:   outbound.TaskTypeRetrievalDocument,
+	}
+
+	mockEmbeddingService.On("GenerateEmbedding", mock.Anything, mock.Anything, mock.Anything).
+		Return(mockResult, nil)
 
 	processor := &DefaultJobProcessor{
-		config:             suite.processor.config,
-		activeJobs:         make(map[string]*JobExecution),
-		indexingJobRepo:    &MockIndexingJobRepository{},
-		gitClient:          &MockEnhancedGitClient{},
-		codeParser:         &MockCodeParser{},
-		embeddingGenerator: mockEmbeddingGenerator,
+		config:           suite.processor.config,
+		activeJobs:       make(map[string]*JobExecution),
+		indexingJobRepo:  &MockIndexingJobRepository{},
+		gitClient:        &MockEnhancedGitClient{},
+		codeParser:       &MockCodeParser{},
+		embeddingService: mockEmbeddingService,
 	}
 
 	message := messaging.EnhancedIndexingJobMessage{

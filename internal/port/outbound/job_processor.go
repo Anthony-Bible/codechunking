@@ -410,11 +410,6 @@ type CodeParser interface {
 	ParseDirectory(ctx context.Context, dirPath string, config CodeParsingConfig) ([]CodeChunk, error)
 }
 
-// EmbeddingGenerator defines the interface for generating embeddings.
-type EmbeddingGenerator interface {
-	GenerateEmbedding(ctx context.Context, text string) ([]float64, error)
-}
-
 // CodeParsingConfig holds configuration for code parsing.
 type CodeParsingConfig struct {
 	ChunkSizeBytes   int

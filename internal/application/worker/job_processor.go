@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/messaging"
 	"codechunking/internal/port/inbound"
 	"codechunking/internal/port/outbound"
@@ -58,17 +59,17 @@ type JobProgress struct {
 
 // DefaultJobProcessor is the default implementation.
 type DefaultJobProcessor struct {
-	config             JobProcessorConfig
-	indexingJobRepo    outbound.IndexingJobRepository
-	repositoryRepo     outbound.RepositoryRepository
-	gitClient          outbound.GitClient
-	codeParser         outbound.CodeParser
-	embeddingGenerator outbound.EmbeddingGenerator
-	activeJobs         map[string]*JobExecution
-	jobsMu             sync.RWMutex
-	semaphore          chan struct{}
-	metrics            inbound.JobProcessorMetrics
-	healthStatus       inbound.JobProcessorHealthStatus
+	config           JobProcessorConfig
+	indexingJobRepo  outbound.IndexingJobRepository
+	repositoryRepo   outbound.RepositoryRepository
+	gitClient        outbound.GitClient
+	codeParser       outbound.CodeParser
+	embeddingService outbound.EmbeddingService
+	activeJobs       map[string]*JobExecution
+	jobsMu           sync.RWMutex
+	semaphore        chan struct{}
+	metrics          inbound.JobProcessorMetrics
+	healthStatus     inbound.JobProcessorHealthStatus
 }
 
 // NewDefaultJobProcessor creates a new default job processor.
@@ -78,7 +79,7 @@ func NewDefaultJobProcessor(
 	repositoryRepo outbound.RepositoryRepository,
 	gitClient outbound.GitClient,
 	codeParser outbound.CodeParser,
-	embeddingGenerator outbound.EmbeddingGenerator,
+	embeddingService outbound.EmbeddingService,
 ) inbound.JobProcessor {
 	// Ensure proper semaphore initialization
 	maxConcurrent := config.MaxConcurrentJobs
@@ -87,14 +88,14 @@ func NewDefaultJobProcessor(
 	}
 
 	processor := &DefaultJobProcessor{
-		config:             config,
-		indexingJobRepo:    indexingJobRepo,
-		repositoryRepo:     repositoryRepo,
-		gitClient:          gitClient,
-		codeParser:         codeParser,
-		embeddingGenerator: embeddingGenerator,
-		activeJobs:         make(map[string]*JobExecution),
-		semaphore:          make(chan struct{}, maxConcurrent),
+		config:           config,
+		indexingJobRepo:  indexingJobRepo,
+		repositoryRepo:   repositoryRepo,
+		gitClient:        gitClient,
+		codeParser:       codeParser,
+		embeddingService: embeddingService,
+		activeJobs:       make(map[string]*JobExecution),
+		semaphore:        make(chan struct{}, maxConcurrent),
 	}
 
 	return processor
@@ -273,10 +274,20 @@ func (p *DefaultJobProcessor) generateEmbeddings(ctx context.Context, jobID stri
 	execution := p.activeJobs[jobID]
 	p.jobsMu.RUnlock()
 
+	// Check if execution exists (job may have been removed from activeJobs)
+	if execution == nil {
+		return fmt.Errorf("job execution not found for jobID: %s", jobID)
+	}
+
 	atomic.AddInt64(&execution.Progress.ChunksGenerated, int64(len(chunks)))
 	execution.Progress.Stage = "parsing_complete"
 
-	for _, chunk := range chunks {
+	slogger.Info(ctx, "Starting embedding generation", slogger.Fields{
+		"job_id":      jobID,
+		"chunk_count": len(chunks),
+	})
+
+	for i, chunk := range chunks {
 		// Check for context cancellation
 		select {
 		case <-ctx.Done():
@@ -285,11 +296,42 @@ func (p *DefaultJobProcessor) generateEmbeddings(ctx context.Context, jobID stri
 		}
 
 		execution.Progress.CurrentFile = chunk.FilePath
-		if _, err := p.embeddingGenerator.GenerateEmbedding(ctx, chunk.Content); err != nil {
-			return fmt.Errorf("failed to generate embedding: %w", err)
+		// Generate embedding using Gemini API
+		options := outbound.EmbeddingOptions{
+			Model:    "text-embedding-004",
+			TaskType: outbound.TaskTypeRetrievalDocument,
+			Timeout:  30 * time.Second,
 		}
+
+		result, err := p.embeddingService.GenerateEmbedding(ctx, chunk.Content, options)
+		if err != nil {
+			return fmt.Errorf("failed to generate embedding for chunk %d: %w", i, err)
+		}
+
+		// Store the embedding (placeholder - should integrate with vector storage)
+		slogger.Debug(ctx, "Generated embedding", slogger.Fields{
+			"chunk_id":    chunk.ID,
+			"dimensions":  result.Dimensions,
+			"vector_size": len(result.Vector),
+		})
 		atomic.AddInt64(&execution.Progress.EmbeddingsCreated, 1)
+
+		// Log progress every 10 chunks
+		if (i+1)%10 == 0 || i == len(chunks)-1 {
+			slogger.Info(ctx, "Embedding generation progress", slogger.Fields{
+				"job_id":       jobID,
+				"completed":    i + 1,
+				"total":        len(chunks),
+				"current_file": chunk.FilePath,
+			})
+		}
 	}
+
+	slogger.Info(ctx, "Embedding generation completed", slogger.Fields{
+		"job_id":           jobID,
+		"total_embeddings": len(chunks),
+	})
+
 	return nil
 }
 

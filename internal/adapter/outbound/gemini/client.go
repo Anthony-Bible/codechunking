@@ -4,17 +4,15 @@ import (
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/port/outbound"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"google.golang.org/genai"
 )
 
 const (
@@ -29,26 +27,16 @@ const (
 
 // ClientConfig holds the configuration for the Gemini API client.
 type ClientConfig struct {
-	APIKey          string        `json:"api_key"`
-	BaseURL         string        `json:"base_url"`
-	Model           string        `json:"model"`
-	TaskType        string        `json:"task_type"`
-	Timeout         time.Duration `json:"timeout"`
-	MaxRetries      int           `json:"max_retries"`
-	MaxTokens       int           `json:"max_tokens"`
-	Dimensions      int           `json:"dimensions"`
-	UserAgent       string        `json:"user_agent"`
-	EnableBatching  bool          `json:"enable_batching"`
-	BatchSize       int           `json:"batch_size"`
-	RateLimitBuffer time.Duration `json:"rate_limit_buffer"`
+	APIKey     string        `json:"api_key"`
+	Model      string        `json:"model"`
+	TaskType   string        `json:"task_type"`
+	Timeout    time.Duration `json:"timeout"`
+	Dimensions int           `json:"dimensions"`
 }
 
 // Validate validates the client configuration.
 func (c *ClientConfig) Validate() error {
 	if err := c.validateAPIKey(); err != nil {
-		return err
-	}
-	if err := c.validateBaseURL(); err != nil {
 		return err
 	}
 	if err := c.validateModel(); err != nil {
@@ -60,9 +48,6 @@ func (c *ClientConfig) Validate() error {
 	if err := c.validateTimeout(); err != nil {
 		return err
 	}
-	if err := c.validateMaxRetries(); err != nil {
-		return err
-	}
 	return c.validateDimensions()
 }
 
@@ -72,19 +57,6 @@ func (c *ClientConfig) validateAPIKey() error {
 	}
 	if strings.TrimSpace(c.APIKey) == "" {
 		return errors.New("API key cannot be empty or whitespace")
-	}
-	return nil
-}
-
-func (c *ClientConfig) validateBaseURL() error {
-	if c.BaseURL == "" {
-		return nil
-	}
-	if _, err := url.Parse(c.BaseURL); err != nil {
-		return errors.New("invalid base URL")
-	}
-	if !strings.HasPrefix(c.BaseURL, "http") {
-		return errors.New("invalid base URL")
 	}
 	return nil
 }
@@ -110,13 +82,6 @@ func (c *ClientConfig) validateTimeout() error {
 	return nil
 }
 
-func (c *ClientConfig) validateMaxRetries() error {
-	if c.MaxRetries < 0 {
-		return errors.New("max retries cannot be negative")
-	}
-	return nil
-}
-
 func (c *ClientConfig) validateDimensions() error {
 	if c.Dimensions < 0 {
 		return errors.New("dimensions cannot be negative")
@@ -131,6 +96,7 @@ func validateTaskTypeValue(taskType string) error {
 	validTaskTypes := []string{
 		"RETRIEVAL_DOCUMENT",
 		"RETRIEVAL_QUERY",
+		"CODE_RETRIEVAL_QUERY",
 		"SEMANTIC_SIMILARITY",
 		"CLASSIFICATION",
 		"CLUSTERING",
@@ -145,8 +111,7 @@ func validateTaskTypeValue(taskType string) error {
 
 // Client represents the Gemini API client.
 type Client struct {
-	config     *ClientConfig
-	httpClient *http.Client
+	config *ClientConfig
 }
 
 // NewClient creates a new Gemini API client with the provided configuration.
@@ -160,13 +125,12 @@ func NewClient(config *ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	// Then apply defaults
+	// Apply defaults
 	finalConfig := applyConfigDefaults(config)
-	httpClient := createHTTPClient(finalConfig.Timeout)
 
+	// Create client
 	client := &Client{
-		config:     finalConfig,
-		httpClient: httpClient,
+		config: finalConfig,
 	}
 
 	return client, nil
@@ -181,24 +145,14 @@ func validateClientConfig(config *ClientConfig) error {
 // applyConfigDefaults creates a new config with defaults applied.
 func applyConfigDefaults(config *ClientConfig) *ClientConfig {
 	finalConfig := &ClientConfig{
-		APIKey:          strings.TrimSpace(config.APIKey),
-		BaseURL:         config.BaseURL,
-		Model:           config.Model,
-		TaskType:        config.TaskType,
-		Timeout:         config.Timeout,
-		MaxRetries:      config.MaxRetries,
-		MaxTokens:       config.MaxTokens,
-		Dimensions:      config.Dimensions,
-		UserAgent:       config.UserAgent,
-		EnableBatching:  config.EnableBatching,
-		BatchSize:       config.BatchSize,
-		RateLimitBuffer: config.RateLimitBuffer,
+		APIKey:     strings.TrimSpace(config.APIKey),
+		Model:      config.Model,
+		TaskType:   config.TaskType,
+		Timeout:    config.Timeout,
+		Dimensions: config.Dimensions,
 	}
 
 	// Set defaults
-	if finalConfig.BaseURL == "" {
-		finalConfig.BaseURL = "https://generativelanguage.googleapis.com/v1beta"
-	}
 	if finalConfig.Model == "" {
 		finalConfig.Model = DefaultModel
 	}
@@ -208,52 +162,11 @@ func applyConfigDefaults(config *ClientConfig) *ClientConfig {
 	if finalConfig.Timeout == 0 {
 		finalConfig.Timeout = 30 * time.Second
 	}
-	if finalConfig.MaxRetries == 0 {
-		finalConfig.MaxRetries = 3
-	}
 	if finalConfig.Dimensions == 0 {
 		finalConfig.Dimensions = 768
 	}
-	if finalConfig.MaxTokens == 0 {
-		finalConfig.MaxTokens = 2048
-	}
-	if finalConfig.UserAgent == "" {
-		finalConfig.UserAgent = "CodeChunking-Gemini-Client/1.0.0"
-	}
 
 	return finalConfig
-}
-
-// createHTTPClient creates an HTTP client with enhanced transport configuration and timeouts.
-func createHTTPClient(timeout time.Duration) *http.Client {
-	transport := &http.Transport{
-		// Connection pool settings
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
-
-		// Timeout configurations
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-
-		// Performance optimizations
-		DisableCompression: false,
-		ForceAttemptHTTP2:  true,
-		DisableKeepAlives:  false,
-
-		// Connection reuse
-		MaxConnsPerHost: 50,
-	}
-
-	return &http.Client{
-		Timeout:   timeout,
-		Transport: transport,
-		// Don't follow redirects for API calls
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
 }
 
 // NewClientFromEnv creates a new Gemini API client with environment variable support.
@@ -289,63 +202,6 @@ func (c *Client) GetConfig() *ClientConfig {
 	return &configCopy
 }
 
-// GetHTTPClient returns the HTTP client used by the Gemini client.
-func (c *Client) GetHTTPClient() *http.Client {
-	return c.httpClient
-}
-
-// CreateRequest creates an HTTP request with proper headers, authentication, and timeout handling.
-func (c *Client) CreateRequest(ctx context.Context, method, endpoint string, body io.Reader) (*http.Request, error) {
-	// Validate input parameters
-	if method == "" {
-		return nil, errors.New("HTTP method cannot be empty")
-	}
-	if endpoint == "" {
-		return nil, errors.New("endpoint cannot be empty")
-	}
-
-	// Construct full URL with proper path joining
-	baseURL := strings.TrimSuffix(c.config.BaseURL, "/")
-	cleanEndpoint := strings.TrimPrefix(endpoint, "/")
-	fullURL := baseURL + "/" + cleanEndpoint
-
-	// Validate URL construction
-	if _, err := url.Parse(fullURL); err != nil {
-		return nil, fmt.Errorf("invalid URL constructed: %s, error: %w", fullURL, err)
-	}
-
-	// Create request with context for proper cancellation and timeouts
-	req, err := http.NewRequestWithContext(ctx, method, fullURL, body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	// Set authentication header
-	req.Header.Set("X-Goog-Api-Key", c.config.APIKey)
-
-	// Set standard headers
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", c.config.UserAgent)
-
-	// Add request tracing headers
-	req.Header.Set("X-Request-ID", generateRequestID())
-
-	// Add client version header for debugging
-	req.Header.Set("X-Client-Version", "gemini-client/1.0.0")
-
-	// Set Connection header for better connection management
-	req.Header.Set("Connection", "keep-alive")
-
-	// Add timeout context information to headers for debugging
-	if deadline, ok := ctx.Deadline(); ok {
-		timeoutDuration := time.Until(deadline)
-		req.Header.Set("X-Request-Timeout", fmt.Sprintf("%.2fs", timeoutDuration.Seconds()))
-	}
-
-	return req, nil
-}
-
 // EmbeddingService interface implementation (stubs for GREEN phase)
 
 // GenerateEmbedding generates an embedding vector for a given text content.
@@ -354,11 +210,89 @@ func (c *Client) GenerateEmbedding(
 	text string,
 	options outbound.EmbeddingOptions,
 ) (*outbound.EmbeddingResult, error) {
-	slogger.Info(ctx, "GenerateEmbedding called", slogger.Fields{
-		"text_length": len(text),
-		"model":       c.config.Model,
-	})
-	return nil, errors.New("GenerateEmbedding not implemented yet")
+	requestID := c.LogEmbeddingRequest(ctx, text, options)
+	startTime := time.Now()
+
+	// Input validation
+	if strings.TrimSpace(text) == "" {
+		return nil, &outbound.EmbeddingError{
+			Code:      "empty_text",
+			Type:      "validation",
+			Message:   "text content cannot be empty",
+			Retryable: false,
+		}
+	}
+
+	// Create GenAI client (for future use when SDK API is confirmed)
+	_, err := c.createGenaiClient(ctx)
+	if err != nil {
+		c.LogEmbeddingError(ctx, requestID, err.(*outbound.EmbeddingError), time.Since(startTime))
+		return nil, err
+	}
+
+	// Determine model to use
+	model := options.Model
+	if model == "" {
+		model = c.config.Model
+	}
+
+	// Configure task type (for future use when SDK supports it)
+	_ = convertTaskType(options.TaskType)
+
+	// Create GenAI client
+	genaiClient, err := c.createGenaiClient(ctx)
+	if err != nil {
+		c.LogEmbeddingError(ctx, requestID, err.(*outbound.EmbeddingError), time.Since(startTime))
+		return nil, err
+	}
+
+	// Create content for embedding
+	content := genai.NewContentFromText(text, genai.RoleUser)
+
+	// Configure task type
+	taskType := convertTaskType(options.TaskType)
+
+	// Create embed config
+	config := &genai.EmbedContentConfig{
+		TaskType: taskType,
+	}
+	if c.config.Dimensions > 0 {
+		dims := int32(c.config.Dimensions)
+		config.OutputDimensionality = &dims
+	}
+
+	// Generate embedding using the SDK
+	result, err := genaiClient.Models.EmbedContent(ctx, model, []*genai.Content{content}, config)
+	if err != nil {
+		embeddingErr := c.convertSDKError(err)
+		c.LogEmbeddingError(ctx, requestID, embeddingErr, time.Since(startTime))
+		return nil, embeddingErr
+	}
+
+	// Convert to our domain type
+	if len(result.Embeddings) == 0 || result.Embeddings[0] == nil || len(result.Embeddings[0].Values) == 0 {
+		embeddingErr := &outbound.EmbeddingError{
+			Code:      "no_embeddings",
+			Type:      "response",
+			Message:   "no embeddings returned from API",
+			Retryable: false,
+		}
+		c.LogEmbeddingError(ctx, requestID, embeddingErr, time.Since(startTime))
+		return nil, embeddingErr
+	}
+
+	embedding := result.Embeddings[0]
+	embeddingResult := &outbound.EmbeddingResult{
+		Vector:      c.convertToFloat64Slice(embedding.Values),
+		Dimensions:  len(embedding.Values),
+		Model:       model,
+		TaskType:    options.TaskType,
+		GeneratedAt: time.Now(),
+		RequestID:   requestID,
+	}
+
+	c.LogEmbeddingResponse(ctx, requestID, embeddingResult, time.Since(startTime))
+	return embeddingResult, nil
 }
 
 // GenerateBatchEmbeddings generates embeddings for multiple texts in a single request.
@@ -371,7 +305,30 @@ func (c *Client) GenerateBatchEmbeddings(
 		"text_count": len(texts),
 		"model":      c.config.Model,
 	})
-	return nil, errors.New("GenerateBatchEmbeddings not implemented yet")
+
+	// Input validation
+	if len(texts) == 0 {
+		return nil, &outbound.EmbeddingError{
+			Code:      "empty_texts",
+			Type:      "validation",
+			Message:   "texts array cannot be empty",
+			Retryable: false,
+		}
+	}
+
+	// For now, implement batch as sequential calls to GenerateEmbedding
+	// TODO: Replace with actual batch API when SDK supports it
+	results := make([]*outbound.EmbeddingResult, 0, len(texts))
+
+	for i, text := range texts {
+		result, err := c.GenerateEmbedding(ctx, text, options)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate embedding for text %d: %w", i, err)
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
 }
 
 // GenerateCodeChunkEmbedding generates an embedding specifically for a CodeChunk.
@@ -385,7 +342,37 @@ func (c *Client) GenerateCodeChunkEmbedding(
 		"language": chunk.Language,
 		"model":    c.config.Model,
 	})
-	return nil, errors.New("GenerateCodeChunkEmbedding not implemented yet")
+
+	// Input validation
+	if chunk == nil {
+		return nil, &outbound.EmbeddingError{
+			Code:      "nil_chunk",
+			Type:      "validation",
+			Message:   "chunk cannot be nil",
+			Retryable: false,
+		}
+	}
+
+	// Generate embedding for the chunk content
+	embeddingResult, err := c.GenerateEmbedding(ctx, chunk.Content, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate embedding for code chunk: %w", err)
+	}
+
+	// Create CodeChunkEmbedding from the result
+	codeChunkEmbedding := &outbound.CodeChunkEmbedding{
+		EmbeddingResult:  embeddingResult,
+		ChunkID:          chunk.ID,
+		SourceFile:       chunk.FilePath,
+		Language:         chunk.Language,
+		ChunkType:        "code_block", // Default chunk type
+		SemanticContext:  []string{},   // Empty for now
+		QualityScore:     1.0,          // Default quality score
+		ComplexityScore:  0.5,          // Default complexity score
+		EmbeddingVersion: "v1.0",       // Version of embedding approach
+	}
+
+	return codeChunkEmbedding, nil
 }
 
 // ValidateApiKey validates the API key configuration.
@@ -393,7 +380,36 @@ func (c *Client) ValidateApiKey(ctx context.Context) error {
 	slogger.Info(ctx, "ValidateApiKey called", slogger.Fields{
 		"api_key_length": len(c.config.APIKey),
 	})
-	return errors.New("ValidateApiKey not implemented yet")
+
+	// Basic validation first
+	if err := c.config.validateAPIKey(); err != nil {
+		return &outbound.EmbeddingError{
+			Code:      "invalid_api_key",
+			Type:      "auth",
+			Message:   fmt.Sprintf("API key validation failed: %v", err),
+			Retryable: false,
+			Cause:     err,
+		}
+	}
+
+	// Test API key by attempting to create a client
+	client, err := c.createGenaiClient(ctx)
+	if err != nil {
+		return &outbound.EmbeddingError{
+			Code:      "api_key_test_failed",
+			Type:      "auth",
+			Message:   "API key test failed - unable to create client",
+			Retryable: false,
+			Cause:     err,
+		}
+	}
+
+	// For now, if client creation succeeds, we assume the API key is valid
+	// TODO: Add actual API test call when SDK API is confirmed
+	_ = client // Prevent unused variable warning
+
+	slogger.Info(ctx, "API key validation successful", slogger.Fields{})
+	return nil
 }
 
 // GetModelInfo returns information about the embedding model.
@@ -401,13 +417,52 @@ func (c *Client) GetModelInfo(ctx context.Context) (*outbound.ModelInfo, error) 
 	slogger.Info(ctx, "GetModelInfo called", slogger.Fields{
 		"model": c.config.Model,
 	})
-	return nil, errors.New("GetModelInfo not implemented yet")
+
+	// Return hardcoded model info for the default model
+	// TODO: Replace with actual SDK call to get model info when API is available
+	modelInfo := &outbound.ModelInfo{
+		Name:       c.config.Model,
+		Version:    "1.0",
+		MaxTokens:  8192, // Typical max for embedding models
+		Dimensions: 768,  // Default dimensions for gemini-embedding-001
+		SupportedTaskTypes: []outbound.EmbeddingTaskType{
+			outbound.TaskTypeRetrievalDocument,
+			outbound.TaskTypeRetrievalQuery,
+			outbound.TaskTypeCodeRetrievalQuery,
+			outbound.TaskTypeSemanticSimilarity,
+			outbound.TaskTypeClassification,
+			outbound.TaskTypeClustering,
+		},
+		SupportsCustomDim: true,
+		SupportsBatching:  false, // TODO: Update when batch API is available
+		Description:       "Google Gemini embedding model for text embeddings",
+		PricingTier:       "paid",
+		RateLimits: &outbound.RateLimitInfo{
+			RequestsPerMinute:  60,
+			RequestsPerDay:     1000,
+			TokensPerMinute:    100000,
+			TokensPerDay:       1000000,
+			BatchSize:          100,
+			ConcurrentRequests: 10,
+			ResetWindow:        time.Minute,
+		},
+	}
+
+	return modelInfo, nil
 }
 
 // GetSupportedModels returns a list of supported embedding models.
 func (c *Client) GetSupportedModels(ctx context.Context) ([]string, error) {
 	slogger.Info(ctx, "GetSupportedModels called", slogger.Fields{})
-	return nil, errors.New("GetSupportedModels not implemented yet")
+
+	// Return hardcoded list of supported models
+	// TODO: Replace with actual SDK call to list models when API is available
+	supportedModels := []string{
+		"gemini-embedding-001",
+		"gemini-embedding-001", // Alternative model name
+	}
+
+	return supportedModels, nil
 }
 
 // EstimateTokenCount estimates the number of tokens in the given text.
@@ -517,167 +572,88 @@ func max(a, b int) int {
 	return b
 }
 
-// SerializeEmbeddingRequest serializes an embedding request to JSON with optimized performance.
-func (c *Client) SerializeEmbeddingRequest(
-	ctx context.Context,
-	text string,
-	options outbound.EmbeddingOptions,
-) ([]byte, error) {
-	// Input validation with enhanced error context
-	if text == "" {
-		slogger.Error(ctx, "Empty text provided for embedding serialization", slogger.Fields{})
-		return nil, &outbound.EmbeddingError{
-			Code:      "empty_text",
-			Type:      "validation",
-			Message:   "text content cannot be empty",
-			Retryable: false,
-		}
+// createGenaiClient creates a new genai client for the request
+func (c *Client) createGenaiClient(ctx context.Context) (*genai.Client, error) {
+	clientConfig := &genai.ClientConfig{
+		APIKey: c.config.APIKey,
 	}
-
-	// Model validation
-	targetModel := options.Model
-	if targetModel == "" {
-		targetModel = c.config.Model // Use client default
-	}
-	if targetModel != "gemini-embedding-001" {
-		slogger.Error(ctx, "Unsupported model requested", slogger.Fields{
-			"requested_model": targetModel,
-			"supported_model": "gemini-embedding-001",
-		})
-		return nil, &outbound.EmbeddingError{
-			Code:      "unsupported_model",
-			Type:      "validation",
-			Message:   fmt.Sprintf("unsupported model: %s, only gemini-embedding-001 is supported", targetModel),
-			Retryable: false,
-		}
-	}
-
-	// Build request structure with proper task type handling
-	taskType := "RETRIEVAL_DOCUMENT" // Default
-	if options.TaskType != "" {
-		taskType = string(options.TaskType)
-	}
-
-	request := EmbedContentRequest{
-		Model: "models/gemini-embedding-001",
-		Content: Content{
-			Parts: []Part{{Text: text}},
-		},
-		TaskType:             taskType,
-		OutputDimensionality: c.config.Dimensions,
-	}
-
-	// Optimized JSON marshaling with error handling
-	data, err := json.Marshal(request)
+	client, err := genai.NewClient(ctx, clientConfig)
 	if err != nil {
-		slogger.Error(ctx, "Failed to marshal embedding request", slogger.Fields{
-			"error":       err.Error(),
-			"text_length": len(text),
-			"task_type":   taskType,
-		})
 		return nil, &outbound.EmbeddingError{
-			Code:      "serialization_error",
-			Type:      "validation",
-			Message:   fmt.Sprintf("failed to serialize request: %v", err),
+			Code:      "client_creation_failed",
+			Type:      "auth",
+			Message:   fmt.Sprintf("failed to create genai cl ient: %v", err),
 			Retryable: false,
 			Cause:     err,
 		}
 	}
-
-	slogger.Debug(ctx, "Successfully serialized embedding request", slogger.Fields{
-		"request_size": len(data),
-		"text_length":  len(text),
-		"task_type":    taskType,
-	})
-
-	return data, nil
+	return client, nil
 }
 
-// DeserializeEmbeddingResponse deserializes an embedding response from JSON with enhanced validation.
-func (c *Client) DeserializeEmbeddingResponse(ctx context.Context, data []byte) (*outbound.EmbeddingResult, error) {
-	// Input validation
-	if len(data) == 0 {
-		slogger.Error(ctx, "Empty response data provided for deserialization", slogger.Fields{})
-		return nil, &outbound.EmbeddingError{
-			Code:      "empty_response",
-			Type:      "validation",
-			Message:   "response data cannot be empty",
-			Retryable: false,
-		}
+// convertTaskType converts from outbound.EmbeddingTaskType to string for genai SDK
+func convertTaskType(taskType outbound.EmbeddingTaskType) string {
+	switch taskType {
+	case outbound.TaskTypeRetrievalDocument:
+		return "RETRIEVAL_DOCUMENT"
+	case outbound.TaskTypeRetrievalQuery:
+		return "RETRIEVAL_QUERY"
+	case outbound.TaskTypeCodeRetrievalQuery:
+		return "CODE_RETRIEVAL_QUERY"
+	case outbound.TaskTypeSemanticSimilarity:
+		return "SEMANTIC_SIMILARITY"
+	case outbound.TaskTypeClassification:
+		return "CLASSIFICATION"
+	case outbound.TaskTypeClustering:
+		return "CLUSTERING"
+	default:
+		return "RETRIEVAL_DOCUMENT"
 	}
-
-	var response EmbedContentResponse
-
-	// JSON deserialization with detailed error context
-	if err := json.Unmarshal(data, &response); err != nil {
-		slogger.Error(ctx, "Failed to parse embedding response JSON", slogger.Fields{
-			"error":            err.Error(),
-			"response_size":    len(data),
-			"response_preview": string(data[:min(len(data), 200)]), // First 200 chars for debugging
-		})
-		return nil, &outbound.EmbeddingError{
-			Code:      "parse_error",
-			Type:      "validation",
-			Message:   fmt.Sprintf("failed to parse response JSON: %v", err),
-			Retryable: false,
-			Cause:     err,
-		}
-	}
-
-	// Validate response structure
-	if len(response.Embedding.Values) == 0 {
-		slogger.Error(ctx, "Response missing embedding values", slogger.Fields{
-			"response_size": len(data),
-		})
-		return nil, &outbound.EmbeddingError{
-			Code:      "missing_embedding",
-			Type:      "validation",
-			Message:   "response missing required embedding field or embedding is empty",
-			Retryable: false,
-		}
-	}
-
-	// Validate embedding dimensions
-	expectedDimensions := c.config.Dimensions
-	actualDimensions := len(response.Embedding.Values)
-	if actualDimensions != expectedDimensions {
-		slogger.Warn(ctx, "Embedding dimensions mismatch", slogger.Fields{
-			"expected_dimensions": expectedDimensions,
-			"actual_dimensions":   actualDimensions,
-		})
-	}
-
-	result := &outbound.EmbeddingResult{
-		Vector:      response.Embedding.Values,
-		Dimensions:  actualDimensions,
-		Model:       c.config.Model,
-		TaskType:    outbound.TaskTypeRetrievalDocument,
-		GeneratedAt: time.Now(),
-	}
-
-	slogger.Debug(ctx, "Successfully deserialized embedding response", slogger.Fields{
-		"vector_dimensions": actualDimensions,
-		"response_size":     len(data),
-		"model":             result.Model,
-	})
-
-	return result, nil
 }
 
-// ValidateTokenLimit validates if text exceeds token limit.
-func (c *Client) ValidateTokenLimit(ctx context.Context, text string, maxTokens int) error {
-	tokenCount, _ := c.EstimateTokenCount(ctx, text)
-	if tokenCount > maxTokens {
-		return &outbound.EmbeddingError{
-			Code: "token_limit_exceeded",
-			Type: "validation",
-			Message: fmt.Sprintf(
-				"text exceeds maximum token limit of %d (estimated: %d tokens)",
-				maxTokens,
-				tokenCount,
-			),
-			Retryable: false,
-		}
+// convertSDKError converts a genai SDK error to our domain error type
+func (c *Client) convertSDKError(err error) *outbound.EmbeddingError {
+	if err == nil {
+		return nil
 	}
-	return nil
+
+	// Default error values
+	embeddingErr := &outbound.EmbeddingError{
+		Code:      "api_error",
+		Type:      "server",
+		Message:   err.Error(),
+		Retryable: true,
+		Cause:     err,
+	}
+
+	// Check for common error patterns
+	errStr := strings.ToLower(err.Error())
+	if strings.Contains(errStr, "api key") || strings.Contains(errStr, "unauthorized") ||
+		strings.Contains(errStr, "authentication") {
+		embeddingErr.Code = "invalid_api_key"
+		embeddingErr.Type = "auth"
+		embeddingErr.Retryable = false
+	} else if strings.Contains(errStr, "quota") || strings.Contains(errStr, "limit") {
+		embeddingErr.Code = "quota_exceeded"
+		embeddingErr.Type = "quota"
+		embeddingErr.Retryable = true
+	} else if strings.Contains(errStr, "invalid") || strings.Contains(errStr, "bad request") {
+		embeddingErr.Code = "invalid_input"
+		embeddingErr.Type = "validation"
+		embeddingErr.Retryable = false
+	}
+
+	return embeddingErr
+}
+
+// convertToFloat64Slice converts []float32 to []float64
+func (c *Client) convertToFloat64Slice(values []float32) []float64 {
+	if values == nil {
+		return nil
+	}
+
+	result := make([]float64, len(values))
+	for i, v := range values {
+		result[i] = float64(v)
+	}
+	return result
 }

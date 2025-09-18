@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Interfaces.
@@ -842,7 +844,7 @@ func (m *MockChunker) Chunk(ctx context.Context, nodes []*SyntaxNode) ([]outboun
 		endPos := valueobject.Position{Row: valueobject.ClampToUint32((i + 1) * 10), Column: 0}
 
 		chunks[i] = outbound.EnhancedCodeChunk{
-			ID:            fmt.Sprintf("chunk_%d", i),
+			ID:            uuid.New().String(),
 			Content:       fmt.Sprintf("chunk_content_%d", i),
 			StartPosition: startPos,
 			EndPosition:   endPos,

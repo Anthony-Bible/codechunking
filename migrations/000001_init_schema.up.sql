@@ -1,12 +1,12 @@
 -- Initial schema migration
 -- This migration creates the core tables for the codechunking system
 
+-- Create schema first
+CREATE SCHEMA IF NOT EXISTS codechunking;
+
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "vector";
-
--- Create schema
-CREATE SCHEMA IF NOT EXISTS codechunking;
+CREATE EXTENSION IF NOT EXISTS "vector" SCHEMA codechunking;
 SET search_path TO codechunking, public;
 
 -- Repositories table
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS code_chunks (
 CREATE TABLE IF NOT EXISTS embeddings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     chunk_id UUID REFERENCES code_chunks(id) ON DELETE CASCADE,
-    embedding vector(768), -- Gemini text-embedding-004 produces 768-dimensional vectors
+    embedding vector(768), -- Gemini gemini-embedding-001 produces 768-dimensional vectors
     model_version VARCHAR(50) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,

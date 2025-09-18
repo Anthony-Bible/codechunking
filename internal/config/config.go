@@ -61,6 +61,7 @@ type NATSConfig struct {
 	URL           string        `mapstructure:"url"`
 	MaxReconnects int           `mapstructure:"max_reconnects"`
 	ReconnectWait time.Duration `mapstructure:"reconnect_wait"`
+	TestMode      bool          `mapstructure:"test_mode"`
 }
 
 // GeminiConfig holds Gemini API configuration.

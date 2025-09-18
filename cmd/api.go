@@ -369,9 +369,9 @@ func (sf *ServiceFactory) createGeminiEmbeddingClient() (outbound.EmbeddingServi
 	geminiConfig := &gemini.ClientConfig{
 		APIKey:     sf.config.Gemini.APIKey,
 		Model:      sf.config.Gemini.Model,
-		MaxRetries: sf.config.Gemini.MaxRetries,
 		Timeout:    sf.config.Gemini.Timeout,
 		TaskType:   "RETRIEVAL_DOCUMENT", // Default for search functionality
+		Dimensions: 768,                  // Default dimensions for gemini-embedding-001
 	}
 
 	// Create gemini client

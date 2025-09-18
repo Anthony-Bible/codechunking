@@ -10,32 +10,22 @@ import (
 	"time"
 )
 
-// TestGeminiClient_AuthenticationHeaders tests various authentication header scenarios.
-func TestGeminiClient_AuthenticationHeaders(t *testing.T) {
+// TestGeminiClient_ConfigValidation tests client configuration validation scenarios.
+func TestGeminiClient_ConfigValidation(t *testing.T) {
 	tests := []struct {
 		name              string
 		apiKey            string
 		expectedAuthError bool
-		expectedHeaders   map[string]string
 		description       string
 	}{
 		{
-			name:   "valid_standard_api_key",
-			apiKey: "AIzaSyDaGmWKa4JsXZ5HjGAdPQ98nQqcFMnGbE8",
-			expectedHeaders: map[string]string{
-				"x-goog-api-key": "AIzaSyDaGmWKa4JsXZ5HjGAdPQ98nQqcFMnGbE8",
-				"Content-Type":   "application/json",
-				"Accept":         "application/json",
-				"User-Agent":     "CodeChunking-Gemini-Client/1.0.0",
-			},
-			description: "Standard Gemini API key should set proper authentication headers",
+			name:        "valid_standard_api_key",
+			apiKey:      "AIzaSyDaGmWKa4JsXZ5HjGAdPQ98nQqcFMnGbE8",
+			description: "Standard Gemini API key should validate correctly",
 		},
 		{
-			name:   "api_key_with_underscores_and_hyphens",
-			apiKey: "AIzaSy_Test-Key_123-ABC_def",
-			expectedHeaders: map[string]string{
-				"x-goog-api-key": "AIzaSy_Test-Key_123-ABC_def",
-			},
+			name:        "api_key_with_underscores_and_hyphens",
+			apiKey:      "AIzaSy_Test-Key_123-ABC_def",
 			description: "API keys with special characters should be handled correctly",
 		},
 		{
@@ -51,11 +41,8 @@ func TestGeminiClient_AuthenticationHeaders(t *testing.T) {
 			description:       "Whitespace-only API key should be treated as empty",
 		},
 		{
-			name:   "api_key_with_leading_trailing_whitespace",
-			apiKey: "  AIzaSyDaGmWKa4JsXZ5HjGAdPQ98nQqcFMnGbE8  ",
-			expectedHeaders: map[string]string{
-				"x-goog-api-key": "AIzaSyDaGmWKa4JsXZ5HjGAdPQ98nQqcFMnGbE8",
-			},
+			name:        "api_key_with_leading_trailing_whitespace",
+			apiKey:      "  AIzaSyDaGmWKa4JsXZ5HjGAdPQ98nQqcFMnGbE8  ",
 			description: "Leading/trailing whitespace should be trimmed from API key",
 		},
 	}
@@ -64,13 +51,11 @@ func TestGeminiClient_AuthenticationHeaders(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config := &gemini.ClientConfig{
 				APIKey:   tt.apiKey,
-				BaseURL:  "https://generativelanguage.googleapis.com/v1beta",
 				Model:    "gemini-embedding-001",
 				TaskType: "RETRIEVAL_DOCUMENT",
 				Timeout:  30 * time.Second,
 			}
 
-			// This test should fail because the Client struct doesn't exist
 			client, err := gemini.NewClient(config)
 
 			if tt.expectedAuthError {
@@ -95,26 +80,10 @@ func TestGeminiClient_AuthenticationHeaders(t *testing.T) {
 				return
 			}
 
-			// Test request creation with authentication headers
-			ctx := context.Background()
-			req, err := client.CreateRequest(ctx, "POST", "/models/gemini-embedding-001:embedContent", nil)
-			if err != nil {
-				t.Errorf("unexpected error creating request: %v", err)
-				return
-			}
-
-			// Verify expected headers are set
-			for headerName, expectedValue := range tt.expectedHeaders {
-				actualValue := req.Header.Get(headerName)
-				if actualValue != expectedValue {
-					t.Errorf("header %s: expected %q, got %q", headerName, expectedValue, actualValue)
-				}
-			}
-
-			// Verify no credentials leak into other headers
-			authHeader := req.Header.Get("Authorization")
-			if authHeader != "" {
-				t.Errorf("unexpected Authorization header: %q (should use x-goog-api-key)", authHeader)
+			// Verify client configuration
+			clientConfig := client.GetConfig()
+			if strings.TrimSpace(clientConfig.APIKey) == "" {
+				t.Error("expected non-empty API key in client config")
 			}
 		})
 	}
@@ -220,9 +189,9 @@ func TestGeminiClient_EnvironmentVariableResolution(t *testing.T) {
 			tt.setupEnv()
 
 			config := &gemini.ClientConfig{
-				BaseURL:  "https://generativelanguage.googleapis.com/v1beta",
 				Model:    "gemini-embedding-001",
 				TaskType: "RETRIEVAL_DOCUMENT",
+				Timeout:  30 * time.Second,
 			}
 
 			if tt.configAPIKey != "" {
@@ -266,16 +235,10 @@ func TestGeminiClient_EnvironmentVariableResolution(t *testing.T) {
 				t.Errorf("expected resolved API key %q, got %q", tt.expectedResolution, clientConfig.APIKey)
 			}
 
-			// Verify the API key is used in requests
-			req, err := client.CreateRequest(ctx, "POST", "/test", nil)
-			if err != nil {
-				t.Errorf("unexpected error creating request: %v", err)
-				return
-			}
-
-			actualHeader := req.Header.Get("X-Goog-Api-Key")
-			if actualHeader != tt.expectedResolution {
-				t.Errorf("expected request header %q, got %q", tt.expectedResolution, actualHeader)
+			// Verify the API key was resolved correctly by checking client config
+			resolvedConfig := client.GetConfig()
+			if resolvedConfig.APIKey != tt.expectedResolution {
+				t.Errorf("expected resolved API key %q in config, got %q", tt.expectedResolution, resolvedConfig.APIKey)
 			}
 		})
 	}
@@ -355,9 +318,9 @@ func TestGeminiClient_APIKeyValidation(t *testing.T) {
 			if tt.expectedValid {
 				config := &gemini.ClientConfig{
 					APIKey:   tt.apiKey,
-					BaseURL:  "https://generativelanguage.googleapis.com/v1beta",
 					Model:    "gemini-embedding-001",
 					TaskType: "RETRIEVAL_DOCUMENT",
+					Timeout:  30 * time.Second,
 				}
 
 				// This test should fail because NewClient doesn't exist
@@ -385,12 +348,10 @@ func TestGeminiClient_APIKeyValidation(t *testing.T) {
 func TestGeminiClient_AuthenticationIntegration(t *testing.T) {
 	t.Run("authentication_with_retry_mechanism", func(t *testing.T) {
 		config := &gemini.ClientConfig{
-			APIKey:     "test-retry-key",
-			BaseURL:    "https://generativelanguage.googleapis.com/v1beta",
-			Model:      "gemini-embedding-001",
-			TaskType:   "RETRIEVAL_DOCUMENT",
-			MaxRetries: 3,
-			Timeout:    10 * time.Second,
+			APIKey:   "test-retry-key",
+			Model:    "gemini-embedding-001",
+			TaskType: "RETRIEVAL_DOCUMENT",
+			Timeout:  10 * time.Second,
 		}
 
 		// This test should fail because the Client doesn't exist
@@ -414,7 +375,6 @@ func TestGeminiClient_AuthenticationIntegration(t *testing.T) {
 	t.Run("authentication_timeout_handling", func(t *testing.T) {
 		config := &gemini.ClientConfig{
 			APIKey:   "test-timeout-key",
-			BaseURL:  "https://generativelanguage.googleapis.com/v1beta",
 			Model:    "gemini-embedding-001",
 			TaskType: "RETRIEVAL_DOCUMENT",
 			Timeout:  1 * time.Millisecond, // Very short timeout
@@ -441,9 +401,9 @@ func TestGeminiClient_AuthenticationIntegration(t *testing.T) {
 	t.Run("authentication_with_context_cancellation", func(t *testing.T) {
 		config := &gemini.ClientConfig{
 			APIKey:   "test-cancel-key",
-			BaseURL:  "https://generativelanguage.googleapis.com/v1beta",
 			Model:    "gemini-embedding-001",
 			TaskType: "RETRIEVAL_DOCUMENT",
+			Timeout:  30 * time.Second,
 		}
 
 		// This test should fail because the Client doesn't exist

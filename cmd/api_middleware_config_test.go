@@ -570,7 +570,7 @@ func createTestConfig(_ *testing.T) *config.Config {
 		},
 		Gemini: config.GeminiConfig{
 			APIKey: "test-key",
-			Model:  "text-embedding-004",
+			Model:  "gemini-embedding-001",
 		},
 		Log: config.LogConfig{
 			Level:  "info",

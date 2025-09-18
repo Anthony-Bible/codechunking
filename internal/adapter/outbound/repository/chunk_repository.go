@@ -17,9 +17,12 @@ import (
 
 // Constants for default values.
 const (
-	defaultChunkType    = "code"
-	defaultEntityName   = ""
-	defaultParentEntity = ""
+	defaultChunkType     = "fragment"
+	defaultEntityName    = ""
+	defaultParentEntity  = ""
+	defaultQualifiedName = ""
+	defaultSignature     = ""
+	defaultVisibility    = ""
 )
 
 // SQL query constants.
@@ -27,8 +30,9 @@ const (
 	insertChunkQuery = `
 		INSERT INTO codechunking.code_chunks (
 			id, repository_id, file_path, chunk_type, content, language,
-			start_line, end_line, entity_name, parent_entity, content_hash, metadata
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			start_line, end_line, entity_name, parent_entity, content_hash, metadata,
+			qualified_name, signature, visibility
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT (repository_id, file_path, content_hash) DO NOTHING
 	`
 
@@ -84,6 +88,12 @@ func (r *PostgreSQLChunkRepository) FindChunksByIDs(
 			c.language,
 			c.start_line,
 			c.end_line,
+			c.chunk_type,
+			c.entity_name,
+			c.parent_entity,
+			c.qualified_name,
+			c.signature,
+			c.visibility,
 			r.id,
 			r.name,
 			r.url
@@ -109,6 +119,12 @@ func (r *PostgreSQLChunkRepository) FindChunksByIDs(
 			&chunk.Language,
 			&chunk.StartLine,
 			&chunk.EndLine,
+			&chunk.Type,
+			&chunk.EntityName,
+			&chunk.ParentEntity,
+			&chunk.QualifiedName,
+			&chunk.Signature,
+			&chunk.Visibility,
 			&chunk.Repository.ID,
 			&chunk.Repository.Name,
 			&chunk.Repository.URL,
@@ -145,11 +161,46 @@ func (r *PostgreSQLChunkRepository) SaveChunk(ctx context.Context, chunk *outbou
 		return fmt.Errorf("invalid chunk ID format: %w", err)
 	}
 
-	// Default values for missing fields
-	entityName := defaultEntityName
-	parentEntity := defaultParentEntity
-	chunkType := defaultChunkType
-	repositoryID := uuid.Nil // This should be set by caller
+	// Use chunk type information or defaults
+	entityName := chunk.EntityName
+	if entityName == "" {
+		entityName = defaultEntityName
+	}
+
+	parentEntity := chunk.ParentEntity
+	if parentEntity == "" {
+		parentEntity = defaultParentEntity
+	}
+
+	chunkType := chunk.Type
+	if chunkType == "" {
+		chunkType = defaultChunkType
+	}
+
+	qualifiedName := chunk.QualifiedName
+	if qualifiedName == "" {
+		qualifiedName = defaultQualifiedName
+	}
+
+	signature := chunk.Signature
+	if signature == "" {
+		signature = defaultSignature
+	}
+
+	visibility := chunk.Visibility
+	if visibility == "" {
+		visibility = defaultVisibility
+	}
+
+	// Validate repository ID is provided
+	repositoryID := chunk.RepositoryID
+	if repositoryID == uuid.Nil {
+		slogger.Error(ctx, "Missing repository_id for chunk save", slogger.Fields2(
+			"chunk_id", chunk.ID,
+			"file_path", chunk.FilePath,
+		))
+		return fmt.Errorf("repository_id is required to save chunk")
+	}
 
 	_, err = r.pool.Exec(ctx, query,
 		chunkID,
@@ -164,13 +215,17 @@ func (r *PostgreSQLChunkRepository) SaveChunk(ctx context.Context, chunk *outbou
 		parentEntity,
 		chunk.Hash,
 		nil, // metadata
+		qualifiedName,
+		signature,
+		visibility,
 	)
 	if err != nil {
-		slogger.Error(ctx, "Failed to save chunk", slogger.Fields3(
-			"chunk_id", chunk.ID,
-			"file_path", chunk.FilePath,
-			"error", err.Error(),
-		))
+		slogger.Error(ctx, "Failed to save chunk", slogger.Fields{
+			"chunk_id":      chunk.ID,
+			"file_path":     chunk.FilePath,
+			"repository_id": repositoryID.String(),
+			"error":         err.Error(),
+		})
 		return fmt.Errorf("failed to save chunk: %w", err)
 	}
 
@@ -211,11 +266,45 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 			return fmt.Errorf("invalid chunk ID format: %w", err)
 		}
 
-		// Default values
-		entityName := defaultEntityName
-		parentEntity := defaultParentEntity
-		chunkType := defaultChunkType
-		repositoryID := uuid.Nil
+		// Use chunk type information or defaults
+		entityName := chunk.EntityName
+		if entityName == "" {
+			entityName = defaultEntityName
+		}
+
+		parentEntity := chunk.ParentEntity
+		if parentEntity == "" {
+			parentEntity = defaultParentEntity
+		}
+
+		chunkType := chunk.Type
+		if chunkType == "" {
+			chunkType = defaultChunkType
+		}
+
+		qualifiedName := chunk.QualifiedName
+		if qualifiedName == "" {
+			qualifiedName = defaultQualifiedName
+		}
+
+		signature := chunk.Signature
+		if signature == "" {
+			signature = defaultSignature
+		}
+
+		visibility := chunk.Visibility
+		if visibility == "" {
+			visibility = defaultVisibility
+		}
+
+		repositoryID := chunk.RepositoryID
+		if repositoryID == uuid.Nil {
+			slogger.Error(ctx, "Missing repository_id for chunk batch save", slogger.Fields2(
+				"chunk_id", chunk.ID,
+				"file_path", chunk.FilePath,
+			))
+			return fmt.Errorf("repository_id is required to save chunk in batch")
+		}
 
 		_, err = tx.Exec(ctx, query,
 			chunkID,
@@ -230,13 +319,17 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 			parentEntity,
 			chunk.Hash,
 			nil, // metadata
+			qualifiedName,
+			signature,
+			visibility,
 		)
 		if err != nil {
-			slogger.Error(ctx, "Failed to save chunk in batch", slogger.Fields3(
-				"chunk_id", chunk.ID,
-				"file_path", chunk.FilePath,
-				"error", err.Error(),
-			))
+			slogger.Error(ctx, "Failed to save chunk in batch", slogger.Fields{
+				"chunk_id":      chunk.ID,
+				"file_path":     chunk.FilePath,
+				"repository_id": repositoryID.String(),
+				"error":         err.Error(),
+			})
 			return fmt.Errorf("failed to save chunk in batch: %w", err)
 		}
 	}
@@ -259,7 +352,8 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 // GetChunk retrieves a chunk by ID.
 func (r *PostgreSQLChunkRepository) GetChunk(ctx context.Context, id uuid.UUID) (*outbound.CodeChunk, error) {
 	query := `
-		SELECT id, file_path, start_line, end_line, content, language, content_hash, created_at
+		SELECT id, file_path, start_line, end_line, content, language, content_hash, created_at,
+		       chunk_type, entity_name, parent_entity, qualified_name, signature, visibility
 		FROM codechunking.code_chunks
 		WHERE id = $1 AND deleted_at IS NULL
 	`
@@ -276,6 +370,12 @@ func (r *PostgreSQLChunkRepository) GetChunk(ctx context.Context, id uuid.UUID) 
 		&chunk.Language,
 		&chunk.Hash,
 		&createdAt,
+		&chunk.Type,
+		&chunk.EntityName,
+		&chunk.ParentEntity,
+		&chunk.QualifiedName,
+		&chunk.Signature,
+		&chunk.Visibility,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -302,7 +402,8 @@ func (r *PostgreSQLChunkRepository) GetChunksForRepository(
 	repositoryID uuid.UUID,
 ) ([]outbound.CodeChunk, error) {
 	query := `
-		SELECT id, file_path, start_line, end_line, content, language, content_hash, created_at
+		SELECT id, file_path, start_line, end_line, content, language, content_hash, created_at,
+		       chunk_type, entity_name, parent_entity, qualified_name, signature, visibility
 		FROM codechunking.code_chunks
 		WHERE repository_id = $1 AND deleted_at IS NULL
 		ORDER BY file_path, start_line
@@ -332,6 +433,12 @@ func (r *PostgreSQLChunkRepository) GetChunksForRepository(
 			&chunk.Language,
 			&chunk.Hash,
 			&createdAt,
+			&chunk.Type,
+			&chunk.EntityName,
+			&chunk.ParentEntity,
+			&chunk.QualifiedName,
+			&chunk.Signature,
+			&chunk.Visibility,
 		)
 		if err != nil {
 			slogger.Error(ctx, "Failed to scan chunk row", slogger.Fields2(
@@ -443,7 +550,7 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingToPartitioned(
 		embedding.ID,
 		embedding.ChunkID,
 		embedding.RepositoryID,
-		pq.Array(embedding.Vector),
+		VectorToString(embedding.Vector),
 		embedding.ModelVersion,
 	)
 	if err != nil {
@@ -478,7 +585,7 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingToRegular(ctx context.Context, 
 	_, err := r.pool.Exec(ctx, query,
 		embedding.ID,
 		embedding.ChunkID,
-		pq.Array(embedding.Vector),
+		VectorToString(embedding.Vector),
 		embedding.ModelVersion,
 	)
 	if err != nil {
@@ -556,7 +663,7 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingsBatchToPartitioned(
 			embedding.ID,
 			embedding.ChunkID,
 			embedding.RepositoryID,
-			pq.Array(embedding.Vector),
+			VectorToString(embedding.Vector),
 			embedding.ModelVersion,
 		)
 		if err != nil {
@@ -596,7 +703,7 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingsBatchToRegular(
 		_, err := tx.Exec(ctx, query,
 			embedding.ID,
 			embedding.ChunkID,
-			pq.Array(embedding.Vector),
+			VectorToString(embedding.Vector),
 			embedding.ModelVersion,
 		)
 		if err != nil {
@@ -913,7 +1020,7 @@ func (r *PostgreSQLChunkRepository) searchSimilarInPartitioned(
 	sqlQuery := `
 		SELECT
 			ep.chunk_id,
-			1 - (ep.embedding <=> $1) as similarity,
+			1 - (ep.embedding <=> $1::vector) as similarity,
 			c.id,
 			c.file_path,
 			c.start_line,
@@ -924,7 +1031,7 @@ func (r *PostgreSQLChunkRepository) searchSimilarInPartitioned(
 			c.created_at
 		FROM codechunking.embeddings_partitioned ep
 		JOIN codechunking.code_chunks c ON ep.chunk_id = c.id
-		WHERE (1 - (ep.embedding <=> $1)) > $2
+		WHERE (1 - (ep.embedding <=> $1::vector)) > $2
 			AND ep.deleted_at IS NULL
 			AND c.deleted_at IS NULL
 		ORDER BY similarity DESC
@@ -944,7 +1051,7 @@ func (r *PostgreSQLChunkRepository) searchSimilarInRegular(
 	sqlQuery := `
 		SELECT
 			e.chunk_id,
-			1 - (e.embedding <=> $1) as similarity,
+			1 - (e.embedding <=> $1::vector) as similarity,
 			c.id,
 			c.file_path,
 			c.start_line,
@@ -955,7 +1062,7 @@ func (r *PostgreSQLChunkRepository) searchSimilarInRegular(
 			c.created_at
 		FROM codechunking.embeddings e
 		JOIN codechunking.code_chunks c ON e.chunk_id = c.id
-		WHERE (1 - (e.embedding <=> $1)) > $2
+		WHERE (1 - (e.embedding <=> $1::vector)) > $2
 			AND e.deleted_at IS NULL
 			AND c.deleted_at IS NULL
 		ORDER BY similarity DESC
@@ -974,7 +1081,7 @@ func (r *PostgreSQLChunkRepository) executeSimilaritySearch(
 	limit int,
 	tableType string,
 ) ([]outbound.EmbeddingSearchResult, error) {
-	rows, err := r.pool.Query(ctx, sqlQuery, pq.Array(query), threshold, limit)
+	rows, err := r.pool.Query(ctx, sqlQuery, VectorToString(query), threshold, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute %s similarity search: %w", tableType, err)
 	}
@@ -1049,11 +1156,53 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 		return fmt.Errorf("invalid chunk ID format: %w", err)
 	}
 
-	// Default values
-	entityName := defaultEntityName
-	parentEntity := defaultParentEntity
-	chunkType := defaultChunkType
-	repositoryID := embedding.RepositoryID // Use repository ID from embedding
+	// Use chunk type information or defaults
+	entityName := chunk.EntityName
+	if entityName == "" {
+		entityName = defaultEntityName
+	}
+
+	parentEntity := chunk.ParentEntity
+	if parentEntity == "" {
+		parentEntity = defaultParentEntity
+	}
+
+	chunkType := chunk.Type
+	if chunkType == "" {
+		chunkType = defaultChunkType
+	}
+
+	qualifiedName := chunk.QualifiedName
+	if qualifiedName == "" {
+		qualifiedName = defaultQualifiedName
+	}
+
+	signature := chunk.Signature
+	if signature == "" {
+		signature = defaultSignature
+	}
+
+	visibility := chunk.Visibility
+	if visibility == "" {
+		visibility = defaultVisibility
+	}
+
+	// Prefer repository ID from chunk; fallback to embedding.RepositoryID
+	repositoryID := chunk.RepositoryID
+	if repositoryID == uuid.Nil {
+		repositoryID = embedding.RepositoryID
+	}
+	if repositoryID == uuid.Nil {
+		slogger.Error(ctx, "Missing repository_id for transactional chunk save", slogger.Fields{
+			"chunk_id":     chunk.ID,
+			"embedding_id": embedding.ID.String(),
+		})
+		return fmt.Errorf("repository_id is required to save chunk with embedding")
+	}
+	// Ensure embedding.RepositoryID matches for partitioned table
+	if embedding.RepositoryID == uuid.Nil {
+		embedding.RepositoryID = repositoryID
+	}
 
 	_, err = tx.Exec(ctx, chunkQuery,
 		chunkID,
@@ -1068,12 +1217,16 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 		parentEntity,
 		chunk.Hash,
 		nil, // metadata
+		qualifiedName,
+		signature,
+		visibility,
 	)
 	if err != nil {
-		slogger.Error(ctx, "Failed to save chunk in transaction", slogger.Fields2(
-			"chunk_id", chunk.ID,
-			"error", err.Error(),
-		))
+		slogger.Error(ctx, "Failed to save chunk in transaction", slogger.Fields{
+			"chunk_id":      chunk.ID,
+			"repository_id": repositoryID.String(),
+			"error":         err.Error(),
+		})
 		return fmt.Errorf("failed to save chunk in transaction: %w", err)
 	}
 
@@ -1084,7 +1237,7 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 		embedding.ID,
 		embedding.ChunkID,
 		embedding.RepositoryID,
-		pq.Array(embedding.Vector),
+		VectorToString(embedding.Vector),
 		embedding.ModelVersion,
 	)
 	if err != nil {
@@ -1100,14 +1253,15 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 		_, err = tx.Exec(ctx, regularEmbeddingQuery,
 			embedding.ID,
 			embedding.ChunkID,
-			pq.Array(embedding.Vector),
+			VectorToString(embedding.Vector),
 			embedding.ModelVersion,
 		)
 		if err != nil {
-			slogger.Error(ctx, "Failed to save embedding to regular table in transaction", slogger.Fields2(
-				"chunk_id", chunk.ID,
-				"error", err.Error(),
-			))
+			slogger.Error(ctx, "Failed to save embedding to regular table in transaction", slogger.Fields{
+				"chunk_id":      chunk.ID,
+				"repository_id": repositoryID.String(),
+				"error":         err.Error(),
+			})
 			return fmt.Errorf("failed to save embedding in transaction: %w", err)
 		}
 	}
@@ -1120,7 +1274,10 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	slogger.Debug(ctx, "Chunk with embedding saved successfully", slogger.Field("chunk_id", chunk.ID))
+	slogger.Debug(ctx, "Chunk with embedding saved successfully", slogger.Fields{
+		"chunk_id":      chunk.ID,
+		"repository_id": repositoryID.String(),
+	})
 	return nil
 }
 
@@ -1158,13 +1315,7 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 	}()
 
 	// Save all chunks first
-	chunkQuery := `
-		INSERT INTO codechunking.code_chunks (
-			id, repository_id, file_path, chunk_type, content, language,
-			start_line, end_line, entity_name, parent_entity, content_hash, metadata
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		ON CONFLICT (repository_id, file_path, content_hash) DO NOTHING
-	`
+	chunkQuery := insertChunkQuery
 
 	for i, chunk := range chunks {
 		chunkID, err := uuid.Parse(chunk.ID)
@@ -1176,11 +1327,53 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			return fmt.Errorf("invalid chunk ID format: %w", err)
 		}
 
-		// Default values
-		entityName := defaultEntityName
-		parentEntity := defaultParentEntity
-		chunkType := defaultChunkType
-		repositoryID := embeddings[i].RepositoryID // Use repository ID from corresponding embedding
+		// Use chunk type information or defaults
+		entityName := chunk.EntityName
+		if entityName == "" {
+			entityName = defaultEntityName
+		}
+
+		parentEntity := chunk.ParentEntity
+		if parentEntity == "" {
+			parentEntity = defaultParentEntity
+		}
+
+		chunkType := chunk.Type
+		if chunkType == "" {
+			chunkType = defaultChunkType
+		}
+
+		qualifiedName := chunk.QualifiedName
+		if qualifiedName == "" {
+			qualifiedName = defaultQualifiedName
+		}
+
+		signature := chunk.Signature
+		if signature == "" {
+			signature = defaultSignature
+		}
+
+		visibility := chunk.Visibility
+		if visibility == "" {
+			visibility = defaultVisibility
+		}
+
+		// Prefer chunk.RepositoryID; fallback to embedding.RepositoryID
+		repositoryID := chunks[i].RepositoryID
+		if repositoryID == uuid.Nil {
+			repositoryID = embeddings[i].RepositoryID
+		}
+		if repositoryID == uuid.Nil {
+			slogger.Error(ctx, "Missing repository_id for batch transactional chunk save", slogger.Fields{
+				"chunk_id":    chunk.ID,
+				"batch_index": i,
+			})
+			return fmt.Errorf("repository_id is required to save chunk in batch transaction")
+		}
+		// Ensure embedding has repository id for partitioned table path
+		if embeddings[i].RepositoryID == uuid.Nil {
+			embeddings[i].RepositoryID = repositoryID
+		}
 
 		_, err = tx.Exec(ctx, chunkQuery,
 			chunkID,
@@ -1195,13 +1388,17 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			parentEntity,
 			chunk.Hash,
 			nil, // metadata
+			qualifiedName,
+			signature,
+			visibility,
 		)
 		if err != nil {
-			slogger.Error(ctx, "Failed to save chunk in batch transaction", slogger.Fields3(
-				"chunk_id", chunk.ID,
-				"batch_index", i,
-				"error", err.Error(),
-			))
+			slogger.Error(ctx, "Failed to save chunk in batch transaction", slogger.Fields{
+				"chunk_id":      chunk.ID,
+				"batch_index":   i,
+				"repository_id": repositoryID.String(),
+				"error":         err.Error(),
+			})
 			return fmt.Errorf("failed to save chunk in batch transaction: %w", err)
 		}
 	}
@@ -1223,7 +1420,7 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			embedding.ID,
 			embedding.ChunkID,
 			embedding.RepositoryID,
-			pq.Array(embedding.Vector),
+			VectorToString(embedding.Vector),
 			embedding.ModelVersion,
 		)
 		if err != nil {
@@ -1248,15 +1445,16 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			_, err = tx.Exec(ctx, regularEmbeddingQuery,
 				embedding.ID,
 				embedding.ChunkID,
-				pq.Array(embedding.Vector),
+				VectorToString(embedding.Vector),
 				embedding.ModelVersion,
 			)
 			if err != nil {
-				slogger.Error(ctx, "Failed to save embedding to regular table in batch transaction", slogger.Fields3(
-					"chunk_id", chunks[i].ID,
-					"batch_index", i,
-					"error", err.Error(),
-				))
+				slogger.Error(ctx, "Failed to save embedding to regular table in batch transaction", slogger.Fields{
+					"chunk_id":      chunks[i].ID,
+					"batch_index":   i,
+					"repository_id": embeddings[i].RepositoryID.String(),
+					"error":         err.Error(),
+				})
 				return fmt.Errorf("failed to save embedding in batch transaction: %w", err)
 			}
 		}

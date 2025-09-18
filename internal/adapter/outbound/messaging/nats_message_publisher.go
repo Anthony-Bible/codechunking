@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"codechunking/internal/config"
+	"codechunking/internal/domain/messaging"
 	"codechunking/internal/port/outbound"
 	"context"
 	"encoding/json"
@@ -90,6 +91,7 @@ func NewNATSMessagePublisher(cfg config.NATSConfig) (outbound.MessagePublisher, 
 
 	return &NATSMessagePublisher{
 		config:           cfg,
+		isTestMode:       cfg.TestMode,
 		connectionHealth: ConnectionHealthStatus{},
 		messageMetrics:   MessageMetrics{},
 	}, nil
@@ -158,11 +160,22 @@ func (n *NATSMessagePublisher) checkTestModeErrors(start time.Time) error {
 }
 
 func (n *NATSMessagePublisher) createAndMarshalMessage(repositoryID uuid.UUID, repositoryURL string) ([]byte, error) {
-	msg := IndexingJobMessage{
+	msg := messaging.EnhancedIndexingJobMessage{
+		MessageID:     uuid.New().String(),
+		CorrelationID: messaging.GenerateCorrelationID(),
+		SchemaVersion: "2.0",
+		Timestamp:     time.Now(),
 		RepositoryID:  repositoryID,
 		RepositoryURL: repositoryURL,
-		Timestamp:     time.Now(),
-		MessageID:     uuid.New().String(),
+		Priority:      messaging.JobPriorityNormal,
+		RetryAttempt:  0,
+		MaxRetries:    3,
+		ProcessingMetadata: messaging.ProcessingMetadata{
+			ChunkSizeBytes: 1024,
+		},
+		ProcessingContext: messaging.ProcessingContext{
+			TimeoutSeconds: 300,
+		},
 	}
 
 	return json.Marshal(msg)
@@ -223,10 +236,8 @@ func (n *NATSMessagePublisher) PublishIndexingJob(
 
 // Connect establishes connection to NATS server.
 func (n *NATSMessagePublisher) Connect() error {
-	// Detect test mode early - if URL is localhost:4222, assume it's a unit test
-	// Integration tests would use a different URL or mechanism
-	if strings.Contains(n.config.URL, "localhost:4222") {
-		n.isTestMode = true
+	// Handle test mode - return early without connecting to actual NATS
+	if n.isTestMode {
 		n.isConnected = true
 		n.updateConnectionHealth(true, nil)
 		return nil

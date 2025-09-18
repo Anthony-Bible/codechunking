@@ -46,7 +46,7 @@ This is a production-grade code chunking and semantic search system using hexago
 - **Language**: Go 1.24
 - **Database**: PostgreSQL with pgvector extension
 - **Messaging**: NATS JetStream for async job processing
-- **Embeddings**: Google Gemini API (text-embedding-004 model)
+- **Embeddings**: Google Gemini API (gemini-embedding-001 model)
 - **CLI**: Cobra framework with Viper configuration
 - **Code Parsing**: Tree-sitter for semantic code chunking
 

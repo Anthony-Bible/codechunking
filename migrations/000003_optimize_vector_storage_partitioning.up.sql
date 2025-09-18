@@ -2,7 +2,7 @@
 -- This migration implements partitioning strategies for optimal vector storage performance
 
 -- Enable required extensions (if not already enabled)
-CREATE EXTENSION IF NOT EXISTS "vector";
+CREATE EXTENSION IF NOT EXISTS "vector" SCHEMA codechunking;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Set search path
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS embeddings_partitioned (
     id UUID DEFAULT uuid_generate_v4(),
     chunk_id UUID NOT NULL,
     repository_id UUID NOT NULL, -- Added for efficient partitioning
-    embedding vector(768), -- Gemini text-embedding-004 produces 768-dimensional vectors
+    embedding vector(768), -- Gemini gemini-embedding-001 produces 768-dimensional vectors
     model_version VARCHAR(50) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,

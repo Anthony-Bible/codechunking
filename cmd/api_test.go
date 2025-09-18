@@ -709,7 +709,7 @@ func setTestDefaults(v *viper.Viper) {
 
 	// Gemini defaults (test values)
 	v.SetDefault("gemini.api_key", "test-key")
-	v.SetDefault("gemini.model", "text-embedding-004")
+	v.SetDefault("gemini.model", "gemini-embedding-001")
 
 	// Logging defaults
 	v.SetDefault("log.level", "info")
@@ -746,7 +746,7 @@ func newTestConfig() *testConfigBuilder {
 			},
 			Gemini: config.GeminiConfig{
 				APIKey: "test-key",
-				Model:  "text-embedding-004",
+				Model:  "gemini-embedding-001",
 			},
 		},
 	}

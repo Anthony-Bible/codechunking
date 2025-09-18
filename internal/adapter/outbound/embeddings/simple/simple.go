@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Dimension of Gemini text-embedding-004 used in schema; keep same for POC.
+// Dimension of Gemini gemini-embedding-001 used in schema; keep same for POC.
 const embedDim = 768
 
 // Generator implements a deterministic stub EmbeddingGenerator.

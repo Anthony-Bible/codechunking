@@ -140,9 +140,9 @@ func createWorkerService(cfg *config.Config, dbPool *pgxpool.Pool) (inbound.Work
 		indexingJobRepository,
 		repoRepository,
 		gitClient,
-		codeParser,               // Now using real TreeSitter CodeParser
-		createEmbeddingService(), // Using Gemini embedding service
-		chunkStorageRepository,   // Repository for storing chunks and embeddings
+		codeParser,                  // Now using real TreeSitter CodeParser
+		createEmbeddingService(cfg), // Using Gemini embedding service
+		chunkStorageRepository,      // Repository for storing chunks and embeddings
 	)
 
 	// Create consumer
@@ -218,19 +218,25 @@ func waitForShutdownAndStop(workerService inbound.WorkerService) {
 }
 
 // createEmbeddingService creates an embedding service, preferring Gemini but falling back to simple generator.
-func createEmbeddingService() outbound.EmbeddingService {
-	// Try to create Gemini client first
-	geminiAPIKey := os.Getenv("GEMINI_API_KEY")
+func createEmbeddingService(cfg *config.Config) outbound.EmbeddingService {
+	// Try to create Gemini client first using Viper configuration
+	geminiAPIKey := cfg.Gemini.APIKey
+
+	// Fallback to environment variables for backward compatibility
 	if geminiAPIKey == "" {
-		geminiAPIKey = os.Getenv("GOOGLE_API_KEY")
+		geminiAPIKey = os.Getenv("GEMINI_API_KEY")
+		if geminiAPIKey == "" {
+			geminiAPIKey = os.Getenv("GOOGLE_API_KEY")
+		}
 	}
 
 	if geminiAPIKey != "" {
 		config := &gemini.ClientConfig{
-			APIKey:   geminiAPIKey,
-			Model:    "text-embedding-004",
-			TaskType: "RETRIEVAL_DOCUMENT",
-			Timeout:  30 * time.Second,
+			APIKey:     geminiAPIKey,
+			Model:      cfg.Gemini.Model,
+			TaskType:   "RETRIEVAL_DOCUMENT",
+			Timeout:    cfg.Gemini.Timeout,
+			Dimensions: 768, // Default dimensions for gemini-embedding-001
 		}
 
 		client, err := gemini.NewClient(config)
@@ -245,7 +251,7 @@ func createEmbeddingService() outbound.EmbeddingService {
 			return client
 		}
 	} else {
-		slogger.WarnNoCtx("No Gemini API key found in environment (GEMINI_API_KEY or GOOGLE_API_KEY), falling back to simple generator", nil)
+		slogger.WarnNoCtx("No Gemini API key found in configuration or environment (CODECHUNK_GEMINI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY), falling back to simple generator", nil)
 	}
 
 	// Fall back to simple generator

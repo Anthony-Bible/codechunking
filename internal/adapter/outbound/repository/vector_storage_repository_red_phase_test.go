@@ -303,7 +303,7 @@ func TestVectorStorageRepository_BulkInsertEmbeddings_ConflictHandling(t *testin
 		{
 			name:               "Update on conflict should update existing",
 			firstInsert:        initialEmbeddings[:5],
-			secondInsert:       createUpdatedTestEmbeddings(t, chunkIDs[:3], repositoryID, "text-embedding-004"),
+			secondInsert:       createUpdatedTestEmbeddings(t, chunkIDs[:3], repositoryID, "gemini-embedding-001"),
 			conflictAction:     outbound.ConflictActionUpdate,
 			expectError:        false,
 			expectFirstCount:   5,
@@ -414,7 +414,7 @@ func TestVectorStorageRepository_UpsertEmbedding(t *testing.T) {
 		},
 		{
 			name:      "Existing embedding upsert should update",
-			embedding: createUpdatedTestEmbeddings(t, chunkIDs[:1], repositoryID, "text-embedding-004")[0],
+			embedding: createUpdatedTestEmbeddings(t, chunkIDs[:1], repositoryID, "gemini-embedding-001")[0],
 			options: outbound.UpsertOptions{
 				UsePartitionedTable: false,
 				UpdateStrategy:      outbound.EmbeddingUpdateStrategyReplace,
@@ -502,14 +502,14 @@ func TestVectorStorageRepository_FindEmbeddingByChunkID(t *testing.T) {
 		{
 			name:         "Existing embedding should be found",
 			chunkID:      chunkIDs[0],
-			modelVersion: "text-embedding-004",
+			modelVersion: "gemini-embedding-001",
 			expectFound:  true,
 			expectError:  false,
 		},
 		{
 			name:         "Non-existing chunk ID should return nil",
 			chunkID:      uuid.New(),
-			modelVersion: "text-embedding-004",
+			modelVersion: "gemini-embedding-001",
 			expectFound:  false,
 			expectError:  false,
 		},
@@ -523,7 +523,7 @@ func TestVectorStorageRepository_FindEmbeddingByChunkID(t *testing.T) {
 		{
 			name:         "Nil chunk ID should return error",
 			chunkID:      uuid.Nil,
-			modelVersion: "text-embedding-004",
+			modelVersion: "gemini-embedding-001",
 			expectFound:  false,
 			expectError:  true,
 		},
@@ -651,7 +651,7 @@ func TestVectorStorageRepository_FindEmbeddingsByRepositoryID(t *testing.T) {
 			name:         "Filter by model version should work",
 			repositoryID: repositoryID1,
 			filters: outbound.EmbeddingFilters{
-				ModelVersions:       []string{"text-embedding-004"},
+				ModelVersions:       []string{"gemini-embedding-001"},
 				UsePartitionedTable: false,
 				Limit:               100,
 				Offset:              0,
@@ -1493,7 +1493,7 @@ func createTestEmbeddings(
 			ChunkID:      chunkID,
 			RepositoryID: repositoryID,
 			Embedding:    createTestVector(768, float64(i)*0.1), // Vary values for diversity
-			ModelVersion: "text-embedding-004",
+			ModelVersion: "gemini-embedding-001",
 			CreatedAt:    time.Now(),
 		}
 	}
@@ -1534,7 +1534,7 @@ func createInvalidDimensionEmbeddings(
 			ChunkID:      chunkID,
 			RepositoryID: repositoryID,
 			Embedding:    createTestVector(500, float64(i)*0.1), // Wrong dimensions
-			ModelVersion: "text-embedding-004",
+			ModelVersion: "gemini-embedding-001",
 			CreatedAt:    time.Now(),
 		}
 	}
@@ -1550,7 +1550,7 @@ func createEmbeddingsWithoutRepositoryID(t *testing.T, chunkIDs []uuid.UUID) []o
 			ChunkID:      chunkID,
 			RepositoryID: uuid.Nil, // Missing repository ID
 			Embedding:    createTestVector(768, float64(i)*0.1),
-			ModelVersion: "text-embedding-004",
+			ModelVersion: "gemini-embedding-001",
 			CreatedAt:    time.Now(),
 		}
 	}

@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -21,50 +20,7 @@ const (
 	embeddingsPartitionedTable = "codechunking.embeddings_partitioned"
 )
 
-// vectorToString converts a float64 slice to pgvector string format.
-func vectorToString(vector []float64) string {
-	if len(vector) == 0 {
-		return "[]"
-	}
-
-	var sb strings.Builder
-	sb.WriteByte('[')
-	for i, val := range vector {
-		if i > 0 {
-			sb.WriteByte(',')
-		}
-		sb.WriteString(strconv.FormatFloat(val, 'f', -1, 64))
-	}
-	sb.WriteByte(']')
-	return sb.String()
-}
-
-// stringToVector converts a pgvector string format to float64 slice.
-func stringToVector(vectorStr string) ([]float64, error) {
-	if vectorStr == "" || vectorStr == "[]" {
-		return []float64{}, nil
-	}
-
-	// Remove brackets
-	vectorStr = strings.Trim(vectorStr, "[]")
-	if vectorStr == "" {
-		return []float64{}, nil
-	}
-
-	// Split by comma
-	parts := strings.Split(vectorStr, ",")
-	vector := make([]float64, len(parts))
-
-	for i, part := range parts {
-		val, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
-		if err != nil {
-			return nil, fmt.Errorf("invalid vector element %q: %w", part, err)
-		}
-		vector[i] = val
-	}
-
-	return vector, nil
-}
+// Removed local implementations - using shared utility functions from vector_utils.go
 
 // PostgreSQLVectorStorageRepository implements the VectorStorageRepository interface.
 type PostgreSQLVectorStorageRepository struct {
@@ -239,7 +195,7 @@ func (r *PostgreSQLVectorStorageRepository) processBatch(
 	query += returningClause
 
 	for _, embedding := range batch {
-		vectorStr := vectorToString(embedding.Embedding)
+		vectorStr := VectorToString(embedding.Embedding)
 		var args []interface{}
 		if options.UsePartitionedTable {
 			args = []interface{}{
@@ -383,7 +339,7 @@ func (r *PostgreSQLVectorStorageRepository) UpsertEmbedding(
 	}
 
 	qi := GetQueryInterface(ctx, r.pool)
-	vectorStr := vectorToString(embedding.Embedding)
+	vectorStr := VectorToString(embedding.Embedding)
 
 	tableName := embeddingsTable
 	var query string
@@ -467,7 +423,7 @@ func (r *PostgreSQLVectorStorageRepository) FindEmbeddingByChunkID(
 	}
 
 	// Parse the vector string back to float64 slice
-	vector, err := stringToVector(vectorStr)
+	vector, err := StringToVector(vectorStr)
 	if err != nil {
 		return nil, WrapError(err, "parse vector from database")
 	}
@@ -565,7 +521,7 @@ func (r *PostgreSQLVectorStorageRepository) scanEmbeddingRow(
 	}
 
 	// Parse the vector string back to float64 slice
-	vector, err := stringToVector(vectorStr)
+	vector, err := StringToVector(vectorStr)
 	if err != nil {
 		return embedding, fmt.Errorf("parse vector from database: %w", err)
 	}
@@ -781,11 +737,11 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 	}
 
 	// Convert query vector to pgvector format
-	queryVectorStr := vectorToString(queryVector)
+	queryVectorStr := VectorToString(queryVector)
 
 	// Use cosine similarity: 1 - (embedding <=> query_vector)
-	similarityClause := "1 - (e.embedding <=> $1) AS similarity"
-	distanceClause := "(e.embedding <=> $1) AS distance"
+	similarityClause := "1 - (e.embedding <=> $1::vector) AS similarity"
+	distanceClause := "(e.embedding <=> $1::vector) AS distance"
 
 	whereConditions := []string{"e.deleted_at IS NULL"}
 	args := []interface{}{queryVectorStr}
@@ -825,7 +781,7 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 	if options.MinSimilarity > 0 {
 		whereConditions = append(
 			whereConditions,
-			fmt.Sprintf("1 - (e.embedding <=> '%s') >= %f", queryVectorStr, options.MinSimilarity),
+			fmt.Sprintf("1 - (e.embedding <=> '%s'::vector) >= %f", queryVectorStr, options.MinSimilarity),
 		)
 	}
 
@@ -834,18 +790,18 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 	var query string
 	if options.UsePartitionedTable {
 		query = fmt.Sprintf(`
-			%s, %s, %s, ROW_NUMBER() OVER (ORDER BY (1 - (e.embedding <=> $1)) DESC) as rank
+			%s, %s, %s, ROW_NUMBER() OVER (ORDER BY (1 - (e.embedding <=> $1::vector)) DESC) as rank
 			FROM %s
 			WHERE %s
-			ORDER BY (1 - (e.embedding <=> $1)) DESC
+			ORDER BY (1 - (e.embedding <=> $1::vector)) DESC
 			LIMIT %d`,
 			selectClause, similarityClause, distanceClause, tableName, whereClause, options.MaxResults)
 	} else {
 		query = fmt.Sprintf(`
-			%s, %s, %s, ROW_NUMBER() OVER (ORDER BY (1 - (e.embedding <=> $1)) DESC) as rank
+			%s, %s, %s, ROW_NUMBER() OVER (ORDER BY (1 - (e.embedding <=> $1::vector)) DESC) as rank
 			FROM %s %s
 			WHERE %s
-			ORDER BY (1 - (e.embedding <=> $1)) DESC
+			ORDER BY (1 - (e.embedding <=> $1::vector)) DESC
 			LIMIT %d`,
 			selectClause, similarityClause, distanceClause, tableName, joinClause, whereClause, options.MaxResults)
 	}
@@ -894,7 +850,7 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 		}
 
 		// Parse the vector string back to float64 slice
-		vector, err := stringToVector(vectorStr)
+		vector, err := StringToVector(vectorStr)
 		if err != nil {
 			return nil, WrapError(err, "parse vector from similarity search")
 		}

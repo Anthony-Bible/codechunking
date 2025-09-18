@@ -97,8 +97,8 @@ type VectorEmbedding struct {
 	ID           uuid.UUID  `json:"id"`
 	ChunkID      uuid.UUID  `json:"chunk_id"`
 	RepositoryID uuid.UUID  `json:"repository_id"` // Required for partitioned tables
-	Embedding    []float64  `json:"embedding"`     // 768-dimensional vector for Gemini text-embedding-004
-	ModelVersion string     `json:"model_version"` // e.g., "text-embedding-004"
+	Embedding    []float64  `json:"embedding"`     // 768-dimensional vector for Gemini gemini-embedding-001
+	ModelVersion string     `json:"model_version"` // e.g., "gemini-embedding-001"
 	CreatedAt    time.Time  `json:"created_at"`
 	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
 }

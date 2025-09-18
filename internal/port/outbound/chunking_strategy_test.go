@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -529,8 +530,8 @@ func TestCodeChunkingStrategy_ValidateChunkBoundaries(t *testing.T) {
 			createTestEnhancedCodeChunk("TestFunc1", ChunkFunction, StrategyFunction),
 			createTestEnhancedCodeChunk("TestFunc2", ChunkFunction, StrategyFunction),
 		}
-		chunks[0].ID = "chunk1"
-		chunks[1].ID = "chunk2"
+		chunks[0].ID = uuid.New().String()
+		chunks[1].ID = uuid.New().String()
 
 		results, err := mock.ValidateChunkBoundaries(ctx, chunks)
 
@@ -570,7 +571,7 @@ func TestCodeChunkingStrategy_ValidateChunkBoundaries(t *testing.T) {
 
 		// Create chunk with incomplete boundaries
 		chunk := createTestEnhancedCodeChunk("IncompleteFunc", ChunkFunction, StrategyFunction)
-		chunk.ID = "chunk1"
+		chunk.ID = uuid.New().String()
 		chunk.Content = "func TestFunc() {\n    if condition {" // Missing closing braces
 
 		results, err := mock.ValidateChunkBoundaries(ctx, []EnhancedCodeChunk{chunk})
@@ -615,7 +616,7 @@ func TestCodeChunkingStrategy_ValidateChunkBoundaries(t *testing.T) {
 		}
 
 		chunk := createTestEnhancedCodeChunk("MainFunc", ChunkFunction, StrategyFunction)
-		chunk.ID = "chunk1"
+		chunk.ID = uuid.New().String()
 		chunk.Content = "func main() {\n    result := helper(config)\n    fmt.Println(result)\n}"
 
 		results, err := mock.ValidateChunkBoundaries(ctx, []EnhancedCodeChunk{chunk})
@@ -719,7 +720,7 @@ func TestCodeChunkingStrategy_ValidateChunkBoundaries(t *testing.T) {
 		}
 
 		chunk := createTestEnhancedCodeChunk("ComplexFunc", ChunkFunction, StrategyFunction)
-		chunk.ID = "chunk1"
+		chunk.ID = uuid.New().String()
 		chunk.QualityMetrics.CohesionScore = 0.3   // Poor cohesion
 		chunk.QualityMetrics.ComplexityScore = 0.9 // High complexity
 

@@ -9,15 +9,23 @@ import (
 
 // CodeChunk represents a parsed code chunk.
 type CodeChunk struct {
-	ID        string    `json:"id"`
-	FilePath  string    `json:"file_path"`
-	StartLine int       `json:"start_line"`
-	EndLine   int       `json:"end_line"`
-	Content   string    `json:"content"`
-	Language  string    `json:"language"`
-	Size      int       `json:"size"`
-	Hash      string    `json:"hash"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           string    `json:"id"`
+	RepositoryID uuid.UUID `json:"repository_id,omitempty"`
+	FilePath     string    `json:"file_path"`
+	StartLine    int       `json:"start_line"`
+	EndLine      int       `json:"end_line"`
+	Content      string    `json:"content"`
+	Language     string    `json:"language"`
+	Size         int       `json:"size"`
+	Hash         string    `json:"hash"`
+	CreatedAt    time.Time `json:"created_at"`
+	// Enhanced type information from semantic analysis
+	Type          string `json:"type,omitempty"`           // Semantic construct type (function, class, method, interface, etc.)
+	EntityName    string `json:"entity_name,omitempty"`    // Name of the entity (function name, class name, etc.)
+	ParentEntity  string `json:"parent_entity,omitempty"`  // Parent entity name (class for method, namespace for class, etc.)
+	QualifiedName string `json:"qualified_name,omitempty"` // Fully qualified name
+	Signature     string `json:"signature,omitempty"`      // Function/method signature
+	Visibility    string `json:"visibility,omitempty"`     // Visibility modifier (public, private, protected)
 }
 
 // ChunkRepository defines operations for storing and retrieving code chunks.

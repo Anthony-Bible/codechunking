@@ -155,7 +155,7 @@ func TestVectorOperations(t *testing.T) {
 			INSERT INTO embeddings (chunk_id, embedding, model_version)
 			VALUES ($1, $2, $3)
 			ON CONFLICT (chunk_id, model_version) DO NOTHING
-		`, chunkID, testVectorStr, "text-embedding-004")
+		`, chunkID, testVectorStr, "gemini-embedding-001")
 		require.NoError(t, err)
 
 		// Verify insertion
@@ -182,7 +182,7 @@ func TestVectorOperations(t *testing.T) {
 			INSERT INTO embeddings_partitioned (chunk_id, repository_id, embedding, model_version)
 			VALUES ($1, $2, $3, $4)
 			ON CONFLICT (chunk_id, model_version, repository_id) DO NOTHING
-		`, chunkID, repositoryID, testVectorStr, "text-embedding-004")
+		`, chunkID, repositoryID, testVectorStr, "gemini-embedding-001")
 		require.NoError(t, err)
 
 		// Verify insertion
@@ -318,7 +318,7 @@ func TestPartitionManagement(t *testing.T) {
 		_, err = pool.Exec(ctx, `
 			INSERT INTO embeddings_partitioned (chunk_id, repository_id, embedding, model_version)
 			VALUES ($1, $2, $3, $4)
-		`, chunkID, repositoryID, testVectorStr, "text-embedding-004")
+		`, chunkID, repositoryID, testVectorStr, "gemini-embedding-001")
 		require.NoError(t, err, "insertion with proper repository_id should succeed")
 
 		// Cleanup

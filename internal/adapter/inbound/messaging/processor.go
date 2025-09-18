@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/messaging"
 	"context"
 	"encoding/json"
@@ -22,6 +23,20 @@ func (n *NATSConsumer) handleMessage(msg *nats.Msg) error {
 	// Deserialize the enhanced indexing job message
 	var jobMessage messaging.EnhancedIndexingJobMessage
 	if err := json.Unmarshal(msg.Data, &jobMessage); err != nil {
+		// Log deserialization failure with structured logging and message details
+		messagePreview := string(msg.Data)
+		if len(messagePreview) > 200 {
+			messagePreview = messagePreview[:200] + "..."
+		}
+
+		slogger.ErrorNoCtx("Failed to deserialize message from NATS", slogger.Fields{
+			"error":           err.Error(),
+			"message_size":    len(msg.Data),
+			"message_subject": msg.Subject,
+			"message_preview": messagePreview,
+			"expected_format": "EnhancedIndexingJobMessage",
+		})
+
 		n.updateStats(false, 0)
 		n.updateHealthOnError(fmt.Sprintf("failed to unmarshal message: %v", err))
 		return fmt.Errorf("failed to unmarshal message: %w", err)
@@ -128,11 +143,13 @@ func (n *NATSConsumer) processMessage(msg *nats.Msg) {
 func (n *NATSConsumer) messageProcessingLoop() {
 	for {
 		n.mu.RLock()
-		running := n.running
+		draining := n.draining
 		subscription := n.subscription
 		n.mu.RUnlock()
 
-		if !running || subscription == nil {
+		// Only stop processing if we're explicitly draining or subscription is nil
+		// Continue processing even if running is false during normal operation
+		if draining || subscription == nil {
 			break
 		}
 

@@ -280,22 +280,12 @@ func (p *DefaultJobProcessor) generateEmbeddings(
 	repositoryID uuid.UUID,
 	chunks []outbound.CodeChunk,
 ) error {
-	p.jobsMu.RLock()
-	execution := p.activeJobs[jobID]
-	p.jobsMu.RUnlock()
-
-	// Check if execution exists (job may have been removed from activeJobs)
+	execution := p.getJobExecution(jobID)
 	if execution == nil {
 		return fmt.Errorf("job execution not found for jobID: %s", jobID)
 	}
 
-	// Ensure Progress is initialized
-	if execution.Progress == nil {
-		execution.Progress = &JobProgress{}
-	}
-
-	atomic.AddInt64(&execution.Progress.ChunksGenerated, int64(len(chunks)))
-	execution.Progress.Stage = "parsing_complete"
+	p.initializeEmbeddingProgress(execution, len(chunks))
 
 	slogger.Info(ctx, "Starting embedding generation", slogger.Fields{
 		"job_id":      jobID,
@@ -303,67 +293,11 @@ func (p *DefaultJobProcessor) generateEmbeddings(
 	})
 
 	for i, chunk := range chunks {
-		// Check for context cancellation
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+		if err := p.processChunkEmbedding(ctx, jobID, repositoryID, chunk, i, len(chunks), execution); err != nil {
+			return err
 		}
 
-		if execution.Progress != nil {
-			execution.Progress.CurrentFile = chunk.FilePath
-		}
-		// Generate embedding using Gemini API
-		options := outbound.EmbeddingOptions{
-			Model:    "text-embedding-004",
-			TaskType: outbound.TaskTypeRetrievalDocument,
-			Timeout:  30 * time.Second,
-		}
-
-		result, err := p.embeddingService.GenerateEmbedding(ctx, chunk.Content, options)
-		if err != nil {
-			return fmt.Errorf("failed to generate embedding for chunk %d: %w", i, err)
-		}
-
-		// Parse chunk ID as UUID for database storage
-		chunkUUID, err := uuid.Parse(chunk.ID)
-		if err != nil {
-			return fmt.Errorf("invalid chunk ID format for chunk %d: %w", i, err)
-		}
-
-		// Create embedding struct for database storage
-		embedding := &outbound.Embedding{
-			ID:           uuid.New(),
-			ChunkID:      chunkUUID,
-			RepositoryID: repositoryID,
-			Vector:       result.Vector,
-			ModelVersion: "text-embedding-004",
-			CreatedAt:    time.Now().Format(time.RFC3339),
-		}
-
-		// Store chunk and embedding in database using transactional method
-		if err := p.chunkStorageRepo.SaveChunkWithEmbedding(ctx, &chunk, embedding); err != nil {
-			return fmt.Errorf("failed to store chunk and embedding for chunk %d: %w", i, err)
-		}
-
-		slogger.Debug(ctx, "Generated and stored embedding", slogger.Fields{
-			"chunk_id":    chunk.ID,
-			"dimensions":  result.Dimensions,
-			"vector_size": len(result.Vector),
-		})
-		if execution.Progress != nil {
-			atomic.AddInt64(&execution.Progress.EmbeddingsCreated, 1)
-		}
-
-		// Log progress every 10 chunks
-		if (i+1)%10 == 0 || i == len(chunks)-1 {
-			slogger.Info(ctx, "Embedding generation progress", slogger.Fields{
-				"job_id":       jobID,
-				"completed":    i + 1,
-				"total":        len(chunks),
-				"current_file": chunk.FilePath,
-			})
-		}
+		p.logEmbeddingProgress(ctx, jobID, i+1, len(chunks), chunk.FilePath)
 	}
 
 	slogger.Info(ctx, "Embedding generation completed", slogger.Fields{
@@ -372,6 +306,182 @@ func (p *DefaultJobProcessor) generateEmbeddings(
 	})
 
 	return nil
+}
+
+func (p *DefaultJobProcessor) getJobExecution(jobID string) *JobExecution {
+	p.jobsMu.RLock()
+	defer p.jobsMu.RUnlock()
+	return p.activeJobs[jobID]
+}
+
+func (p *DefaultJobProcessor) initializeEmbeddingProgress(execution *JobExecution, chunkCount int) {
+	if execution.Progress == nil {
+		execution.Progress = &JobProgress{}
+	}
+	atomic.AddInt64(&execution.Progress.ChunksGenerated, int64(chunkCount))
+	execution.Progress.Stage = "parsing_complete"
+}
+
+func (p *DefaultJobProcessor) processChunkEmbedding(
+	ctx context.Context,
+	jobID string,
+	repositoryID uuid.UUID,
+	chunk outbound.CodeChunk,
+	chunkIndex, totalChunks int,
+	execution *JobExecution,
+) error {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		slogger.Warn(ctx, "Embedding generation cancelled due to context cancellation", slogger.Fields{
+			"job_id":   jobID,
+			"chunk_id": chunkIndex + 1,
+			"total":    totalChunks,
+		})
+		return ctx.Err()
+	default:
+	}
+
+	if execution.Progress != nil {
+		execution.Progress.CurrentFile = chunk.FilePath
+	}
+
+	// Generate the embedding
+	result, err := p.generateSingleEmbedding(ctx, jobID, chunk, chunkIndex)
+	if err != nil {
+		return err
+	}
+
+	// Store the embedding
+	if err := p.storeSingleEmbedding(ctx, jobID, repositoryID, chunk, result, chunkIndex); err != nil {
+		return err
+	}
+
+	if execution.Progress != nil {
+		atomic.AddInt64(&execution.Progress.EmbeddingsCreated, 1)
+	}
+
+	return nil
+}
+
+func (p *DefaultJobProcessor) generateSingleEmbedding(
+	ctx context.Context,
+	jobID string,
+	chunk outbound.CodeChunk,
+	chunkIndex int,
+) (*outbound.EmbeddingResult, error) {
+	slogger.Debug(ctx, "Starting embedding generation for chunk", slogger.Fields{
+		"job_id":     jobID,
+		"chunk_id":   chunk.ID,
+		"chunk_num":  chunkIndex + 1,
+		"file_path":  chunk.FilePath,
+		"chunk_size": len(chunk.Content),
+	})
+
+	embeddingCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	options := outbound.EmbeddingOptions{
+		Model:    "gemini-embedding-001",
+		TaskType: outbound.TaskTypeRetrievalDocument,
+		Timeout:  30 * time.Second,
+	}
+
+	result, err := p.embeddingService.GenerateEmbedding(embeddingCtx, chunk.Content, options)
+	if err != nil {
+		slogger.Error(ctx, "Failed to generate embedding", slogger.Fields{
+			"job_id":    jobID,
+			"chunk_id":  chunk.ID,
+			"chunk_num": chunkIndex + 1,
+			"file_path": chunk.FilePath,
+			"error":     err.Error(),
+		})
+		return nil, fmt.Errorf("failed to generate embedding for chunk %d (%s): %w", chunkIndex, chunk.ID, err)
+	}
+
+	slogger.Debug(ctx, "Embedding generated successfully", slogger.Fields{
+		"job_id":     jobID,
+		"chunk_id":   chunk.ID,
+		"dimensions": result.Dimensions,
+	})
+
+	return result, nil
+}
+
+func (p *DefaultJobProcessor) storeSingleEmbedding(
+	ctx context.Context,
+	jobID string,
+	repositoryID uuid.UUID,
+	chunk outbound.CodeChunk,
+	result *outbound.EmbeddingResult,
+	chunkIndex int,
+) error {
+	chunkUUID, err := uuid.Parse(chunk.ID)
+	if err != nil {
+		slogger.Error(ctx, "Invalid chunk ID format", slogger.Fields{
+			"job_id":   jobID,
+			"chunk_id": chunk.ID,
+			"error":    err.Error(),
+		})
+		return fmt.Errorf("invalid chunk ID format for chunk %d: %w", chunkIndex, err)
+	}
+
+	// Ensure chunk carries repository ID for persistence
+	chunk.RepositoryID = repositoryID
+
+	embedding := &outbound.Embedding{
+		ID:           uuid.New(),
+		ChunkID:      chunkUUID,
+		RepositoryID: repositoryID,
+		Vector:       result.Vector,
+		ModelVersion: "gemini-embedding-001",
+		CreatedAt:    time.Now().Format(time.RFC3339),
+	}
+
+	slogger.Debug(ctx, "Saving chunk and embedding to database", slogger.Fields{
+		"job_id":        jobID,
+		"chunk_id":      chunk.ID,
+		"embedding_id":  embedding.ID.String(),
+		"vector_length": len(result.Vector),
+	})
+
+	dbCtx, dbCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer dbCancel()
+
+	if err := p.chunkStorageRepo.SaveChunkWithEmbedding(dbCtx, &chunk, embedding); err != nil {
+		slogger.Error(ctx, "Failed to store chunk and embedding", slogger.Fields{
+			"job_id":       jobID,
+			"chunk_id":     chunk.ID,
+			"embedding_id": embedding.ID.String(),
+			"error":        err.Error(),
+		})
+		return fmt.Errorf("failed to store chunk and embedding for chunk %d (%s): %w", chunkIndex, chunk.ID, err)
+	}
+
+	slogger.Debug(ctx, "Chunk and embedding saved successfully", slogger.Fields{
+		"job_id":       jobID,
+		"chunk_id":     chunk.ID,
+		"embedding_id": embedding.ID.String(),
+	})
+
+	return nil
+}
+
+func (p *DefaultJobProcessor) logEmbeddingProgress(
+	ctx context.Context,
+	jobID string,
+	completed, total int,
+	currentFile string,
+) {
+	if completed%10 == 0 || completed == total {
+		slogger.Info(ctx, "Embedding generation progress", slogger.Fields{
+			"job_id":       jobID,
+			"completed":    completed,
+			"total":        total,
+			"current_file": currentFile,
+			"progress_pct": fmt.Sprintf("%.1f", float64(completed)/float64(total)*100),
+		})
+	}
 }
 
 // updateMetrics updates the processor metrics.

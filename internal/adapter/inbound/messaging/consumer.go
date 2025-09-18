@@ -20,6 +20,7 @@ type NATSConsumer struct {
 	natsConfig        config.NATSConfig
 	jobProcessor      inbound.JobProcessor
 	running           bool
+	draining          bool // New field to track if consumer is draining for shutdown
 	mu                sync.RWMutex
 	stats             inbound.ConsumerStats
 	health            inbound.ConsumerHealthStatus
@@ -56,6 +57,7 @@ func NewNATSConsumer(
 		natsConfig:   natsConfig,
 		jobProcessor: processor,
 		running:      false,
+		draining:     false, // Initialize draining state
 		stats: inbound.ConsumerStats{
 			ActiveSince: now,
 		},
@@ -270,6 +272,7 @@ func (n *NATSConsumer) Stop(_ context.Context) error {
 
 	// Update state to indicate shutdown
 	n.running = false
+	n.draining = true // Set draining flag to stop message processing loop
 	n.health.IsRunning = false
 	n.health.IsConnected = false
 	n.isConnected = false
@@ -353,6 +356,7 @@ func (n *NATSConsumer) GetProcessedMessages() int64 {
 }
 
 // Drain gracefully drains the consumer over the specified timeout.
+// This function should only be called during actual shutdown scenarios.
 func (n *NATSConsumer) Drain(ctx context.Context, timeout time.Duration) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -360,6 +364,9 @@ func (n *NATSConsumer) Drain(ctx context.Context, timeout time.Duration) error {
 	if !n.running {
 		return nil // Already stopped
 	}
+
+	// Set draining flag to indicate this is an explicit drain for shutdown
+	n.draining = true
 
 	// Create a context with timeout for the drain operation
 	drainCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -385,6 +392,7 @@ func (n *NATSConsumer) Drain(ctx context.Context, timeout time.Duration) error {
 			return fmt.Errorf("drain timeout exceeded after %v", timeout)
 		case <-ticker.C:
 			if n.pendingMessages == 0 {
+				// Only stop the consumer when we're explicitly draining for shutdown
 				n.running = false
 				n.health.IsRunning = false
 				return nil

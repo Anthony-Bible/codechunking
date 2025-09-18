@@ -61,11 +61,12 @@ type EmbeddingOptions struct {
 type EmbeddingTaskType string
 
 const (
-	TaskTypeRetrievalDocument  EmbeddingTaskType = "RETRIEVAL_DOCUMENT"  // For document retrieval/search
-	TaskTypeRetrievalQuery     EmbeddingTaskType = "RETRIEVAL_QUERY"     // For search queries
-	TaskTypeSemanticSimilarity EmbeddingTaskType = "SEMANTIC_SIMILARITY" // For similarity analysis
-	TaskTypeClassification     EmbeddingTaskType = "CLASSIFICATION"      // For classification tasks
-	TaskTypeClustering         EmbeddingTaskType = "CLUSTERING"          // For clustering tasks
+	TaskTypeRetrievalDocument  EmbeddingTaskType = "RETRIEVAL_DOCUMENT"   // For document retrieval/search
+	TaskTypeRetrievalQuery     EmbeddingTaskType = "RETRIEVAL_QUERY"      // For general search queries
+	TaskTypeCodeRetrievalQuery EmbeddingTaskType = "CODE_RETRIEVAL_QUERY" // For code search queries
+	TaskTypeSemanticSimilarity EmbeddingTaskType = "SEMANTIC_SIMILARITY"  // For similarity analysis
+	TaskTypeClassification     EmbeddingTaskType = "CLASSIFICATION"       // For classification tasks
+	TaskTypeClustering         EmbeddingTaskType = "CLUSTERING"           // For clustering tasks
 )
 
 // TruncationStrategy defines how to handle text that exceeds token limits.

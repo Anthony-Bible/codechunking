@@ -1,6 +1,7 @@
 package service
 
 import (
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -34,6 +35,13 @@ type ChunkInfo struct {
 	Language   string             `json:"language"`
 	StartLine  int                `json:"start_line"`
 	EndLine    int                `json:"end_line"`
+	// Enhanced type information
+	Type          string `json:"type,omitempty"`           // Semantic construct type (function, class, method, etc.)
+	EntityName    string `json:"entity_name,omitempty"`    // Name of the entity
+	ParentEntity  string `json:"parent_entity,omitempty"`  // Parent entity name
+	QualifiedName string `json:"qualified_name,omitempty"` // Fully qualified name
+	Signature     string `json:"signature,omitempty"`      // Function/method signature
+	Visibility    string `json:"visibility,omitempty"`     // Visibility modifier
 }
 
 // NewSearchService creates a new SearchService instance.
@@ -75,9 +83,13 @@ func (s *SearchService) Search(ctx context.Context, request dto.SearchRequestDTO
 	}
 
 	// Generate embedding for query
+	slogger.Info(ctx, "Starting embedding generation for search query", slogger.Fields{
+		"query": request.Query,
+		"limit": request.Limit,
+	})
 	embeddingOptions := outbound.EmbeddingOptions{
-		Model:    "text-embedding-004",
-		TaskType: outbound.TaskTypeRetrievalQuery,
+		Model:    "gemini-embedding-001",
+		TaskType: outbound.TaskTypeCodeRetrievalQuery,
 		Timeout:  30 * time.Second,
 	}
 
@@ -91,16 +103,29 @@ func (s *SearchService) Search(ctx context.Context, request dto.SearchRequestDTO
 	}
 
 	// Perform vector similarity search
+	slogger.Info(ctx, "Starting vector similarity search", slogger.Fields{
+		"vector_dimensions":     len(embeddingResult.Vector),
+		"use_partitioned_table": true,
+		"max_results":           request.Limit + request.Offset,
+	})
 	searchOptions := outbound.SimilaritySearchOptions{
-		MaxResults:    request.Limit + request.Offset, // Get enough results for pagination
-		MinSimilarity: request.SimilarityThreshold,
-		RepositoryIDs: request.RepositoryIDs,
+		UsePartitionedTable: true,                           // Use partitioned table for better performance
+		MaxResults:          request.Limit + request.Offset, // Get enough results for pagination
+		MinSimilarity:       request.SimilarityThreshold,
+		RepositoryIDs:       request.RepositoryIDs,
 	}
 
 	vectorResults, err := s.vectorRepo.VectorSimilaritySearch(ctx, embeddingResult.Vector, searchOptions)
 	if err != nil {
+		slogger.Error(ctx, "Vector similarity search failed", slogger.Fields{
+			"error": err.Error(),
+		})
 		return nil, fmt.Errorf("vector search failed: %w", err)
 	}
+
+	slogger.Info(ctx, "Vector search completed, extracting chunk IDs", slogger.Fields{
+		"vector_results_count": len(vectorResults),
+	})
 
 	// Extract chunk IDs
 	chunkIDs := make([]uuid.UUID, len(vectorResults))
@@ -109,10 +134,22 @@ func (s *SearchService) Search(ctx context.Context, request dto.SearchRequestDTO
 	}
 
 	// Retrieve chunk information
+	slogger.Info(ctx, "Starting chunk information retrieval", slogger.Fields{
+		"chunk_ids_count": len(chunkIDs),
+	})
 	chunks, err := s.chunkRepo.FindChunksByIDs(ctx, chunkIDs)
 	if err != nil {
+		slogger.Error(ctx, "Failed to retrieve chunk information", slogger.Fields{
+			"error":           err.Error(),
+			"chunk_ids_count": len(chunkIDs),
+		})
 		return nil, fmt.Errorf("failed to retrieve chunks: %w", err)
 	}
+
+	slogger.Info(ctx, "Chunk retrieval completed, building search results", slogger.Fields{
+		"chunks_retrieved": len(chunks),
+		"vector_results":   len(vectorResults),
+	})
 
 	// Build search results
 	results := s.buildSearchResults(vectorResults, chunks, request)
@@ -173,8 +210,8 @@ func (s *SearchService) buildSearchResults(
 			continue // Skip if chunk not found
 		}
 
-		// Apply language and file type filters
-		if !s.matchesFilters(chunk, request.Languages, request.FileTypes) {
+		// Apply all filters including type filters
+		if !s.matchesFilters(chunk, request) {
 			continue
 		}
 
@@ -187,6 +224,13 @@ func (s *SearchService) buildSearchResults(
 			Language:        chunk.Language,
 			StartLine:       chunk.StartLine,
 			EndLine:         chunk.EndLine,
+			// Include enhanced type information
+			Type:          chunk.Type,
+			EntityName:    chunk.EntityName,
+			ParentEntity:  chunk.ParentEntity,
+			QualifiedName: chunk.QualifiedName,
+			Signature:     chunk.Signature,
+			Visibility:    chunk.Visibility,
 		}
 		results = append(results, result)
 	}
@@ -194,12 +238,12 @@ func (s *SearchService) buildSearchResults(
 	return results
 }
 
-// matchesFilters checks if a chunk matches the language and file type filters.
-func (s *SearchService) matchesFilters(chunk ChunkInfo, languages []string, fileTypes []string) bool {
+// matchesFilters checks if a chunk matches all the specified filters.
+func (s *SearchService) matchesFilters(chunk ChunkInfo, request dto.SearchRequestDTO) bool {
 	// Check language filter
-	if len(languages) > 0 {
+	if len(request.Languages) > 0 {
 		languageMatches := false
-		for _, lang := range languages {
+		for _, lang := range request.Languages {
 			if strings.EqualFold(chunk.Language, lang) {
 				languageMatches = true
 				break
@@ -211,15 +255,50 @@ func (s *SearchService) matchesFilters(chunk ChunkInfo, languages []string, file
 	}
 
 	// Check file type filter
-	if len(fileTypes) > 0 {
+	if len(request.FileTypes) > 0 {
 		fileTypeMatches := false
-		for _, fileType := range fileTypes {
+		for _, fileType := range request.FileTypes {
 			if strings.HasSuffix(strings.ToLower(chunk.FilePath), strings.ToLower(fileType)) {
 				fileTypeMatches = true
 				break
 			}
 		}
 		if !fileTypeMatches {
+			return false
+		}
+	}
+
+	// Check type filter
+	if len(request.Types) > 0 {
+		typeMatches := false
+		for _, typeFilter := range request.Types {
+			if strings.EqualFold(chunk.Type, typeFilter) {
+				typeMatches = true
+				break
+			}
+		}
+		if !typeMatches {
+			return false
+		}
+	}
+
+	// Check entity name filter
+	if request.EntityName != "" {
+		if !strings.Contains(strings.ToLower(chunk.EntityName), strings.ToLower(request.EntityName)) {
+			return false
+		}
+	}
+
+	// Check visibility filter
+	if len(request.Visibility) > 0 {
+		visibilityMatches := false
+		for _, visibilityFilter := range request.Visibility {
+			if strings.EqualFold(chunk.Visibility, visibilityFilter) {
+				visibilityMatches = true
+				break
+			}
+		}
+		if !visibilityMatches {
 			return false
 		}
 	}

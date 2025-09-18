@@ -42,6 +42,10 @@ type SearchRequestDTO struct {
 	FileTypes           []string    `json:"file_types,omitempty"`
 	SimilarityThreshold float64     `json:"similarity_threshold,omitempty" validate:"omitempty,min=0,max=1"`
 	Sort                string      `json:"sort,omitempty"                 validate:"omitempty,oneof=similarity:desc similarity:asc file_path:asc file_path:desc"`
+	// Enhanced type filtering
+	Types      []string `json:"types,omitempty"`       // Filter by semantic construct types (function, class, method, etc.)
+	EntityName string   `json:"entity_name,omitempty"` // Filter by specific entity name
+	Visibility []string `json:"visibility,omitempty"`  // Filter by visibility (public, private, protected)
 }
 
 // ApplyDefaults sets default values for optional fields.
@@ -146,6 +150,13 @@ type SearchResultDTO struct {
 	Language        string         `json:"language"`
 	StartLine       int            `json:"start_line"`
 	EndLine         int            `json:"end_line"`
+	// Enhanced type information
+	Type          string `json:"type,omitempty"`           // Semantic construct type (function, class, method, etc.)
+	EntityName    string `json:"entity_name,omitempty"`    // Name of the entity
+	ParentEntity  string `json:"parent_entity,omitempty"`  // Parent entity name
+	QualifiedName string `json:"qualified_name,omitempty"` // Fully qualified name
+	Signature     string `json:"signature,omitempty"`      // Function/method signature
+	Visibility    string `json:"visibility,omitempty"`     // Visibility modifier
 }
 
 // Validate performs validation on SearchResultDTO.

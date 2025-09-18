@@ -604,12 +604,11 @@ func TestGeminiClient_RequestResponseLogging(t *testing.T) {
 
 func createTestClient(t *testing.T) *gemini.Client {
 	config := &gemini.ClientConfig{
-		APIKey:    "test-api-key",
-		BaseURL:   "https://generativelanguage.googleapis.com/v1beta",
-		Model:     "gemini-embedding-001",
-		TaskType:  "RETRIEVAL_DOCUMENT",
-		Timeout:   30 * time.Second,
-		MaxTokens: 2048,
+		APIKey:     "test-api-key",
+		Model:      "gemini-embedding-001",
+		TaskType:   "RETRIEVAL_DOCUMENT",
+		Timeout:    30 * time.Second,
+		Dimensions: 768,
 	}
 
 	client, err := gemini.NewClient(config)

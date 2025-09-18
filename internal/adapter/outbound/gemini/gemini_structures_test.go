@@ -487,34 +487,20 @@ func TestGeminiStructures_ConfigurationStructure(t *testing.T) {
 	t.Run("client_config_structure", func(t *testing.T) {
 		// This test should fail initially because the struct doesn't exist
 		config := &gemini.ClientConfig{
-			APIKey:          "test-api-key-12345",
-			BaseURL:         "https://generativelanguage.googleapis.com/v1beta",
-			Model:           "gemini-embedding-001",
-			TaskType:        "RETRIEVAL_DOCUMENT",
-			Timeout:         30 * time.Second,
-			MaxRetries:      3,
-			MaxTokens:       2048,
-			Dimensions:      768,
-			UserAgent:       "CodeChunking/1.0.0",
-			EnableBatching:  true,
-			BatchSize:       5,
-			RateLimitBuffer: 100 * time.Millisecond,
+			APIKey:     "test-api-key-12345",
+			Model:      "gemini-embedding-001",
+			TaskType:   "RETRIEVAL_DOCUMENT",
+			Timeout:    30 * time.Second,
+			Dimensions: 768,
 		}
 
 		// Verify all fields
 		expectedFields := map[string]interface{}{
-			"APIKey":          "test-api-key-12345",
-			"BaseURL":         "https://generativelanguage.googleapis.com/v1beta",
-			"Model":           "gemini-embedding-001",
-			"TaskType":        "RETRIEVAL_DOCUMENT",
-			"Timeout":         30 * time.Second,
-			"MaxRetries":      3,
-			"MaxTokens":       2048,
-			"Dimensions":      768,
-			"UserAgent":       "CodeChunking/1.0.0",
-			"EnableBatching":  true,
-			"BatchSize":       5,
-			"RateLimitBuffer": 100 * time.Millisecond,
+			"APIKey":     "test-api-key-12345",
+			"Model":      "gemini-embedding-001",
+			"TaskType":   "RETRIEVAL_DOCUMENT",
+			"Timeout":    30 * time.Second,
+			"Dimensions": 768,
 		}
 
 		// Use reflection to verify fields (this helper will fail initially)
@@ -531,7 +517,6 @@ func TestGeminiStructures_ConfigurationStructure(t *testing.T) {
 				name: "valid_config",
 				config: &gemini.ClientConfig{
 					APIKey:   "valid-key",
-					BaseURL:  "https://generativelanguage.googleapis.com/v1beta",
 					Model:    "gemini-embedding-001",
 					TaskType: "RETRIEVAL_DOCUMENT",
 				},
@@ -540,7 +525,6 @@ func TestGeminiStructures_ConfigurationStructure(t *testing.T) {
 			{
 				name: "missing_api_key",
 				config: &gemini.ClientConfig{
-					BaseURL:  "https://generativelanguage.googleapis.com/v1beta",
 					Model:    "gemini-embedding-001",
 					TaskType: "RETRIEVAL_DOCUMENT",
 				},
@@ -550,7 +534,6 @@ func TestGeminiStructures_ConfigurationStructure(t *testing.T) {
 				name: "invalid_model",
 				config: &gemini.ClientConfig{
 					APIKey:   "valid-key",
-					BaseURL:  "https://generativelanguage.googleapis.com/v1beta",
 					Model:    "invalid-model",
 					TaskType: "RETRIEVAL_DOCUMENT",
 				},

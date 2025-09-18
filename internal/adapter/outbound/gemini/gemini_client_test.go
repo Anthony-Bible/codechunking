@@ -560,13 +560,10 @@ func TestGeminiClient_BasicClientInitializationAndConfiguration(t *testing.T) {
 		// Verify default values were set
 		clientConfig := client.GetConfig()
 		expectedDefaults := map[string]interface{}{
-			"BaseURL":    "https://generativelanguage.googleapis.com/v1beta",
 			"Model":      "gemini-embedding-001",
 			"TaskType":   "RETRIEVAL_DOCUMENT",
 			"Timeout":    30 * time.Second,
-			"MaxRetries": 3,
 			"Dimensions": 768,
-			"MaxTokens":  2048,
 		}
 
 		for field, expected := range expectedDefaults {
@@ -600,18 +597,11 @@ func TestGeminiClient_BasicClientInitializationAndConfiguration(t *testing.T) {
 		// Verify all config values were set correctly
 		clientConfig := client.GetConfig()
 		expectedFields := map[string]interface{}{
-			"APIKey":          "full-config-api-key",
-			"BaseURL":         "https://custom.googleapis.com/v1",
-			"Model":           "gemini-embedding-001",
-			"TaskType":        "SEMANTIC_SIMILARITY",
-			"Timeout":         45 * time.Second,
-			"MaxRetries":      5,
-			"MaxTokens":       4096,
-			"Dimensions":      768,
-			"UserAgent":       "CustomApp/2.0.0",
-			"EnableBatching":  true,
-			"BatchSize":       20,
-			"RateLimitBuffer": 200 * time.Millisecond,
+			"APIKey":     "full-config-api-key",
+			"Model":      "gemini-embedding-001",
+			"TaskType":   "SEMANTIC_SIMILARITY",
+			"Timeout":    45 * time.Second,
+			"Dimensions": 768,
 		}
 
 		for field, expected := range expectedFields {

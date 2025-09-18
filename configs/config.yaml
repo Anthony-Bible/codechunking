@@ -24,7 +24,7 @@ nats:
   reconnect_wait: 2s
 
 gemini:
-  model: text-embedding-004
+  model: gemini-embedding-001
   max_retries: 3
   timeout: 30s
 

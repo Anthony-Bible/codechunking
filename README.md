@@ -45,6 +45,38 @@ The system follows hexagonal architecture (ports and adapters) principles:
 └── docker/              # Docker configurations
 ```
 
+### Architecture Overview
+
+```mermaid
+flowchart LR
+    %% Actors & Entrypoints
+    user[User / CLI / Client] --> api[API Server]
+
+    %% API Handlers
+    api --> repoH[[Repository Handler]]
+    api --> searchH[[Search Handler]]
+    api --> healthH[[Health Endpoint]]
+
+    %% Messaging & Workers
+    repoH --> nats{{NATS JetStream}}
+    nats --> worker[Worker Service]
+
+    %% Processing Pipeline
+    worker --> git[Git Clone]
+    worker --> ts[Tree-sitter Parsers]
+    ts --> chunker[Semantic Chunker]
+    chunker --> gemini[Gemini Embeddings]
+
+    %% Storage & Query
+    gemini --> db[(PostgreSQL + pgvector)]
+    searchH --> gemini
+    searchH --> db
+    db <--> api
+
+    classDef core stroke-width:2px
+    class api,nats,worker,db core
+```
+
 ## Data Flow Architecture
 
 The following diagram illustrates how repositories are processed, chunked, stored, and retrieved:
@@ -202,6 +234,37 @@ graph TB
     class GIT_CLONE,TS_PARSER,GO_PARSER,PY_PARSER,CHUNKER,SEMANTIC_ANALYZER processLayer
     class POSTGRES,PGVECTOR,REPO_TABLE,CHUNKS_TABLE,EMBED_TABLE,EMBED_PART,JOBS_TABLE storageLayer
     class GEMINI_CLIENT,BATCH_PROCESSOR,RETRY_LOGIC embedLayer
+```
+
+### Critical Components
+
+```mermaid
+flowchart TB
+    subgraph Critical Path
+        A[Repository Ingestion] --> B[Chunking]
+        B --> C[Embedding Generation]
+        C --> D[Vector Storage]
+        E[Semantic Query] --> F[Vector Similarity Search]
+        F --> G[Result Assembly]
+    end
+
+    %% Map to concrete components
+    A -.-> api[API Server]
+    api -.-> nats{{NATS JetStream}}
+    nats -.-> worker[Worker Service]
+    worker -.-> ts[Tree-sitter Parsers]
+    ts -.-> chunker[Semantic Chunker]
+    chunker -.-> gemini[Gemini Client]
+    gemini -.-> db[(PostgreSQL + pgvector)]
+    E -.-> api
+    F -.-> db
+    G -.-> api
+
+    %% Styling to highlight criticals
+    classDef critical fill:#ffe0e0,stroke:#c62828,stroke-width:2px
+    classDef infra fill:#e3f2fd,stroke:#1565c0,stroke-width:1.5px
+    class A,B,C,D,E,F,G critical
+    class api,nats,worker,ts,chunker,gemini,db infra
 ```
 
 ### Key Data Flow Stages

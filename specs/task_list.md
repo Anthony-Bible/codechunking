@@ -1187,7 +1187,7 @@ The final phase will focus on making the system production-ready:
    - ✅ **Architecture Compliance**: 3 focused files (1,770 lines total, all under 500-line guideline), hexagonal architecture patterns
 6. **Phase 6 Vector Storage and Retrieval** ✅ **100% COMPLETE** 🎉 - **Phase 6.1 & 6.2 COMPLETE**
    - ✅ **Day 1-4: Phase 6.1 Database Schema Optimization** - **COMPLETE** 🎉 using comprehensive TDD methodology (RED-GREEN-REFACTOR)
-   - ✅ **PostgreSQL pgvector Integration**: Complete pgvector extension setup with 768-dimensional vectors for Gemini text-embedding-004
+   - ✅ **PostgreSQL pgvector Integration**: Complete pgvector extension setup with 768-dimensional vectors for Gemini gemini-embedding-001
    - ✅ **HNSW Index Optimization**: Optimal index parameters (m=16, ef_construction=64, cosine similarity) for high-performance vector search
    - ✅ **Partitioning Strategy**: Production-ready table partitioning with 4 partitions for large-scale vector data management
    - ✅ **Day 5-6: Phase 6.2 Vector Operations Implementation** - **COMPLETE** 🎉 using comprehensive TDD methodology (RED-GREEN-REFACTOR)
@@ -1293,7 +1293,7 @@ The final phase will focus on making the system production-ready:
 - ✅ **Production Quality**: Enterprise-grade memory management with observability, graceful degradation, and performance optimization
 
 **Phase 6.1 Achievements:** ✅ **100% COMPLETE - VERIFIED** 🎉
-- ✅ **Vector Dimensions Optimization**: Confirmed and validated 768-dimensional vectors for Gemini text-embedding-004 model with optimal performance characteristics
+- ✅ **Vector Dimensions Optimization**: Confirmed and validated 768-dimensional vectors for Gemini gemini-embedding-001 model with optimal performance characteristics
 - ✅ **HNSW Index Implementation**: Deployed optimal HNSW indexes with m=16, ef_construction=64, cosine similarity across all partitions for superior query performance
 - ✅ **Production Partitioning Strategy**: Implemented hash-partitioned embeddings table (4 partitions) with balanced distribution for horizontal scalability
 - ✅ **Enterprise Schema Design**: Created embeddings_partitioned table with proper constraints, including partition key in primary key and unique constraints

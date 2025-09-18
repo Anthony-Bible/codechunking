@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -443,7 +444,7 @@ func simulateChunkProcessing(_ context.Context, _ *testing.T, processableFiles [
 		chunks := (i % 3) + 1 // 1-3 chunks per file
 
 		for j := range chunks {
-			chunkID := fmt.Sprintf("chunk_%d_%d", i, j)
+			chunkID := uuid.New().String()
 			ext := filepath.Ext(file)
 			language := "unknown"
 

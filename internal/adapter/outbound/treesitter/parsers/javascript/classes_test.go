@@ -688,10 +688,10 @@ class IncompleteClass {
 	})
 }
 
-// TestJavaScriptClasses_ClassExpressions_RedPhase tests class expression detection.
+// TestJavaScriptClasses_ClassExpressions tests class expression detection.
 // This is a RED PHASE test that defines expected behavior for class expressions.
 // Currently FAILS because class expressions are not being detected (returns 0 classes).
-func TestJavaScriptClasses_ClassExpressions_RedPhase(t *testing.T) {
+func TestJavaScriptClasses_ClassExpressions(t *testing.T) {
 	sourceCode := `// class_expressions_red.js
 
 // Variable-assigned class expression - should be detected as "MyClass" 
@@ -754,10 +754,10 @@ function createMixin() {
 	assert.Equal(t, outbound.ConstructClass, namedClass.Type)
 }
 
-// TestJavaScriptClasses_StaticMemberMetadata_RedPhase tests static member metadata extraction.
+// TestJavaScriptClasses_StaticMemberMetadata tests static member metadata extraction.
 // This is a RED PHASE test that defines expected behavior for static member metadata.
 // Currently FAILS because static_properties and static_methods metadata is missing/nil.
-func TestJavaScriptClasses_StaticMemberMetadata_RedPhase(t *testing.T) {
+func TestJavaScriptClasses_StaticMemberMetadata(t *testing.T) {
 	sourceCode := `// static_metadata_red.js
 
 class ApiService {
@@ -835,10 +835,10 @@ class ApiService {
 	assert.True(t, hasPrivateStatic.(bool), "Should detect private static members")
 }
 
-// TestJavaScriptClasses_MixinFactoryDetection_RedPhase tests mixin factory function detection.
+// TestJavaScriptClasses_MixinFactoryDetection tests mixin factory function detection.
 // This is a RED PHASE test that defines expected behavior for functions returning classes.
 // Currently FAILS because functions returning classes are not detected as class-like constructs.
-func TestJavaScriptClasses_MixinFactoryDetection_RedPhase(t *testing.T) {
+func TestJavaScriptClasses_MixinFactoryDetection(t *testing.T) {
 	sourceCode := `// mixin_factory_red.js
 
 // Mixin factory function that returns a class - should be detected with returns_class metadata

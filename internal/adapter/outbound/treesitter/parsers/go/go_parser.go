@@ -11,6 +11,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	forest "github.com/alexaandru/go-sitter-forest"
+	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
 )
 
 // Constants to avoid goconst lint warnings and reduce hardcoded values.
@@ -311,26 +314,62 @@ type ObservableGoParser struct {
 }
 
 func (o *ObservableGoParser) Parse(ctx context.Context, source []byte) (*treesitter.ParseResult, error) {
-	startTime := time.Now()
-	sourceCode := string(source)
+	// Real Tree-sitter based parsing using forest grammar (fixes empty AST)
+	start := time.Now()
 
-	parseTree, err := o.parser.Parse(ctx, sourceCode)
-	if err != nil {
+	// Validate Go source before parsing
+	if err := o.parser.validateGoSource(ctx, source); err != nil {
 		return nil, err
 	}
 
-	convertedTree, err := treesitter.ConvertDomainParseTreeToPort(parseTree)
+	grammar := forest.GetLanguage("go")
+	if grammar == nil {
+		return nil, errors.New("failed to get Go grammar from forest")
+	}
+
+	parser := tree_sitter.NewParser()
+	if parser == nil {
+		return nil, errors.New("failed to create tree-sitter parser")
+	}
+	if ok := parser.SetLanguage(grammar); !ok {
+		return nil, errors.New("failed to set Go language in tree-sitter parser")
+	}
+
+	tree, err := parser.ParseString(ctx, nil, source)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert parse tree: %w", err)
+		return nil, fmt.Errorf("failed to parse Go source: %w", err)
+	}
+	if tree == nil {
+		return nil, errors.New("parse tree is nil")
+	}
+	defer tree.Close()
+
+	// Convert TS tree to domain
+	rootTS := tree.RootNode()
+	rootNode, nodeCount, maxDepth := convertTSNodeToDomain(rootTS, 0)
+
+	metadata, err := valueobject.NewParseMetadata(time.Since(start), "go-tree-sitter-bare", "1.0.0")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create parse metadata: %w", err)
+	}
+	metadata.NodeCount = nodeCount
+	metadata.MaxDepth = maxDepth
+
+	domainTree, err := valueobject.NewParseTree(ctx, o.parser.supportedLanguage, rootNode, source, metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create domain parse tree: %w", err)
 	}
 
-	result := &treesitter.ParseResult{
+	portTree, err := treesitter.ConvertDomainParseTreeToPort(domainTree)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert domain parse tree: %w", err)
+	}
+
+	return &treesitter.ParseResult{
 		Success:   true,
-		ParseTree: convertedTree,
-		Duration:  time.Since(startTime),
-	}
-
-	return result, nil
+		ParseTree: portTree,
+		Duration:  time.Since(start),
+	}, nil
 }
 
 func (o *ObservableGoParser) ParseSource(
@@ -339,8 +378,61 @@ func (o *ObservableGoParser) ParseSource(
 	source []byte,
 	options treesitter.ParseOptions,
 ) (*treesitter.ParseResult, error) {
-	// Minimal implementation to satisfy interface
-	return o.Parse(ctx, source)
+	// Real Tree-sitter based parsing for provided language (expects Go)
+	start := time.Now()
+
+	// Validate Go source before parsing
+	if err := o.parser.validateGoSource(ctx, source); err != nil {
+		return nil, err
+	}
+
+	grammar := forest.GetLanguage("go")
+	if grammar == nil {
+		return nil, errors.New("failed to get Go grammar from forest")
+	}
+
+	parser := tree_sitter.NewParser()
+	if parser == nil {
+		return nil, errors.New("failed to create tree-sitter parser")
+	}
+	if ok := parser.SetLanguage(grammar); !ok {
+		return nil, errors.New("failed to set Go language in tree-sitter parser")
+	}
+
+	tree, err := parser.ParseString(ctx, nil, source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Go source: %w", err)
+	}
+	if tree == nil {
+		return nil, errors.New("parse tree is nil")
+	}
+	defer tree.Close()
+
+	rootTS := tree.RootNode()
+	rootNode, nodeCount, maxDepth := convertTSNodeToDomain(rootTS, 0)
+
+	metadata, err := valueobject.NewParseMetadata(time.Since(start), "go-tree-sitter-bare", "1.0.0")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create parse metadata: %w", err)
+	}
+	metadata.NodeCount = nodeCount
+	metadata.MaxDepth = maxDepth
+
+	domainTree, err := valueobject.NewParseTree(ctx, language, rootNode, source, metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create domain parse tree: %w", err)
+	}
+
+	portTree, err := treesitter.ConvertDomainParseTreeToPort(domainTree)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert domain parse tree: %w", err)
+	}
+
+	return &treesitter.ParseResult{
+		Success:   true,
+		ParseTree: portTree,
+		Duration:  time.Since(start),
+	}, nil
 }
 
 func (o *ObservableGoParser) GetLanguage() string {
@@ -544,6 +636,49 @@ func (o *ObservableGoParser) extractDocumentationFromLines(lines []string, start
 		}
 	}
 	return strings.Join(docLines, " ")
+}
+
+// convertTSNodeToDomain converts a tree-sitter node to our domain ParseNode and returns
+// the constructed node along with total node count and max depth encountered.
+func convertTSNodeToDomain(node tree_sitter.Node, depth int) (*valueobject.ParseNode, int, int) {
+	if node.IsNull() {
+		return nil, 0, depth
+	}
+
+	dom := &valueobject.ParseNode{
+		Type:      node.Type(),
+		StartByte: valueobject.ClampUintToUint32(node.StartByte()),
+		EndByte:   valueobject.ClampUintToUint32(node.EndByte()),
+		StartPos: valueobject.Position{
+			Row:    valueobject.ClampUintToUint32(node.StartPoint().Row),
+			Column: valueobject.ClampUintToUint32(node.StartPoint().Column),
+		},
+		EndPos: valueobject.Position{
+			Row:    valueobject.ClampUintToUint32(node.EndPoint().Row),
+			Column: valueobject.ClampUintToUint32(node.EndPoint().Column),
+		},
+		Children: make([]*valueobject.ParseNode, 0),
+	}
+
+	count := 1
+	maxDepth := depth
+	childCount := node.ChildCount()
+	for i := range childCount {
+		child := node.Child(i)
+		if child.IsNull() {
+			continue
+		}
+		cNode, cCount, cDepth := convertTSNodeToDomain(child, depth+1)
+		if cNode != nil {
+			dom.Children = append(dom.Children, cNode)
+			count += cCount
+			if cDepth > maxDepth {
+				maxDepth = cDepth
+			}
+		}
+	}
+
+	return dom, count, maxDepth
 }
 
 // VariableInfo represents a variable/constant/type found in source code (GREEN PHASE).

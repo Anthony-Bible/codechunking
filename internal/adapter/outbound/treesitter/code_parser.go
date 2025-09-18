@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // TreeSitterCodeParser implements outbound.CodeParser using TreeSitter infrastructure.
@@ -216,7 +218,7 @@ func (p *TreeSitterCodeParser) convertSemanticToCodeChunks(
 ) []outbound.CodeChunk {
 	var codeChunks []outbound.CodeChunk
 
-	for i, semanticChunk := range semanticChunks {
+	for _, semanticChunk := range semanticChunks {
 		// Estimate line numbers from byte positions (approximation)
 		startLine := p.estimateLineNumber(semanticChunk.Content, int(semanticChunk.StartByte))
 		endLine := p.estimateLineNumber(semanticChunk.Content, int(semanticChunk.EndByte))
@@ -225,9 +227,21 @@ func (p *TreeSitterCodeParser) convertSemanticToCodeChunks(
 		hash := sha256.Sum256([]byte(semanticChunk.Content))
 		hashStr := hex.EncodeToString(hash[:])
 
-		// Create code chunk
+		// Convert visibility modifier to string
+		visibility := ""
+		if semanticChunk.Visibility != "" {
+			visibility = string(semanticChunk.Visibility)
+		}
+
+		// Get parent entity name from ParentChunk if available
+		parentEntity := ""
+		if semanticChunk.ParentChunk != nil {
+			parentEntity = semanticChunk.ParentChunk.Name
+		}
+
+		// Create code chunk with preserved semantic type information
 		chunk := outbound.CodeChunk{
-			ID:        fmt.Sprintf("%s:semantic:%d:%s", filePath, i, hashStr[:8]),
+			ID:        uuid.New().String(),
 			FilePath:  filePath,
 			StartLine: startLine,
 			EndLine:   endLine,
@@ -236,6 +250,13 @@ func (p *TreeSitterCodeParser) convertSemanticToCodeChunks(
 			Size:      len(semanticChunk.Content),
 			Hash:      hashStr,
 			CreatedAt: time.Now(),
+			// Preserve semantic type information
+			Type:          string(semanticChunk.Type),
+			EntityName:    semanticChunk.Name,
+			ParentEntity:  parentEntity,
+			QualifiedName: semanticChunk.QualifiedName,
+			Signature:     semanticChunk.Signature,
+			Visibility:    visibility,
 		}
 
 		codeChunks = append(codeChunks, chunk)
@@ -300,8 +321,8 @@ func (p *TreeSitterCodeParser) createChunk(
 	hash := sha256.Sum256([]byte(content))
 	hashStr := hex.EncodeToString(hash[:])
 
-	// Generate unique ID
-	id := fmt.Sprintf("%s:%d-%d:%s", filePath, startLine, endLine, hashStr[:8])
+	// Generate unique UUID for the chunk ID
+	id := uuid.New().String()
 
 	return outbound.CodeChunk{
 		ID:        id,
@@ -313,6 +334,8 @@ func (p *TreeSitterCodeParser) createChunk(
 		Size:      len(content),
 		Hash:      hashStr,
 		CreatedAt: time.Now(),
+		// For simple chunks, mark as generic code type
+		Type: "fragment", // Use fragment type for non-semantic chunks
 	}
 }
 

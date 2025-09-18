@@ -9,8 +9,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -90,6 +88,11 @@ func (o *ObservableGoParser) ExtractFunctions(
 			slogger.Info(ctx, "Extracted function", slogger.Fields{
 				"function_name": fn.Name,
 			})
+		} else {
+			slogger.Error(ctx, "Failed to parse function node", slogger.Fields{
+				"error":     err.Error(),
+				"node_type": node.Type,
+			})
 		}
 	}
 
@@ -103,11 +106,12 @@ func (o *ObservableGoParser) ExtractFunctions(
 		}
 	}
 
-	// Fallback to source-based parsing if Tree-sitter nodes are empty
+	// Log if Tree-sitter parsing found no functions (removed fallback to force Tree-sitter usage)
 	if len(functions) == 0 {
-		slogger.Info(ctx, "No Tree-sitter nodes found, falling back to source-based parsing", slogger.Fields{})
-		fallbackFunctions := o.extractFunctionsFromSourceText(parseTree, packageName)
-		functions = append(functions, fallbackFunctions...)
+		slogger.Warn(ctx, "Tree-sitter found no function nodes - check parse tree and grammar", slogger.Fields{
+			"function_nodes_searched": nodeTypeFunctionDecl,
+			"method_nodes_searched":   nodeTypeMethodDecl,
+		})
 	}
 
 	slogger.Info(ctx, "ExtractFunctions completed", slogger.Fields{
@@ -117,203 +121,9 @@ func (o *ObservableGoParser) ExtractFunctions(
 	return functions, nil
 }
 
-// extractFunctionsFromSourceText provides fallback function extraction using source text parsing.
-func (o *ObservableGoParser) extractFunctionsFromSourceText(
-	parseTree *valueobject.ParseTree,
-	packageName string,
-) []outbound.SemanticCodeChunk {
-	var functions []outbound.SemanticCodeChunk
-	source := string(parseTree.Source())
+// extractFunctionsFromSourceText is now removed - forcing Tree-sitter only parsing
 
-	// Extract detailed function information
-	functionsInfo := o.extractDetailedFunctionInfo(source)
-
-	for _, info := range functionsInfo {
-		chunkID := fmt.Sprintf("func:%s", info.Name)
-		if info.IsMethod {
-			chunkID = fmt.Sprintf("method:%s:%s", info.ReceiverType, info.Name)
-		}
-
-		chunkType := outbound.ConstructFunction
-		if info.IsMethod {
-			chunkType = outbound.ConstructMethod
-		}
-
-		qualifiedName := info.Name
-		if packageName != "" && packageName != defaultPackageName {
-			qualifiedName = packageName + "." + info.Name
-		}
-		if info.IsMethod && info.ReceiverType != "" {
-			qualifiedName = info.ReceiverType + "." + info.Name
-		}
-
-		functions = append(functions, outbound.SemanticCodeChunk{
-			ChunkID:       chunkID,
-			Name:          info.Name,
-			QualifiedName: qualifiedName,
-			Language:      parseTree.Language(),
-			Type:          chunkType,
-			Visibility:    o.getVisibility(info.Name),
-			Content:       info.Content,
-			Documentation: info.Documentation,
-			Parameters:    info.Parameters,
-			ReturnType:    info.ReturnType,
-			StartByte:     info.StartByte,
-			EndByte:       info.EndByte,
-			ExtractedAt:   time.Now(),
-		})
-	}
-	return functions
-}
-
-// extractDetailedFunctionInfo parses source code to extract detailed function information.
-func (o *ObservableGoParser) extractDetailedFunctionInfo(source string) []FunctionInfo {
-	var functions []FunctionInfo
-
-	// Find all function declarations using regex
-	funcPattern := regexp.MustCompile(
-		`(?s)((?://[^\n]*\n)*)\s*func\s*(?:\([^)]*\))?\s*([A-Za-z_][A-Za-z0-9_]*)\s*\([^{]*\{[^}]*\}`,
-	)
-	matches := funcPattern.FindAllStringSubmatch(source, -1)
-
-	for _, match := range matches {
-		if len(match) >= 3 {
-			fullMatch := match[0]
-			comments := strings.TrimSpace(match[1])
-			funcName := match[2]
-
-			// Find start position
-			startPos := strings.Index(source, fullMatch)
-			if startPos == -1 {
-				continue
-			}
-
-			// Extract function content (clean up formatting)
-			content := strings.TrimSpace(fullMatch)
-			if strings.HasPrefix(content, "//") {
-				// Remove leading comments from content, keep only the function
-				lines := strings.Split(content, "\n")
-				var funcLines []string
-				inFunc := false
-				for _, line := range lines {
-					if strings.Contains(line, "func ") {
-						inFunc = true
-					}
-					if inFunc {
-						funcLines = append(funcLines, line)
-					}
-				}
-				content = strings.Join(funcLines, "\n")
-			}
-
-			// Parse documentation from comments
-			var documentation string
-			if comments != "" {
-				docLines := strings.Split(comments, "\n")
-				var cleanedDocs []string
-				for _, line := range docLines {
-					line = strings.TrimSpace(line)
-					line = strings.TrimPrefix(line, "//")
-					line = strings.TrimSpace(line)
-					if line != "" {
-						cleanedDocs = append(cleanedDocs, line)
-					}
-				}
-				documentation = strings.Join(cleanedDocs, " ")
-			}
-
-			// Determine if it's a method and extract receiver type
-			isMethod := false
-			receiverType := ""
-			if strings.Contains(fullMatch, "func (") {
-				isMethod = true
-				receiverMatch := regexp.MustCompile(`func\s*\(\s*\w+\s+\*?(\w+)\s*\)`).FindStringSubmatch(fullMatch)
-				if len(receiverMatch) > 1 {
-					receiverType = receiverMatch[1]
-				}
-			}
-
-			// Parse parameters and return type (simplified)
-			parameters := o.parseParametersFromSource(fullMatch)
-			returnType := o.parseReturnTypeFromSource(fullMatch)
-
-			// Safe conversion with bounds checking
-			startBytePos := startPos + 1 // +1 to match test expectations
-			endBytePos := startPos + len(fullMatch)
-
-			// Ensure values fit in uint32
-			var startByte, endByte uint32
-			if startBytePos >= 0 && startBytePos <= int(^uint32(0)) {
-				startByte = uint32(startBytePos)
-			}
-			if endBytePos >= 0 && endBytePos <= int(^uint32(0)) {
-				endByte = uint32(endBytePos)
-			}
-
-			functions = append(functions, FunctionInfo{
-				Name:          funcName,
-				Documentation: documentation,
-				Content:       content,
-				Parameters:    parameters,
-				ReturnType:    returnType,
-				StartByte:     startByte,
-				EndByte:       endByte,
-				IsMethod:      isMethod,
-				ReceiverType:  receiverType,
-			})
-		}
-	}
-
-	return functions
-}
-
-// parseParametersFromSource extracts parameters from function source (simplified).
-func (o *ObservableGoParser) parseParametersFromSource(funcSource string) []outbound.Parameter {
-	var parameters []outbound.Parameter
-
-	// Extract parameter list between parentheses
-	paramPattern := regexp.MustCompile(`func[^(]*\(([^)]*)\)`)
-	matches := paramPattern.FindStringSubmatch(funcSource)
-	if len(matches) < 2 {
-		return parameters
-	}
-
-	paramStr := strings.TrimSpace(matches[1])
-	if paramStr == "" {
-		return parameters
-	}
-
-	// Split parameters by comma
-	paramParts := strings.Split(paramStr, ",")
-	for _, param := range paramParts {
-		param = strings.TrimSpace(param)
-		if param == "" {
-			continue
-		}
-
-		// Parse "name type" format
-		parts := strings.Fields(param)
-		if len(parts) >= 2 {
-			parameters = append(parameters, outbound.Parameter{
-				Name: parts[0],
-				Type: parts[1],
-			})
-		}
-	}
-
-	return parameters
-}
-
-// parseReturnTypeFromSource extracts return type from function source (simplified).
-func (o *ObservableGoParser) parseReturnTypeFromSource(funcSource string) string {
-	// Look for return type after parameter list
-	returnPattern := regexp.MustCompile(`\)\s*([A-Za-z_][A-Za-z0-9_]*)\s*\{`)
-	matches := returnPattern.FindStringSubmatch(funcSource)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-	return ""
-}
+// Regex-based parsing methods removed - Tree-sitter only parsing now
 
 // extractPackageNameFromTree extracts package name from parse tree, with fallback.
 func (o *ObservableGoParser) extractPackageNameFromTree(parseTree *valueobject.ParseTree) string {
@@ -373,6 +183,7 @@ func (p *GoParser) parseGoFunction(
 	packageName string,
 	parseTree *valueobject.ParseTree,
 ) (outbound.SemanticCodeChunk, error) {
+	ctx := context.TODO() // Add context for logging
 	if node == nil {
 		return outbound.SemanticCodeChunk{}, errors.New("parse node cannot be nil")
 	}
@@ -380,9 +191,27 @@ func (p *GoParser) parseGoFunction(
 		return outbound.SemanticCodeChunk{}, errors.New("parse tree cannot be nil")
 	}
 
-	nameNode := findChildByTypeInNode(node, "identifier")
+	// Debug: log all children types
+	var childTypes []string
+	for _, child := range node.Children {
+		childTypes = append(childTypes, child.Type)
+	}
+	slogger.Debug(ctx, "Function node children", slogger.Fields{
+		"child_types": childTypes,
+	})
+
+	// Find the first identifier child (should be function name in function_declaration)
+	var nameNode *valueobject.ParseNode
+	for _, child := range node.Children {
+		if child.Type == "identifier" {
+			nameNode = child
+			break
+		}
+	}
 	if nameNode == nil {
-		return outbound.SemanticCodeChunk{}, errors.New("function name not found")
+		return outbound.SemanticCodeChunk{}, errors.New(
+			"function name not found - children: " + strings.Join(childTypes, ", "),
+		)
 	}
 
 	name := parseTree.GetNodeText(nameNode)
@@ -446,10 +275,10 @@ func (p *GoParser) parseGoMethod(
 		return outbound.SemanticCodeChunk{}, errors.New("parse tree cannot be nil")
 	}
 
-	// Find method name (identifier after func keyword and receiver)
+	// Find method name: Go grammar uses field_identifier for method names
 	var nameNode *valueobject.ParseNode
-	for i, child := range node.Children {
-		if child.Type == "identifier" && i > 2 {
+	for _, child := range node.Children {
+		if child.Type == nodeTypeFieldIdentifier || child.Type == nodeTypeIdentifier {
 			nameNode = child
 			break
 		}
@@ -462,9 +291,9 @@ func (p *GoParser) parseGoMethod(
 	name := parseTree.GetNodeText(nameNode)
 	visibility := p.getVisibility(name)
 
-	// Extract receiver info
+	// Extract receiver info (first parameter_list before name)
 	receiverInfo := ""
-	parameterNodes := findChildrenByType(node, "parameter_list")
+	parameterNodes := findChildrenByType(node, nodeTypeParameterList)
 	if len(parameterNodes) > 0 && parameterNodes[0].StartByte < nameNode.StartByte {
 		receiverInfo = parseTree.GetNodeText(parameterNodes[0])
 	}

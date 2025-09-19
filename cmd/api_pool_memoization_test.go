@@ -3,9 +3,9 @@ package cmd
 import (
 	"codechunking/internal/config"
 	"context"
-	"fmt"
 	"net"
 	urlpkg "net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -755,7 +755,7 @@ func requireDatabase(t *testing.T, host string, port int) {
 		port = 5432
 	}
 
-	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	address := net.JoinHostPort(host, strconv.Itoa(port))
 
 	if cached, ok := databaseAvailability.Load(address); ok {
 		if available, _ := cached.(bool); !available {

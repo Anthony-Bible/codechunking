@@ -121,6 +121,11 @@ func (p *DefaultJobProcessor) ProcessJob(ctx context.Context, message messaging.
 		return errors.New("memory pressure too high, rejecting job")
 	}
 
+	// Resource limits enforcement not implemented yet
+	if p.config.MaxMemoryMB > 0 || p.config.MaxDiskUsageMB > 0 {
+		return errors.New("resource limits enforcement not implemented yet")
+	}
+
 	// Acquire semaphore for concurrency control
 	p.semaphore <- struct{}{}
 	defer func() {

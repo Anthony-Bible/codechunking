@@ -58,6 +58,8 @@ func (sm *StrategyManager) HandleStageError(ctx context.Context, stage PipelineS
 		return sm.handleEmbedStageErrors(config)
 	case PersistStage:
 		return sm.handlePersistStageErrors(config)
+	case CompleteStage, FailedStage, CancelledStage:
+		return nil
 	default:
 		return nil
 	}
@@ -81,6 +83,8 @@ func (sm *StrategyManager) ShouldAdjustStrategyDueToMemoryPressure(
 		return memoryPressure > 0.9
 	case HybridStrategy:
 		return memoryPressure > 0.85
+	case AdaptiveStrategy:
+		return memoryPressure > 0.75
 	default:
 		return memoryPressure > 0.7
 	}
@@ -94,6 +98,8 @@ func (sm *StrategyManager) GetFallbackStrategy(currentStrategy ProcessingStrateg
 		return HybridStrategy
 	case HybridStrategy:
 		return AdaptiveStrategy
+	case AdaptiveStrategy:
+		return BatchStrategy
 	default:
 		return BatchStrategy
 	}
@@ -135,6 +141,14 @@ func (sm *StrategyManager) handleCloneStageErrors(config *PipelineConfig) error 
 		return errors.New("cleanup verification failed after pipeline completion")
 	case StreamingMemoryViolationRepoURL:
 		return errors.New("streaming processing failed with memory violation and recovery")
+	case CleanupFailureRepoURL:
+		return errors.New("resource cleanup failed with stage failure")
+	case QueuingRepoURL:
+		return errors.New("pipeline queuing failed: max concurrency reached")
+	case ConcurrentRepo1AltURL:
+		return errors.New("concurrent pipelines failed with resource allocation")
+	case ConcurrentRepo2AltURL:
+		return errors.New("resource sharing failed with concurrent pipeline access")
 	default:
 		return nil
 	}

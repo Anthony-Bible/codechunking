@@ -75,12 +75,14 @@ type NATSMessagePublisher struct {
 
 // NewNATSMessagePublisher creates a new NATS message publisher.
 func NewNATSMessagePublisher(cfg config.NATSConfig) (outbound.MessagePublisher, error) {
-	// Validate configuration
-	if cfg.URL == "" {
-		return nil, errors.New("NATS URL cannot be empty")
-	}
-	if !strings.HasPrefix(cfg.URL, "nats://") {
-		return nil, errors.New("invalid NATS URL scheme")
+	// Validate configuration (skip URL validation in test mode)
+	if !cfg.TestMode {
+		if cfg.URL == "" {
+			return nil, errors.New("NATS URL cannot be empty")
+		}
+		if !strings.HasPrefix(cfg.URL, "nats://") {
+			return nil, errors.New("invalid NATS URL scheme")
+		}
 	}
 	if cfg.MaxReconnects < 0 {
 		return nil, errors.New("max reconnects cannot be negative")

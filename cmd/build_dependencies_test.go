@@ -241,6 +241,9 @@ func TestServiceFactory_CreateRepositoryService_UsesBuildDependencies(t *testing
 			MaxConnections: 10,
 			SSLMode:        "disable",
 		},
+		NATS: config.NATSConfig{
+			TestMode: true, // Enable test mode to bypass URL validation
+		},
 	}
 	serviceFactory := NewServiceFactory(cfg)
 

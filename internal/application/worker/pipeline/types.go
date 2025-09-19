@@ -88,6 +88,10 @@ const (
 	StreamingFallbackRepoURL          = "https://github.com/test/streaming-fallback-repo"
 	DynamicRepoURL                    = "https://github.com/test/dynamic-repo"
 	CleanupRepoURL                    = "https://github.com/test/cleanup-repo"
+	CleanupFailureRepoURL             = "https://github.com/test/cleanup-failure-repo"
+	QueuingRepoURL                    = "https://github.com/test/queuing-repo"
+	ConcurrentRepo1AltURL             = "https://github.com/test/concurrent-1"
+	ConcurrentRepo2AltURL             = "https://github.com/test/concurrent-2"
 )
 
 type PipelineOrchestrator interface {

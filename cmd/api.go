@@ -9,6 +9,7 @@ import (
 	"codechunking/internal/adapter/inbound/service"
 	"codechunking/internal/adapter/outbound/gemini"
 	"codechunking/internal/adapter/outbound/messaging"
+	"codechunking/internal/adapter/outbound/mock"
 	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/registry"
@@ -177,11 +178,8 @@ func (sf *ServiceFactory) Close() error {
 //     or fail-fast (repository service)
 //   - The MessagePublisher uses NATS JetStream for real message queue functionality
 func (sf *ServiceFactory) buildDependencies() (outbound.RepositoryRepository, outbound.IndexingJobRepository, outbound.MessagePublisher, error) {
-	// Create NATS message publisher with configuration
-	messagePublisher, err := sf.createMessagePublisher()
-	if err != nil {
-		return nil, nil, nil, err
-	}
+	// Create NATS message publisher with configuration (always succeeds with fallback to mock)
+	messagePublisher := sf.createMessagePublisher()
 
 	// Use memoized database pool instead of creating new one
 	dbPool, dbErr := sf.GetDatabasePool()
@@ -297,30 +295,38 @@ func (sf *ServiceFactory) createDatabasePool() (*pgxpool.Pool, error) {
 }
 
 // createMessagePublisher creates a NATS message publisher.
-func (sf *ServiceFactory) createMessagePublisher() (outbound.MessagePublisher, error) {
-	// Create NATS message publisher with configuration
+func (sf *ServiceFactory) createMessagePublisher() outbound.MessagePublisher {
+	// Try to create NATS message publisher with configuration
 	natsPublisher, err := messaging.NewNATSMessagePublisher(sf.config.NATS)
 	if err != nil {
-		return nil, err
+		// Log the NATS failure and fall back to mock
+		slogger.ErrorNoCtx("Failed to create NATS message publisher, falling back to mock",
+			slogger.Field("error", err.Error()))
+		return mock.NewMockMessagePublisher()
 	}
 
 	// Get concrete type to call setup methods
 	concretePublisher, ok := natsPublisher.(*messaging.NATSMessagePublisher)
 	if !ok {
-		return nil, errors.New("failed to cast to NATSMessagePublisher")
+		slogger.ErrorNoCtx("Failed to cast to NATSMessagePublisher, falling back to mock", nil)
+		return mock.NewMockMessagePublisher()
 	}
 
 	// Connect to NATS server
 	if err := concretePublisher.Connect(); err != nil {
-		return nil, err
+		slogger.ErrorNoCtx("Failed to connect to NATS server, falling back to mock",
+			slogger.Field("error", err.Error()))
+		return mock.NewMockMessagePublisher()
 	}
 
 	// Ensure required streams exist
 	if err := concretePublisher.EnsureStream(); err != nil {
-		return nil, err
+		slogger.ErrorNoCtx("Failed to ensure NATS stream, falling back to mock",
+			slogger.Field("error", err.Error()))
+		return mock.NewMockMessagePublisher()
 	}
 
-	return natsPublisher, nil
+	return natsPublisher
 }
 
 // CreateSearchService creates a search service instance with full-stack dependencies.

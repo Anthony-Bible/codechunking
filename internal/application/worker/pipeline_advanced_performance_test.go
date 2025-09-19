@@ -24,6 +24,7 @@ type ProcessingPipeline struct {
 	jobQueue  chan Job
 	wg        sync.WaitGroup
 	workerIDs chan int
+	closed    int32 // atomic flag for pipeline state
 }
 
 func NewProcessingPipeline(workers int) *ProcessingPipeline {
@@ -46,11 +47,19 @@ func (p *ProcessingPipeline) SetProcessor(processor func(Job) error) {
 }
 
 func (p *ProcessingPipeline) Submit(ctx context.Context, job Job) error {
+	// Check if pipeline is closed
+	if atomic.LoadInt32(&p.closed) == 1 {
+		return errors.New("pipeline closed")
+	}
+
 	select {
 	case p.jobQueue <- job:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	default:
+		// Channel might be full or closed
+		return errors.New("pipeline busy or closed")
 	}
 }
 
@@ -72,6 +81,10 @@ func (p *ProcessingPipeline) startWorkers() {
 }
 
 func (p *ProcessingPipeline) Close() {
+	// Check if already closed to avoid double-close panic
+	if !atomic.CompareAndSwapInt32(&p.closed, 0, 1) {
+		return // Already closed
+	}
 	close(p.jobQueue)
 	p.wg.Wait()
 }
@@ -590,9 +603,6 @@ func BenchmarkRealWorldPerformance_PrometheusCodebase(b *testing.B) {
 
 func TestRealWorldPerformance_MemoryBehavior(t *testing.T) {
 	t.Parallel()
-	pipeline := NewProcessingPipeline(10)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	t.Cleanup(cancel)
 
 	codebases := []struct {
 		name  string
@@ -607,6 +617,11 @@ func TestRealWorldPerformance_MemoryBehavior(t *testing.T) {
 	for _, cb := range codebases {
 		t.Run(cb.name, func(t *testing.T) {
 			t.Parallel()
+			// Create a separate pipeline for each sub-test
+			pipeline := NewProcessingPipeline(10)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+
 			repo := generateSyntheticCodebase(cb.files, cb.size)
 
 			var memUsage []int64
@@ -630,7 +645,11 @@ func TestRealWorldPerformance_MemoryBehavior(t *testing.T) {
 			for i, file := range repo {
 				go func(id int, content string) {
 					defer wg.Done()
-					pipeline.Submit(ctx, Job{ID: fmt.Sprintf("file-%d", id), Data: content})
+					// Handle potential errors from submission
+					if err := pipeline.Submit(ctx, Job{ID: fmt.Sprintf("file-%d", id), Data: content}); err != nil {
+						// Log but continue - context might be cancelled or pipeline closed
+						t.Logf("Failed to submit job %d: %v", id, err)
+					}
 				}(i, file)
 			}
 

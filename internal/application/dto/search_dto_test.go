@@ -220,7 +220,6 @@ func TestSearchRequestDTO_Defaults(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			// This should call ApplyDefaults() method on SearchRequestDTO
 			dto := tc.input

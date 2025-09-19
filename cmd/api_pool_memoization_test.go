@@ -3,6 +3,10 @@ package cmd
 import (
 	"codechunking/internal/config"
 	"context"
+	"fmt"
+	"net"
+	urlpkg "net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -28,6 +32,8 @@ func TestServiceFactory_MemoizedDatabasePool_BasicBehavior(t *testing.T) {
 				SSLMode:        "disable",
 			},
 		}
+
+		requireDatabase(t, cfg.Database.Host, cfg.Database.Port)
 		serviceFactory := NewServiceFactory(cfg)
 
 		// Act - Call the memoized pool method multiple times
@@ -63,6 +69,8 @@ func TestServiceFactory_MemoizedDatabasePool_BasicBehavior(t *testing.T) {
 				SSLMode:        "disable",
 			},
 		}
+
+		requireDatabase(t, cfg.Database.Host, cfg.Database.Port)
 		serviceFactory := NewServiceFactory(cfg)
 
 		// Act - Call pool method multiple times
@@ -95,6 +103,8 @@ func TestServiceFactory_MemoizedDatabasePool_BasicBehavior(t *testing.T) {
 				SSLMode:        "disable",
 			},
 		}
+
+		requireDatabase(t, cfg.Database.Host, cfg.Database.Port)
 		serviceFactory1 := NewServiceFactory(cfg)
 		serviceFactory2 := NewServiceFactory(cfg)
 
@@ -135,6 +145,8 @@ func TestServiceFactory_MemoizedDatabasePool_ConcurrentAccess(t *testing.T) {
 				SSLMode:        "disable",
 			},
 		}
+
+		requireDatabase(t, cfg.Database.Host, cfg.Database.Port)
 		serviceFactory := NewServiceFactory(cfg)
 
 		const numGoroutines = 10
@@ -188,6 +200,8 @@ func TestServiceFactory_MemoizedDatabasePool_ConcurrentAccess(t *testing.T) {
 				SSLMode:        "disable",
 			},
 		}
+
+		requireDatabase(t, cfg.Database.Host, cfg.Database.Port)
 
 		// Create a factory that simulates slow pool creation
 		serviceFactory := NewServiceFactoryWithSlowPoolCreation(cfg, 100*time.Millisecond)
@@ -294,6 +308,8 @@ func TestServiceFactory_MemoizedDatabasePool_ErrorHandling(t *testing.T) {
 			SSLMode:        "disable",
 		})
 
+		requireDatabase(t, serviceFactory.config.Database.Host, serviceFactory.config.Database.Port)
+
 		// Act - Try again with updated config
 		pool2, err2 := serviceFactory.GetDatabasePool()
 
@@ -370,6 +386,9 @@ func TestServiceFactory_MemoizedDatabasePool_IntegrationWithBuildDependencies(t 
 				ReconnectWait: 2000000000, // 2s in nanoseconds
 			},
 		}
+
+		requireDatabase(t, cfg.Database.Host, cfg.Database.Port)
+		requireNATS(t, cfg.NATS.URL)
 		serviceFactory := NewServiceFactory(cfg)
 
 		// Act - Call GetDatabasePool first
@@ -413,6 +432,9 @@ func TestServiceFactory_MemoizedDatabasePool_IntegrationWithBuildDependencies(t 
 				ReconnectWait: 2000000000, // 2s in nanoseconds
 			},
 		}
+
+		requireDatabase(t, cfg.Database.Host, cfg.Database.Port)
+		requireNATS(t, cfg.NATS.URL)
 		serviceFactory := NewServiceFactory(cfg)
 
 		// Act - Call CreateHealthService multiple times
@@ -450,6 +472,9 @@ func TestServiceFactory_MemoizedDatabasePool_IntegrationWithBuildDependencies(t 
 				ReconnectWait: 2000000000, // 2s in nanoseconds
 			},
 		}
+
+		requireDatabase(t, cfg.Database.Host, cfg.Database.Port)
+		requireNATS(t, cfg.NATS.URL)
 		serviceFactory := NewServiceFactory(cfg)
 
 		// Act - Get pool directly first
@@ -487,6 +512,8 @@ func TestServiceFactory_MemoizedDatabasePool_CleanupAndClose(t *testing.T) {
 				SSLMode:        "disable",
 			},
 		}
+
+		requireDatabase(t, cfg.Database.Host, cfg.Database.Port)
 		serviceFactory := NewServiceFactory(cfg)
 
 		// Act - Create pool
@@ -522,6 +549,8 @@ func TestServiceFactory_MemoizedDatabasePool_CleanupAndClose(t *testing.T) {
 				SSLMode:        "disable",
 			},
 		}
+
+		requireDatabase(t, cfg.Database.Host, cfg.Database.Port)
 		serviceFactory := NewServiceFactory(cfg)
 
 		// Act - Create pool
@@ -552,6 +581,8 @@ func TestServiceFactory_MemoizedDatabasePool_CleanupAndClose(t *testing.T) {
 				SSLMode:        "disable",
 			},
 		}
+
+		requireDatabase(t, cfg.Database.Host, cfg.Database.Port)
 		serviceFactory := NewServiceFactory(cfg)
 
 		// Act - Close without ever creating pool
@@ -574,6 +605,8 @@ func TestServiceFactory_MemoizedDatabasePool_CleanupAndClose(t *testing.T) {
 				SSLMode:        "disable",
 			},
 		}
+
+		requireDatabase(t, cfg.Database.Host, cfg.Database.Port)
 		serviceFactory := NewServiceFactory(cfg)
 
 		// Act - Create pool
@@ -705,3 +738,74 @@ func NewServiceFactoryWithSlowPoolCreation(cfg *config.Config, delay time.Durati
 // Mock methods that need to be added to ServiceFactory for testing
 // These document the expected testing interface
 // NOTE: The actual implementations are now in api.go
+
+var (
+	databaseAvailability sync.Map
+	natsAvailability     sync.Map
+)
+
+func requireDatabase(t *testing.T, host string, port int) {
+	t.Helper()
+
+	if host == "" {
+		t.Skip("database host not configured for test")
+	}
+
+	if port == 0 {
+		port = 5432
+	}
+
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+
+	if cached, ok := databaseAvailability.Load(address); ok {
+		if available, _ := cached.(bool); !available {
+			t.Skipf("PostgreSQL not available at %s", address)
+		}
+		return
+	}
+
+	conn, err := net.DialTimeout("tcp", address, 250*time.Millisecond)
+	if err != nil {
+		databaseAvailability.Store(address, false)
+		t.Skipf("PostgreSQL not available at %s: %v", address, err)
+	}
+	_ = conn.Close()
+	databaseAvailability.Store(address, true)
+}
+
+func requireNATS(t *testing.T, rawURL string) {
+	t.Helper()
+
+	if rawURL == "" {
+		t.Skip("NATS URL not configured for test")
+	}
+
+	parsed, err := urlpkg.Parse(rawURL)
+	if err != nil {
+		t.Skipf("invalid NATS URL %q: %v", rawURL, err)
+	}
+
+	address := parsed.Host
+	if address == "" {
+		t.Skipf("NATS host not present in URL %q", rawURL)
+	}
+
+	if !strings.Contains(address, ":") {
+		address = net.JoinHostPort(address, "4222")
+	}
+
+	if cached, ok := natsAvailability.Load(address); ok {
+		if available, _ := cached.(bool); !available {
+			t.Skipf("NATS not available at %s", address)
+		}
+		return
+	}
+
+	conn, err := net.DialTimeout("tcp", address, 250*time.Millisecond)
+	if err != nil {
+		natsAvailability.Store(address, false)
+		t.Skipf("NATS not available at %s: %v", address, err)
+	}
+	_ = conn.Close()
+	natsAvailability.Store(address, true)
+}

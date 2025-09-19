@@ -1686,3 +1686,12 @@ func containsString(slice []string, item string) bool {
 	}
 	return false
 }
+
+// createTestMetrics creates a DiskMetrics instance for testing.
+func createTestMetrics() *DiskMetrics {
+	metrics, err := NewDiskMetrics("test")
+	if err != nil {
+		panic(err) // Test should fail if we can't create metrics
+	}
+	return metrics
+}

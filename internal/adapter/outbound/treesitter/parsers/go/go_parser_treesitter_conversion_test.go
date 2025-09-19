@@ -5,7 +5,10 @@ import (
 	"codechunking/internal/port/outbound"
 	"context"
 	"testing"
+	"time"
 
+	forest "github.com/alexaandru/go-sitter-forest"
+	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -737,4 +740,124 @@ func main() {
 		assert.Contains(t, nodeText, "func", "Node text should contain actual source code")
 		assert.Contains(t, nodeText, "main", "Node text should contain function name")
 	}
+}
+
+// Helper functions for test support
+
+func createMockParseTreeFromSource(
+	t *testing.T,
+	lang valueobject.Language,
+	sourceCode string,
+) *valueobject.ParseTree {
+	t.Helper()
+
+	// REFACTOR PHASE: Use real tree-sitter parsing instead of mock
+	return createRealParseTreeFromSource(t, lang, sourceCode)
+}
+
+// createRealParseTreeFromSource creates a ParseTree using actual tree-sitter parsing.
+func createRealParseTreeFromSource(
+	t *testing.T,
+	lang valueobject.Language,
+	sourceCode string,
+) *valueobject.ParseTree {
+	t.Helper()
+
+	// Get Go grammar from forest
+	grammar := forest.GetLanguage("go")
+	require.NotNil(t, grammar, "Failed to get Go grammar from forest")
+
+	// Create tree-sitter parser
+	parser := tree_sitter.NewParser()
+	require.NotNil(t, parser, "Failed to create tree-sitter parser")
+
+	success := parser.SetLanguage(grammar)
+	require.True(t, success, "Failed to set Go language")
+
+	// Parse the source code
+	tree, err := parser.ParseString(context.Background(), nil, []byte(sourceCode))
+	require.NoError(t, err, "Failed to parse Go source")
+	require.NotNil(t, tree, "Parse tree should not be nil")
+	defer tree.Close()
+
+	// Convert tree-sitter tree to domain ParseNode
+	rootTSNode := tree.RootNode()
+	rootNode, nodeCount, maxDepth := convertTreeSitterNode(rootTSNode, 0)
+
+	// Create metadata with parsing statistics
+	metadata, err := valueobject.NewParseMetadata(
+		time.Millisecond, // placeholder duration
+		"go-tree-sitter-bare",
+		"1.0.0",
+	)
+	require.NoError(t, err, "Failed to create metadata")
+
+	// Update metadata with actual counts
+	metadata.NodeCount = nodeCount
+	metadata.MaxDepth = maxDepth
+
+	// Create and return ParseTree
+	parseTree, err := valueobject.NewParseTree(
+		context.Background(),
+		lang,
+		rootNode,
+		[]byte(sourceCode),
+		metadata,
+	)
+	require.NoError(t, err, "Failed to create ParseTree")
+
+	return parseTree
+}
+
+func convertTreeSitterNode(node tree_sitter.Node, depth int) (*valueobject.ParseNode, int, int) {
+	if node.IsNull() {
+		return nil, 0, depth
+	}
+
+	// Convert tree-sitter node to domain ParseNode
+	parseNode := &valueobject.ParseNode{
+		Type:      node.Type(),
+		StartByte: safeUintToUint32(node.StartByte()),
+		EndByte:   safeUintToUint32(node.EndByte()),
+		StartPos: valueobject.Position{
+			Row:    safeUintToUint32(node.StartPoint().Row),
+			Column: safeUintToUint32(node.StartPoint().Column),
+		},
+		EndPos: valueobject.Position{
+			Row:    safeUintToUint32(node.EndPoint().Row),
+			Column: safeUintToUint32(node.EndPoint().Column),
+		},
+		Children: make([]*valueobject.ParseNode, 0),
+	}
+
+	nodeCount := 1
+	maxDepth := depth
+
+	// Convert children recursively
+	childCount := node.ChildCount()
+	for i := range childCount {
+		childNode := node.Child(i)
+		if childNode.IsNull() {
+			continue
+		}
+
+		childParseNode, childNodeCount, childMaxDepth := convertTreeSitterNode(childNode, depth+1)
+		if childParseNode != nil {
+			parseNode.Children = append(parseNode.Children, childParseNode)
+			nodeCount += childNodeCount
+			if childMaxDepth > maxDepth {
+				maxDepth = childMaxDepth
+			}
+		}
+	}
+
+	return parseNode, nodeCount, maxDepth
+}
+
+// safeUintToUint32 safely converts uint to uint32 with bounds checking.
+func safeUintToUint32(val uint) uint32 {
+	if val > uint(^uint32(0)) {
+		return ^uint32(0) // Return max uint32 if overflow would occur
+	}
+	return uint32(val)
 }

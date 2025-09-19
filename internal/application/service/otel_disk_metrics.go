@@ -565,7 +565,7 @@ func (m *DiskMetrics) RecordDiskHealthCheck(
 		healthValue = 1
 	case DiskHealthCriticalStr:
 		healthValue = 2
-	case string(ShutdownPhaseFailed):
+	case DiskHealthFailedStr:
 		healthValue = 3
 	default:
 		healthValue = -1

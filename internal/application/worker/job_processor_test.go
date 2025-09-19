@@ -820,13 +820,12 @@ func (suite *JobProcessorTestSuite) TestProcessJob_MemoryCleanup_BetweenJobs() {
 	for _, msg := range messages {
 		err := suite.processor.ProcessJob(ctx, msg)
 		suite.Require().Error(err)
-		suite.Contains(err.Error(), "not implemented yet")
+		suite.Contains(err.Error(), "resource limits enforcement not implemented yet")
 	}
 
-	// Cleanup should be implemented but fail in RED phase
+	// Cleanup should succeed
 	err := suite.processor.Cleanup()
-	suite.Require().Error(err)
-	suite.Contains(err.Error(), "not implemented yet")
+	suite.Require().NoError(err)
 }
 
 // TestProcessJob_LargeRepository_MemoryOptimization tests memory optimization.
@@ -1327,7 +1326,7 @@ func (suite *JobProcessorTestSuite) TestJobProcessor_WorkspaceDir_Management() {
 
 	err := processor.Cleanup()
 	suite.Require().Error(err)
-	suite.Contains(err.Error(), "not implemented yet")
+	suite.Contains(err.Error(), "failed to recreate workspace directory")
 }
 
 // TestJobProcessor_ResourceLimits_Enforcement tests resource limit enforcement.
@@ -1371,8 +1370,7 @@ func (suite *JobProcessorTestSuite) TestJobProcessor_ResourceLimits_Enforcement(
 // TestCleanup_Implementation tests cleanup implementation.
 func (suite *JobProcessorTestSuite) TestCleanup_Implementation() {
 	err := suite.processor.Cleanup()
-	suite.Require().Error(err)
-	suite.Contains(err.Error(), "not implemented yet")
+	suite.Require().NoError(err)
 }
 
 // TestJobProcessor_CleanupInterval_Scheduling tests cleanup scheduling.

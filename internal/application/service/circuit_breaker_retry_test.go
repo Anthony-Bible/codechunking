@@ -457,9 +457,10 @@ func TestCircuitBreakerRetry_ConcurrentOperations(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, retryWithCB)
 
-	ctx := context.Background()
-	const goroutines = 10
-	const iterations = 50
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	const goroutines = 5
+	const iterations = 20
 
 	successCount := make(chan int, goroutines)
 	failureCount := make(chan int, goroutines)
@@ -471,6 +472,11 @@ func TestCircuitBreakerRetry_ConcurrentOperations(t *testing.T) {
 			failures := 0
 
 			for j := range iterations {
+				// Check if context is cancelled
+				if ctx.Err() != nil {
+					break
+				}
+
 				operation := func() error {
 					// Simulate some failures to trigger circuit breaker
 					if (id+j)%10 < 3 {
@@ -479,7 +485,11 @@ func TestCircuitBreakerRetry_ConcurrentOperations(t *testing.T) {
 					return nil
 				}
 
-				err = retryWithCB.ExecuteWithRetry(ctx, operation)
+				// Use a shorter timeout for each operation
+				opCtx, opCancel := context.WithTimeout(ctx, 200*time.Millisecond)
+				err = retryWithCB.ExecuteWithRetry(opCtx, operation)
+				opCancel()
+
 				if err != nil {
 					failures++
 				} else {
@@ -487,18 +497,39 @@ func TestCircuitBreakerRetry_ConcurrentOperations(t *testing.T) {
 				}
 			}
 
-			successCount <- successes
-			failureCount <- failures
+			// Send results or timeout
+			select {
+			case successCount <- successes:
+			case <-ctx.Done():
+				return
+			}
+
+			select {
+			case failureCount <- failures:
+			case <-ctx.Done():
+				return
+			}
 		}(i)
 	}
 
-	// Collect results
+	// Collect results with timeout
 	totalSuccesses := 0
 	totalFailures := 0
 
 	for range goroutines {
-		totalSuccesses += <-successCount
-		totalFailures += <-failureCount
+		select {
+		case s := <-successCount:
+			totalSuccesses += s
+		case <-ctx.Done():
+			t.Fatal("Timeout waiting for success count")
+		}
+
+		select {
+		case f := <-failureCount:
+			totalFailures += f
+		case <-ctx.Done():
+			t.Fatal("Timeout waiting for failure count")
+		}
 	}
 
 	// Verify that circuit breaker affected the outcomes

@@ -154,6 +154,7 @@ func TestConsumerSubscription(t *testing.T) {
 		consumerConfig := ConsumerConfig{
 			Subject:       "indexing.job",
 			QueueGroup:    "indexing-workers",
+			DurableName:   "test-consumer",
 			AckWait:       30 * time.Second,
 			MaxDeliver:    3,
 			MaxAckPending: 100,
@@ -164,6 +165,8 @@ func TestConsumerSubscription(t *testing.T) {
 		}
 
 		mockProcessor := &MockJobProcessor{}
+		// Set up mock to handle any ProcessJob calls that might come in
+		mockProcessor.On("ProcessJob", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 		consumer, err := NewNATSConsumer(consumerConfig, natsConfig, mockProcessor)
 		require.NoError(t, err)

@@ -151,6 +151,9 @@ func TestConsumerCreation(t *testing.T) {
 // TestConsumerSubscription tests message subscription and deserialization.
 func TestConsumerSubscription(t *testing.T) {
 	t.Run("should subscribe to subject with queue group", func(t *testing.T) {
+		if testing.Short() {
+			t.Skip("Skipping integration test in short mode")
+		}
 		consumerConfig := ConsumerConfig{
 			Subject:       "indexing.job",
 			QueueGroup:    "indexing-workers",
@@ -263,9 +266,13 @@ func TestConsumerSubscription(t *testing.T) {
 // TestConsumerLifecycle tests consumer lifecycle management.
 func TestConsumerLifecycle(t *testing.T) {
 	t.Run("should start consumer successfully", func(t *testing.T) {
+		if testing.Short() {
+			t.Skip("Skipping integration test in short mode")
+		}
 		consumerConfig := ConsumerConfig{
 			Subject:       "indexing.job",
 			QueueGroup:    "indexing-workers",
+			DurableName:   "lifecycle-consumer",
 			AckWait:       30 * time.Second,
 			MaxDeliver:    3,
 			MaxAckPending: 100,
@@ -276,6 +283,8 @@ func TestConsumerLifecycle(t *testing.T) {
 		}
 
 		mockProcessor := &MockJobProcessor{}
+		// Set up mock to handle any ProcessJob calls from existing messages in stream
+		mockProcessor.On("ProcessJob", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 		consumer, err := NewNATSConsumer(consumerConfig, natsConfig, mockProcessor)
 		require.NoError(t, err)
@@ -294,9 +303,13 @@ func TestConsumerLifecycle(t *testing.T) {
 	})
 
 	t.Run("should stop consumer gracefully", func(t *testing.T) {
+		if testing.Short() {
+			t.Skip("Skipping integration test in short mode")
+		}
 		consumerConfig := ConsumerConfig{
 			Subject:       "indexing.job",
 			QueueGroup:    "indexing-workers",
+			DurableName:   "stop-consumer",
 			AckWait:       30 * time.Second,
 			MaxDeliver:    3,
 			MaxAckPending: 100,
@@ -307,6 +320,8 @@ func TestConsumerLifecycle(t *testing.T) {
 		}
 
 		mockProcessor := &MockJobProcessor{}
+		// Set up mock to handle any ProcessJob calls from existing messages in stream
+		mockProcessor.On("ProcessJob", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 		consumer, err := NewNATSConsumer(consumerConfig, natsConfig, mockProcessor)
 		require.NoError(t, err)
@@ -329,9 +344,13 @@ func TestConsumerLifecycle(t *testing.T) {
 	})
 
 	t.Run("should handle context cancellation during start", func(t *testing.T) {
+		if testing.Short() {
+			t.Skip("Skipping integration test in short mode")
+		}
 		consumerConfig := ConsumerConfig{
 			Subject:       "indexing.job",
 			QueueGroup:    "indexing-workers",
+			DurableName:   "cancellation-consumer",
 			AckWait:       30 * time.Second,
 			MaxDeliver:    3,
 			MaxAckPending: 100,
@@ -342,6 +361,8 @@ func TestConsumerLifecycle(t *testing.T) {
 		}
 
 		mockProcessor := &MockJobProcessor{}
+		// Set up mock to handle any ProcessJob calls from existing messages in stream
+		mockProcessor.On("ProcessJob", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 		consumer, err := NewNATSConsumer(consumerConfig, natsConfig, mockProcessor)
 		require.NoError(t, err)
@@ -434,12 +455,16 @@ func TestConsumerErrorHandling(t *testing.T) {
 // TestConsumerLoadBalancing tests queue group load balancing behavior.
 func TestConsumerLoadBalancing(t *testing.T) {
 	t.Run("should distribute messages across queue group members", func(t *testing.T) {
+		if testing.Short() {
+			t.Skip("Skipping integration test in short mode")
+		}
 		// This test verifies that messages are distributed across multiple consumers
 		// in the same queue group using the load balancing mechanism
 
 		consumerConfig1 := ConsumerConfig{
 			Subject:       "indexing.job",
 			QueueGroup:    "indexing-workers",
+			DurableName:   "consumer-1",
 			AckWait:       30 * time.Second,
 			MaxDeliver:    3,
 			MaxAckPending: 100,
@@ -448,6 +473,7 @@ func TestConsumerLoadBalancing(t *testing.T) {
 		consumerConfig2 := ConsumerConfig{
 			Subject:       "indexing.job",
 			QueueGroup:    "indexing-workers", // Same queue group
+			DurableName:   "consumer-2",
 			AckWait:       30 * time.Second,
 			MaxDeliver:    3,
 			MaxAckPending: 100,
@@ -459,6 +485,9 @@ func TestConsumerLoadBalancing(t *testing.T) {
 
 		mockProcessor1 := &MockJobProcessor{}
 		mockProcessor2 := &MockJobProcessor{}
+		// Set up mocks to handle any ProcessJob calls from existing messages in stream
+		mockProcessor1.On("ProcessJob", mock.Anything, mock.Anything).Return(nil).Maybe()
+		mockProcessor2.On("ProcessJob", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 		consumer1, err := NewNATSConsumer(consumerConfig1, natsConfig, mockProcessor1)
 		require.NoError(t, err)
@@ -483,10 +512,14 @@ func TestConsumerLoadBalancing(t *testing.T) {
 	})
 
 	t.Run("should verify queue group isolation", func(t *testing.T) {
+		if testing.Short() {
+			t.Skip("Skipping integration test in short mode")
+		}
 		// Test that consumers in different queue groups don't interfere
 		consumerConfig1 := ConsumerConfig{
 			Subject:       "indexing.job",
 			QueueGroup:    "indexing-workers",
+			DurableName:   "consumer-isolation-1",
 			AckWait:       30 * time.Second,
 			MaxDeliver:    3,
 			MaxAckPending: 100,
@@ -495,6 +528,7 @@ func TestConsumerLoadBalancing(t *testing.T) {
 		consumerConfig2 := ConsumerConfig{
 			Subject:       "indexing.job",
 			QueueGroup:    "priority-workers", // Different queue group
+			DurableName:   "consumer-isolation-2",
 			AckWait:       30 * time.Second,
 			MaxDeliver:    3,
 			MaxAckPending: 100,
@@ -505,6 +539,8 @@ func TestConsumerLoadBalancing(t *testing.T) {
 		}
 
 		mockProcessor := &MockJobProcessor{}
+		// Set up mock to handle any ProcessJob calls from existing messages in stream
+		mockProcessor.On("ProcessJob", mock.Anything, mock.Anything).Return(nil).Maybe()
 
 		consumer1, err := NewNATSConsumer(consumerConfig1, natsConfig, mockProcessor)
 		require.NoError(t, err)

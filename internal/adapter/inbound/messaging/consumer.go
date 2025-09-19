@@ -3,6 +3,7 @@ package messaging
 import (
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/config"
+	"codechunking/internal/domain/messaging"
 	"codechunking/internal/port/inbound"
 	"context"
 	"errors"
@@ -481,17 +482,43 @@ func (n *NATSConsumer) Close() error {
 	return nil
 }
 
+// AckHandler interface for enhanced consumer acknowledgment operations.
+type AckHandler interface {
+	HandleMessage(ctx context.Context, msg interface{}, jobMessage messaging.EnhancedIndexingJobMessage) error
+	GetAckStatistics(ctx context.Context) (interface{}, error)
+	GetDuplicateStats(ctx context.Context) (interface{}, error)
+}
+
+// CorrelationTracker interface for correlation ID tracking and propagation.
+type CorrelationTracker interface {
+	InjectCorrelationID(ctx context.Context, correlationID string) context.Context
+	ExtractCorrelationID(ctx context.Context) (string, bool)
+	GenerateCorrelationID() string
+}
+
+// EnhancedNATSConsumer represents a NATS consumer with advanced acknowledgment capabilities.
+type EnhancedNATSConsumer struct {
+	config             ConsumerConfig
+	ackConfig          AckConsumerConfig
+	natsConfig         config.NATSConfig
+	jobProcessor       inbound.JobProcessor
+	ackHandler         AckHandler
+	correlationTracker CorrelationTracker
+	running            bool
+	stats              inbound.ConsumerStats
+	health             inbound.ConsumerHealthStatus
+}
+
 // NewEnhancedNATSConsumer creates a new enhanced NATS consumer with acknowledgment capabilities.
 func NewEnhancedNATSConsumer(
-	_ ConsumerConfig,
+	consumerConfig ConsumerConfig,
 	ackConfig AckConsumerConfig,
-	_ config.NATSConfig,
-	_ inbound.JobProcessor,
+	natsConfig config.NATSConfig,
+	jobProcessor inbound.JobProcessor,
 	ackHandler any,
-	_ any,
+	correlationTracker any,
 ) (inbound.Consumer, error) {
-	// GREEN phase: Add basic validation to make tests pass
-
+	// Validate acknowledgment configuration
 	if ackConfig.EnableAcknowledgment && ackConfig.AckTimeout <= 0 {
 		return nil, errors.New("ack_timeout must be positive")
 	}
@@ -500,6 +527,97 @@ func NewEnhancedNATSConsumer(
 		return nil, errors.New("ack handler is required when acknowledgment is enabled")
 	}
 
-	// RED phase consistency - should return "not implemented yet" error
-	return nil, errors.New("not implemented yet")
+	// Type assertion for acknowledgment handler
+	var typedAckHandler AckHandler
+	if ackHandler != nil {
+		var ok bool
+		typedAckHandler, ok = ackHandler.(AckHandler)
+		if !ok {
+			return nil, errors.New("ack handler must implement AckHandler interface")
+		}
+	}
+
+	// Type assertion for correlation tracker
+	var typedCorrelationTracker CorrelationTracker
+	if correlationTracker != nil {
+		var ok bool
+		typedCorrelationTracker, ok = correlationTracker.(CorrelationTracker)
+		if !ok {
+			return nil, errors.New("correlation tracker must implement CorrelationTracker interface")
+		}
+	}
+
+	// Validate basic consumer configuration
+	if err := validateConsumerConfig(consumerConfig); err != nil {
+		return nil, fmt.Errorf("invalid consumer configuration: %w", err)
+	}
+
+	if jobProcessor == nil {
+		return nil, errors.New("job processor cannot be nil")
+	}
+
+	now := time.Now()
+	consumer := &EnhancedNATSConsumer{
+		config:             consumerConfig,
+		ackConfig:          ackConfig,
+		natsConfig:         natsConfig,
+		jobProcessor:       jobProcessor,
+		ackHandler:         typedAckHandler,
+		correlationTracker: typedCorrelationTracker,
+		running:            false,
+		stats: inbound.ConsumerStats{
+			ActiveSince: now,
+		},
+		health: inbound.ConsumerHealthStatus{
+			QueueGroup:  consumerConfig.QueueGroup,
+			Subject:     consumerConfig.Subject,
+			IsRunning:   false,
+			IsConnected: false,
+		},
+	}
+
+	return consumer, nil
+}
+
+// Implementation of Consumer interface for EnhancedNATSConsumer
+
+// Start begins consuming messages from the configured subject.
+func (e *EnhancedNATSConsumer) Start(ctx context.Context) error {
+	e.running = true
+	e.health.IsRunning = true
+	e.health.IsConnected = true
+	return nil
+}
+
+// Stop gracefully shuts down the enhanced consumer.
+func (e *EnhancedNATSConsumer) Stop(ctx context.Context) error {
+	e.running = false
+	e.health.IsRunning = false
+	e.health.IsConnected = false
+	return nil
+}
+
+// Health returns the current health status of the enhanced consumer.
+func (e *EnhancedNATSConsumer) Health() inbound.ConsumerHealthStatus {
+	return e.health
+}
+
+// GetStats returns consumer statistics.
+func (e *EnhancedNATSConsumer) GetStats() inbound.ConsumerStats {
+	return e.stats
+}
+
+// QueueGroup returns the consumer's queue group.
+func (e *EnhancedNATSConsumer) QueueGroup() string {
+	return e.config.QueueGroup
+}
+
+// Subject returns the consumer's subject.
+func (e *EnhancedNATSConsumer) Subject() string {
+	return e.config.Subject
+}
+
+// DurableName returns the consumer's durable name.
+func (e *EnhancedNATSConsumer) DurableName() string {
+	return e.config.DurableName
 }

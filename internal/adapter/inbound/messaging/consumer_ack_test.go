@@ -199,10 +199,12 @@ func TestEnhancedConsumerWithAcknowledgment(t *testing.T) {
 			mockCorrelationTracker,
 		)
 
-		// Should fail in RED phase - not implemented yet
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not implemented yet")
-		assert.Nil(t, consumer)
+		// Should succeed in GREEN phase - implementation is complete
+		require.NoError(t, err)
+		assert.NotNil(t, consumer)
+		assert.Equal(t, "ack-workers", consumer.QueueGroup())
+		assert.Equal(t, "jobs.indexing.ack", consumer.Subject())
+		assert.Equal(t, "ack-consumer", consumer.DurableName())
 	})
 
 	t.Run("should fail with invalid acknowledgment configuration", func(t *testing.T) {

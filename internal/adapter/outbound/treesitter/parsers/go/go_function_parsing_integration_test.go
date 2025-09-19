@@ -21,7 +21,7 @@ func TestGoParser_TreeSitter_FunctionContent(t *testing.T) {
 	// Load the function sample from repo root (test_function.txt)
 	_, thisFile, _, _ := runtime.Caller(0)
 	dir := filepath.Dir(thisFile)
-	for i := 0; i < 6; i++ { // ascend to repo root
+	for range 6 { // ascend to repo root
 		dir = filepath.Dir(dir)
 	}
 	funcPath := filepath.Join(dir, "test_function.txt")

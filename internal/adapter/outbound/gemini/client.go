@@ -226,7 +226,11 @@ func (c *Client) GenerateEmbedding(
 	// Create GenAI client (for future use when SDK API is confirmed)
 	_, err := c.createGenaiClient(ctx)
 	if err != nil {
-		c.LogEmbeddingError(ctx, requestID, err.(*outbound.EmbeddingError), time.Since(startTime))
+		c.LogEmbeddingError(ctx, requestID, func() *outbound.EmbeddingError {
+			target := &outbound.EmbeddingError{}
+			_ = errors.As(err, &target)
+			return target
+		}(), time.Since(startTime))
 		return nil, err
 	}
 
@@ -242,7 +246,11 @@ func (c *Client) GenerateEmbedding(
 	// Create GenAI client
 	genaiClient, err := c.createGenaiClient(ctx)
 	if err != nil {
-		c.LogEmbeddingError(ctx, requestID, err.(*outbound.EmbeddingError), time.Since(startTime))
+		c.LogEmbeddingError(ctx, requestID, func() *outbound.EmbeddingError {
+			target := &outbound.EmbeddingError{}
+			_ = errors.As(err, &target)
+			return target
+		}(), time.Since(startTime))
 		return nil, err
 	}
 
@@ -572,7 +580,7 @@ func max(a, b int) int {
 	return b
 }
 
-// createGenaiClient creates a new genai client for the request
+// createGenaiClient creates a new genai client for the request.
 func (c *Client) createGenaiClient(ctx context.Context) (*genai.Client, error) {
 	clientConfig := &genai.ClientConfig{
 		APIKey: c.config.APIKey,
@@ -590,7 +598,7 @@ func (c *Client) createGenaiClient(ctx context.Context) (*genai.Client, error) {
 	return client, nil
 }
 
-// convertTaskType converts from outbound.EmbeddingTaskType to string for genai SDK
+// convertTaskType converts from outbound.EmbeddingTaskType to string for genai SDK.
 func convertTaskType(taskType outbound.EmbeddingTaskType) string {
 	switch taskType {
 	case outbound.TaskTypeRetrievalDocument:
@@ -610,7 +618,7 @@ func convertTaskType(taskType outbound.EmbeddingTaskType) string {
 	}
 }
 
-// convertSDKError converts a genai SDK error to our domain error type
+// convertSDKError converts a genai SDK error to our domain error type.
 func (c *Client) convertSDKError(err error) *outbound.EmbeddingError {
 	if err == nil {
 		return nil
@@ -645,7 +653,7 @@ func (c *Client) convertSDKError(err error) *outbound.EmbeddingError {
 	return embeddingErr
 }
 
-// convertToFloat64Slice converts []float32 to []float64
+// convertToFloat64Slice converts []float32 to []float64.
 func (c *Client) convertToFloat64Slice(values []float32) []float64 {
 	if values == nil {
 		return nil

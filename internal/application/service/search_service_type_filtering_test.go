@@ -934,7 +934,7 @@ func TestSearchService_TypeInformationInResults(t *testing.T) {
 }
 
 // Helper function to set up mock expectations - this will fail initially since we need to
-// implement proper mock behavior that respects type filtering
+// implement proper mock behavior that respects type filtering.
 func setupMockSearchExpectations(
 	mockVectorRepo *MockVectorStorageRepository,
 	mockEmbeddingService *MockEmbeddingService,

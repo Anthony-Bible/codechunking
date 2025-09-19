@@ -451,7 +451,7 @@ class OuterClass {
 	assert.Len(t, nestedClassMethods, 1)
 }
 
-func TestJavaScriptClassExtraction_ClassExpressions(t *testing.T) {
+func TestJavaScriptClassExtraction_ClassExpressionsBasic(t *testing.T) {
 	ctx := context.Background()
 	jsLang, err := valueobject.NewLanguage(valueobject.LanguageJavaScript)
 	require.NoError(t, err)

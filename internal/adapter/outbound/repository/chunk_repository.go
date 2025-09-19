@@ -199,7 +199,7 @@ func (r *PostgreSQLChunkRepository) SaveChunk(ctx context.Context, chunk *outbou
 			"chunk_id", chunk.ID,
 			"file_path", chunk.FilePath,
 		))
-		return fmt.Errorf("repository_id is required to save chunk")
+		return errors.New("repository_id is required to save chunk")
 	}
 
 	_, err = r.pool.Exec(ctx, query,
@@ -303,7 +303,7 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 				"chunk_id", chunk.ID,
 				"file_path", chunk.FilePath,
 			))
-			return fmt.Errorf("repository_id is required to save chunk in batch")
+			return errors.New("repository_id is required to save chunk in batch")
 		}
 
 		_, err = tx.Exec(ctx, query,
@@ -1197,7 +1197,7 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 			"chunk_id":     chunk.ID,
 			"embedding_id": embedding.ID.String(),
 		})
-		return fmt.Errorf("repository_id is required to save chunk with embedding")
+		return errors.New("repository_id is required to save chunk with embedding")
 	}
 	// Ensure embedding.RepositoryID matches for partitioned table
 	if embedding.RepositoryID == uuid.Nil {
@@ -1368,7 +1368,7 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 				"chunk_id":    chunk.ID,
 				"batch_index": i,
 			})
-			return fmt.Errorf("repository_id is required to save chunk in batch transaction")
+			return errors.New("repository_id is required to save chunk in batch transaction")
 		}
 		// Ensure embedding has repository id for partitioned table path
 		if embeddings[i].RepositoryID == uuid.Nil {

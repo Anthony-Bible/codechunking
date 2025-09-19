@@ -688,10 +688,10 @@ class IncompleteClass {
 	})
 }
 
-// TestJavaScriptClasses_ClassExpressions tests class expression detection.
+// TestJavaScriptClasses_ClassExpressionsVariableAssigned tests class expression detection for variable-assigned classes.
 // This is a RED PHASE test that defines expected behavior for class expressions.
 // Currently FAILS because class expressions are not being detected (returns 0 classes).
-func TestJavaScriptClasses_ClassExpressions(t *testing.T) {
+func TestJavaScriptClasses_ClassExpressionsVariableAssigned(t *testing.T) {
 	sourceCode := `// class_expressions_red.js
 
 // Variable-assigned class expression - should be detected as "MyClass" 

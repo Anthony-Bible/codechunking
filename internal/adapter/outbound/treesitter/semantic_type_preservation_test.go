@@ -372,7 +372,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_HandlesMultipleChunks(t *testing
 	// Assert: First chunk (class) type information
 	assert.Equal(t, "class", result[0].Type)
 	assert.Equal(t, "User", result[0].EntityName)
-	assert.Equal(t, "", result[0].ParentEntity) // No parent
+	assert.Empty(t, result[0].ParentEntity) // No parent
 	assert.Equal(t, "com.example.User", result[0].QualifiedName)
 	assert.Equal(t, "type User struct", result[0].Signature)
 	assert.Equal(t, "public", result[0].Visibility)
@@ -388,7 +388,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_HandlesMultipleChunks(t *testing
 	// Assert: Third chunk (constant) type information
 	assert.Equal(t, "constant", result[2].Type)
 	assert.Equal(t, "DefaultUserRole", result[2].EntityName)
-	assert.Equal(t, "", result[2].ParentEntity) // No parent
+	assert.Empty(t, result[2].ParentEntity) // No parent
 	assert.Equal(t, "com.example.DefaultUserRole", result[2].QualifiedName)
 	assert.Equal(t, "const DefaultUserRole string", result[2].Signature)
 	assert.Equal(t, "public", result[2].Visibility)

@@ -1,6 +1,8 @@
 package service
 
 import (
+	"codechunking/internal/config"
+	"codechunking/internal/port/inbound"
 	"context"
 	"testing"
 	"time"
@@ -260,4 +262,70 @@ func TestWorkerService_RestartConsumer(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "service is shutting down")
 	})
+}
+
+// createTestWorkerService creates a worker service instance for testing with the provided config.
+func createTestWorkerService(t *testing.T, serviceConfig WorkerServiceConfig) inbound.WorkerService {
+	t.Helper()
+
+	// Use default test NATS config
+	natsConfig := config.NATSConfig{
+		URL:           "nats://localhost:4222",
+		MaxReconnects: 10,
+		ReconnectWait: 2 * time.Second,
+	}
+
+	// Create mock job processor with basic expectations
+	mockJobProcessor := &MockJobProcessor{}
+	mockJobProcessor.On("GetHealthStatus").Return(inbound.JobProcessorHealthStatus{
+		IsReady:       true,
+		ActiveJobs:    0,
+		CompletedJobs: 0,
+		FailedJobs:    0,
+	})
+	mockJobProcessor.On("GetMetrics").Return(inbound.JobProcessorMetrics{
+		TotalJobsProcessed: 0,
+		FilesProcessed:     0,
+	})
+	mockJobProcessor.On("Cleanup").Return(nil)
+
+	return NewDefaultWorkerService(serviceConfig, natsConfig, mockJobProcessor)
+}
+
+// createMockConsumer creates a mock consumer with the given ID and queue group.
+func createMockConsumer(id string, queueGroup string) *MockConsumer {
+	mockConsumer := &MockConsumer{}
+
+	// Set up basic mock expectations
+	mockConsumer.On("QueueGroup").Return(queueGroup)
+	mockConsumer.On("Subject").Return("indexing.job")
+	mockConsumer.On("DurableName").Return(id)
+
+	// Set up start/stop expectations
+	mockConsumer.On("Start", mock.Anything).Return(nil)
+	mockConsumer.On("Stop", mock.Anything).Return(nil)
+
+	// Set up health status expectations
+	mockConsumer.On("Health").Return(inbound.ConsumerHealthStatus{
+		IsRunning:       true,
+		IsConnected:     true,
+		LastMessageTime: time.Now(),
+		MessagesHandled: 0,
+		ErrorCount:      0,
+		QueueGroup:      queueGroup,
+		Subject:         "indexing.job",
+	})
+
+	// Set up stats expectations
+	mockConsumer.On("GetStats").Return(inbound.ConsumerStats{
+		MessagesReceived:   0,
+		MessagesProcessed:  0,
+		MessagesFailed:     0,
+		AverageProcessTime: 0,
+		ActiveSince:        time.Now(),
+		BytesReceived:      0,
+		MessageRate:        0.0,
+	})
+
+	return mockConsumer
 }

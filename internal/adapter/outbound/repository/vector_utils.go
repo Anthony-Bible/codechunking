@@ -8,7 +8,7 @@ import (
 
 // vectorToString converts a float64 slice to pgvector string format.
 // This function ensures consistent vector formatting across all repository implementations.
-// Format: [1.0,2.0,3.0] (pgvector standard format)
+// Format: [1.0,2.0,3.0] (pgvector standard format).
 func VectorToString(vector []float64) string {
 	if len(vector) == 0 {
 		return "[]"

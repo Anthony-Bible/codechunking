@@ -221,6 +221,13 @@ func (s *Server) Start(ctx context.Context) error {
 		return errors.New("server is already running")
 	}
 
+	// Check if context is already canceled before attempting to listen
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	// Create listener using ListenConfig
 	lc := &net.ListenConfig{}
 	listener, err := lc.Listen(ctx, "tcp", s.httpServer.Addr)

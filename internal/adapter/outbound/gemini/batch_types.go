@@ -42,6 +42,7 @@ type BatchAnalysisConfig struct {
 	EmbeddingOptions  outbound.EmbeddingOptions `json:"embedding_options"`  // Embedding options to use
 	TestDuration      time.Duration             `json:"test_duration"`      // Duration for benchmark tests
 	WarmupDuration    time.Duration             `json:"warmup_duration"`    // Warmup duration before measurements
+	NetworkDelay      time.Duration             `json:"network_delay"`      // Simulated network delay per request
 }
 
 // OptimizationGoal defines different optimization targets.

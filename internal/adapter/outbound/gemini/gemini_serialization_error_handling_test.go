@@ -567,29 +567,37 @@ func TestGeminiClient_RequestResponseLogging(t *testing.T) {
 			client := createTestClient(t)
 			ctx := context.Background()
 
-			// RED PHASE: These methods don't exist yet - tests should fail
-			t.Error(
-				"LogEmbeddingRequest, LogEmbeddingResponse, and LogEmbeddingError methods do not exist yet - need implementation in GREEN phase",
-			)
+			// GREEN PHASE: Test the implemented logging methods
+			requestID := client.LogEmbeddingRequest(ctx, tt.text, tt.options)
 
-			// Define expected behavior for GREEN phase implementation:
-			// requestID := client.LogEmbeddingRequest(ctx, tt.text, tt.options)
-			// client.LogEmbeddingResponse(ctx, requestID, result, duration)
-			// client.LogEmbeddingError(ctx, requestID, embeddingErr, duration)
-			// The methods should:
-			// 1. Generate unique request IDs
-			// 2. Log structured fields using slogger package
-			// 3. Include performance metrics (duration, token counts)
-			// 4. Use appropriate log levels (info for success, error for failures)
-			// 5. Include context-aware correlation IDs
-			// 6. Log both request and response details
+			// Verify request ID is generated
+			if requestID == "" {
+				t.Error("LogEmbeddingRequest should return a non-empty request ID")
+			}
 
-			_ = client
-			_ = ctx
-			_ = tt.simulateError
-			_ = tt.expectedLogFields
-			_ = tt.expectedLogLevel
-			_ = tt.expectedLogMessage
+			duration := time.Duration(100) * time.Millisecond
+
+			if tt.simulateError {
+				// Test error logging
+				embeddingErr := &outbound.EmbeddingError{
+					Code:    "invalid_api_key",
+					Type:    "auth",
+					Message: "Authentication failed",
+				}
+				client.LogEmbeddingError(ctx, requestID, embeddingErr, duration)
+			} else {
+				// Test success logging
+				result := &outbound.EmbeddingResult{
+					Vector:      []float64{0.1, 0.2, 0.3},
+					Dimensions:  768,
+					TokenCount:  10,
+					Model:       "gemini-embedding-001",
+					TaskType:    outbound.TaskTypeRetrievalDocument,
+					GeneratedAt: time.Now(),
+					RequestID:   requestID,
+				}
+				client.LogEmbeddingResponse(ctx, requestID, result, duration)
+			}
 
 			// Test context-aware logging
 			slogger.Info(ctx, "Test logging verification", slogger.Fields{

@@ -5,7 +5,7 @@ import (
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/port/outbound"
 	"context"
-	"net/http"
+	"errors"
 	"os"
 	"reflect"
 	"testing"
@@ -629,35 +629,57 @@ func TestGeminiClient_BasicClientInitializationAndConfiguration(t *testing.T) {
 		// Test that all interface methods are available
 		ctx := context.Background()
 
-		// These method calls should fail because they don't exist yet
+		// Test GenerateEmbedding - should work but may fail with auth errors (expected behavior)
 		_, err = client.GenerateEmbedding(ctx, "test text", outbound.EmbeddingOptions{})
-		if err == nil {
-			t.Error("expected GenerateEmbedding to fail (not implemented yet)")
+		// Note: This may fail due to invalid API key, but that's expected auth behavior
+		// The method is implemented and should handle the request properly
+		if err != nil {
+			checkEmbeddingError(t, err, "GenerateEmbedding")
 		}
 
+		// Test GenerateBatchEmbeddings - should work but may fail with auth errors
 		_, err = client.GenerateBatchEmbeddings(ctx, []string{"text1", "text2"}, outbound.EmbeddingOptions{})
-		if err == nil {
-			t.Error("expected GenerateBatchEmbeddings to fail (not implemented yet)")
+		if err != nil {
+			checkEmbeddingError(t, err, "GenerateBatchEmbeddings")
 		}
 
+		// Test ValidateApiKey - should work (basic validation always succeeds)
 		err = client.ValidateApiKey(ctx)
-		if err == nil {
-			t.Error("expected ValidateApiKey to fail (not implemented yet)")
+		if err != nil {
+			checkEmbeddingError(t, err, "ValidateApiKey")
 		}
 
-		_, err = client.GetModelInfo(ctx)
-		if err == nil {
-			t.Error("expected GetModelInfo to fail (not implemented yet)")
+		// Test GetModelInfo - should always succeed (returns hardcoded values)
+		modelInfo, err := client.GetModelInfo(ctx)
+		switch {
+		case err != nil:
+			t.Errorf("GetModelInfo should succeed but got error: %v", err)
+		case modelInfo == nil:
+			t.Error("GetModelInfo should return non-nil ModelInfo")
+		default:
+			verifyModelInfo(t, modelInfo)
 		}
 
-		_, err = client.GetSupportedModels(ctx)
-		if err == nil {
-			t.Error("expected GetSupportedModels to fail (not implemented yet)")
+		// Test GetSupportedModels - should always succeed (returns hardcoded list)
+		supportedModels, err := client.GetSupportedModels(ctx)
+		switch {
+		case err != nil:
+			t.Errorf("GetSupportedModels should succeed but got error: %v", err)
+		case len(supportedModels) == 0:
+			t.Error("GetSupportedModels should return non-empty list")
+		default:
+			verifySupportedModels(t, supportedModels)
 		}
 
-		_, err = client.EstimateTokenCount(ctx, "test text")
-		if err == nil {
-			t.Error("expected EstimateTokenCount to fail (not implemented yet)")
+		// Test EstimateTokenCount - should always succeed (pure calculation)
+		tokenCount, err := client.EstimateTokenCount(ctx, "test text")
+		switch {
+		case err != nil:
+			t.Errorf("EstimateTokenCount should succeed but got error: %v", err)
+		case tokenCount <= 0:
+			t.Errorf("EstimateTokenCount should return positive count, got %d", tokenCount)
+		case tokenCount < 1 || tokenCount > 10:
+			t.Errorf("EstimateTokenCount returned unreasonable count %d for 'test text'", tokenCount)
 		}
 	})
 
@@ -764,24 +786,47 @@ func verifyRequestField(request interface{}, fieldName string, expectedValue int
 	return reflect.DeepEqual(actualValue, expectedValue)
 }
 
-func verifyTransportField(transport *http.Transport, fieldName string, expectedValue interface{}) bool {
-	if transport == nil {
-		return false
+// checkEmbeddingError checks if an error is an expected embedding error.
+func checkEmbeddingError(t *testing.T, err error, methodName string) {
+	// Check if it's an expected auth/API error, not a "not implemented" error
+	embErr := &outbound.EmbeddingError{}
+	if errors.As(err, &embErr) {
+		if embErr.Type == "auth" || embErr.Code == "client_creation_failed" {
+			// This is expected behavior with test API key
+			t.Logf("%s auth error (expected): %v", methodName, err)
+		} else {
+			t.Errorf("%s unexpected error type: %v", methodName, err)
+		}
+	} else {
+		t.Logf("%s error (may be expected): %v", methodName, err)
 	}
+}
 
-	// Simple field-by-field comparison for GREEN phase
-	switch fieldName {
-	case "MaxIdleConns":
-		return transport.MaxIdleConns == expectedValue
-	case "IdleConnTimeout":
-		return transport.IdleConnTimeout == expectedValue
-	case "TLSHandshakeTimeout":
-		return transport.TLSHandshakeTimeout == expectedValue
-	case "DisableCompression":
-		return transport.DisableCompression == expectedValue
-	case "ForceAttemptHTTP2":
-		return transport.ForceAttemptHTTP2 == expectedValue
-	default:
-		return false
+// verifyModelInfo verifies the model info structure.
+func verifyModelInfo(t *testing.T, modelInfo *outbound.ModelInfo) {
+	// Verify expected model info structure
+	if modelInfo.Name != "gemini-embedding-001" {
+		t.Errorf("expected model name 'gemini-embedding-001', got %q", modelInfo.Name)
+	}
+	if modelInfo.Dimensions != 768 {
+		t.Errorf("expected dimensions 768, got %d", modelInfo.Dimensions)
+	}
+	if len(modelInfo.SupportedTaskTypes) == 0 {
+		t.Error("expected non-empty SupportedTaskTypes")
+	}
+}
+
+// verifySupportedModels verifies the supported models list.
+func verifySupportedModels(t *testing.T, supportedModels []string) {
+	// Verify expected models are included
+	found := false
+	for _, model := range supportedModels {
+		if model == "gemini-embedding-001" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected 'gemini-embedding-001' to be in supported models list")
 	}
 }

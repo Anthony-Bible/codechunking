@@ -19,6 +19,12 @@ const (
 	// DefaultModel is the default Gemini embedding model.
 	DefaultModel = "gemini-embedding-001"
 
+	// Default task type for embeddings.
+	DefaultTaskType = "RETRIEVAL_DOCUMENT"
+
+	// Error type constants.
+	ErrorTypeQuota = "quota"
+
 	// Error severity levels.
 	ErrorSeverityLow    = "low"
 	ErrorSeverityMedium = "medium"
@@ -94,7 +100,7 @@ func (c *ClientConfig) validateDimensions() error {
 
 func validateTaskTypeValue(taskType string) error {
 	validTaskTypes := []string{
-		"RETRIEVAL_DOCUMENT",
+		DefaultTaskType,
 		"RETRIEVAL_QUERY",
 		"CODE_RETRIEVAL_QUERY",
 		"SEMANTIC_SIMILARITY",
@@ -157,7 +163,7 @@ func applyConfigDefaults(config *ClientConfig) *ClientConfig {
 		finalConfig.Model = DefaultModel
 	}
 	if finalConfig.TaskType == "" {
-		finalConfig.TaskType = "RETRIEVAL_DOCUMENT"
+		finalConfig.TaskType = DefaultTaskType
 	}
 	if finalConfig.Timeout == 0 {
 		finalConfig.Timeout = 30 * time.Second
@@ -223,25 +229,11 @@ func (c *Client) GenerateEmbedding(
 		}
 	}
 
-	// Create GenAI client (for future use when SDK API is confirmed)
-	_, err := c.createGenaiClient(ctx)
-	if err != nil {
-		c.LogEmbeddingError(ctx, requestID, func() *outbound.EmbeddingError {
-			target := &outbound.EmbeddingError{}
-			_ = errors.As(err, &target)
-			return target
-		}(), time.Since(startTime))
-		return nil, err
-	}
-
 	// Determine model to use
 	model := options.Model
 	if model == "" {
 		model = c.config.Model
 	}
-
-	// Configure task type (for future use when SDK supports it)
-	_ = convertTaskType(options.TaskType)
 
 	// Create GenAI client
 	genaiClient, err := c.createGenaiClient(ctx)
@@ -265,7 +257,16 @@ func (c *Client) GenerateEmbedding(
 		TaskType: taskType,
 	}
 	if c.config.Dimensions > 0 {
-		dims := int32(c.config.Dimensions)
+		// Check for overflow before converting to int32
+		if c.config.Dimensions > 2147483647 { // math.MaxInt32
+			return nil, &outbound.EmbeddingError{
+				Code:      "invalid_dimensions",
+				Type:      "validation",
+				Message:   "dimensions value exceeds maximum supported value",
+				Retryable: false,
+			}
+		}
+		dims := int32(c.config.Dimensions) // #nosec G115 - bounds checked above
 		config.OutputDimensionality = &dims
 	}
 
@@ -345,13 +346,7 @@ func (c *Client) GenerateCodeChunkEmbedding(
 	chunk *outbound.CodeChunk,
 	options outbound.EmbeddingOptions,
 ) (*outbound.CodeChunkEmbedding, error) {
-	slogger.Info(ctx, "GenerateCodeChunkEmbedding called", slogger.Fields{
-		"chunk_id": chunk.ID,
-		"language": chunk.Language,
-		"model":    c.config.Model,
-	})
-
-	// Input validation
+	// Input validation first
 	if chunk == nil {
 		return nil, &outbound.EmbeddingError{
 			Code:      "nil_chunk",
@@ -360,6 +355,12 @@ func (c *Client) GenerateCodeChunkEmbedding(
 			Retryable: false,
 		}
 	}
+
+	slogger.Info(ctx, "GenerateCodeChunkEmbedding called", slogger.Fields{
+		"chunk_id": chunk.ID,
+		"language": chunk.Language,
+		"model":    c.config.Model,
+	})
 
 	// Generate embedding for the chunk content
 	embeddingResult, err := c.GenerateEmbedding(ctx, chunk.Content, options)
@@ -635,16 +636,17 @@ func (c *Client) convertSDKError(err error) *outbound.EmbeddingError {
 
 	// Check for common error patterns
 	errStr := strings.ToLower(err.Error())
-	if strings.Contains(errStr, "api key") || strings.Contains(errStr, "unauthorized") ||
-		strings.Contains(errStr, "authentication") {
+	switch {
+	case strings.Contains(errStr, "api key") || strings.Contains(errStr, "unauthorized") ||
+		strings.Contains(errStr, "authentication"):
 		embeddingErr.Code = "invalid_api_key"
 		embeddingErr.Type = "auth"
 		embeddingErr.Retryable = false
-	} else if strings.Contains(errStr, "quota") || strings.Contains(errStr, "limit") {
+	case strings.Contains(errStr, ErrorTypeQuota) || strings.Contains(errStr, "limit"):
 		embeddingErr.Code = "quota_exceeded"
-		embeddingErr.Type = "quota"
+		embeddingErr.Type = ErrorTypeQuota
 		embeddingErr.Retryable = true
-	} else if strings.Contains(errStr, "invalid") || strings.Contains(errStr, "bad request") {
+	case strings.Contains(errStr, "invalid") || strings.Contains(errStr, "bad request"):
 		embeddingErr.Code = "invalid_input"
 		embeddingErr.Type = "validation"
 		embeddingErr.Retryable = false

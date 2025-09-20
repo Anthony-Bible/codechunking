@@ -1475,6 +1475,7 @@ const MaxValue = 100
 		IncludeVariables:  true,
 		IncludeConstants:  true,
 		IncludePackages:   true,
+		IncludePrivate:    true,
 	}
 
 	chunks := adapter.ExtractCodeChunks(domainTree, options)

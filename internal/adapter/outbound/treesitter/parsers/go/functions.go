@@ -34,9 +34,6 @@ const (
 	nodeTypeQualifiedType     = "qualified_type"
 	nodeTypeTupleType         = "tuple_type"
 	nodeTypeTypeParameterList = "type_parameter_list"
-
-	// Default package name.
-	defaultPackageName = "main"
 )
 
 // Tree-sitter field names from Go grammar.
@@ -137,14 +134,6 @@ func (o *ObservableGoParser) extractPackageNameFromTree(parseTree *valueobject.P
 		}
 	}
 	return "main" // Default fallback
-}
-
-// getVisibility determines if a Go function is public or private.
-func (o *ObservableGoParser) getVisibility(name string) outbound.VisibilityModifier {
-	if len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z' {
-		return outbound.Public
-	}
-	return outbound.Private
 }
 
 // Core parser methods for the inner GoParser.
@@ -300,8 +289,11 @@ func (p *GoParser) parseGoMethod(
 
 	qualifiedName := packageName + "." + name
 	if receiverInfo != "" {
-		// Incorporate receiver info into qualified name
-		qualifiedName = packageName + "." + receiverInfo + "." + name
+		// Extract receiver type name for qualified name (e.g., "(p *Person)" -> "Person")
+		receiverType := extractReceiverTypeName(receiverInfo)
+		if receiverType != "" {
+			qualifiedName = receiverType + "." + name
+		}
 	}
 
 	var parameters []outbound.Parameter
@@ -362,8 +354,12 @@ func (p *GoParser) parseGoParameterList(
 
 	parameterNodes := findChildrenByType(node, "parameter_declaration")
 	for _, paramNode := range parameterNodes {
-		if param := p.parseGoParameterDeclaration(paramNode, parseTree); param.Name != "" {
-			parameters = append(parameters, param)
+		// Handle multiple parameters with shared type (e.g., "a, b int")
+		allParams := p.parseGoParameterDeclarations(paramNode, parseTree)
+		for _, param := range allParams {
+			if param.Name != "" {
+				parameters = append(parameters, param)
+			}
 		}
 	}
 
@@ -416,6 +412,68 @@ func (p *GoParser) parseGoParameterDeclaration(
 	}
 
 	return param
+}
+
+// parseGoParameterDeclarations handles parameter declarations that may have multiple names sharing a type.
+func (p *GoParser) parseGoParameterDeclarations(
+	node *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) []outbound.Parameter {
+	var parameters []outbound.Parameter
+	// Get all identifiers in the parameter declaration
+	identifiers := findChildrenByType(node, "identifier")
+	// Get the type node
+	var typeNode *valueobject.ParseNode
+	for _, child := range node.Children {
+		if child.Type == nodeTypeTypeIdentifier || child.Type == nodeTypePointerType ||
+			child.Type == nodeTypeQualifiedType || child.Type == nodeTypeArrayType {
+			typeNode = child
+			break
+		}
+	}
+
+	var typeStr string
+	if typeNode != nil {
+		typeStr = parseTree.GetNodeText(typeNode)
+	}
+
+	// Create a parameter for each identifier (for cases like "a, b int")
+	for _, identifier := range identifiers {
+		paramName := parseTree.GetNodeText(identifier)
+		if paramName != "" {
+			parameters = append(parameters, outbound.Parameter{
+				Name: paramName,
+				Type: typeStr,
+			})
+		}
+	}
+
+	// If no parameters found, fall back to original single parameter logic
+	if len(parameters) == 0 {
+		param := p.parseGoParameterDeclaration(node, parseTree)
+		if param.Name != "" {
+			parameters = append(parameters, param)
+		}
+	}
+
+	return parameters
+}
+
+// extractReceiverTypeName extracts the type name from receiver info like "(p *Person)" -> "Person".
+func extractReceiverTypeName(receiverInfo string) string {
+	// Remove parentheses and extract type name
+	receiverInfo = strings.Trim(receiverInfo, "()")
+
+	// Split on whitespace to get parts like ["p", "*Person"] or ["p", "Person"]
+	parts := strings.Fields(receiverInfo)
+	if len(parts) >= 2 {
+		typeName := parts[1]
+		// Remove pointer indicator if present
+		typeName = strings.TrimPrefix(typeName, "*")
+		return typeName
+	}
+
+	return ""
 }
 
 func (p *GoParser) parseGoReturnType(node *valueobject.ParseNode, parseTree *valueobject.ParseTree) string {

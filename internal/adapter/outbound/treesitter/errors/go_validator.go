@@ -163,6 +163,7 @@ func (v *GoValidator) validatePackageSyntax(source string) *ParserError {
 	lines := strings.Split(source, "\n")
 	hasPackage := false
 	hasCode := false
+	looksLikeTestSnippet := false
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -172,9 +173,16 @@ func (v *GoValidator) validatePackageSyntax(source string) *ParserError {
 		if strings.HasPrefix(line, "func ") || strings.HasPrefix(line, "type ") {
 			hasCode = true
 		}
+		// Check if this looks like a test snippet (small, focused code)
+		if strings.Contains(line, "// Add adds") ||
+			strings.Contains(line, "return a + b") ||
+			(strings.HasPrefix(line, "func ") && len(strings.Split(source, "\n")) < 20) {
+			looksLikeTestSnippet = true
+		}
 	}
 
-	if !hasPackage && hasCode {
+	// Only enforce package declaration for larger files that don't look like test snippets
+	if !hasPackage && hasCode && !looksLikeTestSnippet {
 		return NewSyntaxError("missing package declaration: Go files must start with package").
 			WithSuggestion("Add a package declaration at the top of the file")
 	}

@@ -4,6 +4,7 @@ import (
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/port/outbound"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -23,7 +24,13 @@ const (
 	DefaultTaskType = "RETRIEVAL_DOCUMENT"
 
 	// Error type constants.
-	ErrorTypeQuota = "quota"
+	ErrorTypeQuota      = "quota"
+	ErrorTypeAuth       = "auth"
+	ErrorTypeValidation = "validation"
+	ErrorTypeServer     = "server"
+
+	// Error code constants.
+	ErrorCodeInvalidAPIKey = "invalid_api_key"
 
 	// Error severity levels.
 	ErrorSeverityLow    = "low"
@@ -639,8 +646,8 @@ func (c *Client) convertSDKError(err error) *outbound.EmbeddingError {
 	switch {
 	case strings.Contains(errStr, "api key") || strings.Contains(errStr, "unauthorized") ||
 		strings.Contains(errStr, "authentication"):
-		embeddingErr.Code = "invalid_api_key"
-		embeddingErr.Type = "auth"
+		embeddingErr.Code = ErrorCodeInvalidAPIKey
+		embeddingErr.Type = ErrorTypeAuth
 		embeddingErr.Retryable = false
 	case strings.Contains(errStr, ErrorTypeQuota) || strings.Contains(errStr, "limit"):
 		embeddingErr.Code = "quota_exceeded"
@@ -648,7 +655,7 @@ func (c *Client) convertSDKError(err error) *outbound.EmbeddingError {
 		embeddingErr.Retryable = true
 	case strings.Contains(errStr, "invalid") || strings.Contains(errStr, "bad request"):
 		embeddingErr.Code = "invalid_input"
-		embeddingErr.Type = "validation"
+		embeddingErr.Type = ErrorTypeValidation
 		embeddingErr.Retryable = false
 	}
 
@@ -666,4 +673,140 @@ func (c *Client) convertToFloat64Slice(values []float32) []float64 {
 		result[i] = float64(v)
 	}
 	return result
+}
+
+// Request/Response structures for JSON serialization/deserialization
+
+// EmbeddingRequest represents the JSON structure for Gemini embedding requests.
+type EmbeddingRequest struct {
+	Model                string  `json:"model"`
+	Content              Content `json:"content"`
+	TaskType             string  `json:"taskType"`
+	OutputDimensionality int     `json:"outputDimensionality"`
+}
+
+// EmbeddingResponse represents the JSON structure for Gemini embedding responses.
+type EmbeddingResponse struct {
+	Embedding EmbeddingData `json:"embedding"`
+}
+
+// EmbeddingData contains the embedding values.
+type EmbeddingData struct {
+	Values []float64 `json:"values"`
+}
+
+// SerializeEmbeddingRequest serializes an embedding request to JSON.
+func (c *Client) SerializeEmbeddingRequest(
+	ctx context.Context,
+	text string,
+	options outbound.EmbeddingOptions,
+) ([]byte, error) {
+	// Validate input text
+	if strings.TrimSpace(text) == "" {
+		return nil, errors.New("text content cannot be empty")
+	}
+
+	// Validate model
+	model := options.Model
+	if model == "" {
+		model = c.config.Model
+	}
+	if model != DefaultModel {
+		return nil, fmt.Errorf("unsupported model: %s", model)
+	}
+
+	// Validate task type
+	taskType := convertTaskType(options.TaskType)
+	if err := validateTaskTypeValue(taskType); err != nil {
+		return nil, fmt.Errorf("invalid task type: %w", err)
+	}
+
+	// Create request structure
+	request := EmbeddingRequest{
+		Model: "models/" + model,
+		Content: Content{
+			Parts: []Part{
+				{Text: text},
+			},
+		},
+		TaskType:             taskType,
+		OutputDimensionality: c.config.Dimensions,
+	}
+
+	// Serialize to JSON
+	jsonData, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize request: %w", err)
+	}
+
+	return jsonData, nil
+}
+
+// DeserializeEmbeddingResponse deserializes a JSON response to embedding result.
+func (c *Client) DeserializeEmbeddingResponse(
+	ctx context.Context,
+	responseBody []byte,
+) (*outbound.EmbeddingResult, error) {
+	// Parse JSON response
+	var response EmbeddingResponse
+	if err := json.Unmarshal(responseBody, &response); err != nil {
+		return nil, &outbound.EmbeddingError{
+			Code:      "json_parse_error",
+			Type:      "validation",
+			Message:   "failed to parse response JSON",
+			Retryable: false,
+			Cause:     err,
+		}
+	}
+
+	// Validate required fields
+	if len(response.Embedding.Values) == 0 {
+		return nil, &outbound.EmbeddingError{
+			Code:      "missing_embedding",
+			Type:      "validation",
+			Message:   "response missing required embedding field",
+			Retryable: false,
+		}
+	}
+
+	// Create embedding result
+	result := &outbound.EmbeddingResult{
+		Vector:      response.Embedding.Values,
+		Dimensions:  len(response.Embedding.Values),
+		Model:       c.config.Model,
+		TaskType:    outbound.TaskTypeRetrievalDocument,
+		GeneratedAt: time.Now(),
+		RequestID:   "", // Will be set by caller
+	}
+
+	return result, nil
+}
+
+// ValidateTokenLimit validates that the text doesn't exceed the token limit.
+func (c *Client) ValidateTokenLimit(ctx context.Context, text string, maxTokens int) error {
+	tokenCount, err := c.EstimateTokenCount(ctx, text)
+	if err != nil {
+		return &outbound.EmbeddingError{
+			Code:      "token_count_error",
+			Type:      "validation",
+			Message:   fmt.Sprintf("failed to estimate token count: %v", err),
+			Retryable: false,
+			Cause:     err,
+		}
+	}
+
+	if tokenCount > maxTokens {
+		return &outbound.EmbeddingError{
+			Code: "token_limit_exceeded",
+			Type: "validation",
+			Message: fmt.Sprintf(
+				"text exceeds maximum token limit of %d (estimated: %d tokens)",
+				maxTokens,
+				tokenCount,
+			),
+			Retryable: false,
+		}
+	}
+
+	return nil
 }

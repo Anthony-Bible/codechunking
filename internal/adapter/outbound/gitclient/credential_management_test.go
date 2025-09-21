@@ -594,7 +594,7 @@ git:
 	}
 
 	// Setup explicit credentials if provided
-	var explicitConfig *outbound.TokenAuthConfig
+	var explicitConfig outbound.AuthConfig
 	if tt.explicitToken != "" {
 		explicitConfig = &outbound.TokenAuthConfig{
 			Token:     tt.explicitToken,

@@ -129,15 +129,32 @@ func TestAPICommand_GracefulShutdown(t *testing.T) {
 		},
 		{
 			name: "server_waits_for_active_requests_during_shutdown",
-			setupFunc: func(_ *testing.T, baseURL string) {
+			setupFunc: func(t *testing.T, baseURL string) {
+				// Create synchronization channel to ensure request starts before shutdown
+				requestStarted := make(chan struct{})
+
 				// Start a long-running request in background
 				go func() {
-					resp, err := http.Get(baseURL + "/health?slow=true")
+					// Create HTTP client with sufficient timeout
+					client := &http.Client{
+						Timeout: 30 * time.Second, // Longer than the 2s handler delay
+					}
+
+					// Signal that we're about to start the request
+					close(requestStarted)
+
+					// Make the slow request
+					resp, err := client.Get(baseURL + "/health?slow=true")
 					if err == nil {
 						_ = resp.Body.Close()
 					}
 				}()
-				time.Sleep(100 * time.Millisecond) // Let request start
+
+				// Wait for confirmation that request has started
+				<-requestStarted
+
+				// Add small buffer to ensure request reaches the handler
+				time.Sleep(50 * time.Millisecond)
 			},
 			shutdownFunc: func(t *testing.T, server APIServer, _ string) {
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

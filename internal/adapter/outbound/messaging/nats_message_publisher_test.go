@@ -360,7 +360,8 @@ func TestNATSMessagePublisher_EnsureStream_Failures(t *testing.T) {
 	}
 
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL:      "nats://localhost:4222",
+		TestMode: true,
 	}
 
 	for _, tt := range tests {
@@ -375,7 +376,7 @@ func TestNATSMessagePublisher_EnsureStream_Failures(t *testing.T) {
 
 			// This test will fail because EnsureStream is not implemented
 			err = publisher.(*NATSMessagePublisher).EnsureStream()
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
 		})
 	}
@@ -972,7 +973,8 @@ func TestNATSMessagePublisher_ErrorHandling_CircuitBreaker(t *testing.T) {
 
 func TestNATSMessagePublisher_ErrorHandling_JetStreamErrors(t *testing.T) {
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL:      "nats://localhost:4222",
+		TestMode: true,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -1044,7 +1046,7 @@ func TestNATSMessagePublisher_ErrorHandling_JetStreamErrors(t *testing.T) {
 
 			// This test will fail because JetStream error handling is not implemented
 			err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
 		})
 	}

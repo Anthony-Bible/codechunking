@@ -62,7 +62,7 @@ type StreamingCodeProcessor struct {
 	detector LargeFileDetector
 	tracker  MemoryUsageTracker
 
-	parsers  map[string]TreeSitterParser
+	Parsers  map[string]TreeSitterParser
 	chunkers map[outbound.ChunkingStrategyType]Chunker
 
 	metrics *outbound.ProcessingMetrics
@@ -114,7 +114,7 @@ func NewStreamingCodeProcessor(
 		enforcer: enforcer,
 		detector: detector,
 		tracker:  tracker,
-		parsers:  make(map[string]TreeSitterParser),
+		Parsers:  make(map[string]TreeSitterParser),
 		chunkers: make(map[outbound.ChunkingStrategyType]Chunker),
 		metrics: &outbound.ProcessingMetrics{
 			FilesProcessed:        0,
@@ -267,7 +267,7 @@ func (p *StreamingCodeProcessor) processFileParsing(
 			}
 
 			// Get parser for language
-			parser, ok := p.parsers[lang.String()]
+			parser, ok := p.Parsers[lang.String()]
 			if !ok {
 				errCtx := pipeline.NewProcessingErrorContext(
 					"StreamingCodeProcessor",

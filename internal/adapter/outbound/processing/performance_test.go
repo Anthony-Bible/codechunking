@@ -37,7 +37,7 @@ func BenchmarkStreamingProcessorThroughput_SmallFiles(b *testing.B) {
 
 		parser := NewMockTreeSitterParser()
 		chunker := NewMockChunker()
-		processor.parsers["go"] = parser
+		processor.Parsers["Go"] = parser
 		processor.chunkers[outbound.StrategyFunction] = chunker
 
 		ctx := context.Background()
@@ -90,7 +90,7 @@ func BenchmarkStreamingProcessorThroughput_MediumFiles(b *testing.B) {
 
 		parser := NewMockTreeSitterParser()
 		chunker := NewMockChunker()
-		processor.parsers["go"] = parser
+		processor.Parsers["Go"] = parser
 		processor.chunkers[outbound.StrategyFunction] = chunker
 
 		ctx := context.Background()
@@ -143,7 +143,7 @@ func BenchmarkStreamingProcessorThroughput_LargeFiles(b *testing.B) {
 
 		parser := NewMockTreeSitterParser()
 		chunker := NewMockChunker()
-		processor.parsers["go"] = parser
+		processor.Parsers["Go"] = parser
 		processor.chunkers[outbound.StrategyFunction] = chunker
 
 		ctx := context.Background()
@@ -196,7 +196,7 @@ func BenchmarkStreamingProcessorMemory_LargeFiles(b *testing.B) {
 
 		parser := NewMockTreeSitterParser()
 		chunker := NewMockChunker()
-		processor.parsers["go"] = parser
+		processor.Parsers["Go"] = parser
 		processor.chunkers[outbound.StrategyFunction] = chunker
 
 		ctx := context.Background()
@@ -250,7 +250,7 @@ func BenchmarkStreamingProcessorMemory_Concurrent(b *testing.B) {
 
 		parser := NewMockTreeSitterParser()
 		chunker := NewMockChunker()
-		processor.parsers["go"] = parser
+		processor.Parsers["Go"] = parser
 		processor.chunkers[outbound.StrategyFunction] = chunker
 
 		ctx := context.Background()
@@ -311,7 +311,7 @@ func TestMemoryLimitEnforcement(t *testing.T) {
 
 	parser := NewMockTreeSitterParser()
 	chunker := NewMockChunker()
-	processor.parsers["go"] = parser
+	processor.Parsers["Go"] = parser
 	processor.chunkers[outbound.StrategyFunction] = chunker
 
 	ctx := context.Background()
@@ -346,7 +346,7 @@ func TestMemoryLeakPrevention(t *testing.T) {
 
 	parser := NewMockTreeSitterParser()
 	chunker := NewMockChunker()
-	processor.parsers["go"] = parser
+	processor.Parsers["Go"] = parser
 	processor.chunkers[outbound.StrategyFunction] = chunker
 
 	ctx := context.Background()

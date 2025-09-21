@@ -180,8 +180,16 @@ func (p *GoParser) extractImports(sourceCode string, tree *valueobject.ParseTree
 }
 
 func (p *GoParser) extractPackageNameFromTree(tree *valueobject.ParseTree) string {
-	// This is a stub to make it compile
-	return ""
+	packageNodes := tree.GetNodesByType("package_clause")
+	if len(packageNodes) > 0 {
+		// Look for package identifier in the package clause
+		for _, child := range packageNodes[0].Children {
+			if child.Type == "package_identifier" || child.Type == "_package_identifier" {
+				return tree.GetNodeText(child)
+			}
+		}
+	}
+	return "main" // Default fallback
 }
 
 // getParameterType gets the type node from a parameter-like declaration.

@@ -3,11 +3,9 @@ package treesitter
 import (
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/valueobject"
-	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 )
@@ -151,11 +149,11 @@ func (f *ParserFactoryImpl) CreateParser(
 		return parserFactory()
 	}
 
-	// Fallback to enhanced stub parser for unsupported languages
-	slogger.Warn(ctx, "No registered parser found, using enhanced stub parser", slogger.Fields{
+	// No registered parser found for this language
+	slogger.Error(ctx, "No registered parser found for language", slogger.Fields{
 		"language": language.Name(),
 	})
-	return NewStubParser(language), nil
+	return nil, fmt.Errorf("no parser registered for language: %s", language.Name())
 }
 
 // CreateGoParser creates a specialized Go parser.
@@ -244,27 +242,16 @@ func (f *ParserFactoryImpl) IsLanguageSupported(
 	return err == nil
 }
 
-// ValidateLanguageSupport validates if a language is supported.
+// ValidateLanguageSupport validates if a language is supported by checking registered parsers.
 func (f *ParserFactoryImpl) ValidateLanguageSupport(
 	_ context.Context,
 	language valueobject.Language,
 ) error {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-
 	langName := language.Name()
 
-	// Check if language is in supported list
-	for _, supported := range f.supportedLangs {
-		if supported.Name() == langName {
-			// Check if we have a wrapper for this language
-			switch langName {
-			case valueobject.LanguageGo, valueobject.LanguagePython, valueobject.LanguageJavaScript:
-				return nil
-			default:
-				return fmt.Errorf("language %s is supported but no parser wrapper available", langName)
-			}
-		}
+	// Check if we have a registered parser for this language
+	if parserFactory := GetRegisteredParser(langName); parserFactory != nil {
+		return nil
 	}
 
 	return fmt.Errorf("unsupported language: %s", langName)
@@ -463,394 +450,6 @@ func hasExtension(filePath, ext string) bool {
 		return false
 	}
 	return filePath[len(filePath)-len(ext):] == ext
-}
-
-// StubParser is a minimal parser implementation for GREEN phase testing.
-type StubParser struct {
-	language valueobject.Language
-}
-
-// NewStubParser creates a new stub parser for the given language.
-func NewStubParser(language valueobject.Language) *StubParser {
-	return &StubParser{
-		language: language,
-	}
-}
-
-// Parse implements the Parse method for ObservableTreeSitterParser.
-func (s *StubParser) Parse(ctx context.Context, source []byte) (*ParseResult, error) {
-	// For GREEN phase: create a minimal parse tree to make tests pass
-	rootNode := &ParseNode{
-		Type:       "source_file",
-		StartByte:  0,
-		EndByte:    valueobject.ClampToUint32(len(source)),
-		StartPoint: Point{Row: 0, Column: 0},
-		EndPoint:   Point{Row: 0, Column: valueobject.ClampToUint32(len(source))},
-		Children:   []*ParseNode{},
-		IsNamed:    true,
-		IsError:    false,
-		IsMissing:  false,
-		Text:       string(source),
-	}
-
-	// Add some basic child nodes based on language to make semantic extraction work
-	switch s.language.Name() {
-	case valueobject.LanguageGo:
-		s.addGoNodes(rootNode, source)
-	case valueobject.LanguageJavaScript:
-		s.addJavaScriptNodes(rootNode, source)
-	case valueobject.LanguagePython:
-		s.addPythonNodes(rootNode, source)
-	}
-
-	parseTree := &ParseTree{
-		Language:       s.language.Name(),
-		RootNode:       rootNode,
-		Source:         string(source),
-		CreatedAt:      time.Now(),
-		TreeSitterTree: nil, // No real tree-sitter tree for stub
-	}
-
-	return &ParseResult{
-		Success:   true,
-		ParseTree: parseTree,
-		Errors:    []ParseError{},
-		Warnings:  []ParseWarning{},
-		Duration:  time.Millisecond, // Fast fake parse
-		Statistics: &ParsingStatistics{
-			TotalNodes:     1,
-			ErrorNodes:     0,
-			MissingNodes:   0,
-			MaxDepth:       1,
-			ParseDuration:  time.Millisecond,
-			MemoryUsed:     uint64(len(source)),
-			BytesProcessed: uint64(len(source)),
-			LinesProcessed: 1,
-			TreeSizeBytes:  uint64(len(source)),
-		},
-		Metadata: map[string]interface{}{
-			"stub_parser": true,
-			"language":    s.language.Name(),
-		},
-	}, nil
-}
-
-// addGoNodes adds basic Go nodes to make semantic extraction work.
-func (s *StubParser) addGoNodes(root *ParseNode, source []byte) {
-	content := string(source)
-
-	// Simple detection for function declarations
-	if strings.Contains(content, "func ") {
-		funcNode := &ParseNode{
-			Type:       "function_declaration",
-			StartByte:  0,
-			EndByte:    valueobject.ClampToUint32(len(source)),
-			StartPoint: Point{Row: 0, Column: 0},
-			EndPoint:   Point{Row: 0, Column: valueobject.ClampToUint32(len(source))},
-			Children: []*ParseNode{
-				{
-					Type:      "identifier",
-					StartByte: 0,
-					EndByte:   10,
-					Text:      "stubFunction",
-					IsNamed:   true,
-				},
-			},
-			IsNamed: true,
-			Text:    content,
-		}
-		root.Children = append(root.Children, funcNode)
-	}
-}
-
-// addJavaScriptNodes adds basic JavaScript nodes to make semantic extraction work.
-func (s *StubParser) addJavaScriptNodes(root *ParseNode, source []byte) {
-	content := string(source)
-
-	// Simple detection for function declarations
-	if strings.Contains(content, "function ") || strings.Contains(content, "=> ") {
-		funcNode := &ParseNode{
-			Type:       "function_declaration",
-			StartByte:  0,
-			EndByte:    valueobject.ClampToUint32(len(source)),
-			StartPoint: Point{Row: 0, Column: 0},
-			EndPoint:   Point{Row: 0, Column: valueobject.ClampToUint32(len(source))},
-			Children: []*ParseNode{
-				{
-					Type:      "identifier",
-					StartByte: 0,
-					EndByte:   10,
-					Text:      "stubFunction",
-					IsNamed:   true,
-				},
-			},
-			IsNamed: true,
-			Text:    content,
-		}
-		root.Children = append(root.Children, funcNode)
-	}
-}
-
-// addPythonNodes adds basic Python nodes to make semantic extraction work.
-func (s *StubParser) addPythonNodes(root *ParseNode, source []byte) {
-	content := string(source)
-
-	// Simple detection for function or class declarations
-	if strings.Contains(content, "def ") {
-		funcNode := &ParseNode{
-			Type:       "function_definition",
-			StartByte:  0,
-			EndByte:    valueobject.ClampToUint32(len(source)),
-			StartPoint: Point{Row: 0, Column: 0},
-			EndPoint:   Point{Row: 0, Column: valueobject.ClampToUint32(len(source))},
-			Children: []*ParseNode{
-				{
-					Type:      "identifier",
-					StartByte: 0,
-					EndByte:   10,
-					Text:      "stubFunction",
-					IsNamed:   true,
-				},
-			},
-			IsNamed: true,
-			Text:    content,
-		}
-		root.Children = append(root.Children, funcNode)
-	}
-
-	if strings.Contains(content, "class ") {
-		classNode := &ParseNode{
-			Type:       "class_definition",
-			StartByte:  0,
-			EndByte:    valueobject.ClampToUint32(len(source)),
-			StartPoint: Point{Row: 0, Column: 0},
-			EndPoint:   Point{Row: 0, Column: valueobject.ClampToUint32(len(source))},
-			Children: []*ParseNode{
-				{
-					Type:      "identifier",
-					StartByte: 0,
-					EndByte:   10,
-					Text:      "StubClass",
-					IsNamed:   true,
-				},
-			},
-			IsNamed: true,
-			Text:    content,
-		}
-		root.Children = append(root.Children, classNode)
-	}
-}
-
-// Implement other required methods for ObservableTreeSitterParser interface
-
-func (s *StubParser) ExtractFunctions(
-	ctx context.Context,
-	parseTree *valueobject.ParseTree,
-	options outbound.SemanticExtractionOptions,
-) ([]outbound.SemanticCodeChunk, error) {
-	slogger.Info(ctx, "StubParser.ExtractFunctions called", slogger.Fields{
-		"language": s.language.Name(),
-	})
-
-	// Extract functions from the parse tree
-	var functions []outbound.SemanticCodeChunk
-
-	switch s.language.Name() {
-	case valueobject.LanguageGo:
-		functions = s.extractGoFunctions(ctx, parseTree)
-	case valueobject.LanguageJavaScript:
-		functions = s.extractJavaScriptFunctions(ctx, parseTree)
-	case valueobject.LanguagePython:
-		functions = s.extractPythonFunctions(ctx, parseTree)
-	}
-
-	slogger.Info(ctx, "StubParser function extraction completed", slogger.Fields{
-		"functions_found": len(functions),
-	})
-
-	return functions, nil
-}
-
-func (s *StubParser) ExtractClasses(
-	ctx context.Context,
-	parseTree *valueobject.ParseTree,
-	options outbound.SemanticExtractionOptions,
-) ([]outbound.SemanticCodeChunk, error) {
-	return []outbound.SemanticCodeChunk{}, nil
-}
-
-func (s *StubParser) ExtractInterfaces(
-	ctx context.Context,
-	parseTree *valueobject.ParseTree,
-	options outbound.SemanticExtractionOptions,
-) ([]outbound.SemanticCodeChunk, error) {
-	return []outbound.SemanticCodeChunk{}, nil
-}
-
-func (s *StubParser) ExtractVariables(
-	ctx context.Context,
-	parseTree *valueobject.ParseTree,
-	options outbound.SemanticExtractionOptions,
-) ([]outbound.SemanticCodeChunk, error) {
-	return []outbound.SemanticCodeChunk{}, nil
-}
-
-func (s *StubParser) ExtractImports(
-	ctx context.Context,
-	parseTree *valueobject.ParseTree,
-	options outbound.SemanticExtractionOptions,
-) ([]outbound.ImportDeclaration, error) {
-	return []outbound.ImportDeclaration{}, nil
-}
-
-func (s *StubParser) ExtractModules(
-	ctx context.Context,
-	parseTree *valueobject.ParseTree,
-	options outbound.SemanticExtractionOptions,
-) ([]outbound.SemanticCodeChunk, error) {
-	return []outbound.SemanticCodeChunk{}, nil
-}
-
-func (s *StubParser) GetSupportedLanguage() valueobject.Language {
-	return s.language
-}
-
-func (s *StubParser) GetSupportedConstructTypes() []outbound.SemanticConstructType {
-	return []outbound.SemanticConstructType{
-		outbound.ConstructFunction,
-		outbound.ConstructClass,
-		outbound.ConstructModule,
-	}
-}
-
-func (s *StubParser) IsSupported(language valueobject.Language) bool {
-	return language.Name() == s.language.Name()
-}
-
-func (s *StubParser) GetLanguage() string {
-	return s.language.Name()
-}
-
-func (s *StubParser) Close() error {
-	// Nothing to clean up for stub
-	return nil
-}
-
-func (s *StubParser) ParseSource(
-	ctx context.Context,
-	language valueobject.Language,
-	source []byte,
-	options ParseOptions,
-) (*ParseResult, error) {
-	// Delegate to main Parse method
-	return s.Parse(ctx, source)
-}
-
-// extractGoFunctions extracts Go functions from the parse tree.
-func (s *StubParser) extractGoFunctions(
-	ctx context.Context,
-	parseTree *valueobject.ParseTree,
-) []outbound.SemanticCodeChunk {
-	var functions []outbound.SemanticCodeChunk
-
-	// Get function nodes from the parse tree
-	functionNodes := parseTree.GetNodesByType("function_declaration")
-	slogger.Info(ctx, "Found function declaration nodes", slogger.Fields{
-		"count": len(functionNodes),
-	})
-
-	// Extract functions using simple regex parsing on the source
-	source := string(parseTree.Source())
-	funcNames := s.extractGoFunctionNames(source)
-
-	for _, funcName := range funcNames {
-		functions = append(functions, outbound.SemanticCodeChunk{
-			ChunkID:       fmt.Sprintf("func:%s", funcName),
-			Name:          funcName,
-			QualifiedName: funcName,
-			Language:      parseTree.Language(),
-			Type:          outbound.ConstructFunction,
-			Visibility:    s.getVisibility(funcName),
-			Content:       fmt.Sprintf("// Go function: %s", funcName),
-			ExtractedAt:   time.Now(),
-		})
-	}
-
-	return functions
-}
-
-// extractGoFunctionNames extracts function names from Go source code.
-func (s *StubParser) extractGoFunctionNames(source string) []string {
-	var funcNames []string
-	lines := strings.Split(source, "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "func ") {
-			continue
-		}
-
-		if funcName := s.parseFunctionName(line); funcName != "" {
-			funcNames = append(funcNames, funcName)
-		}
-	}
-
-	return funcNames
-}
-
-// parseFunctionName extracts function name from a Go function declaration line.
-func (s *StubParser) parseFunctionName(line string) string {
-	// Extract function name: "func name(" or "func (receiver) name("
-	funcLine := strings.TrimPrefix(line, "func ")
-
-	// Handle method receivers: func (r Receiver) methodName(
-	if strings.HasPrefix(funcLine, "(") {
-		// Find the closing paren and skip to method name
-		parenEnd := strings.Index(funcLine, ")")
-		if parenEnd == -1 || parenEnd+1 >= len(funcLine) {
-			return ""
-		}
-		funcLine = strings.TrimSpace(funcLine[parenEnd+1:])
-	}
-
-	// Extract just the function name before the opening parenthesis
-	parenStart := strings.Index(funcLine, "(")
-	if parenStart <= 0 {
-		return ""
-	}
-
-	funcName := strings.TrimSpace(funcLine[:parenStart])
-	if funcName == "" || strings.Contains(funcName, " ") {
-		return ""
-	}
-
-	return funcName
-}
-
-// getVisibility determines if a Go function is public or private.
-func (s *StubParser) getVisibility(name string) outbound.VisibilityModifier {
-	if len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z' {
-		return outbound.Public
-	}
-	return outbound.Private
-}
-
-// extractJavaScriptFunctions extracts JavaScript functions from the parse tree.
-func (s *StubParser) extractJavaScriptFunctions(
-	ctx context.Context,
-	parseTree *valueobject.ParseTree,
-) []outbound.SemanticCodeChunk {
-	// TODO: Implement JavaScript function extraction
-	return []outbound.SemanticCodeChunk{}
-}
-
-// extractPythonFunctions extracts Python functions from the parse tree.
-func (s *StubParser) extractPythonFunctions(
-	ctx context.Context,
-	parseTree *valueobject.ParseTree,
-) []outbound.SemanticCodeChunk {
-	// TODO: Implement Python function extraction
-	return []outbound.SemanticCodeChunk{}
 }
 
 // ============================================================================

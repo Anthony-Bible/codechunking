@@ -37,7 +37,7 @@ func Add(a int, b int) int {
 					ChunkID:       "", // Will be set dynamically by implementation (timestamp-based)
 					Type:          outbound.ConstructFunction,
 					Name:          "Add",
-					QualifiedName: "main.Add", // Package-qualified name as expected by implementation
+					QualifiedName: "Add", // Functions in main/default package use just the function name
 					Visibility:    outbound.Public,
 					Documentation: "Add adds two integers and returns the result",
 					Content:       "func Add(a int, b int) int {\n\treturn a + b\n}",
@@ -317,7 +317,7 @@ func helper(a int) int {
 					ChunkID:       "", // Will be set dynamically by implementation (timestamp-based)
 					Type:          outbound.ConstructFunction,
 					Name:          "helper",
-					QualifiedName: "main.helper", // Package-qualified name as expected by implementation
+					QualifiedName: "helper", // Functions in main/default package use just the function name
 					Visibility:    outbound.Private,
 					Documentation: "helper is a private helper function",
 					Content:       "func helper(a int) int {\n\treturn a + 1\n}",

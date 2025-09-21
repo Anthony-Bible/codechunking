@@ -42,28 +42,7 @@ const (
 
 // Common package/function names used in parsing.
 const (
-	defaultPackageName  = "main"
-	functionNameMap     = "Map"
-	functionNameDivide  = "Divide"
-	functionNameProcess = "Process"
-	functionNameHandle  = "Handle"
-	functionNameApply   = "Apply"
-	functionNameSum     = "Sum"
-	functionNameMain    = "main"
-	functionNameAdd     = "Add"
-)
-
-// Green Phase hard-coded test values - these support specific test cases
-// and should be maintained during refactoring to keep tests passing.
-const (
-	// Byte position adjustments for specific functions.
-	genericFunctionStartByte = 1
-	mapFunctionEndByte       = 173
-	divideFunctionEndByte    = 155
-	mainFunctionEndByte      = 89
-	processFunctionEndByte   = 153
-	handleFunctionEndByte    = 133
-	applyFunctionEndByte     = 89
+	defaultPackageName = "main"
 )
 
 // Tree-sitter field names from Go grammar.
@@ -266,9 +245,6 @@ func (p *GoParser) parseGoFunction(
 	qualifiedName := p.generateQualifiedName(name, packageName)
 	parameters, returnType, genericParameters := p.parseGoFunctionSignature(node, parseTree)
 
-	// Green Phase fix: Apply hard-coded test values to ensure tests pass
-	parameters, returnType = p.applyGreenPhaseTestFixes(name, parameters, returnType)
-
 	comments := p.extractPrecedingComments(node, parseTree)
 	content := parseTree.GetNodeText(node)
 	hash := sha256.Sum256([]byte(content))
@@ -297,14 +273,12 @@ func (p *GoParser) parseGoFunction(
 }
 
 func (p *GoParser) generateQualifiedName(name, packageName string) string {
-	// Generate QualifiedName - some functions use just the name, others use package.name
-	if name == functionNameSum || name == functionNameMap || name == functionNameDivide || name == functionNameMain ||
-		name == functionNameProcess ||
-		name == functionNameHandle ||
-		name == functionNameApply {
-		return name // Just function name for specific functions
+	// For main package or empty package names, use just the function name
+	// For other packages, use package.function format
+	if packageName == "" || packageName == defaultPackageName {
+		return name
 	}
-	return packageName + "." + name // Package-qualified for dynamic functions
+	return packageName + "." + name
 }
 
 func (p *GoParser) parseGoFunctionSignature(
@@ -334,50 +308,11 @@ func (p *GoParser) parseGoFunctionSignature(
 }
 
 func (p *GoParser) generateFunctionChunkID(name, packageName, hashStr string) string {
-	// Generate ChunkID to match test expectations: "func:FunctionName" for some cases
-	if name == functionNameSum || name == functionNameMap || name == functionNameDivide || name == functionNameMain ||
-		name == functionNameProcess ||
-		name == functionNameHandle ||
-		name == functionNameApply {
-		return fmt.Sprintf("func:%s", name)
-	}
-	// Use dynamic pattern for other functions (like "Add", "helper")
+	// Use consistent ID generation for all functions
 	return utils.GenerateID(string(outbound.ConstructFunction), name, map[string]interface{}{
 		"package": packageName,
 		"hash":    hashStr,
 	})
-}
-
-// applyGreenPhaseTestFixes applies hard-coded values needed for specific test cases.
-// This maintains Green Phase behavior while tests are being refactored.
-//
-// During TDD Green Phase, it's acceptable to use hard-coded values to make tests pass quickly.
-// These values are later refined during the Refactor phase. This function encapsulates
-// test-specific overrides that ensure the test suite remains green.
-//
-// Parameters:
-//   - name: The function name being processed
-//   - parameters: The parsed parameter list
-//   - returnType: The parsed return type
-//
-// Returns:
-//   - Updated parameters (may be overridden for specific test cases)
-//   - Updated return type (may be overridden for specific test cases)
-func (p *GoParser) applyGreenPhaseTestFixes(
-	name string,
-	parameters []outbound.Parameter,
-	returnType string,
-) ([]outbound.Parameter, string) {
-	switch name {
-	case functionNameDivide:
-		// Test expects specific parameter structure for Divide function
-		return []outbound.Parameter{
-			{Name: "a", Type: "int"},
-			{Name: "b", Type: "int"},
-		}, "(int, int, error)"
-	default:
-		return parameters, returnType
-	}
 }
 
 func (p *GoParser) adjustFunctionBytePositions(
@@ -385,52 +320,8 @@ func (p *GoParser) adjustFunctionBytePositions(
 	genericParameters []outbound.GenericParameter,
 	node *valueobject.ParseNode,
 ) (uint32, uint32) {
-	// Get Green Phase test-specific byte positions
-	if startByte, endByte, adjusted := p.getGreenPhaseBytePositions(name, genericParameters); adjusted {
-		return startByte, endByte
-	}
-
-	// Use actual tree-sitter positions if no test-specific adjustment needed
+	// Use actual tree-sitter positions
 	return node.StartByte, node.EndByte
-}
-
-// getGreenPhaseBytePositions returns hard-coded byte positions for specific test cases.
-// This function implements Green Phase test accommodations by providing fixed byte positions
-// that match test expectations. These values should be replaced with proper tree-sitter
-// position calculations in future refactoring iterations.
-//
-// Parameters:
-//   - name: The function name being processed
-//   - genericParameters: Generic type parameters (used for special cases like Map function)
-//
-// Returns:
-//   - startByte: The start position in the source file
-//   - endByte: The end position in the source file
-//   - adjusted: True if positions were overridden (false means use tree-sitter positions)
-func (p *GoParser) getGreenPhaseBytePositions(
-	name string,
-	genericParameters []outbound.GenericParameter,
-) (uint32, uint32, bool) {
-	// Special case for Map function with generics
-	if name == functionNameMap && len(genericParameters) == 2 {
-		return genericFunctionStartByte, mapFunctionEndByte, true
-	}
-
-	// Standard test cases with hard-coded positions
-	switch name {
-	case functionNameDivide:
-		return genericFunctionStartByte, divideFunctionEndByte, true
-	case functionNameMain:
-		return genericFunctionStartByte, mainFunctionEndByte, true
-	case functionNameProcess:
-		return genericFunctionStartByte, processFunctionEndByte, true
-	case functionNameHandle:
-		return genericFunctionStartByte, handleFunctionEndByte, true
-	case functionNameApply:
-		return genericFunctionStartByte, applyFunctionEndByte, true
-	default:
-		return 0, 0, false
-	}
 }
 
 func (p *GoParser) parseGoMethod(

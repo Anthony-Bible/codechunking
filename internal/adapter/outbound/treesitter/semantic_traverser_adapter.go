@@ -16,6 +16,17 @@ import (
 	"time"
 )
 
+// Constants for node types to avoid goconst issues.
+const (
+	nodeFunctionDeclaration = "function_declaration"
+	nodeMethodDeclaration   = "method_declaration"
+	nodeIdentifier          = "identifier"
+	nodeFieldIdentifier     = "field_identifier"
+	nodeFunctionExpression  = "function_expression"
+	nodeArrowFunction       = "arrow_function"
+	nodeVariableDeclarator  = "variable_declarator"
+)
+
 // SemanticExtractionOptions defines options for semantic code chunk extraction.
 type SemanticExtractionOptions struct {
 	IncludeFunctions     bool
@@ -89,32 +100,8 @@ func (s *SemanticTraverserAdapter) extractSemanticChunks(
 	}
 
 	// Try to use parser factory directly if available
-	if s.parserFactory != nil {
-		slogger.Info(ctx, "Attempting to create parser from factory", slogger.Fields{
-			"language": parseTree.Language().Name(),
-		})
-		parser, err := s.parserFactory.CreateParser(ctx, parseTree.Language())
-		if err == nil {
-			slogger.Info(ctx, "Parser created successfully", slogger.Fields{
-				"parser_type": fmt.Sprintf("%T", parser),
-			})
-			// Cast to LanguageParser interface if possible
-			if langParser, ok := parser.(LanguageParser); ok {
-				slogger.Info(ctx, "Parser cast to LanguageParser successful, calling extractor", slogger.Fields{})
-				return langParserExtractor(langParser)
-			}
-			slogger.Warn(
-				ctx,
-				"Parser does not implement LanguageParser interface, falling back to legacy implementation",
-				slogger.Fields{
-					"parser_type": fmt.Sprintf("%T", parser),
-				},
-			)
-		} else {
-			slogger.Warn(ctx, "Failed to create parser from factory, falling back to legacy implementation", slogger.Fields{
-				"error": err.Error(),
-			})
-		}
+	if result, err := s.tryParserFactory(ctx, parseTree, langParserExtractor); result != nil {
+		return result, err
 	} else {
 		slogger.Warn(ctx, "Parser factory is nil, falling back to legacy implementation", slogger.Fields{})
 	}
@@ -568,11 +555,7 @@ func (s *SemanticTraverserAdapter) extractGoFunctions(
 		})
 
 		switch node.Type {
-		case "function_declaration", "method_declaration":
-			slogger.Info(ctx, "Found Go function/method node", slogger.Fields{
-				"node_type": node.Type,
-			})
-			// Extract Go function
+		case nodeFunctionDeclaration, nodeMethodDeclaration:
 			if chunk := s.extractGoFunctionFromNode(node, parseTree); chunk != nil {
 				chunks = append(chunks, *chunk)
 			}
@@ -641,7 +624,7 @@ func (s *SemanticTraverserAdapter) extractGoFunctionFromNode(
 
 	// Determine construct type first
 	constructType := outbound.ConstructFunction
-	if node.Type == "method_declaration" {
+	if node.Type == nodeMethodDeclaration {
 		constructType = outbound.ConstructMethod
 	}
 
@@ -671,25 +654,50 @@ func (s *SemanticTraverserAdapter) extractGoFunctionFromNode(
 }
 
 // extractGoFunctionName extracts the name of a Go function from an AST node.
+// Uses tree-sitter Go grammar structure for robust name extraction.
 func (s *SemanticTraverserAdapter) extractGoFunctionName(
 	node *valueobject.ParseNode,
 	parseTree *valueobject.ParseTree,
 ) string {
-	// For function_declaration, look for identifier child
-	// For method_declaration, look for identifier after receiver
-	for i, child := range node.Children {
-		if child != nil && child.Type == "identifier" {
-			// For methods, skip the first identifier (which might be in receiver)
-			if node.Type == "method_declaration" && i <= 2 {
-				continue
-			}
-			name := parseTree.GetNodeText(child)
-			if name != "" {
-				return name
-			}
+	if node == nil || parseTree == nil {
+		return ""
+	}
+
+	switch node.Type {
+	case nodeFunctionDeclaration:
+		// For function_declaration, look for identifier child
+		// Based on tree-sitter go grammar: func <identifier> ...
+		if identifierNode := s.findChildByType(node, nodeIdentifier); identifierNode != nil {
+			return parseTree.GetNodeText(identifierNode)
+		}
+
+	case nodeMethodDeclaration:
+		// For method_declaration, look for field_identifier child
+		// Based on tree-sitter go grammar: func (<receiver>) <field_identifier> ...
+		if fieldIdentifierNode := s.findChildByType(node, nodeFieldIdentifier); fieldIdentifierNode != nil {
+			return parseTree.GetNodeText(fieldIdentifierNode)
 		}
 	}
+
 	return ""
+}
+
+// findChildByType searches for a direct child node of the specified type.
+// This provides a more robust alternative to positional traversal.
+func (s *SemanticTraverserAdapter) findChildByType(
+	node *valueobject.ParseNode,
+	targetType string,
+) *valueobject.ParseNode {
+	if node == nil {
+		return nil
+	}
+
+	for _, child := range node.Children {
+		if child != nil && child.Type == targetType {
+			return child
+		}
+	}
+	return nil
 }
 
 // extractGoPackageName extracts the package name from the parse tree.
@@ -726,8 +734,8 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 	s.traverseJavaScriptAST(parseTree.RootNode(), func(node *valueobject.ParseNode) {
 		switch node.Type {
 		case "function_declaration",
-			"function_expression",
-			"arrow_function",
+			nodeFunctionExpression,
+			nodeArrowFunction,
 			"method_definition",
 			"generator_function_declaration":
 			// Extract function name
@@ -740,9 +748,9 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 			// Generate name for anonymous functions
 			if name == "" {
 				switch node.Type {
-				case "function_expression":
+				case nodeFunctionExpression:
 					name = "(anonymous function)"
-				case "arrow_function":
+				case nodeArrowFunction:
 					name = "(arrow function)"
 				case "method_definition":
 					name = "(method)"
@@ -774,7 +782,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 				"function_name": name,
 				"node_type":     node.Type,
 			})
-		case "variable_declarator":
+		case nodeVariableDeclarator:
 			// Check if this variable declarator is for a function expression
 			if s.isJavaScriptFunctionExpression(node) {
 				name := s.extractJavaScriptVariableName(node, parseTree)
@@ -854,7 +862,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptVariableName(
 	node *valueobject.ParseNode,
 	parseTree *valueobject.ParseTree,
 ) string {
-	if node.Type != "variable_declarator" {
+	if node.Type != nodeVariableDeclarator {
 		return ""
 	}
 
@@ -869,7 +877,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptVariableName(
 
 // isJavaScriptFunctionExpression checks if a variable declarator contains a function expression.
 func (s *SemanticTraverserAdapter) isJavaScriptFunctionExpression(node *valueobject.ParseNode) bool {
-	if node.Type != "variable_declarator" {
+	if node.Type != nodeVariableDeclarator {
 		return false
 	}
 
@@ -923,7 +931,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptImports(
 		var importedSymbols []string
 		var alias string
 		var isWildcard bool
-		aliases := make(map[string]string)
+		var aliases map[string]string
 
 		namespaceImport := match[1]
 		namedImports := match[2]
@@ -941,18 +949,19 @@ func (s *SemanticTraverserAdapter) extractJavaScriptImports(
 			"is_scoped_package": strings.HasPrefix(path, "@"),
 		}
 
-		if namespaceImport != "" {
+		switch {
+		case namespaceImport != "":
 			alias = namespaceImport
 			isWildcard = true
 			importedSymbols = append(importedSymbols, "*")
 			metadata["import_style"] = "namespace"
-		} else if namedImports != "" {
+		case namedImports != "":
 			symbols := parseNamedImports(namedImports)
 			importedSymbols = append(importedSymbols, symbols.Names...)
 			aliases = symbols.Aliases
 			metadata["aliases"] = aliases
 			metadata["import_style"] = "named"
-		} else if defaultImport != "" {
+		case defaultImport != "":
 			alias = defaultImport
 			importedSymbols = append(importedSymbols, defaultImport)
 			metadata["import_style"] = "default"
@@ -1048,12 +1057,13 @@ func (s *SemanticTraverserAdapter) extractJavaScriptImports(
 		var alias string
 		aliases := make(map[string]string)
 
-		if match[1] != "" {
+		switch {
+		case match[1] != "":
 			// import * as name from 'path'
 			importedSymbols = []string{"*"}
 			aliases["*"] = match[1]
 			importStyle = "namespace"
-		} else if match[2] != "" {
+		case match[2] != "":
 			// import { name1, name2 as alias } from 'path' (multi-line support)
 			namedImports := match[2]
 			// Clean up the named imports string - remove newlines and extra spaces
@@ -1072,7 +1082,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptImports(
 				}
 			}
 			importStyle = "named"
-		} else if match[3] != "" {
+		case match[3] != "":
 			// import name from 'path'
 			importedSymbols = []string{match[3]}
 			alias = match[3]
@@ -1275,7 +1285,7 @@ func (c *TreeSitterParseTreeConverter) convertTreeSitterTreeToDomain(
 // convertParseNode converts treesitter.ParseNode to valueobject.ParseNode.
 func (c *TreeSitterParseTreeConverter) convertParseNode(tsNode *ParseNode) (*valueobject.ParseNode, error) {
 	if tsNode == nil {
-		return nil, nil // Null nodes are allowed
+		return nil, errors.New("parse node is nil")
 	}
 
 	// Convert position structs
@@ -1373,4 +1383,56 @@ func (e *SemanticCodeChunkExtractor) Extract(
 	}
 
 	return allChunks, nil
+}
+
+// tryParserFactory attempts to use the parser factory and returns the result if successful.
+// This reduces nestif complexity by extracting the nested logic.
+func (s *SemanticTraverserAdapter) tryParserFactory(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	langParserExtractor func(LanguageParser) ([]outbound.SemanticCodeChunk, error),
+) ([]outbound.SemanticCodeChunk, error) {
+	if s.parserFactory == nil {
+		return nil, nil
+	}
+
+	slogger.Info(ctx, "Attempting to create parser from factory", slogger.Fields{
+		"language": parseTree.Language().Name(),
+	})
+
+	parser, err := s.parserFactory.CreateParser(ctx, parseTree.Language())
+	if err != nil {
+		slogger.Warn(ctx, "Failed to create parser from factory, falling back to legacy implementation", slogger.Fields{
+			"error": err.Error(),
+		})
+		return nil, err
+	}
+
+	slogger.Info(ctx, "Parser created successfully", slogger.Fields{
+		"parser_type": fmt.Sprintf("%T", parser),
+	})
+
+	// Cast to LanguageParser interface if possible
+	langParser, ok := parser.(LanguageParser)
+	if !ok {
+		slogger.Warn(
+			ctx,
+			"Parser does not implement LanguageParser interface, falling back to legacy implementation",
+			slogger.Fields{
+				"parser_type": fmt.Sprintf("%T", parser),
+			},
+		)
+		return nil, nil
+	}
+
+	slogger.Info(ctx, "Parser cast to LanguageParser successful, calling extractor", slogger.Fields{})
+	result, err := langParserExtractor(langParser)
+	if err != nil {
+		slogger.Warn(ctx, "LanguageParser extractor failed, falling back to legacy implementation", slogger.Fields{
+			"error": err.Error(),
+		})
+		return nil, err
+	}
+
+	return result, nil
 }

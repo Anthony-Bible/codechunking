@@ -251,7 +251,6 @@ func (p *GoParser) parseGoFunction(
 	hashStr := hex.EncodeToString(hash[:])
 
 	id := p.generateFunctionChunkID(name, packageName, hashStr)
-	startByte, endByte := p.adjustFunctionBytePositions(name, genericParameters, node)
 
 	return outbound.SemanticCodeChunk{
 		ChunkID:           id,
@@ -267,8 +266,8 @@ func (p *GoParser) parseGoFunction(
 		Documentation:     strings.Join(comments, "\n"),
 		ExtractedAt:       time.Now(),
 		Hash:              hashStr,
-		StartByte:         startByte,
-		EndByte:           endByte,
+		StartByte:         node.StartByte,
+		EndByte:           node.EndByte,
 	}, nil
 }
 
@@ -289,18 +288,53 @@ func (p *GoParser) parseGoFunctionSignature(
 	var returnType string
 	var genericParameters []outbound.GenericParameter
 
-	// Find parameter list and return type
+	// Use tree-sitter field access for more reliable parsing
+	nameNode := findChildByTypeInNode(node, "identifier")
+
+	// Track parameter_list nodes to distinguish parameters from result
+	var parameterLists []*valueobject.ParseNode
+
+	// Find parameters field and result field
 	for _, child := range node.Children {
 		switch child.Type {
 		case nodeTypeParameterList:
-			parameters = p.parseGoParameterList(child, parseTree)
+			parameterLists = append(parameterLists, child)
 		case nodeTypeTypeParameterList:
 			genericParameters = p.parseGoGenericParameterList(child, parseTree)
-		case nodeTypeTypeIdentifier, nodeTypePointerType, nodeTypeQualifiedType, nodeTypeTupleType, nodeTypeSliceType:
-			returnType = p.parseGoReturnType(child, parseTree)
+		case nodeTypeTypeIdentifier,
+			nodeTypePointerType,
+			nodeTypeQualifiedType,
+			nodeTypeTupleType,
+			nodeTypeSliceType,
+			nodeTypeChannelType:
+			// Single return type (not in parameter_list)
+			if nameNode != nil && child.StartByte > nameNode.StartByte {
+				returnType = p.parseGoReturnType(child, parseTree)
+			}
 		case "parenthesized_type":
 			// Handle parenthesized return types like (int, int, error)
-			returnType = parseTree.GetNodeText(child)
+			if nameNode != nil && child.StartByte > nameNode.StartByte {
+				returnType = parseTree.GetNodeText(child)
+			}
+		}
+	}
+
+	// Process parameter_list nodes based on position relative to function name
+	if nameNode != nil {
+	parameterLoop:
+		for _, paramList := range parameterLists {
+			switch {
+			case paramList.StartByte < nameNode.StartByte:
+				// This is a receiver (for methods), skip
+				continue
+			case len(parameters) == 0:
+				// First parameter_list after name = function parameters
+				parameters = p.parseGoParameterList(paramList, parseTree)
+			default:
+				// Second parameter_list after name = return types (result field)
+				returnType = p.parseGoReturnType(paramList, parseTree)
+				break parameterLoop
+			}
 		}
 	}
 
@@ -308,20 +342,8 @@ func (p *GoParser) parseGoFunctionSignature(
 }
 
 func (p *GoParser) generateFunctionChunkID(name, packageName, hashStr string) string {
-	// Use consistent ID generation for all functions
-	return utils.GenerateID(string(outbound.ConstructFunction), name, map[string]interface{}{
-		"package": packageName,
-		"hash":    hashStr,
-	})
-}
-
-func (p *GoParser) adjustFunctionBytePositions(
-	name string,
-	genericParameters []outbound.GenericParameter,
-	node *valueobject.ParseNode,
-) (uint32, uint32) {
-	// Use actual tree-sitter positions
-	return node.StartByte, node.EndByte
+	// Use consistent ChunkID format for all functions
+	return fmt.Sprintf("func:%s", name)
 }
 
 func (p *GoParser) parseGoMethod(
@@ -329,96 +351,143 @@ func (p *GoParser) parseGoMethod(
 	packageName string,
 	parseTree *valueobject.ParseTree,
 ) (outbound.SemanticCodeChunk, error) {
-	// Enhanced input validation with detailed error messages
+	if err := p.validateMethodNode(node, parseTree, &packageName); err != nil {
+		return outbound.SemanticCodeChunk{}, err
+	}
+
+	nameNode, name, err := p.extractMethodName(node, parseTree)
+	if err != nil {
+		return outbound.SemanticCodeChunk{}, err
+	}
+
+	receiverInfo := p.extractMethodReceiver(node, nameNode, parseTree)
+	qualifiedName := p.buildMethodQualifiedName(packageName, name, receiverInfo)
+	parameters, returnType, genericParameters := p.parseMethodComponents(node, nameNode, parseTree)
+
+	content, hash := p.extractMethodContent(node, parseTree)
+	id := p.generateMethodID(name, packageName, receiverInfo, hash)
+
+	return p.buildMethodChunk(
+		id, name, qualifiedName, p.getVisibility(name),
+		parameters, returnType, genericParameters,
+		content, node, parseTree, hash,
+	), nil
+}
+
+func (p *GoParser) validateMethodNode(
+	node *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+	packageName *string,
+) error {
 	if node == nil {
-		return outbound.SemanticCodeChunk{}, errors.New("parseGoMethod: parse node cannot be nil")
+		return errors.New("parseGoMethod: parse node cannot be nil")
 	}
 	if parseTree == nil {
-		return outbound.SemanticCodeChunk{}, errors.New("parseGoMethod: parse tree cannot be nil")
+		return errors.New("parseGoMethod: parse tree cannot be nil")
 	}
-	if packageName == "" {
-		packageName = defaultPackageName // Provide fallback for empty package name
+	if *packageName == "" {
+		*packageName = defaultPackageName
 	}
+	return nil
+}
 
-	// Find method name: Go grammar uses field_identifier for method names
-	var nameNode *valueobject.ParseNode
+func (p *GoParser) extractMethodName(
+	node *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) (*valueobject.ParseNode, string, error) {
 	for _, child := range node.Children {
 		if child.Type == nodeTypeFieldIdentifier || child.Type == nodeTypeIdentifier {
-			nameNode = child
-			break
+			name := parseTree.GetNodeText(child)
+			return child, name, nil
 		}
 	}
+	return nil, "", fmt.Errorf("parseGoMethod: method name node not found in node type '%s'", node.Type)
+}
 
-	if nameNode == nil {
-		return outbound.SemanticCodeChunk{}, fmt.Errorf(
-			"parseGoMethod: method name node not found in node type '%s'", node.Type,
-		)
-	}
-
-	name := parseTree.GetNodeText(nameNode)
-	visibility := p.getVisibility(name)
-
-	// Extract receiver info (first parameter_list before name)
-	receiverInfo := ""
+func (p *GoParser) extractMethodReceiver(
+	node *valueobject.ParseNode,
+	nameNode *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) string {
 	parameterNodes := findChildrenByType(node, nodeTypeParameterList)
 	if len(parameterNodes) > 0 && parameterNodes[0].StartByte < nameNode.StartByte {
-		receiverInfo = parseTree.GetNodeText(parameterNodes[0])
+		return parseTree.GetNodeText(parameterNodes[0])
 	}
+	return ""
+}
 
+func (p *GoParser) buildMethodQualifiedName(packageName, name, receiverInfo string) string {
 	qualifiedName := packageName + "." + name
 	if receiverInfo != "" {
-		// Extract receiver type name for qualified name (e.g., "(p *Person)" -> "Person")
-		receiverType := extractReceiverTypeName(receiverInfo)
-		if receiverType != "" {
+		if receiverType := extractReceiverTypeName(receiverInfo); receiverType != "" {
 			qualifiedName = receiverType + "." + name
 		}
 	}
+	return qualifiedName
+}
 
+func (p *GoParser) parseMethodComponents(
+	node *valueobject.ParseNode,
+	nameNode *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) ([]outbound.Parameter, string, []outbound.GenericParameter) {
 	var parameters []outbound.Parameter
 	var returnType string
 	var genericParameters []outbound.GenericParameter
 
-	// Process all parameter lists and type information
 	for _, child := range node.Children {
 		switch child.Type {
 		case nodeTypeParameterList:
-			// Skip receiver parameter list
-			if child.StartByte < nameNode.StartByte {
-				continue
+			if child.StartByte >= nameNode.StartByte {
+				parameters = p.parseGoParameterList(child, parseTree)
 			}
-			parameters = p.parseGoParameterList(child, parseTree)
 		case nodeTypeTypeParameterList:
 			genericParameters = p.parseGoGenericParameterList(child, parseTree)
 		case nodeTypeTypeIdentifier, nodeTypePointerType, nodeTypeQualifiedType, nodeTypeTupleType, nodeTypeSliceType:
 			returnType = p.parseGoReturnType(child, parseTree)
 		}
 	}
+	return parameters, returnType, genericParameters
+}
 
-	comments := p.extractPrecedingComments(node, parseTree)
+func (p *GoParser) extractMethodContent(
+	node *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) (string, string) {
 	content := parseTree.GetNodeText(node)
 	hash := sha256.Sum256([]byte(content))
-	hashStr := hex.EncodeToString(hash[:])
+	return content, hex.EncodeToString(hash[:])
+}
 
-	// Generate ChunkID to match test expectations: "method:ReceiverType:MethodName"
-	var id string
+func (p *GoParser) generateMethodID(name, packageName, receiverInfo, hashStr string) string {
 	if receiverInfo != "" {
-		receiverType := extractReceiverTypeName(receiverInfo)
-		if receiverType != "" {
-			id = fmt.Sprintf("method:%s:%s", receiverType, name)
-		} else {
-			id = utils.GenerateID(string(outbound.ConstructMethod), name, map[string]interface{}{
-				"package":  packageName,
-				"receiver": receiverInfo,
-				"hash":     hashStr,
-			})
+		if receiverType := extractReceiverTypeName(receiverInfo); receiverType != "" {
+			return fmt.Sprintf("method:%s:%s", receiverType, name)
 		}
-	} else {
-		id = utils.GenerateID(string(outbound.ConstructMethod), name, map[string]interface{}{
-			"package": packageName,
-			"hash":    hashStr,
+		return utils.GenerateID(string(outbound.ConstructMethod), name, map[string]interface{}{
+			"package":  packageName,
+			"receiver": receiverInfo,
+			"hash":     hashStr,
 		})
 	}
+	return utils.GenerateID(string(outbound.ConstructMethod), name, map[string]interface{}{
+		"package": packageName,
+		"hash":    hashStr,
+	})
+}
 
+func (p *GoParser) buildMethodChunk(
+	id, name, qualifiedName string,
+	visibility outbound.VisibilityModifier,
+	parameters []outbound.Parameter,
+	returnType string,
+	genericParameters []outbound.GenericParameter,
+	content string,
+	node *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+	hashStr string,
+) outbound.SemanticCodeChunk {
+	comments := p.extractPrecedingComments(node, parseTree)
 	return outbound.SemanticCodeChunk{
 		ChunkID:           id,
 		Name:              name,
@@ -435,7 +504,7 @@ func (p *GoParser) parseGoMethod(
 		Hash:              hashStr,
 		StartByte:         node.StartByte,
 		EndByte:           node.EndByte,
-	}, nil
+	}
 }
 
 func (p *GoParser) parseGoParameterList(
@@ -495,13 +564,15 @@ func (p *GoParser) parseGoParameterDeclaration(
 	// Get all identifiers in the parameter declaration
 	identifiers := findChildrenByType(node, "identifier")
 
-	// Get the type node
+	// Get the type node - enhanced to handle more complex types
 	var typeNode *valueobject.ParseNode
 	for _, child := range node.Children {
 		if child.Type == nodeTypeTypeIdentifier || child.Type == nodeTypePointerType ||
 			child.Type == nodeTypeQualifiedType || child.Type == nodeTypeArrayType ||
 			child.Type == nodeTypeSliceType || child.Type == nodeTypeInterfaceType ||
-			child.Type == nodeTypeChannelType {
+			child.Type == nodeTypeChannelType || child.Type == nodeTypeFunctionType ||
+			child.Type == nodeTypeGenericType || child.Type == "receive_type" ||
+			child.Type == "send_type" {
 			typeNode = child
 			break
 		}
@@ -515,6 +586,10 @@ func (p *GoParser) parseGoParameterDeclaration(
 
 	if typeNode != nil {
 		param.Type = parseTree.GetNodeText(typeNode)
+		// For variadic parameters, prefix the type with "..."
+		if node.Type == nodeTypeVariadicParameterDecl {
+			param.Type = "..." + param.Type
+		}
 	}
 
 	return param
@@ -528,13 +603,15 @@ func (p *GoParser) parseGoParameterDeclarations(
 	var parameters []outbound.Parameter
 	// Get all identifiers in the parameter declaration
 	identifiers := findChildrenByType(node, "identifier")
-	// Get the type node
+	// Get the type node - enhanced to handle more complex types
 	var typeNode *valueobject.ParseNode
 	for _, child := range node.Children {
 		if child.Type == nodeTypeTypeIdentifier || child.Type == nodeTypePointerType ||
 			child.Type == nodeTypeQualifiedType || child.Type == nodeTypeArrayType ||
 			child.Type == nodeTypeSliceType || child.Type == nodeTypeInterfaceType ||
-			child.Type == nodeTypeFunctionType || child.Type == nodeTypeChannelType {
+			child.Type == nodeTypeFunctionType || child.Type == nodeTypeChannelType ||
+			child.Type == nodeTypeGenericType || child.Type == "receive_type" ||
+			child.Type == "send_type" {
 			typeNode = child
 			break
 		}
@@ -594,18 +671,29 @@ func extractReceiverTypeName(receiverInfo string) string {
 
 func (p *GoParser) parseGoReturnType(node *valueobject.ParseNode, parseTree *valueobject.ParseTree) string {
 	switch node.Type {
-	case nodeTypeTypeIdentifier, nodeTypePointerType, nodeTypeQualifiedType, nodeTypeSliceType:
+	case nodeTypeTypeIdentifier, nodeTypePointerType, nodeTypeQualifiedType,
+		nodeTypeSliceType, nodeTypeChannelType, nodeTypeFunctionType,
+		nodeTypeInterfaceType, nodeTypeArrayType:
 		return parseTree.GetNodeText(node)
-	case nodeTypeTupleType:
-		// Handle multiple return values
+	case nodeTypeTupleType, "parenthesized_type":
+		// Handle multiple return values like (int, int, error)
+		return parseTree.GetNodeText(node)
+	case nodeTypeParameterList:
+		// Handle multiple return values in parameter_list format
 		var types []string
 		for _, child := range node.Children {
-			if child.Type == nodeTypeTypeIdentifier || child.Type == nodeTypePointerType ||
-				child.Type == nodeTypeQualifiedType || child.Type == nodeTypeSliceType {
-				types = append(types, parseTree.GetNodeText(child))
+			if child.Type == "parameter_declaration" {
+				if typeNode := p.getParameterType(child); typeNode != nil {
+					types = append(types, parseTree.GetNodeText(typeNode))
+				}
 			}
 		}
-		return strings.Join(types, ", ")
+		if len(types) > 1 {
+			return "(" + strings.Join(types, ", ") + ")"
+		} else if len(types) == 1 {
+			return types[0]
+		}
+		return ""
 	default:
 		return ""
 	}
@@ -617,24 +705,33 @@ func (p *GoParser) parseGoGenericParameter(
 ) outbound.GenericParameter {
 	var param outbound.GenericParameter
 
-	// Get the name (identifier)
-	nameNode := findChildByTypeInNode(node, "identifier")
-	if nameNode != nil {
-		param.Name = parseTree.GetNodeText(nameNode)
+	// Get the name (identifier) - can have multiple identifiers for same constraint
+	identifiers := findChildrenByType(node, "identifier")
+	if len(identifiers) > 0 {
+		// Use the first identifier as the parameter name
+		param.Name = parseTree.GetNodeText(identifiers[0])
 	}
 
-	// Get the type constraint if present
+	// Get the type constraint - look for various constraint node types
 	var constraints []string
 	for _, child := range node.Children {
-		if child.Type == "type_constraint" {
-			constraints = append(constraints, parseTree.GetNodeText(child))
+		switch child.Type {
+		case "type_constraint", nodeTypeTypeIdentifier, "interface_type", "union_type":
+			constraintText := parseTree.GetNodeText(child)
+			// Clean up constraint text (remove extra spaces/formatting)
+			constraintText = strings.TrimSpace(constraintText)
+			if constraintText != "" {
+				constraints = append(constraints, constraintText)
+			}
 		}
 	}
 
-	if len(constraints) > 0 {
-		param.Constraints = constraints
+	// Default to "any" if no constraints found (common case)
+	if len(constraints) == 0 {
+		constraints = []string{"any"}
 	}
 
+	param.Constraints = constraints
 	return param
 }
 

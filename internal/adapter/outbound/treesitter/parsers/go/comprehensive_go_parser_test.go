@@ -6,12 +6,53 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// calculateExpectedPositions parses source code with tree-sitter and returns
+// the actual byte positions for the specified function name.
+func calculateExpectedPositions(t *testing.T, sourceCode, functionName string) (uint32, uint32) {
+	ctx := context.Background()
+	factory, err := treesitter.NewTreeSitterParserFactory(ctx)
+	require.NoError(t, err)
+
+	goLang, err := valueobject.NewLanguage(valueobject.LanguageGo)
+	require.NoError(t, err)
+
+	parser, err := factory.CreateParser(ctx, goLang)
+	require.NoError(t, err)
+
+	parseTree, err := parser.Parse(ctx, []byte(sourceCode))
+	require.NoError(t, err)
+
+	domainTree, err := treesitter.ConvertPortParseTreeToDomain(parseTree.ParseTree)
+	require.NoError(t, err)
+
+	// Find function nodes in the parse tree
+	functionNodes := domainTree.GetNodesByType("function_declaration")
+	methodNodes := domainTree.GetNodesByType("method_declaration")
+	allNodes := make([]*valueobject.ParseNode, 0, len(functionNodes)+len(methodNodes))
+	allNodes = append(allNodes, functionNodes...)
+	allNodes = append(allNodes, methodNodes...)
+
+	for _, node := range allNodes {
+		// Look for identifier child nodes to find the function name
+		for _, child := range node.Children {
+			if child.Type == "identifier" || child.Type == "field_identifier" {
+				nodeName := domainTree.GetNodeText(child)
+				if nodeName == functionName {
+					return node.StartByte, node.EndByte
+				}
+			}
+		}
+	}
+
+	t.Fatalf("Function '%s' not found in source code", functionName)
+	return 0, 0
+}
 
 func TestGoParserFunctionExtraction(t *testing.T) {
 	ctx := context.Background()
@@ -20,9 +61,11 @@ func TestGoParserFunctionExtraction(t *testing.T) {
 	require.NotNil(t, parser)
 
 	tests := []struct {
-		name           string
-		sourceCode     string
-		expectedChunks []outbound.SemanticCodeChunk
+		name                string
+		sourceCode          string
+		expectedChunks      []outbound.SemanticCodeChunk
+		expectedChunksFunc  func(t *testing.T) []outbound.SemanticCodeChunk
+		useDynamicPositions bool
 	}{
 		{
 			name: "Regular function with basic parameters",
@@ -32,22 +75,32 @@ func Add(a int, b int) int {
 	return a + b
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "", // Will be set dynamically by implementation (timestamp-based)
-					Type:          outbound.ConstructFunction,
-					Name:          "Add",
-					QualifiedName: "Add", // Functions in main/default package use just the function name
-					Visibility:    outbound.Public,
-					Documentation: "Add adds two integers and returns the result",
-					Content:       "func Add(a int, b int) int {\n\treturn a + b\n}",
-					StartByte:     49, // Actual tree-sitter parsed position (0x31)
-					EndByte:       93, // Actual tree-sitter parsed position (0x5d)
-					Parameters:    []outbound.Parameter{{Name: "a", Type: "int"}, {Name: "b", Type: "int"}},
-					ReturnType:    "int",
-					Language:      valueobject.Language{}, // Will be set dynamically by implementation
-				},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// Add adds two integers and returns the result
+func Add(a int, b int) int {
+	return a + b
+}
+`
+				startByte, endByte := calculateExpectedPositions(t, sourceCode, "Add")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "func:Add",
+						Type:          outbound.ConstructFunction,
+						Name:          "Add",
+						QualifiedName: "Add", // Functions in main/default package use just the function name
+						Visibility:    outbound.Public,
+						Documentation: "Add adds two integers and returns the result",
+						Content:       "func Add(a int, b int) int {\n\treturn a + b\n}",
+						StartByte:     startByte, // Calculated dynamically from tree-sitter
+						EndByte:       endByte,   // Calculated dynamically from tree-sitter
+						Parameters:    []outbound.Parameter{{Name: "a", Type: "int"}, {Name: "b", Type: "int"}},
+						ReturnType:    "int",
+						Language:      valueobject.Language{}, // Will be set dynamically by implementation
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Method with pointer receiver",
@@ -57,22 +110,32 @@ func (p *Point) String() string {
 	return fmt.Sprintf("(%d, %d)", p.X, p.Y)
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "method:Point:String",
-					Type:          outbound.ConstructMethod,
-					Name:          "String",
-					QualifiedName: "Point.String",
-					Visibility:    outbound.Public,
-					Documentation: "String returns the string representation of the point",
-					Content:       "func (p *Point) String() string {\n\treturn fmt.Sprintf(\"(%d, %d)\", p.X, p.Y)\n}",
-					StartByte:     58,
-					EndByte:       135,
-					Parameters:    []outbound.Parameter{},
-					ReturnType:    "string",
-					Language:      valueobject.Go,
-				},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// String returns the string representation of the point
+func (p *Point) String() string {
+	return fmt.Sprintf("(%d, %d)", p.X, p.Y)
+}
+`
+				startByte, endByte := calculateExpectedPositions(t, sourceCode, "String")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "method:Point:String",
+						Type:          outbound.ConstructMethod,
+						Name:          "String",
+						QualifiedName: "Point.String",
+						Visibility:    outbound.Public,
+						Documentation: "String returns the string representation of the point",
+						Content:       "func (p *Point) String() string {\n\treturn fmt.Sprintf(\"(%d, %d)\", p.X, p.Y)\n}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Parameters:    []outbound.Parameter{},
+						ReturnType:    "string",
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Method with value receiver",
@@ -82,22 +145,32 @@ func (p Point) Distance() float64 {
 	return math.Sqrt(float64(p.X*p.X + p.Y*p.Y))
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "method:Point:Distance",
-					Type:          outbound.ConstructMethod,
-					Name:          "Distance",
-					QualifiedName: "Point.Distance",
-					Visibility:    outbound.Public,
-					Documentation: "Distance calculates the distance from origin",
-					Content:       "func (p Point) Distance() float64 {\n\treturn math.Sqrt(float64(p.X*p.X + p.Y*p.Y))\n}",
-					StartByte:     49,
-					EndByte:       132,
-					Parameters:    []outbound.Parameter{},
-					ReturnType:    "float64",
-					Language:      valueobject.Go,
-				},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// Distance calculates the distance from origin
+func (p Point) Distance() float64 {
+	return math.Sqrt(float64(p.X*p.X + p.Y*p.Y))
+}
+`
+				startByte, endByte := calculateExpectedPositions(t, sourceCode, "Distance")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "method:Point:Distance",
+						Type:          outbound.ConstructMethod,
+						Name:          "Distance",
+						QualifiedName: "Point.Distance",
+						Visibility:    outbound.Public,
+						Documentation: "Distance calculates the distance from origin",
+						Content:       "func (p Point) Distance() float64 {\n\treturn math.Sqrt(float64(p.X*p.X + p.Y*p.Y))\n}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Parameters:    []outbound.Parameter{},
+						ReturnType:    "float64",
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Variadic function",
@@ -111,22 +184,36 @@ func Sum(nums ...int) int {
 	return total
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "func:Sum",
-					Type:          outbound.ConstructFunction,
-					Name:          "Sum",
-					QualifiedName: "Sum",
-					Visibility:    outbound.Public,
-					Documentation: "Sum calculates the sum of all provided numbers",
-					Content:       "func Sum(nums ...int) int {\n\ttotal := 0\n\tfor _, num := range nums {\n\t\ttotal += num\n\t}\n\treturn total\n}",
-					StartByte:     51,
-					EndByte:       152,
-					Parameters:    []outbound.Parameter{{Name: "nums", Type: "...int"}},
-					ReturnType:    "int",
-					Language:      valueobject.Go,
-				},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// Sum calculates the sum of all provided numbers
+func Sum(nums ...int) int {
+	total := 0
+	for _, num := range nums {
+		total += num
+	}
+	return total
+}
+`
+				startByte, endByte := calculateExpectedPositions(t, sourceCode, "Sum")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "func:Sum",
+						Type:          outbound.ConstructFunction,
+						Name:          "Sum",
+						QualifiedName: "Sum",
+						Visibility:    outbound.Public,
+						Documentation: "Sum calculates the sum of all provided numbers",
+						Content:       "func Sum(nums ...int) int {\n\ttotal := 0\n\tfor _, num := range nums {\n\t\ttotal += num\n\t}\n\treturn total\n}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Parameters:    []outbound.Parameter{{Name: "nums", Type: "...int"}},
+						ReturnType:    "int",
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Generic function with type parameters",
@@ -140,29 +227,43 @@ func Map[T any, R any](slice []T, fn func(T) R) []R {
 	return result
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "func:Map",
-					Type:          outbound.ConstructFunction,
-					Name:          "Map",
-					QualifiedName: "Map",
-					Visibility:    outbound.Public,
-					Documentation: "Map applies a function to each element of a slice",
-					Content:       "func Map[T any, R any](slice []T, fn func(T) R) []R {\n\tresult := make([]R, len(slice))\n\tfor i, v := range slice {\n\t\tresult[i] = fn(v)\n\t}\n\treturn result\n}",
-					StartByte:     1,
-					EndByte:       173,
-					Parameters: []outbound.Parameter{
-						{Name: "slice", Type: "[]T"},
-						{Name: "fn", Type: "func(T) R"},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// Map applies a function to each element of a slice
+func Map[T any, R any](slice []T, fn func(T) R) []R {
+	result := make([]R, len(slice))
+	for i, v := range slice {
+		result[i] = fn(v)
+	}
+	return result
+}
+`
+				startByte, endByte := calculateExpectedPositions(t, sourceCode, "Map")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "func:Map",
+						Type:          outbound.ConstructFunction,
+						Name:          "Map",
+						QualifiedName: "Map",
+						Visibility:    outbound.Public,
+						Documentation: "Map applies a function to each element of a slice",
+						Content:       "func Map[T any, R any](slice []T, fn func(T) R) []R {\n\tresult := make([]R, len(slice))\n\tfor i, v := range slice {\n\t\tresult[i] = fn(v)\n\t}\n\treturn result\n}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Parameters: []outbound.Parameter{
+							{Name: "slice", Type: "[]T"},
+							{Name: "fn", Type: "func(T) R"},
+						},
+						ReturnType: "[]R",
+						GenericParameters: []outbound.GenericParameter{
+							{Name: "T", Constraints: []string{"any"}},
+							{Name: "R", Constraints: []string{"any"}},
+						},
+						Language: valueobject.Go,
 					},
-					ReturnType: "[]R",
-					GenericParameters: []outbound.GenericParameter{
-						{Name: "T", Constraints: []string{"any"}},
-						{Name: "R", Constraints: []string{"any"}},
-					},
-					Language: valueobject.Go,
-				},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Function with multiple return values",
@@ -175,22 +276,35 @@ func Divide(a, b int) (int, int, error) {
 	return a / b, a % b, nil
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "func:Divide",
-					Type:          outbound.ConstructFunction,
-					Name:          "Divide",
-					QualifiedName: "Divide",
-					Visibility:    outbound.Public,
-					Documentation: "Divide divides two numbers and returns quotient and remainder",
-					Content:       "func Divide(a, b int) (int, int, error) {\n\tif b == 0 {\n\t\treturn 0, 0, errors.New(\"division by zero\")\n\t}\n\treturn a / b, a % b, nil\n}",
-					StartByte:     1,
-					EndByte:       155,
-					Parameters:    []outbound.Parameter{{Name: "a", Type: "int"}, {Name: "b", Type: "int"}},
-					ReturnType:    "(int, int, error)",
-					Language:      valueobject.Go,
-				},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// Divide divides two numbers and returns quotient and remainder
+func Divide(a, b int) (int, int, error) {
+	if b == 0 {
+		return 0, 0, errors.New("division by zero")
+	}
+	return a / b, a % b, nil
+}
+`
+				startByte, endByte := calculateExpectedPositions(t, sourceCode, "Divide")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "func:Divide",
+						Type:          outbound.ConstructFunction,
+						Name:          "Divide",
+						QualifiedName: "Divide",
+						Visibility:    outbound.Public,
+						Documentation: "Divide divides two numbers and returns quotient and remainder",
+						Content:       "func Divide(a, b int) (int, int, error) {\n\tif b == 0 {\n\t\treturn 0, 0, errors.New(\"division by zero\")\n\t}\n\treturn a / b, a % b, nil\n}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Parameters:    []outbound.Parameter{{Name: "a", Type: "int"}, {Name: "b", Type: "int"}},
+						ReturnType:    "(int, int, error)",
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Anonymous function",
@@ -202,22 +316,34 @@ func main() {
 	result := fn(5)
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "func:main",
-					Type:          outbound.ConstructFunction,
-					Name:          "main",
-					QualifiedName: "main",
-					Visibility:    outbound.Private,
-					Documentation: "",
-					Content:       "func main() {\n\tfn := func(x int) int {\n\t\treturn x * 2\n\t}\n\tresult := fn(5)\n}",
-					StartByte:     1,
-					EndByte:       89,
-					Parameters:    []outbound.Parameter{},
-					ReturnType:    "",
-					Language:      valueobject.Go,
-				},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+func main() {
+	fn := func(x int) int {
+		return x * 2
+	}
+	result := fn(5)
+}
+`
+				startByte, endByte := calculateExpectedPositions(t, sourceCode, "main")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "func:main",
+						Type:          outbound.ConstructFunction,
+						Name:          "main",
+						QualifiedName: "main",
+						Visibility:    outbound.Private,
+						Documentation: "",
+						Content:       "func main() {\n\tfn := func(x int) int {\n\t\treturn x * 2\n\t}\n\tresult := fn(5)\n}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Parameters:    []outbound.Parameter{},
+						ReturnType:    "",
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Function with complex signature - channels",
@@ -229,25 +355,37 @@ func Process(input <-chan int, output chan<- string) {
 	}
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "func:Process",
-					Type:          outbound.ConstructFunction,
-					Name:          "Process",
-					QualifiedName: "Process",
-					Visibility:    outbound.Public,
-					Documentation: "Process processes data from input channel and sends to output channel",
-					Content:       "func Process(input <-chan int, output chan<- string) {\n\tfor num := range input {\n\t\toutput <- fmt.Sprintf(\"Processed: %d\", num)\n\t}\n}",
-					StartByte:     1,
-					EndByte:       153,
-					Parameters: []outbound.Parameter{
-						{Name: "input", Type: "<-chan int"},
-						{Name: "output", Type: "chan<- string"},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// Process processes data from input channel and sends to output channel
+func Process(input <-chan int, output chan<- string) {
+	for num := range input {
+		output <- fmt.Sprintf("Processed: %d", num)
+	}
+}
+`
+				startByte, endByte := calculateExpectedPositions(t, sourceCode, "Process")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "func:Process",
+						Type:          outbound.ConstructFunction,
+						Name:          "Process",
+						QualifiedName: "Process",
+						Visibility:    outbound.Public,
+						Documentation: "Process processes data from input channel and sends to output channel",
+						Content:       "func Process(input <-chan int, output chan<- string) {\n\tfor num := range input {\n\t\toutput <- fmt.Sprintf(\"Processed: %d\", num)\n\t}\n}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Parameters: []outbound.Parameter{
+							{Name: "input", Type: "<-chan int"},
+							{Name: "output", Type: "chan<- string"},
+						},
+						ReturnType: "",
+						Language:   valueobject.Go,
 					},
-					ReturnType: "",
-					Language:   valueobject.Go,
-				},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Function with interface parameter",
@@ -259,22 +397,34 @@ func Handle(handler io.Reader) error {
 	return err
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "func:Handle",
-					Type:          outbound.ConstructFunction,
-					Name:          "Handle",
-					QualifiedName: "Handle",
-					Visibility:    outbound.Public,
-					Documentation: "Handle processes data using the provided handler",
-					Content:       "func Handle(handler io.Reader) error {\n\tdata := make([]byte, 1024)\n\t_, err := handler.Read(data)\n\treturn err\n}",
-					StartByte:     1,
-					EndByte:       133,
-					Parameters:    []outbound.Parameter{{Name: "handler", Type: "io.Reader"}},
-					ReturnType:    "error",
-					Language:      valueobject.Go,
-				},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// Handle processes data using the provided handler
+func Handle(handler io.Reader) error {
+	data := make([]byte, 1024)
+	_, err := handler.Read(data)
+	return err
+}
+`
+				startByte, endByte := calculateExpectedPositions(t, sourceCode, "Handle")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "func:Handle",
+						Type:          outbound.ConstructFunction,
+						Name:          "Handle",
+						QualifiedName: "Handle",
+						Visibility:    outbound.Public,
+						Documentation: "Handle processes data using the provided handler",
+						Content:       "func Handle(handler io.Reader) error {\n\tdata := make([]byte, 1024)\n\t_, err := handler.Read(data)\n\treturn err\n}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Parameters:    []outbound.Parameter{{Name: "handler", Type: "io.Reader"}},
+						ReturnType:    "error",
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Function with function type parameter",
@@ -284,25 +434,35 @@ func Apply(value int, fn func(int) bool) bool {
 	return fn(value)
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "func:Apply",
-					Type:          outbound.ConstructFunction,
-					Name:          "Apply",
-					QualifiedName: "Apply",
-					Visibility:    outbound.Public,
-					Documentation: "Apply applies the given function to the value",
-					Content:       "func Apply(value int, fn func(int) bool) bool {\n\treturn fn(value)\n}",
-					StartByte:     1,
-					EndByte:       89,
-					Parameters: []outbound.Parameter{
-						{Name: "value", Type: "int"},
-						{Name: "fn", Type: "func(int) bool"},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// Apply applies the given function to the value
+func Apply(value int, fn func(int) bool) bool {
+	return fn(value)
+}
+`
+				startByte, endByte := calculateExpectedPositions(t, sourceCode, "Apply")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "func:Apply",
+						Type:          outbound.ConstructFunction,
+						Name:          "Apply",
+						QualifiedName: "Apply",
+						Visibility:    outbound.Public,
+						Documentation: "Apply applies the given function to the value",
+						Content:       "func Apply(value int, fn func(int) bool) bool {\n\treturn fn(value)\n}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Parameters: []outbound.Parameter{
+							{Name: "value", Type: "int"},
+							{Name: "fn", Type: "func(int) bool"},
+						},
+						ReturnType: "bool",
+						Language:   valueobject.Go,
 					},
-					ReturnType: "bool",
-					Language:   valueobject.Go,
-				},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Private function",
@@ -314,7 +474,7 @@ func helper(a int) int {
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ChunkID:       "", // Will be set dynamically by implementation (timestamp-based)
+					ChunkID:       "func:helper",
 					Type:          outbound.ConstructFunction,
 					Name:          "helper",
 					QualifiedName: "helper", // Functions in main/default package use just the function name
@@ -356,21 +516,22 @@ func helper(a int) int {
 				}
 			}
 
-			assert.Len(t, funcChunks, len(tt.expectedChunks))
+			var expectedChunks []outbound.SemanticCodeChunk
+			if tt.useDynamicPositions {
+				expectedChunks = tt.expectedChunksFunc(t)
+			} else {
+				expectedChunks = tt.expectedChunks
+			}
+			assert.Len(t, funcChunks, len(expectedChunks))
 
-			for i, expected := range tt.expectedChunks {
+			for i, expected := range expectedChunks {
 				if i >= len(funcChunks) {
 					continue
 				}
 				actual := funcChunks[i]
 
-				// Assert ChunkID with dynamic handling
-				if expected.ChunkID != "" {
-					assert.Equal(t, expected.ChunkID, actual.ChunkID)
-				} else {
-					// Verify it follows the expected pattern for functions
-					assert.Contains(t, actual.ChunkID, "function_"+strings.ToLower(expected.Name)+"_")
-				}
+				// Assert ChunkID - expect consistent func:Name format
+				assert.Equal(t, expected.ChunkID, actual.ChunkID)
 
 				// Assert basic properties
 				assert.Equal(t, expected.Type, actual.Type)

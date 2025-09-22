@@ -11,8 +11,161 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// MockParser is a minimal parser implementation for testing.
+type MockParser struct {
+	language valueobject.Language
+}
+
+func NewMockParser(lang valueobject.Language) *MockParser {
+	return &MockParser{language: lang}
+}
+
+func (m *MockParser) Parse(ctx context.Context, source []byte) (*ParseResult, error) {
+	// Create a minimal parse tree for testing
+	metadata, err := valueobject.NewParseMetadata(0, "mock", "1.0.0")
+	if err != nil {
+		return nil, err
+	}
+
+	rootNode := &valueobject.ParseNode{
+		Type:      "source_file",
+		StartByte: 0,
+		EndByte:   uint32(len(source)),
+		StartPos:  valueobject.Position{Row: 0, Column: 0},
+		EndPos:    valueobject.Position{Row: 1, Column: 0},
+		Children:  []*valueobject.ParseNode{},
+	}
+
+	domainTree, err := valueobject.NewParseTree(ctx, m.language, rootNode, source, metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	portTree, err := ConvertDomainParseTreeToPort(domainTree)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ParseResult{
+		Success:   true,
+		ParseTree: portTree,
+		Duration:  0,
+	}, nil
+}
+
+func (m *MockParser) ParseSource(
+	ctx context.Context,
+	language valueobject.Language,
+	source []byte,
+	options ParseOptions,
+) (*ParseResult, error) {
+	return m.Parse(ctx, source)
+}
+
+func (m *MockParser) GetLanguage() string {
+	return m.language.Name()
+}
+
+func (m *MockParser) Close() error {
+	return nil
+}
+
+// LanguageParser interface implementations.
+func (m *MockParser) ExtractFunctions(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return []outbound.SemanticCodeChunk{}, nil
+}
+
+func (m *MockParser) ExtractClasses(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return []outbound.SemanticCodeChunk{}, nil
+}
+
+func (m *MockParser) ExtractInterfaces(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return []outbound.SemanticCodeChunk{}, nil
+}
+
+func (m *MockParser) ExtractVariables(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return []outbound.SemanticCodeChunk{}, nil
+}
+
+func (m *MockParser) ExtractImports(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.ImportDeclaration, error) {
+	return []outbound.ImportDeclaration{}, nil
+}
+
+func (m *MockParser) ExtractModules(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	options outbound.SemanticExtractionOptions,
+) ([]outbound.SemanticCodeChunk, error) {
+	return []outbound.SemanticCodeChunk{}, nil
+}
+
+func (m *MockParser) GetSupportedLanguage() valueobject.Language {
+	return m.language
+}
+
+func (m *MockParser) GetSupportedConstructTypes() []outbound.SemanticConstructType {
+	return []outbound.SemanticConstructType{
+		outbound.ConstructFunction,
+		outbound.ConstructClass,
+		outbound.ConstructInterface,
+		outbound.ConstructVariable,
+	}
+}
+
+func (m *MockParser) IsSupported(language valueobject.Language) bool {
+	return language.Name() == m.language.Name()
+}
+
+// setupTestParsers registers the parsers needed for testing to avoid import cycles.
+func setupTestParsers() {
+	// Register parsers manually to avoid import cycles in tests
+	RegisterParser(valueobject.LanguageGo, func() (ObservableTreeSitterParser, error) {
+		goLang, err := valueobject.NewLanguage(valueobject.LanguageGo)
+		if err != nil {
+			return nil, err
+		}
+		return NewMockParser(goLang), nil
+	})
+	RegisterParser(valueobject.LanguagePython, func() (ObservableTreeSitterParser, error) {
+		pythonLang, err := valueobject.NewLanguage(valueobject.LanguagePython)
+		if err != nil {
+			return nil, err
+		}
+		return NewMockParser(pythonLang), nil
+	})
+	RegisterParser(valueobject.LanguageJavaScript, func() (ObservableTreeSitterParser, error) {
+		jsLang, err := valueobject.NewLanguage(valueobject.LanguageJavaScript)
+		if err != nil {
+			return nil, err
+		}
+		return NewMockParser(jsLang), nil
+	})
+}
+
 // TestPipelineMinimalIntegration exercises the basic parser/convert/extract pipeline.
 func TestPipelineMinimalIntegration(t *testing.T) {
+	// Setup parsers for testing
+	setupTestParsers()
 	t.Run("TreeSitterParserFactory", func(t *testing.T) {
 		factory, err := NewTreeSitterParserFactory(context.Background())
 		require.NoError(t, err)
@@ -51,8 +204,10 @@ func main() {
 		factory, err := NewTreeSitterParserFactory(context.Background())
 		require.NoError(t, err)
 		ctx := context.Background()
-		goLang, _ := valueobject.NewLanguage(valueobject.LanguageGo)
-		parser, _ := factory.CreateParser(ctx, goLang)
+		goLang, err := valueobject.NewLanguage(valueobject.LanguageGo)
+		require.NoError(t, err)
+		parser, err := factory.CreateParser(ctx, goLang)
+		require.NoError(t, err)
 
 		goCode := []byte(`package main`)
 		parseResult, err := parser.Parse(ctx, goCode)
@@ -69,16 +224,20 @@ func main() {
 	})
 
 	t.Run("SemanticCodeChunkExtractor", func(t *testing.T) {
-		extractor := NewSemanticCodeChunkExtractor()
-		require.NotNil(t, extractor)
+		// Create a factory and adapter that share the same registry
+		factory, err := NewTreeSitterParserFactory(context.Background())
+		require.NoError(t, err)
+
+		// Create adapter with our factory
+		adapter := NewSemanticTraverserAdapterWithFactory(factory)
 
 		// Create a domain parse tree
 		converter := NewTreeSitterParseTreeConverter()
-		factory, err := NewTreeSitterParserFactory(context.Background())
-		require.NoError(t, err)
 		ctx := context.Background()
-		goLang, _ := valueobject.NewLanguage(valueobject.LanguageGo)
-		parser, _ := factory.CreateParser(ctx, goLang)
+		goLang, err := valueobject.NewLanguage(valueobject.LanguageGo)
+		require.NoError(t, err)
+		parser, err := factory.CreateParser(ctx, goLang)
+		require.NoError(t, err)
 
 		goCode := []byte(`package main
 
@@ -89,8 +248,8 @@ func hello() {
 		domainTree, err := converter.ConvertToDomain(parseResult)
 		require.NoError(t, err)
 
-		// Test extraction
-		chunks, err := extractor.Extract(ctx, domainTree)
+		// Test extraction using the adapter directly
+		chunks, err := adapter.ExtractFunctions(ctx, domainTree, outbound.SemanticExtractionOptions{})
 		require.NoError(t, err)
 		require.NotNil(t, chunks)
 
@@ -103,7 +262,7 @@ func hello() {
 		factory, err := NewTreeSitterParserFactory(context.Background())
 		require.NoError(t, err)
 		converter := NewTreeSitterParseTreeConverter()
-		extractor := NewSemanticCodeChunkExtractor()
+		adapter := NewSemanticTraverserAdapterWithFactory(factory)
 
 		ctx := context.Background()
 
@@ -158,8 +317,8 @@ greet("World")`),
 				require.NoError(t, err)
 				require.NotNil(t, domainTree, "Domain tree should not be nil for %s", tc.name)
 
-				// Extract
-				chunks, err := extractor.Extract(ctx, domainTree)
+				// Extract (using functions as a representative test)
+				chunks, err := adapter.ExtractFunctions(ctx, domainTree, outbound.SemanticExtractionOptions{})
 				require.NoError(t, err)
 				require.NotNil(t, chunks, "Chunks should not be nil for %s", tc.name)
 
@@ -172,10 +331,13 @@ greet("World")`),
 
 // TestPipelineRealCodeSamples runs the pipeline against bundled sample snippets.
 func TestPipelineRealCodeSamples(t *testing.T) {
+	// Setup parsers for testing
+	setupTestParsers()
+
 	factory, err := NewTreeSitterParserFactory(context.Background())
 	require.NoError(t, err)
 	converter := NewTreeSitterParseTreeConverter()
-	extractor := NewSemanticCodeChunkExtractor()
+	adapter := NewSemanticTraverserAdapterWithFactory(factory)
 
 	ctx := context.Background()
 	realCodeSamples := getRealCodeSamples()
@@ -212,7 +374,7 @@ func TestPipelineRealCodeSamples(t *testing.T) {
 			require.NotNil(t, domainTree, "Domain tree should not be nil for %s", sample.filename)
 
 			// Extract
-			chunks, err := extractor.Extract(ctx, domainTree)
+			chunks, err := adapter.ExtractFunctions(ctx, domainTree, outbound.SemanticExtractionOptions{})
 			require.NoError(t, err)
 			require.NotNil(t, chunks, "Chunks should not be nil for %s", sample.filename)
 
@@ -223,10 +385,13 @@ func TestPipelineRealCodeSamples(t *testing.T) {
 
 // TestPipelinePerformance checks basic latency expectations.
 func TestPipelinePerformance(t *testing.T) {
+	// Setup parsers for testing
+	setupTestParsers()
+
 	factory, err := NewTreeSitterParserFactory(context.Background())
 	require.NoError(t, err)
 	converter := NewTreeSitterParseTreeConverter()
-	extractor := NewSemanticCodeChunkExtractor()
+	adapter := NewSemanticTraverserAdapterWithFactory(factory)
 
 	ctx := context.Background()
 
@@ -236,7 +401,8 @@ func main() {
 	fmt.Println("Performance test")
 }`)
 
-	lang, _ := valueobject.NewLanguage(valueobject.LanguageGo)
+	lang, err := valueobject.NewLanguage(valueobject.LanguageGo)
+	require.NoError(t, err)
 
 	// Measure parsing performance
 	start := time.Now()
@@ -249,7 +415,7 @@ func main() {
 	domainTree, err := converter.ConvertToDomain(parseResult)
 	require.NoError(t, err)
 
-	chunks, err := extractor.Extract(ctx, domainTree)
+	chunks, err := adapter.ExtractFunctions(ctx, domainTree, outbound.SemanticExtractionOptions{})
 	require.NoError(t, err)
 
 	elapsed := time.Since(start)

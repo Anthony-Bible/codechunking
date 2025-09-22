@@ -13,6 +13,11 @@ import (
 	"time"
 )
 
+// init registers the Python parser with the treesitter registry to avoid import cycles.
+func init() {
+	treesitter.RegisterParser(valueobject.LanguagePython, NewPythonParser)
+}
+
 // PythonParser implements LanguageParser for Python language parsing.
 type PythonParser struct {
 	supportedLanguage valueobject.Language

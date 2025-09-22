@@ -1,104 +1,80 @@
-package testfixtures
+package treesitter
 
 import (
-	"codechunking/internal/adapter/outbound/treesitter"
-	goparser "codechunking/internal/adapter/outbound/treesitter/parsers/go"
 	"codechunking/internal/domain/valueobject"
 	"context"
+	"time"
+
+	forest "github.com/alexaandru/go-sitter-forest"
+	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
 )
 
-// parseSourceCodeToParseTree uses the actual Go parser to create a real ParseTree from source code.
+// parseSourceCodeToParseTree uses tree-sitter directly to create a real ParseTree from source code.
 func parseSourceCodeToParseTree(sourceCode string) *valueobject.ParseTree {
-	parser, err := goparser.NewGoParser()
-	if err != nil {
-		panic("Failed to create Go parser: " + err.Error())
+	// Get Go grammar from forest
+	grammar := forest.GetLanguage("go")
+	if grammar == nil {
+		panic("Failed to get Go grammar from forest")
 	}
 
+	// Create tree-sitter parser
+	parser := tree_sitter.NewParser()
+	if parser == nil {
+		panic("Failed to create tree-sitter parser")
+	}
+
+	success := parser.SetLanguage(grammar)
+	if !success {
+		panic("Failed to set Go language")
+	}
+
+	// Parse the source code
+	tree, err := parser.ParseString(context.Background(), nil, []byte(sourceCode))
+	if err != nil {
+		panic("Failed to parse Go source: " + err.Error())
+	}
+	if tree == nil {
+		panic("Parse tree should not be nil")
+	}
+	defer tree.Close()
+
+	// Convert tree-sitter tree to domain ParseNode
+	rootTSNode := tree.RootNode()
+	rootNode, nodeCount, maxDepth := convertTreeSitterNode(rootTSNode, 0)
+
+	// Create language
 	language, err := valueobject.NewLanguage(valueobject.LanguageGo)
 	if err != nil {
 		panic("Failed to create language: " + err.Error())
 	}
 
-	result, err := parser.ParseSource(context.Background(), language, []byte(sourceCode), treesitter.ParseOptions{})
-	if err != nil {
-		panic("Failed to parse source code: " + err.Error())
-	}
-
-	if !result.Success {
-		panic("Parse was not successful")
-	}
-
-	// Convert port ParseTree back to domain ParseTree
-	domainTree, err := convertPortToDomainParseTree(result.ParseTree)
-	if err != nil {
-		panic("Failed to convert parse tree: " + err.Error())
-	}
-
-	return domainTree
-}
-
-// convertPortToDomainParseTree converts a port ParseTree to domain ParseTree.
-func convertPortToDomainParseTree(portTree *treesitter.ParseTree) (*valueobject.ParseTree, error) {
-	language, err := valueobject.NewLanguage(valueobject.LanguageGo)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert port ParseNode to domain ParseNode
-	domainRoot := convertPortToDomainParseNode(portTree.RootNode)
-
-	// Create metadata from result statistics
+	// Create metadata with parsing statistics
 	metadata, err := valueobject.NewParseMetadata(
-		0, // duration will be set from result
+		time.Millisecond, // placeholder duration
 		"go-tree-sitter-bare",
 		"1.0.0",
 	)
 	if err != nil {
-		return nil, err
+		panic("Failed to create metadata: " + err.Error())
 	}
 
-	// Create domain ParseTree
-	domainTree, err := valueobject.NewParseTree(
+	// Update metadata with actual counts
+	metadata.NodeCount = nodeCount
+	metadata.MaxDepth = maxDepth
+
+	// Create and return ParseTree
+	parseTree, err := valueobject.NewParseTree(
 		context.Background(),
 		language,
-		domainRoot,
-		[]byte(portTree.Source),
+		rootNode,
+		[]byte(sourceCode),
 		metadata,
 	)
 	if err != nil {
-		return nil, err
+		panic("Failed to create ParseTree: " + err.Error())
 	}
 
-	return domainTree, nil
-}
-
-// convertPortToDomainParseNode recursively converts port ParseNode to domain ParseNode.
-func convertPortToDomainParseNode(portNode *treesitter.ParseNode) *valueobject.ParseNode {
-	if portNode == nil {
-		return nil
-	}
-
-	domainNode := &valueobject.ParseNode{
-		Type:      portNode.Type,
-		StartByte: portNode.StartByte,
-		EndByte:   portNode.EndByte,
-		StartPos: valueobject.Position{
-			Row:    portNode.StartPoint.Row,
-			Column: portNode.StartPoint.Column,
-		},
-		EndPos: valueobject.Position{
-			Row:    portNode.EndPoint.Row,
-			Column: portNode.EndPoint.Column,
-		},
-		Children: make([]*valueobject.ParseNode, len(portNode.Children)),
-	}
-
-	// Convert children recursively
-	for i, child := range portNode.Children {
-		domainNode.Children[i] = convertPortToDomainParseNode(child)
-	}
-
-	return domainNode
+	return parseTree
 }
 
 // GoRegularFunctionsParseTree returns a ParseTree for basic Go function testing using real parsing.

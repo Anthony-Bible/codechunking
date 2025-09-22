@@ -696,6 +696,7 @@ func (p *StreamingCodeProcessor) updateMetrics(result *outbound.ProcessingResult
 // Mock implementations for testing.
 type MockStreamingFileReader struct {
 	content map[string][]byte
+	mutex   sync.RWMutex
 }
 
 func NewMockStreamingFileReader() *MockStreamingFileReader {
@@ -705,6 +706,9 @@ func NewMockStreamingFileReader() *MockStreamingFileReader {
 }
 
 func (m *MockStreamingFileReader) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
 	if content, ok := m.content[path]; ok {
 		buf := make([]byte, len(content))
 		copy(buf, content)
@@ -721,6 +725,8 @@ func (m *MockStreamingFileReader) Close() error {
 }
 
 func (m *MockStreamingFileReader) SetFileContent(path string, content []byte) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
 	m.content[path] = content
 }
 
@@ -766,7 +772,7 @@ type MockMemoryUsageTracker struct {
 
 func (m *MockMemoryUsageTracker) TrackUsage(ctx context.Context, usage int64) error {
 	m.mutex.Lock()
-	m.currentUsage += usage
+	m.currentUsage = usage
 	m.mutex.Unlock()
 	return nil
 }
@@ -775,6 +781,12 @@ func (m *MockMemoryUsageTracker) GetCurrentUsage() int64 {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 	return m.currentUsage
+}
+
+func (m *MockMemoryUsageTracker) Reset() {
+	m.mutex.Lock()
+	m.currentUsage = 0
+	m.mutex.Unlock()
 }
 
 type MockTreeSitterParser struct {

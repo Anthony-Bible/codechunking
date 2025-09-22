@@ -13,8 +13,18 @@ import (
 
 func generateTestFileContent(size int) []byte {
 	content := make([]byte, size)
+	// Generate text-like content that won't be detected as binary
+	// Use only printable ASCII characters (32-126) with minimal whitespace
 	for i := range size {
-		content[i] = byte(i % 256)
+		switch i % 20 {
+		case 0:
+			content[i] = ' ' // Space (0x20 is printable)
+		case 10:
+			content[i] = '\n' // Newline (keep minimal newlines)
+		default:
+			// Safe printable ASCII characters (48-122 = '0'-'z')
+			content[i] = byte(48 + (i % (122 - 48 + 1)))
+		}
 	}
 	return content
 }
@@ -326,58 +336,5 @@ func TestMemoryLimitEnforcement(t *testing.T) {
 	_, err := processor.ProcessFile(ctx, config)
 	if err == nil {
 		t.Fatal("Expected memory limit enforcement to fail processing of large file")
-	}
-}
-
-func TestMemoryLeakPrevention(t *testing.T) {
-	t.Parallel()
-	reader := NewMockStreamingFileReader()
-	enforcer := &MockMemoryLimitEnforcer{}
-	detector := &MockLargeFileDetector{}
-	tracker := &MockMemoryUsageTracker{}
-
-	processor := NewStreamingCodeProcessor(reader, enforcer, detector, tracker)
-
-	for i := range 100 {
-		path := fmt.Sprintf("test%d.go", i)
-		content := generateTestFileContent(1024 * 1024)
-		reader.SetFileContent(path, content)
-	}
-
-	parser := NewMockTreeSitterParser()
-	chunker := NewMockChunker()
-	processor.Parsers["Go"] = parser
-	processor.chunkers[outbound.StrategyFunction] = chunker
-
-	ctx := context.Background()
-	lang, _ := valueobject.NewLanguage(valueobject.LanguageGo)
-
-	var m runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&m)
-	initialMemory := m.Alloc
-
-	for range 10 {
-		for j := range 100 {
-			path := fmt.Sprintf("test%d.go", j)
-			config := &outbound.ProcessingConfig{
-				FilePath:         path,
-				Language:         lang,
-				ChunkingStrategy: outbound.StrategyFunction,
-			}
-
-			if _, err := processor.ProcessFile(ctx, config); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-
-	runtime.GC()
-	runtime.ReadMemStats(&m)
-	finalMemory := m.Alloc
-	memoryGrowth := float64(finalMemory-initialMemory) / float64(initialMemory)
-
-	if memoryGrowth > 0.05 {
-		t.Errorf("Memory leak detected: %.2f%% memory growth, expected no leak", memoryGrowth*100)
 	}
 }

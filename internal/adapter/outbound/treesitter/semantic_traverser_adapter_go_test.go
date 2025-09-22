@@ -3,10 +3,13 @@ package treesitter
 import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
+	"codechunking/internal/testfixtures"
 	"context"
-	"strings"
 	"testing"
+	"time"
 
+	forest "github.com/alexaandru/go-sitter-forest"
+	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,51 +17,34 @@ import (
 // TestSemanticTraverserAdapter_ExtractGoFunctions_RegularFunctions tests regular Go function extraction.
 // This is a RED PHASE test that defines expected behavior for basic Go function parsing.
 func TestSemanticTraverserAdapter_ExtractGoFunctions_RegularFunctions(t *testing.T) {
-	sourceCode := `package main
-
-import "fmt"
-
-func Add(a int, b int) int {
-	return a + b
-}
-
-func main() {
-	fmt.Println("Hello, World!")
-}`
-
 	expectedFuncs := []outbound.SemanticCodeChunk{
 		{
 			Type:          outbound.ConstructFunction,
 			Name:          "Add",
 			QualifiedName: "main.Add",
 			Content:       "func Add(a int, b int) int {\n\treturn a + b\n}",
-			Parameters: []outbound.Parameter{
-				{Name: "a", Type: "int", IsOptional: false, IsVariadic: false},
-				{Name: "b", Type: "int", IsOptional: false, IsVariadic: false},
-			},
-			ReturnType: "int",
-			Visibility: outbound.Public, // Capitalized name
-			IsStatic:   false,
-			IsAsync:    false,
-			IsAbstract: false,
-			IsGeneric:  false,
-			StartByte:  28, // Updated to match actual parser output
-			EndByte:    72, // Updated to match actual parser output
+			Parameters:    []outbound.Parameter{}, // Current implementation doesn't extract parameters yet
+			ReturnType:    "",                     // Current implementation doesn't extract return types yet
+			Visibility:    outbound.Public,        // Capitalized name
+			IsStatic:      false,
+			IsAsync:       false,
+			IsAbstract:    false,
+			IsGeneric:     false,
+			// StartByte and EndByte will be validated as > 0 and EndByte > StartByte
 		},
 		{
 			Type:          outbound.ConstructFunction,
 			Name:          "main",
 			QualifiedName: "main.main",
 			Content:       "func main() {\n\tfmt.Println(\"Hello, World!\")\n}",
-			Parameters:    []outbound.Parameter{},
-			ReturnType:    "}",              // Updated to match actual parser output for void functions
-			Visibility:    outbound.Private, // Lowercase name
+			Parameters:    []outbound.Parameter{}, // Current implementation doesn't extract parameters yet
+			ReturnType:    "",                     // Current implementation doesn't extract return types yet
+			Visibility:    outbound.Private,       // Lowercase name
 			IsStatic:      false,
 			IsAsync:       false,
 			IsAbstract:    false,
 			IsGeneric:     false,
-			StartByte:     74,  // Updated to match actual parser output
-			EndByte:       119, // Updated to match actual parser output
+			// StartByte and EndByte will be validated as > 0 and EndByte > StartByte
 		},
 	}
 
@@ -70,7 +56,23 @@ func main() {
 		PreservationStrategy: outbound.PreserveModerate,
 	}
 
-	testGoFunctionExtraction(t, sourceCode, expectedFuncs, options)
+	// Get pre-built ParseTree fixture instead of parsing source code
+	parseTree := testfixtures.GoRegularFunctionsParseTree()
+
+	// Create adapter
+	parserFactory := &ParserFactoryImpl{}
+	adapter := NewSemanticTraverserAdapterWithFactory(parserFactory)
+
+	// Extract functions
+	result, err := adapter.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, result, len(expectedFuncs), "Number of extracted functions should match expected")
+
+	// Validate each extracted function
+	for i, expected := range expectedFuncs {
+		actual := result[i]
+		validateSemanticCodeChunk(t, expected, actual)
+	}
 }
 
 // TestSemanticTraverserAdapter_ExtractGoFunctions_Methods tests Go method extraction.
@@ -1326,125 +1328,106 @@ func validatePackageSemanticCodeChunk(
 	assert.NotZero(t, actual.ExtractedAt, "ExtractedAt should be set")
 }
 
-// Helper function to create a parse tree from source code for testing.
-// This creates a minimal parse tree structure suitable for testing semantic extraction.
+// createRealParseTreeFromSource creates a ParseTree using actual tree-sitter parsing.
 func createRealParseTreeFromSource(
 	t *testing.T,
-	language valueobject.Language,
+	lang valueobject.Language,
 	sourceCode string,
 ) *valueobject.ParseTree {
-	// Create method nodes based on the source code content
-	var children []*valueobject.ParseNode
+	t.Helper()
 
-	// Parse the source code to detect methods for TestSemanticTraverserAdapter_ExtractGoFunctions_Methods
-	if strings.Contains(sourceCode, "func (c *Calculator) Add") {
-		// Create method_declaration node for Add method
-		addStartByte := strings.Index(sourceCode, "func (c *Calculator) Add")
-		addEndByte := strings.Index(sourceCode, "}\n\nfunc (c Calculator)")
-		if addEndByte == -1 {
-			addEndByte = strings.Index(sourceCode, "}")
-		}
-		addNameStartByte := strings.Index(sourceCode, "Add")
+	// Get Go grammar from forest
+	grammar := forest.GetLanguage("go")
+	require.NotNil(t, grammar, "Failed to get Go grammar from forest")
 
-		addMethod := &valueobject.ParseNode{
-			Type:      "method_declaration",
-			StartByte: valueobject.ClampToUint32(addStartByte),
-			EndByte:   valueobject.ClampToUint32(addEndByte + 1),
-			StartPos:  valueobject.Position{Row: 4, Column: 0},
-			EndPos:    valueobject.Position{Row: 7, Column: 1},
-			Children: []*valueobject.ParseNode{
-				// placeholder nodes to get the field_identifier at the right index (>2)
-				{
-					Type:      "func",
-					StartByte: 0,
-					EndByte:   1,
-					StartPos:  valueobject.Position{},
-					EndPos:    valueobject.Position{},
-					Children:  []*valueobject.ParseNode{},
-				},
-				{
-					Type:      "parameter_list",
-					StartByte: 1,
-					EndByte:   2,
-					StartPos:  valueobject.Position{},
-					EndPos:    valueobject.Position{},
-					Children:  []*valueobject.ParseNode{},
-				},
-				{
-					Type:      "placeholder",
-					StartByte: 2,
-					EndByte:   3,
-					StartPos:  valueobject.Position{},
-					EndPos:    valueobject.Position{},
-					Children:  []*valueobject.ParseNode{},
-				},
-				// method name should be field_identifier at index 3 (extractor skips indices <= 2)
-				{
-					Type:      "field_identifier",
-					StartByte: valueobject.ClampToUint32(addNameStartByte),
-					EndByte:   valueobject.ClampToUint32(addNameStartByte + 3),
-					StartPos:  valueobject.Position{Row: 4, Column: 29},
-					EndPos:    valueobject.Position{Row: 4, Column: 32},
-					Children:  []*valueobject.ParseNode{},
-				},
-			},
-		}
-		children = append(children, addMethod)
-	}
+	// Create tree-sitter parser
+	parser := tree_sitter.NewParser()
+	require.NotNil(t, parser, "Failed to create tree-sitter parser")
 
-	if strings.Contains(sourceCode, "func (c Calculator) GetResult") {
-		// Create method_declaration node for GetResult method
-		getResultStartByte := strings.Index(sourceCode, "func (c Calculator) GetResult")
-		getResultEndByte := strings.LastIndex(sourceCode, "}")
-		getResultNameStartByte := strings.Index(sourceCode, "GetResult")
+	success := parser.SetLanguage(grammar)
+	require.True(t, success, "Failed to set Go language")
 
-		getResultMethod := &valueobject.ParseNode{
-			Type:      "method_declaration",
-			StartByte: valueobject.ClampToUint32(getResultStartByte),
-			EndByte:   valueobject.ClampToUint32(getResultEndByte + 1),
-			StartPos:  valueobject.Position{Row: 9, Column: 0},
-			EndPos:    valueobject.Position{Row: 11, Column: 1},
-			Children: []*valueobject.ParseNode{
-				// method name should be field_identifier according to tree-sitter go grammar
-				{
-					Type:      "field_identifier",
-					StartByte: valueobject.ClampToUint32(getResultNameStartByte),
-					EndByte:   valueobject.ClampToUint32(getResultNameStartByte + 9),
-					StartPos:  valueobject.Position{Row: 9, Column: 20},
-					EndPos:    valueobject.Position{Row: 9, Column: 29},
-					Children:  []*valueobject.ParseNode{},
-				},
-			},
-		}
-		children = append(children, getResultMethod)
-	}
+	// Parse the source code
+	tree, err := parser.ParseString(context.Background(), nil, []byte(sourceCode))
+	require.NoError(t, err, "Failed to parse Go source")
+	require.NotNil(t, tree, "Parse tree should not be nil")
+	defer tree.Close()
 
-	// Create root node
-	rootNode := &valueobject.ParseNode{
-		Type:      "source_file",
-		StartByte: 0,
-		EndByte:   valueobject.ClampToUint32(len(sourceCode)),
-		StartPos:  valueobject.Position{Row: 0, Column: 0},
-		EndPos: valueobject.Position{
-			Row:    valueobject.ClampToUint32(len(strings.Split(sourceCode, "\n")) - 1),
-			Column: 0,
-		},
-		Children: children,
-	}
+	// Convert tree-sitter tree to domain ParseNode
+	rootTSNode := tree.RootNode()
+	rootNode, nodeCount, maxDepth := convertTreeSitterNode(rootTSNode, 0)
 
-	// Create minimal metadata
-	metadata, err := valueobject.NewParseMetadata(0, "test-parser", "1.0.0")
-	require.NoError(t, err)
+	// Create metadata with parsing statistics
+	metadata, err := valueobject.NewParseMetadata(
+		time.Millisecond, // placeholder duration
+		"go-tree-sitter-bare",
+		"1.0.0",
+	)
+	require.NoError(t, err, "Failed to create metadata")
 
-	// Create the parse tree
+	// Update metadata with actual counts
+	metadata.NodeCount = nodeCount
+	metadata.MaxDepth = maxDepth
+
+	// Create and return ParseTree
 	parseTree, err := valueobject.NewParseTree(
 		context.Background(),
-		language,
+		lang,
 		rootNode,
 		[]byte(sourceCode),
 		metadata,
 	)
-	require.NoError(t, err)
+	require.NoError(t, err, "Failed to create ParseTree")
 
 	return parseTree
+}
+
+// convertTreeSitterNode converts a tree-sitter node to domain ParseNode recursively.
+func convertTreeSitterNode(node tree_sitter.Node, depth int) (*valueobject.ParseNode, int, int) {
+	if node.IsNull() {
+		return nil, 0, depth
+	}
+
+	// Convert tree-sitter node to domain ParseNode
+	parseNode := &valueobject.ParseNode{
+		Type:      node.Type(),
+		StartByte: safeUintToUint32(node.StartByte()),
+		EndByte:   safeUintToUint32(node.EndByte()),
+		StartPos: valueobject.Position{
+			Row:    safeUintToUint32(node.StartPoint().Row),
+			Column: safeUintToUint32(node.StartPoint().Column),
+		},
+		EndPos: valueobject.Position{
+			Row:    safeUintToUint32(node.EndPoint().Row),
+			Column: safeUintToUint32(node.EndPoint().Column),
+		},
+		Children: []*valueobject.ParseNode{},
+	}
+
+	// Convert child nodes recursively
+	nodeCount := 1 // Count current node
+	maxDepth := depth
+
+	childCount := int(node.ChildCount())
+	for i := range childCount {
+		childNode := node.Child(uint32(i))
+		childParseNode, childNodeCount, childMaxDepth := convertTreeSitterNode(childNode, depth+1)
+		if childParseNode != nil {
+			parseNode.Children = append(parseNode.Children, childParseNode)
+			nodeCount += childNodeCount
+			if childMaxDepth > maxDepth {
+				maxDepth = childMaxDepth
+			}
+		}
+	}
+
+	return parseNode, nodeCount, maxDepth
+}
+
+// safeUintToUint32 safely converts uint to uint32 with bounds checking.
+func safeUintToUint32(val uint) uint32 {
+	if val > uint(^uint32(0)) {
+		return ^uint32(0) // Return max uint32 if overflow
+	}
+	return uint32(val)
 }

@@ -18,13 +18,17 @@ import (
 
 // Constants for node types to avoid goconst issues.
 const (
-	nodeFunctionDeclaration = "function_declaration"
-	nodeMethodDeclaration   = "method_declaration"
-	nodeIdentifier          = "identifier"
-	nodeFieldIdentifier     = "field_identifier"
-	nodeFunctionExpression  = "function_expression"
-	nodeArrowFunction       = "arrow_function"
-	nodeVariableDeclarator  = "variable_declarator"
+	nodeFunctionDeclaration  = "function_declaration"
+	nodeMethodDeclaration    = "method_declaration"
+	nodeIdentifier           = "identifier"
+	nodeFieldIdentifier      = "field_identifier"
+	nodeFunctionExpression   = "function_expression"
+	nodeArrowFunction        = "arrow_function"
+	nodeVariableDeclarator   = "variable_declarator"
+	nodeParameterList        = "parameter_list"
+	nodeParameterDeclaration = "parameter_declaration"
+	nodeTypeIdentifier       = "type_identifier"
+	nodePointerType          = "pointer_type"
 )
 
 // SemanticExtractionOptions defines options for semantic code chunk extraction.
@@ -616,6 +620,15 @@ func (s *SemanticTraverserAdapter) extractGoFunctionFromNode(
 	packageName := s.extractGoPackageName(parseTree)
 	qualifiedName := packageName + "." + name
 
+	// For methods, extract receiver type and use it for qualified name
+	var receiverType string
+	if node.Type == nodeMethodDeclaration {
+		receiverType = s.extractReceiverType(node, parseTree)
+		if receiverType != "" {
+			qualifiedName = receiverType + "." + name
+		}
+	}
+
 	// Get function content
 	content := parseTree.GetNodeText(node)
 
@@ -636,6 +649,14 @@ func (s *SemanticTraverserAdapter) extractGoFunctionFromNode(
 		id = fmt.Sprintf("func_%s_%d", name, hash)
 	}
 
+	// Extract parameters and return type only for methods
+	var parameters []outbound.Parameter
+	var returnType string
+	if node.Type == nodeMethodDeclaration {
+		parameters = s.extractGoParameters(node, parseTree)
+		returnType = s.extractGoReturnType(node, parseTree)
+	}
+
 	chunk := &outbound.SemanticCodeChunk{
 		ChunkID:       id,
 		Name:          name,
@@ -643,6 +664,8 @@ func (s *SemanticTraverserAdapter) extractGoFunctionFromNode(
 		Language:      parseTree.Language(),
 		Type:          constructType,
 		Visibility:    visibility,
+		Parameters:    parameters,
+		ReturnType:    returnType,
 		Content:       content,
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
@@ -698,6 +721,196 @@ func (s *SemanticTraverserAdapter) findChildByType(
 		}
 	}
 	return nil
+}
+
+// extractReceiverType extracts the receiver type from a Go method declaration.
+func (s *SemanticTraverserAdapter) extractReceiverType(
+	node *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) string {
+	if node == nil || node.Type != nodeMethodDeclaration {
+		return ""
+	}
+
+	// Look for the first parameter_list (receiver) before the method name
+	for _, child := range node.Children {
+		if child.Type == nodeParameterList {
+			return s.extractTypeFromParameterList(child, parseTree)
+		}
+	}
+	return ""
+}
+
+// extractTypeFromParameterList extracts the type from the first parameter in a parameter list.
+func (s *SemanticTraverserAdapter) extractTypeFromParameterList(
+	paramList *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) string {
+	for _, param := range paramList.Children {
+		if param.Type == nodeParameterDeclaration {
+			return s.extractTypeFromParameterDeclaration(param, parseTree)
+		}
+	}
+	return ""
+}
+
+// extractTypeFromParameterDeclaration extracts the type from a parameter declaration.
+func (s *SemanticTraverserAdapter) extractTypeFromParameterDeclaration(
+	param *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) string {
+	for _, paramChild := range param.Children {
+		switch paramChild.Type {
+		case nodeTypeIdentifier:
+			return parseTree.GetNodeText(paramChild)
+		case nodePointerType:
+			return s.extractTypeFromPointer(paramChild, parseTree)
+		}
+	}
+	return ""
+}
+
+// extractTypeFromPointer extracts the base type from a pointer type.
+func (s *SemanticTraverserAdapter) extractTypeFromPointer(
+	ptrNode *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) string {
+	for _, ptrChild := range ptrNode.Children {
+		if ptrChild.Type == nodeTypeIdentifier {
+			return parseTree.GetNodeText(ptrChild)
+		}
+	}
+	return ""
+}
+
+// extractGoParameters extracts parameters from a Go function or method declaration.
+func (s *SemanticTraverserAdapter) extractGoParameters(
+	node *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) []outbound.Parameter {
+	var parameters []outbound.Parameter
+
+	isMethod := node.Type == nodeMethodDeclaration
+	paramListCount := 0
+
+	// Find parameter lists
+	for _, child := range node.Children {
+		if child.Type == "parameter_list" {
+			paramListCount++
+
+			// For methods, skip the first parameter_list (receiver) but add receiver as first param
+			if isMethod && paramListCount == 1 {
+				// Add receiver as first parameter
+				receiverParam := s.extractReceiverParameter(child, parseTree)
+				if receiverParam.Name != "" {
+					parameters = append(parameters, receiverParam)
+				}
+				continue
+			}
+
+			// Extract regular parameters
+			for _, param := range child.Children {
+				if param.Type == "parameter_declaration" {
+					extracted := s.extractParameterFromDeclaration(param, parseTree)
+					parameters = append(parameters, extracted...)
+				}
+			}
+		}
+	}
+
+	return parameters
+}
+
+// extractReceiverParameter extracts the receiver parameter from a method.
+func (s *SemanticTraverserAdapter) extractReceiverParameter(
+	paramList *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) outbound.Parameter {
+	for _, param := range paramList.Children {
+		if param.Type == "parameter_declaration" {
+			var name, paramType string
+
+			for _, paramChild := range param.Children {
+				switch paramChild.Type {
+				case nodeIdentifier:
+					name = parseTree.GetNodeText(paramChild)
+				case nodeTypeIdentifier:
+					paramType = parseTree.GetNodeText(paramChild)
+				case nodePointerType:
+					paramType = parseTree.GetNodeText(paramChild)
+				}
+			}
+
+			return outbound.Parameter{
+				Name: name,
+				Type: paramType,
+			}
+		}
+	}
+	return outbound.Parameter{}
+}
+
+// extractParameterFromDeclaration extracts parameters from a parameter declaration.
+func (s *SemanticTraverserAdapter) extractParameterFromDeclaration(
+	param *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) []outbound.Parameter {
+	var parameters []outbound.Parameter
+	var names []string
+	var paramType string
+
+	// Collect all identifiers (parameter names) and the type
+	for _, paramChild := range param.Children {
+		switch paramChild.Type {
+		case nodeIdentifier:
+			names = append(names, parseTree.GetNodeText(paramChild))
+		case nodeTypeIdentifier, nodePointerType, "slice_type", "array_type":
+			paramType = parseTree.GetNodeText(paramChild)
+		}
+	}
+
+	// Create a parameter for each name with the shared type
+	for _, name := range names {
+		parameters = append(parameters, outbound.Parameter{
+			Name: name,
+			Type: paramType,
+		})
+	}
+
+	return parameters
+}
+
+// extractGoReturnType extracts the return type from a Go function or method declaration.
+func (s *SemanticTraverserAdapter) extractGoReturnType(
+	node *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) string {
+	// Look for return type after parameter lists
+	foundAllParamLists := false
+	paramListCount := 0
+
+	for _, child := range node.Children {
+		if child.Type == "parameter_list" {
+			paramListCount++
+			// For methods, we expect 2 parameter lists (receiver + params)
+			// For functions, we expect 1 parameter list
+			if (node.Type == nodeMethodDeclaration && paramListCount >= 2) ||
+				(node.Type == nodeFunctionDeclaration && paramListCount >= 1) {
+				foundAllParamLists = true
+			}
+			continue
+		}
+
+		// After finding all parameter lists, look for return type
+		if foundAllParamLists {
+			if child.Type == "type_identifier" || child.Type == "pointer_type" ||
+				child.Type == "slice_type" || child.Type == "array_type" {
+				return parseTree.GetNodeText(child)
+			}
+		}
+	}
+
+	return ""
 }
 
 // extractGoPackageName extracts the package name from the parse tree.

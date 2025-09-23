@@ -36,6 +36,7 @@ type ParseNode struct {
 	StartPos  Position
 	EndPos    Position
 	Children  []*ParseNode
+	tsNode    *tree_sitter.Node // Reference to actual tree-sitter node
 }
 
 // Position represents a position in source code.
@@ -283,6 +284,12 @@ func (pt *ParseTree) GetNodeText(node *ParseNode) string {
 		return ""
 	}
 
+	// Use Content() method if tree-sitter node is available
+	if tsNode := node.TreeSitterNode(); tsNode != nil && !tsNode.IsNull() {
+		return tsNode.Content(pt.source)
+	}
+
+	// Fallback to byte slicing
 	if int64(node.EndByte) > int64(len(pt.source)) {
 		return ""
 	}
@@ -643,6 +650,38 @@ func (pt *ParseTree) Cleanup(ctx context.Context) error {
 	})
 
 	return nil
+}
+
+// NewParseNodeWithTreeSitter creates a new ParseNode with tree-sitter node reference.
+func NewParseNodeWithTreeSitter(
+	nodeType string,
+	startByte, endByte uint32,
+	startPos, endPos Position,
+	children []*ParseNode,
+	tsNode tree_sitter.Node,
+) (*ParseNode, error) {
+	return &ParseNode{
+		Type:      nodeType,
+		StartByte: startByte,
+		EndByte:   endByte,
+		StartPos:  startPos,
+		EndPos:    endPos,
+		Children:  children,
+		tsNode:    &tsNode,
+	}, nil
+}
+
+// HasTreeSitterNode returns true if this ParseNode has a tree-sitter node reference.
+func (pn *ParseNode) HasTreeSitterNode() bool {
+	return pn != nil && pn.tsNode != nil
+}
+
+// TreeSitterNode returns the tree-sitter node reference if available.
+func (pn *ParseNode) TreeSitterNode() *tree_sitter.Node {
+	if pn == nil || pn.tsNode == nil {
+		return nil
+	}
+	return pn.tsNode
 }
 
 // IsErrorNode checks if a node represents an error.

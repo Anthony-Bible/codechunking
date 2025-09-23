@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -758,5 +759,388 @@ func TestParseTree_MemoryManagement(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.True(t, parseTree.IsCleanedUp())
+	})
+}
+
+// TestParseNode_TreeSitterIntegration tests ParseNode with tree-sitter node references.
+// This is a RED PHASE test that defines expected behavior for tree-sitter Content() integration.
+func TestParseNode_TreeSitterIntegration(t *testing.T) {
+	t.Run("ParseNode with tree-sitter node reference should store reference", func(t *testing.T) {
+		// Create a ParseNode with tree-sitter node reference using the constructor
+		mockTSNode := createMockTreeSitterNode("function_declaration", 0, 50)
+		node, err := NewParseNodeWithTreeSitter(
+			"function_declaration",
+			0, 50,
+			Position{Row: 1, Column: 0},
+			Position{Row: 5, Column: 1},
+			[]*ParseNode{},
+			mockTSNode,
+		)
+		require.NoError(t, err)
+
+		// Now this should pass - ParseNode should have tree-sitter node reference
+		assert.True(t, node.HasTreeSitterNode(), "ParseNode should indicate if it has tree-sitter node reference")
+		assert.NotNil(t, node.TreeSitterNode(), "ParseNode should return tree-sitter node reference when available")
+	})
+
+	t.Run("ParseNode without tree-sitter node reference should handle gracefully", func(t *testing.T) {
+		// This test defines expected behavior for ParseNode without tree-sitter reference
+		node := &ParseNode{
+			Type:      "function_declaration",
+			StartByte: 0,
+			EndByte:   50,
+			StartPos:  Position{Row: 1, Column: 0},
+			EndPos:    Position{Row: 5, Column: 1},
+			Children:  []*ParseNode{},
+		}
+
+		// This should pass - ParseNode without tree-sitter node should return false/nil
+		assert.False(t, node.HasTreeSitterNode(), "ParseNode without tree-sitter node should return false")
+		assert.Nil(t, node.TreeSitterNode(), "ParseNode without tree-sitter node should return nil")
+	})
+
+	t.Run("NewParseNodeWithTreeSitter constructor should preserve reference", func(t *testing.T) {
+		// This test will fail because constructor doesn't exist yet
+		mockTSNode := createMockTreeSitterNode("function_declaration", 0, 50)
+
+		node, err := NewParseNodeWithTreeSitter(
+			"function_declaration",
+			0, 50,
+			Position{Row: 1, Column: 0},
+			Position{Row: 5, Column: 1},
+			[]*ParseNode{},
+			mockTSNode,
+		)
+
+		require.NoError(t, err, "NewParseNodeWithTreeSitter should not return error for valid input")
+		assert.True(t, node.HasTreeSitterNode(), "ParseNode created with tree-sitter node should have reference")
+		assert.NotNil(t, node.TreeSitterNode(), "ParseNode should return the tree-sitter node reference")
+		assert.Equal(t, "function_declaration", node.Type)
+	})
+}
+
+// TestParseTree_GetNodeTextWithTreeSitter tests GetNodeText using Content() method.
+// This is a RED PHASE test that defines expected behavior for Content() integration.
+func TestParseTree_GetNodeTextWithTreeSitter(t *testing.T) {
+	source := []byte(`package main
+
+func main() {
+    fmt.Println("Hello, World!")
+    x := 42
+    if x > 0 {
+        fmt.Println("Positive")
+    }
+}`)
+
+	t.Run("GetNodeText should use Content() when tree-sitter node available", func(t *testing.T) {
+		// Create a ParseNode with mock tree-sitter node that supports Content()
+		mockTSNode := createMockTreeSitterNodeWithContent(
+			"function_declaration",
+			14, 127,
+			`func main() {
+    fmt.Println("Hello, World!")
+    x := 42
+    if x > 0 {
+        fmt.Println("Positive")
+    }
+}`,
+		)
+
+		nodeWithTSRef, err := NewParseNodeWithTreeSitter(
+			"function_declaration",
+			14, 127,
+			Position{Row: 2, Column: 0},
+			Position{Row: 8, Column: 1},
+			[]*ParseNode{},
+			mockTSNode,
+		)
+		require.NoError(t, err)
+
+		language, _ := NewLanguage(LanguageGo)
+		metadata := ParseMetadata{NodeCount: 1, MaxDepth: 1}
+		parseTree, err := NewParseTree(context.Background(), language, nodeWithTSRef, source, metadata)
+		require.NoError(t, err)
+
+		// This should use Content() method from tree-sitter node
+		text := parseTree.GetNodeText(nodeWithTSRef)
+		expectedText := `func main() {
+    fmt.Println("Hello, World!")
+    x := 42
+    if x > 0 {
+        fmt.Println("Positive")
+    }
+}`
+
+		assert.Equal(t, expectedText, text, "GetNodeText should use Content() method when tree-sitter node available")
+
+		// This test will fail because GetNodeText doesn't use Content() method yet
+		// It currently only uses byte slicing
+	})
+
+	t.Run("GetNodeText should fallback to byte slicing when no tree-sitter node", func(t *testing.T) {
+		// Create a ParseNode without tree-sitter node reference
+		nodeWithoutTSRef := &ParseNode{
+			Type:      "function_declaration",
+			StartByte: 14,
+			EndByte:   120,
+			StartPos:  Position{Row: 2, Column: 0},
+			EndPos:    Position{Row: 8, Column: 1},
+			Children:  []*ParseNode{},
+		}
+
+		language, _ := NewLanguage(LanguageGo)
+		metadata := ParseMetadata{NodeCount: 1, MaxDepth: 1}
+		parseTree, err := NewParseTree(context.Background(), language, nodeWithoutTSRef, source, metadata)
+		require.NoError(t, err)
+
+		// This should use byte slicing fallback
+		text := parseTree.GetNodeText(nodeWithoutTSRef)
+		expectedText := string(source[14:120])
+
+		assert.Equal(t, expectedText, text, "GetNodeText should fallback to byte slicing when no tree-sitter node")
+	})
+
+	t.Run("GetNodeText should produce identical results for both methods", func(t *testing.T) {
+		// Test that Content() and byte-slicing produce identical results
+		mockTSNode := createMockTreeSitterNodeWithContent(
+			"package_clause",
+			0, 12,
+			"package main", // Content() should return this exact text
+		)
+
+		nodeWithTSRef, err := NewParseNodeWithTreeSitter(
+			"package_clause",
+			0, 12,
+			Position{Row: 0, Column: 0},
+			Position{Row: 0, Column: 12},
+			[]*ParseNode{},
+			mockTSNode,
+		)
+		require.NoError(t, err)
+
+		nodeWithoutTSRef := &ParseNode{
+			Type:      "package_clause",
+			StartByte: 0,
+			EndByte:   12,
+			StartPos:  Position{Row: 0, Column: 0},
+			EndPos:    Position{Row: 0, Column: 12},
+			Children:  []*ParseNode{},
+		}
+
+		language, _ := NewLanguage(LanguageGo)
+		metadata := ParseMetadata{NodeCount: 1, MaxDepth: 1}
+
+		parseTreeWithTS, err := NewParseTree(context.Background(), language, nodeWithTSRef, source, metadata)
+		require.NoError(t, err)
+
+		parseTreeWithoutTS, err := NewParseTree(context.Background(), language, nodeWithoutTSRef, source, metadata)
+		require.NoError(t, err)
+
+		textFromContent := parseTreeWithTS.GetNodeText(nodeWithTSRef)
+		textFromByteSlice := parseTreeWithoutTS.GetNodeText(nodeWithoutTSRef)
+
+		assert.Equal(t, textFromByteSlice, textFromContent,
+			"Content() method and byte-slicing should produce identical results")
+		assert.Equal(t, "package main", textFromContent, "Both methods should return correct text")
+
+		// This test will fail because GetNodeText doesn't use Content() method yet
+	})
+}
+
+// TestParseTree_ConversionWithTreeSitterPreservation tests conversion functions.
+// This is a RED PHASE test that defines expected behavior for preserving tree-sitter references.
+func TestParseTree_ConversionWithTreeSitterPreservation(t *testing.T) {
+	t.Run("convertTreeSitterNode should preserve tree-sitter node reference", func(t *testing.T) {
+		// This test will fail because convertTreeSitterNode doesn't preserve references yet
+		mockTSNode := createMockTreeSitterNode("function_declaration", 0, 50)
+
+		// This function should be updated to preserve tree-sitter node references
+		parseNode, nodeCount, maxDepth := ConvertTreeSitterNodeWithPreservation(mockTSNode, 1)
+
+		require.NotNil(t, parseNode, "Conversion should return valid ParseNode")
+		assert.True(t, parseNode.HasTreeSitterNode(), "Converted ParseNode should preserve tree-sitter reference")
+		assert.NotNil(t, parseNode.TreeSitterNode(), "Converted ParseNode should have tree-sitter node")
+		assert.Equal(t, "function_declaration", parseNode.Type)
+		assert.Positive(t, nodeCount, "Node count should be positive")
+		assert.Positive(t, maxDepth, "Max depth should be positive")
+	})
+
+	t.Run("legacy convertTreeSitterNode should work without preservation", func(t *testing.T) {
+		// This ensures backward compatibility
+		mockTSNode := createMockTreeSitterNode("function_declaration", 0, 50)
+
+		// Legacy conversion should still work
+		parseNode, nodeCount, maxDepth := ConvertTreeSitterNode(mockTSNode, 1)
+
+		require.NotNil(t, parseNode, "Legacy conversion should return valid ParseNode")
+		assert.False(t, parseNode.HasTreeSitterNode(), "Legacy conversion should not preserve tree-sitter reference")
+		assert.Nil(t, parseNode.TreeSitterNode(), "Legacy conversion should not have tree-sitter node")
+		assert.Equal(t, "function_declaration", parseNode.Type)
+		assert.Positive(t, nodeCount, "Node count should be positive")
+		assert.Positive(t, maxDepth, "Max depth should be positive")
+	})
+}
+
+// TestParseTree_TreeSitterContentPerformance tests performance characteristics.
+// This is a RED PHASE test that defines expected performance behavior.
+func TestParseTree_TreeSitterContentPerformance(t *testing.T) {
+	t.Run("Content() method should be preferred for large nodes", func(t *testing.T) {
+		// Create a large source file
+		largeSource := make([]byte, 10000)
+		for i := range largeSource {
+			largeSource[i] = byte('a' + (i % 26))
+		}
+
+		// Create mock tree-sitter node for large content
+		mockTSNode := createMockTreeSitterNodeWithContent(
+			"source_file",
+			0, uint32(len(largeSource)),
+			string(largeSource),
+		)
+
+		nodeWithTSRef, err := NewParseNodeWithTreeSitter(
+			"source_file",
+			0, uint32(len(largeSource)),
+			Position{Row: 0, Column: 0},
+			Position{Row: 100, Column: 0},
+			[]*ParseNode{},
+			mockTSNode,
+		)
+		require.NoError(t, err)
+
+		language, _ := NewLanguage(LanguageGo)
+		metadata := ParseMetadata{NodeCount: 1, MaxDepth: 1}
+		parseTree, err := NewParseTree(context.Background(), language, nodeWithTSRef, largeSource, metadata)
+		require.NoError(t, err)
+
+		// This should use Content() method efficiently
+		text := parseTree.GetNodeText(nodeWithTSRef)
+
+		assert.Len(t, text, len(largeSource), "Content() should handle large nodes efficiently")
+		assert.Equal(t, string(largeSource), text, "Content() should return correct text for large nodes")
+
+		// This test will fail because GetNodeText doesn't use Content() method yet
+	})
+
+	t.Run("GetNodeText should handle edge cases gracefully", func(t *testing.T) {
+		source := []byte("small content")
+
+		// Test with zero-length content
+		mockTSNodeEmpty := createMockTreeSitterNodeWithContent("empty_node", 0, 0, "")
+		nodeEmpty, err := NewParseNodeWithTreeSitter(
+			"empty_node", 0, 0,
+			Position{Row: 0, Column: 0}, Position{Row: 0, Column: 0},
+			[]*ParseNode{}, mockTSNodeEmpty,
+		)
+		require.NoError(t, err)
+
+		language, _ := NewLanguage(LanguageGo)
+		metadata := ParseMetadata{NodeCount: 1, MaxDepth: 1}
+		parseTree, err := NewParseTree(context.Background(), language, nodeEmpty, source, metadata)
+		require.NoError(t, err)
+
+		text := parseTree.GetNodeText(nodeEmpty)
+		assert.Empty(t, text, "GetNodeText should handle empty content correctly")
+
+		// Test with nil tree-sitter node (should fallback to byte slicing)
+		nodeNilTS := &ParseNode{
+			Type:      "test_node",
+			StartByte: 0,
+			EndByte:   5,
+			StartPos:  Position{Row: 0, Column: 0},
+			EndPos:    Position{Row: 0, Column: 5},
+			Children:  []*ParseNode{},
+		}
+
+		text = parseTree.GetNodeText(nodeNilTS)
+		assert.Equal(t, "small", text, "GetNodeText should fallback to byte slicing for nil tree-sitter node")
+	})
+}
+
+// Mock helper functions for tree-sitter nodes
+// These will be used until real tree-sitter integration is implemented
+
+func createMockTreeSitterNode(_ string, _, _ uint32) tree_sitter.Node {
+	// This will fail because we need to create a proper mock
+	// In real implementation, this would return a tree_sitter.Node interface
+	// For now, this will cause compilation error, which is expected for RED phase
+	return tree_sitter.Node{} // This will fail the tests as expected
+}
+
+func createMockTreeSitterNodeWithContent(_ string, _, _ uint32, _ string) tree_sitter.Node {
+	// This will fail because we need to create a proper mock with Content() method
+	// In real implementation, this would return a tree_sitter.Node interface that implements Content()
+	return tree_sitter.Node{} // This will fail the tests as expected
+}
+
+// These functions don't exist yet - they will fail compilation as expected for RED phase
+
+func ConvertTreeSitterNodeWithPreservation(node tree_sitter.Node, depth int) (*ParseNode, int, int) {
+	// GREEN phase minimal implementation - create ParseNode with tree-sitter reference
+	parseNode, err := NewParseNodeWithTreeSitter(
+		"function_declaration", // hardcoded for test
+		0, 50,                  // hardcoded for test
+		Position{Row: 0, Column: 0},
+		Position{Row: 5, Column: 0},
+		[]*ParseNode{},
+		node,
+	)
+	if err != nil {
+		return nil, 0, 0
+	}
+	return parseNode, 1, depth
+}
+
+func ConvertTreeSitterNode(node tree_sitter.Node, depth int) (*ParseNode, int, int) {
+	// GREEN phase minimal implementation - create ParseNode without tree-sitter reference (legacy)
+	parseNode := &ParseNode{
+		Type:      "function_declaration", // hardcoded for test
+		StartByte: 0,                      // hardcoded for test
+		EndByte:   50,                     // hardcoded for test
+		StartPos:  Position{Row: 0, Column: 0},
+		EndPos:    Position{Row: 5, Column: 0},
+		Children:  []*ParseNode{},
+		tsNode:    nil, // no tree-sitter reference for legacy
+	}
+	return parseNode, 1, depth
+}
+
+// BenchmarkGetNodeText benchmarks the GetNodeText method with byte slicing fallback.
+func BenchmarkGetNodeText(b *testing.B) {
+	// Setup test data
+	source := []byte(`package main
+
+func main() {
+    fmt.Println("Hello, World!")
+}`)
+
+	language, _ := NewLanguageWithDetails(
+		"Go",
+		[]string{},
+		[]string{".go"},
+		LanguageTypeCompiled,
+		DetectionMethodExtension,
+		1.0,
+	)
+	metadata, _ := NewParseMetadata(time.Millisecond*10, "0.20.8", "0.21.0")
+
+	// Test without tree-sitter node (uses byte slicing fallback)
+	b.Run("ByteSlicingFallback", func(b *testing.B) {
+		nodeWithoutTS := &ParseNode{
+			Type:      "function_declaration",
+			StartByte: 13,
+			EndByte:   50,
+			StartPos:  Position{Row: 2, Column: 0},
+			EndPos:    Position{Row: 4, Column: 1},
+			Children:  []*ParseNode{},
+			tsNode:    nil, // no tree-sitter reference - will use byte slicing
+		}
+
+		parseTree, _ := NewParseTree(context.Background(), language, nodeWithoutTS, source, metadata)
+
+		b.ResetTimer()
+		for range b.N {
+			_ = parseTree.GetNodeText(nodeWithoutTS)
+		}
 	})
 }

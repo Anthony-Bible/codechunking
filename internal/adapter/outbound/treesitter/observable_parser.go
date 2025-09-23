@@ -819,21 +819,42 @@ func (p *ObservableTreeSitterParserImpl) convertTreeSitterNode(
 }
 
 // createParseNodeFromTSNode creates a ParseNode from tree-sitter node with safe type conversion.
+// Now preserves tree-sitter node reference for Content() method usage.
 func (p *ObservableTreeSitterParserImpl) createParseNodeFromTSNode(node tree_sitter.Node) *valueobject.ParseNode {
-	return &valueobject.ParseNode{
-		Type:      node.Type(),
-		StartByte: p.safeUintToUint32(node.StartByte()),
-		EndByte:   p.safeUintToUint32(node.EndByte()),
-		StartPos: valueobject.Position{
+	// Use the constructor that preserves tree-sitter node reference
+	parseNode, err := valueobject.NewParseNodeWithTreeSitter(
+		node.Type(),
+		p.safeUintToUint32(node.StartByte()),
+		p.safeUintToUint32(node.EndByte()),
+		valueobject.Position{
 			Row:    p.safeUintToUint32(node.StartPoint().Row),
 			Column: p.safeUintToUint32(node.StartPoint().Column),
 		},
-		EndPos: valueobject.Position{
+		valueobject.Position{
 			Row:    p.safeUintToUint32(node.EndPoint().Row),
 			Column: p.safeUintToUint32(node.EndPoint().Column),
 		},
-		Children: make([]*valueobject.ParseNode, 0),
+		make([]*valueobject.ParseNode, 0),
+		node,
+	)
+	if err != nil {
+		// Fallback to legacy creation if constructor fails
+		return &valueobject.ParseNode{
+			Type:      node.Type(),
+			StartByte: p.safeUintToUint32(node.StartByte()),
+			EndByte:   p.safeUintToUint32(node.EndByte()),
+			StartPos: valueobject.Position{
+				Row:    p.safeUintToUint32(node.StartPoint().Row),
+				Column: p.safeUintToUint32(node.StartPoint().Column),
+			},
+			EndPos: valueobject.Position{
+				Row:    p.safeUintToUint32(node.EndPoint().Row),
+				Column: p.safeUintToUint32(node.EndPoint().Column),
+			},
+			Children: make([]*valueobject.ParseNode, 0),
+		}
 	}
+	return parseNode
 }
 
 // safeUintToUint32 safely converts uint to uint32 with bounds checking.

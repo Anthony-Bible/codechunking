@@ -353,20 +353,338 @@ func isStructOrInterfaceField(line string) bool {
 		return true
 	}
 
-	// Struct/interface field patterns (basic heuristic)
-	// Examples: "Name string", "Age int", "Value T", "Method() error"
-	parts := strings.Fields(trimmed)
-	if len(parts) >= 2 {
-		// Look for typical field patterns: identifier followed by type
-		// or method patterns: identifier followed by parentheses
-		return !strings.HasPrefix(trimmed, "func ") &&
-			!strings.HasPrefix(trimmed, "var ") &&
-			!strings.HasPrefix(trimmed, "const ") &&
-			!strings.HasPrefix(trimmed, "import ") &&
-			!strings.HasPrefix(trimmed, "package ")
+	// Use AST-based detection with proper grammar-aware analysis
+	if astResult, useAST := tryASTBasedFieldDetection(trimmed); useAST {
+		return astResult
+	}
+
+	// Minimal string-based fallback only for cases where AST parsing fails
+	return isMinimalFieldPattern(trimmed)
+}
+
+// tryASTBasedFieldDetection attempts to use TreeSitterQueryEngine with proper grammar-based detection.
+// Returns (result, shouldUse) where shouldUse indicates if AST parsing was successful.
+func tryASTBasedFieldDetection(line string) (bool, bool) {
+	// Parse the line directly as Go syntax
+	ctx := context.Background()
+	result := treesitter.CreateTreeSitterParseTree(ctx, line)
+	if result.Error != nil {
+		return false, false // Parsing failed, use string fallback
+	}
+
+	// Check if parse tree has syntax errors
+	if _, err := result.ParseTree.HasSyntaxErrors(); err != nil {
+		return false, false // Parsing failed, use string fallback
+	}
+
+	// Use TreeSitterQueryEngine to detect field/method types on the parsed line
+	queryEngine := NewTreeSitterQueryEngine()
+
+	// Check for top-level construct types that should be rejected
+	typeDecls := queryEngine.QueryTypeDeclarations(result.ParseTree)
+	funcDecls := queryEngine.QueryFunctionDeclarations(result.ParseTree)
+	varDecls := queryEngine.QueryVariableDeclarations(result.ParseTree)
+	constDecls := queryEngine.QueryConstDeclarations(result.ParseTree)
+	importDecls := queryEngine.QueryImportDeclarations(result.ParseTree)
+	packageDecls := queryEngine.QueryPackageDeclarations(result.ParseTree)
+
+	// If we found any of these construct types, reject
+	if len(typeDecls) > 0 || len(funcDecls) > 0 || len(varDecls) > 0 || len(constDecls) > 0 ||
+		len(importDecls) > 0 || len(packageDecls) > 0 {
+		return false, true // AST successfully identified this as non-field construct
+	}
+
+	// Check for other constructs that should be rejected
+	allNodes := getAllNodes(result.ParseTree.RootNode())
+	for _, node := range allNodes {
+		// Check node types that should be rejected
+		switch node.Type {
+		case "return_statement", "if_statement", "for_statement", "assignment_statement":
+			return false, true // Found control flow or assignment, reject
+		case "call_expression":
+			// Reject call expressions that are function calls, but allow those that are part of method signatures
+			if isStandaloneFunctionCall(node, result.ParseTree) {
+				return false, true // Found standalone function call, reject
+			}
+		}
+	}
+
+	// Now check for valid field-like patterns using proper grammar-based detection
+	return isValidFieldOrMethodPattern(result.ParseTree, queryEngine), true
+}
+
+// isValidFieldOrMethodPattern uses proper grammar-based detection to identify valid field declarations,
+// method specifications, or embedded types based on tree-sitter Go grammar rules.
+func isValidFieldOrMethodPattern(parseTree *valueobject.ParseTree, queryEngine TreeSitterQueryEngine) bool {
+	if parseTree == nil || parseTree.RootNode() == nil {
+		return false
+	}
+
+	// Check for actual field_declaration nodes (struct fields)
+	fieldDecls := queryEngine.QueryFieldDeclarations(parseTree)
+	for _, fieldDecl := range fieldDecls {
+		if isValidFieldDeclaration(fieldDecl, parseTree) {
+			return true
+		}
+	}
+
+	// Check for method_elem nodes (interface methods) using proper grammar detection
+	methodElems := parseTree.GetNodesByType("method_elem")
+	for _, methodElem := range methodElems {
+		if isValidMethodElem(methodElem, parseTree) {
+			return true
+		}
+	}
+
+	// Check for embedded types (type_elem in interfaces or anonymous fields in structs)
+	typeElems := parseTree.GetNodesByType("type_elem")
+	for _, typeElem := range typeElems {
+		if isValidEmbeddedType(typeElem, parseTree) {
+			return true
+		}
+	}
+
+	// Check for qualified types that could be embedded (like "io.Reader")
+	qualifiedTypes := parseTree.GetNodesByType("qualified_type")
+	if len(qualifiedTypes) > 0 {
+		return true // Embedded qualified type
+	}
+
+	// Check for simple type identifiers that could be embedded
+	typeIds := parseTree.GetNodesByType(nodeTypeTypeIdentifier)
+	for _, typeId := range typeIds {
+		// Check if this type identifier is in a context where it could be an embedded type
+		if isEmbeddedTypeContext(typeId, parseTree) {
+			return true
+		}
 	}
 
 	return false
+}
+
+// isStandaloneFunctionCall checks if a call_expression node represents a standalone function call
+// rather than a method signature parameter or return type using proper AST-based analysis.
+func isStandaloneFunctionCall(node *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
+	if node == nil || node.Type != "call_expression" {
+		return false
+	}
+
+	// Use proper AST-based analysis instead of string literal heuristics
+	// Check if this call_expression has a function field and arguments field (proper function call structure)
+	functionField := node.ChildByFieldName("function")
+	argumentsField := node.ChildByFieldName("arguments")
+
+	// A standalone function call should have both function and arguments
+	if functionField == nil || argumentsField == nil {
+		return false
+	}
+
+	// Check if the arguments contain string literals (common in logging/print calls)
+	if hasStringLiteralArguments(argumentsField) {
+		return true
+	}
+
+	// Check if the function being called looks like a typical function call
+	return isCommonFunctionCall(functionField, parseTree)
+}
+
+// isStringLiteralNode checks if a node is a string literal using proper AST node type checking.
+func isStringLiteralNode(node *valueobject.ParseNode) bool {
+	if node == nil {
+		return false
+	}
+	return node.Type == "interpreted_string_literal" || node.Type == "raw_string_literal"
+}
+
+// hasStringLiteralArguments checks if the arguments field contains string literal nodes.
+func hasStringLiteralArguments(argumentsField *valueobject.ParseNode) bool {
+	if argumentsField == nil {
+		return false
+	}
+
+	for _, arg := range argumentsField.Children {
+		if isStringLiteralNode(arg) {
+			return true // Found string literal arguments, likely a function call
+		}
+	}
+	return false
+}
+
+// isCommonFunctionCall checks if the function field represents a common function call pattern.
+func isCommonFunctionCall(functionField *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
+	if functionField == nil {
+		return false
+	}
+
+	functionText := parseTree.GetNodeText(functionField)
+	// Common function call patterns that should be rejected
+	commonFunctionCalls := []string{"fmt.Print", "log.", "println", "print", "panic"}
+	for _, pattern := range commonFunctionCalls {
+		if strings.Contains(functionText, pattern) {
+			return true // Looks like a common function call
+		}
+	}
+	return false
+}
+
+// isValidFieldDeclaration checks if a field_declaration node has proper structure according to Go grammar.
+// According to grammar: field_declaration has 'name' field (multiple, optional) and 'type' field (required).
+func isValidFieldDeclaration(fieldDecl *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
+	if fieldDecl == nil || fieldDecl.Type != "field_declaration" {
+		return false
+	}
+
+	// Use proper grammar field access instead of iterating children
+	// According to tree-sitter Go grammar, field_declaration has a required 'type' field
+	typeField := fieldDecl.ChildByFieldName("type")
+	if typeField != nil {
+		// Found the type field using proper grammar access, this is a valid field declaration
+		return true
+	}
+
+	// Fallback: check if this could be an embedded type (anonymous field)
+	// For embedded fields, the entire node content is the type
+	if len(fieldDecl.Children) == 1 {
+		child := fieldDecl.Children[0]
+		switch child.Type {
+		case nodeTypeTypeIdentifier, nodeTypeQualifiedType:
+			return true // Embedded type
+		}
+	}
+
+	// Additional check: look for type nodes as direct children (fallback for grammar variations)
+	for _, child := range fieldDecl.Children {
+		switch child.Type {
+		case nodeTypeTypeIdentifier, nodeTypeQualifiedType, nodeTypePointerType, nodeTypeSliceType, nodeTypeArrayType,
+			nodeTypeMapType, nodeTypeChannelType, nodeTypeFunctionType, nodeTypeInterfaceType, nodeTypeStructType:
+			return true // Found a valid type node
+		}
+	}
+
+	return false
+}
+
+// isValidMethodElem checks if a method_elem node has proper structure according to Go grammar.
+// According to grammar: method_elem has 'name' field (required), 'parameters' field (required), 'result' field (optional).
+func isValidMethodElem(methodElem *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
+	if methodElem == nil || methodElem.Type != "method_elem" {
+		return false
+	}
+
+	// Use proper grammar field access according to tree-sitter Go grammar
+	// method_elem requires both 'name' and 'parameters' fields
+	nameField := methodElem.ChildByFieldName("name")
+	parametersField := methodElem.ChildByFieldName("parameters")
+
+	// Both name and parameters are required fields according to the grammar
+	if nameField != nil && parametersField != nil {
+		return true
+	}
+
+	// Fallback: check for required components using child node types
+	hasName := false
+	hasParameters := false
+
+	for _, child := range methodElem.Children {
+		switch child.Type {
+		case nodeTypeFieldIdentifier: // method name
+			hasName = true
+		case nodeTypeParameterList: // method parameters
+			hasParameters = true
+		}
+	}
+
+	// Both name and parameters are required for a valid method element
+	return hasName && hasParameters
+}
+
+// isValidEmbeddedType checks if a type_elem node represents a valid embedded type.
+func isValidEmbeddedType(typeElem *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
+	if typeElem == nil || typeElem.Type != "type_elem" {
+		return false
+	}
+
+	// type_elem nodes in interfaces represent embedded types
+	// They should contain type identifiers or qualified types
+	for _, child := range typeElem.Children {
+		switch child.Type {
+		case nodeTypeTypeIdentifier, nodeTypeQualifiedType, nodeTypeGenericType:
+			return true
+		}
+	}
+
+	return false
+}
+
+// isEmbeddedTypeContext checks if a type_identifier appears in a context where it could be an embedded type.
+func isEmbeddedTypeContext(typeId *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
+	if typeId == nil || typeId.Type != nodeTypeTypeIdentifier {
+		return false
+	}
+
+	// Check if this type identifier is a direct child of the root
+	// (indicating it might be a standalone embedded type)
+	root := parseTree.RootNode()
+	if root == nil {
+		return false
+	}
+
+	for _, child := range root.Children {
+		if child == typeId {
+			return true // Direct child of root, likely an embedded type
+		}
+	}
+
+	return false
+}
+
+// getAllNodes recursively collects all nodes from the parse tree.
+func getAllNodes(rootNode *valueobject.ParseNode) []*valueobject.ParseNode {
+	if rootNode == nil {
+		return []*valueobject.ParseNode{}
+	}
+
+	nodes := []*valueobject.ParseNode{rootNode}
+	for _, child := range rootNode.Children {
+		childNodes := getAllNodes(child)
+		nodes = append(nodes, childNodes...)
+	}
+	return nodes
+}
+
+// isMinimalFieldPattern provides minimal string-based fallback detection for cases where AST parsing fails.
+// This is significantly simplified compared to the original string-based detection since AST-based detection
+// handles most cases properly now.
+func isMinimalFieldPattern(trimmed string) bool {
+	// Handle special cases that AST might miss
+	if strings.Contains(trimmed, "\x00") {
+		return false // Reject null bytes
+	}
+
+	// Quick rejection of obvious non-field patterns
+	rejectPrefixes := []string{
+		"import ", "package ", "return ", "func ", "var ", "const ", "type ", "if ", "for ", "switch ",
+	}
+	for _, prefix := range rejectPrefixes {
+		if strings.HasPrefix(trimmed, prefix) {
+			return false
+		}
+	}
+
+	// Reject obvious function calls (contains parentheses and dots together)
+	if strings.Contains(trimmed, "(") && strings.Contains(trimmed, ")") && strings.Contains(trimmed, ".") {
+		return false // Pattern like "logger.Info(\"processing\")" - method call
+	}
+
+	// Reject assignments
+	if strings.Contains(trimmed, "=") {
+		return false
+	}
+
+	// At this point, if AST parsing failed but we have a reasonable-looking identifier pattern, allow it
+	// This covers edge cases where tree-sitter might not parse individual lines correctly
+	parts := strings.Fields(trimmed)
+	return len(parts) >= 1 && len(parts) <= 3 // Allow simple patterns like "Name", "Name string", "Name string `tag`"
 }
 
 type ObservableGoParser struct {

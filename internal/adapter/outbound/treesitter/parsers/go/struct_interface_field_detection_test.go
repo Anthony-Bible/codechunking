@@ -15,8 +15,6 @@ import (
 // behavior where the function first attempts AST-based detection using TreeSitterQueryEngine
 // and only falls back to string parsing when AST parsing fails or is unavailable.
 func TestIsStructOrInterfaceFieldWithAST(t *testing.T) {
-	parser := &GoParser{}
-
 	tests := []struct {
 		name          string
 		line          string
@@ -192,7 +190,7 @@ func TestIsStructOrInterfaceFieldWithAST(t *testing.T) {
 			// 3. Only fall back to string parsing if AST parsing fails
 			// 4. Handle all edge cases gracefully
 
-			result := parser.isStructOrInterfaceField(tt.line)
+			result := isStructOrInterfaceField(tt.line)
 			assert.Equal(t, tt.expectedField, result, tt.description)
 		})
 	}
@@ -201,8 +199,6 @@ func TestIsStructOrInterfaceFieldWithAST(t *testing.T) {
 // TestIsStructOrInterfaceFieldASTFallback tests that the function properly falls back
 // to string parsing when AST parsing fails or encounters malformed syntax.
 func TestIsStructOrInterfaceFieldASTFallback(t *testing.T) {
-	parser := &GoParser{}
-
 	tests := []struct {
 		name                    string
 		line                    string
@@ -251,7 +247,7 @@ func TestIsStructOrInterfaceFieldASTFallback(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// The restructured function should attempt AST parsing first
 			// and only use string fallback when AST parsing fails
-			result := parser.isStructOrInterfaceField(tt.line)
+			result := isStructOrInterfaceField(tt.line)
 			assert.Equal(t, tt.expectedField, result, tt.description)
 		})
 	}
@@ -260,8 +256,6 @@ func TestIsStructOrInterfaceFieldASTFallback(t *testing.T) {
 // TestIsStructOrInterfaceFieldContextualDetection tests that the function can detect
 // field declarations within proper struct and interface contexts using AST analysis.
 func TestIsStructOrInterfaceFieldContextualDetection(t *testing.T) {
-	parser := &GoParser{}
-
 	// Test cases where context matters for proper detection
 	tests := []struct {
 		name          string
@@ -324,7 +318,7 @@ type ReadWriter interface {
 
 			// The restructured function should be able to detect fields within context
 			// by using TreeSitterQueryEngine to analyze the AST structure
-			fieldResult := parser.isStructOrInterfaceField(tt.lineToTest)
+			fieldResult := isStructOrInterfaceField(tt.lineToTest)
 			assert.Equal(t, tt.expectedField, fieldResult, tt.description)
 		})
 	}
@@ -333,8 +327,6 @@ type ReadWriter interface {
 // TestIsStructOrInterfaceFieldConsistencyBetweenApproaches tests that both AST-based
 // and string-based approaches should give the same results for common field patterns.
 func TestIsStructOrInterfaceFieldConsistencyBetweenApproaches(t *testing.T) {
-	parser := &GoParser{}
-
 	// Common field patterns that both approaches should handle consistently
 	commonPatterns := []string{
 		"Name string",
@@ -357,7 +349,7 @@ func TestIsStructOrInterfaceFieldConsistencyBetweenApproaches(t *testing.T) {
 		t.Run("consistency_"+pattern, func(t *testing.T) {
 			// Test that the restructured AST-first function produces consistent results
 			// This ensures the AST approach doesn't introduce behavior regressions
-			result := parser.isStructOrInterfaceField(pattern)
+			result := isStructOrInterfaceField(pattern)
 
 			// The current string-based implementation result for comparison
 			// (this will help verify consistency during implementation)
@@ -398,7 +390,7 @@ func isStructOrInterfaceFieldCurrentImplementation(line string) bool {
 	return false
 }
 
-// Helper function to determine if a line contains valid Go syntax
+// Helper function to determine if a line contains valid Go syntax.
 func isValidGoSyntax(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" {
@@ -410,14 +402,13 @@ func isValidGoSyntax(line string) bool {
 	testCode := "package test\n\ntype Test struct {\n" + line + "\n}"
 	result := treesitter.CreateTreeSitterParseTree(ctx, testCode)
 
-	return result.Error == nil && !result.ParseTree.HasSyntaxErrors()
+	hasErrors, err := result.ParseTree.HasSyntaxErrors()
+	return result.Error == nil && err == nil && !hasErrors
 }
 
-// TestTreeSitterQueryEngineIntegration tests that the restructured function
+// TestTreeSitterQueryEngineIntegrationForFieldDetection tests that the restructured function
 // properly integrates with TreeSitterQueryEngine for field detection.
-func TestTreeSitterQueryEngineIntegration(t *testing.T) {
-	parser := &GoParser{}
-
+func TestTreeSitterQueryEngineIntegrationForFieldDetection(t *testing.T) {
 	// Test cases that require specific TreeSitterQueryEngine methods
 	tests := []struct {
 		name                 string
@@ -458,7 +449,7 @@ func TestTreeSitterQueryEngineIntegration(t *testing.T) {
 			// 2. Use the appropriate query methods based on the AST structure
 			// 3. Fall back to string parsing only if AST analysis fails
 
-			result := parser.isStructOrInterfaceField(tt.line)
+			result := isStructOrInterfaceField(tt.line)
 
 			// For this test, we expect AST-based detection to work
 			assert.True(t, result, tt.description)
@@ -469,8 +460,6 @@ func TestTreeSitterQueryEngineIntegration(t *testing.T) {
 // TestIsStructOrInterfaceFieldPerformance tests that the AST-first approach
 // doesn't introduce significant performance regressions compared to string parsing.
 func TestIsStructOrInterfaceFieldPerformance(t *testing.T) {
-	parser := &GoParser{}
-
 	// Common field patterns for performance testing
 	testLines := []string{
 		"Name string",
@@ -486,7 +475,7 @@ func TestIsStructOrInterfaceFieldPerformance(t *testing.T) {
 		t.Run("performance_"+line, func(t *testing.T) {
 			// The restructured function should complete efficiently
 			// AST parsing overhead should be acceptable for the improved accuracy
-			result := parser.isStructOrInterfaceField(line)
+			result := isStructOrInterfaceField(line)
 
 			// Basic assertion - actual performance measured separately
 			assert.IsType(t, true, result, "Function should return boolean result efficiently")
@@ -497,8 +486,6 @@ func TestIsStructOrInterfaceFieldPerformance(t *testing.T) {
 // TestIsStructOrInterfaceFieldErrorHandling tests that the function gracefully handles
 // edge cases and error conditions during both AST parsing and string fallback.
 func TestIsStructOrInterfaceFieldErrorHandling(t *testing.T) {
-	parser := &GoParser{}
-
 	tests := []struct {
 		name          string
 		line          string
@@ -541,7 +528,7 @@ func TestIsStructOrInterfaceFieldErrorHandling(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Function should not panic or crash on any input
 			// and should handle edge cases gracefully
-			result := parser.isStructOrInterfaceField(tt.line)
+			result := isStructOrInterfaceField(tt.line)
 			assert.Equal(t, tt.expectedField, result, tt.description)
 		})
 	}
@@ -550,8 +537,6 @@ func TestIsStructOrInterfaceFieldErrorHandling(t *testing.T) {
 // TestIsStructOrInterfaceFieldSpecificASTNodes tests detection of specific
 // AST node types that should be identified as valid struct/interface fields.
 func TestIsStructOrInterfaceFieldSpecificASTNodes(t *testing.T) {
-	parser := &GoParser{}
-
 	tests := []struct {
 		name            string
 		line            string
@@ -600,7 +585,7 @@ func TestIsStructOrInterfaceFieldSpecificASTNodes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// The restructured function should use AST node types to determine
 			// if a line represents a valid struct or interface field
-			result := parser.isStructOrInterfaceField(tt.line)
+			result := isStructOrInterfaceField(tt.line)
 			assert.Equal(t, tt.expectedField, result, tt.description)
 		})
 	}

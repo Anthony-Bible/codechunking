@@ -762,6 +762,7 @@ type person struct {
 			adapter := treesitter.NewSemanticTraverserAdapter()
 			options := &treesitter.SemanticExtractionOptions{
 				IncludeStructs: true,
+				IncludePrivate: true,
 			}
 
 			chunks := adapter.ExtractCodeChunks(domainTree, options)

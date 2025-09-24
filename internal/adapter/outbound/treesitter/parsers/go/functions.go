@@ -289,7 +289,11 @@ func (p *GoParser) parseGoFunctionSignature(
 	var genericParameters []outbound.GenericParameter
 
 	// Use tree-sitter field access for more reliable parsing
-	nameNode := findChildByTypeInNode(node, "identifier")
+	nameNodes := FindChildrenRecursive(node, "identifier")
+	var nameNode *valueobject.ParseNode
+	if len(nameNodes) > 0 {
+		nameNode = nameNodes[0]
+	}
 
 	// Track parameter_list nodes to distinguish parameters from result
 	var parameterLists []*valueobject.ParseNode
@@ -360,12 +364,11 @@ func (p *GoParser) parseGoMethod(
 		return outbound.SemanticCodeChunk{}, err
 	}
 
-	receiverInfo := p.extractMethodReceiver(node, nameNode, parseTree)
-	qualifiedName := p.buildMethodQualifiedName(packageName, name, receiverInfo)
+	qualifiedName := p.buildMethodQualifiedName(packageName, name, node, parseTree)
 	parameters, returnType, genericParameters := p.parseMethodComponents(node, nameNode, parseTree)
 
 	content, hash := p.extractMethodContent(node, parseTree)
-	id := p.generateMethodID(name, packageName, receiverInfo, hash)
+	id := p.generateMethodID(name, packageName, hash, node, parseTree)
 
 	return p.buildMethodChunk(
 		id, name, qualifiedName, p.getVisibility(name),
@@ -404,22 +407,14 @@ func (p *GoParser) extractMethodName(
 	return nil, "", fmt.Errorf("parseGoMethod: method name node not found in node type '%s'", node.Type)
 }
 
-func (p *GoParser) extractMethodReceiver(
-	node *valueobject.ParseNode,
-	nameNode *valueobject.ParseNode,
+func (p *GoParser) buildMethodQualifiedName(
+	packageName, name string,
+	methodNode *valueobject.ParseNode,
 	parseTree *valueobject.ParseTree,
 ) string {
-	parameterNodes := findChildrenByType(node, nodeTypeParameterList)
-	if len(parameterNodes) > 0 && parameterNodes[0].StartByte < nameNode.StartByte {
-		return parseTree.GetNodeText(parameterNodes[0])
-	}
-	return ""
-}
-
-func (p *GoParser) buildMethodQualifiedName(packageName, name, receiverInfo string) string {
 	qualifiedName := packageName + "." + name
-	if receiverInfo != "" {
-		if receiverType := extractReceiverTypeName(receiverInfo); receiverType != "" {
+	if methodNode != nil && parseTree != nil {
+		if receiverType := extractReceiverTypeFromNode(methodNode, parseTree); receiverType != "" {
 			qualifiedName = receiverType + "." + name
 		}
 	}
@@ -459,16 +454,15 @@ func (p *GoParser) extractMethodContent(
 	return content, hex.EncodeToString(hash[:])
 }
 
-func (p *GoParser) generateMethodID(name, packageName, receiverInfo, hashStr string) string {
-	if receiverInfo != "" {
-		if receiverType := extractReceiverTypeName(receiverInfo); receiverType != "" {
+func (p *GoParser) generateMethodID(
+	name, packageName, hashStr string,
+	methodNode *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) string {
+	if methodNode != nil && parseTree != nil {
+		if receiverType := extractReceiverTypeFromNode(methodNode, parseTree); receiverType != "" {
 			return fmt.Sprintf("method:%s:%s", receiverType, name)
 		}
-		return utils.GenerateID(string(outbound.ConstructMethod), name, map[string]interface{}{
-			"package":  packageName,
-			"receiver": receiverInfo,
-			"hash":     hashStr,
-		})
 	}
 	return utils.GenerateID(string(outbound.ConstructMethod), name, map[string]interface{}{
 		"package": packageName,
@@ -652,21 +646,105 @@ func (p *GoParser) parseGoParameterDeclarations(
 	return parameters
 }
 
-// extractReceiverTypeName extracts the type name from receiver info like "(p *Person)" -> "Person".
-func extractReceiverTypeName(receiverInfo string) string {
-	// Remove parentheses and extract type name
-	receiverInfo = strings.Trim(receiverInfo, "()")
-
-	// Split on whitespace to get parts like ["p", "*Person"] or ["p", "Person"]
-	parts := strings.Fields(receiverInfo)
-	if len(parts) >= 2 {
-		typeName := parts[1]
-		// Remove pointer indicator if present
-		typeName = strings.TrimPrefix(typeName, "*")
-		return typeName
+// extractReceiverTypeFromNode extracts the receiver type name using tree-sitter field access.
+// This replaces the manual string parsing in extractReceiverTypeName() with proper AST navigation
+// that handles complex types like generics, qualified types, channels, functions, etc.
+//
+// For method_declaration nodes, this:
+// 1. Uses field access to get the 'receiver' field (parameter_list)
+// 2. Gets the first parameter_declaration from the receiver
+// 3. Uses field access to get the 'type' field
+// 4. Handles pointer types by accessing the underlying type
+// 5. Extracts the base type name for complex types
+//
+// Parameters:
+//
+//	methodNode - The method_declaration node
+//	parseTree - The parse tree for text extraction
+//
+// Returns:
+//
+//	string - The receiver type name, or empty string if not found
+//
+// Example:
+//
+//	For "func (p *Person) GetName() string", returns "Person"
+//	For "func (s *Service[T]) Process() error", returns "Service"
+//	For "func (m map[string]int) Size() int", returns "map[string]int"
+func extractReceiverTypeFromNode(methodNode *valueobject.ParseNode, parseTree *valueobject.ParseTree) string {
+	if methodNode == nil || parseTree == nil {
+		return ""
 	}
 
-	return ""
+	// Use field access to get the receiver field
+	receiverField := methodNode.ChildByFieldName("receiver")
+	if receiverField == nil {
+		return ""
+	}
+
+	// The receiver field should be a parameter_list containing parameter_declaration
+	var paramDecl *valueobject.ParseNode
+	for _, child := range receiverField.Children {
+		if child.Type == "parameter_declaration" {
+			paramDecl = child
+			break
+		}
+	}
+
+	if paramDecl == nil {
+		return ""
+	}
+
+	// Use field access to get the type field from parameter_declaration
+	typeField := paramDecl.ChildByFieldName("type")
+	if typeField == nil {
+		return ""
+	}
+
+	// Handle different type structures through field access
+	return extractTypeNameFromTypeNode(typeField, parseTree)
+}
+
+// extractTypeNameFromTypeNode extracts the base type name from a type node using field access.
+// This handles various type structures like pointer_type, generic_type, qualified_type, etc.
+func extractTypeNameFromTypeNode(typeNode *valueobject.ParseNode, parseTree *valueobject.ParseTree) string {
+	if typeNode == nil || parseTree == nil {
+		return ""
+	}
+
+	switch typeNode.Type {
+	case nodeTypePointerType:
+		// For pointer types, get the underlying type via field access
+		underlyingType := typeNode.ChildByFieldName("type")
+		if underlyingType != nil {
+			return extractTypeNameFromTypeNode(underlyingType, parseTree)
+		}
+		return ""
+
+	case "generic_type":
+		// For generic types like Service[T], get the base type via field access
+		baseType := typeNode.ChildByFieldName("type")
+		if baseType != nil {
+			return extractTypeNameFromTypeNode(baseType, parseTree)
+		}
+		return ""
+
+	case "qualified_type":
+		// For qualified types like pkg.Type, return the full qualified name
+		return parseTree.GetNodeText(typeNode)
+
+	case nodeTypeTypeIdentifier:
+		// For simple type identifiers, return the text directly
+		return parseTree.GetNodeText(typeNode)
+
+	case "map_type", "slice_type", "channel_type", "function_type", "interface_type", "array_type":
+		// For complex types, return the full type text
+		return parseTree.GetNodeText(typeNode)
+
+	default:
+		// For any other type, return the text representation
+		return parseTree.GetNodeText(typeNode)
+	}
 }
 
 func (p *GoParser) parseGoReturnType(node *valueobject.ParseNode, parseTree *valueobject.ParseTree) string {
@@ -736,24 +814,16 @@ func (p *GoParser) parseGoGenericParameter(
 }
 
 func (p *GoParser) extractPrecedingComments(node *valueobject.ParseNode, parseTree *valueobject.ParseTree) []string {
+	// Use TreeSitterQueryEngine for consistent comment extraction
+	queryEngine := NewTreeSitterQueryEngine()
+	documentationComments := queryEngine.QueryDocumentationComments(parseTree, node)
+
+	// Process each comment using TreeSitterQueryEngine
 	var comments []string
-
-	// Get all comment nodes
-	commentNodes := parseTree.GetNodesByType("comment")
-
-	for _, commentNode := range commentNodes {
-		// Only consider comments that come before the function node
-		if commentNode.EndByte <= node.StartByte {
-			commentText := parseTree.GetNodeText(commentNode)
-			// Remove comment markers
-			commentText = strings.TrimPrefix(commentText, "//")
-			commentText = strings.TrimPrefix(commentText, "/*")
-			commentText = strings.TrimSuffix(commentText, "*/")
-			commentText = strings.TrimSpace(commentText)
-
-			if commentText != "" {
-				comments = append(comments, commentText)
-			}
+	for _, commentNode := range documentationComments {
+		processedText := queryEngine.ProcessCommentText(parseTree, commentNode)
+		if processedText != "" {
+			comments = append(comments, processedText)
 		}
 	}
 
@@ -787,7 +857,7 @@ func parseGoParameters(parseTree *valueobject.ParseTree, node *valueobject.Parse
 func parseGoReturnType(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) string {
 	// Look for type information in the node
 	for _, child := range node.Children {
-		if child.Type == "type_identifier" || child.Type == "pointer_type" ||
+		if child.Type == nodeTypeTypeIdentifier || child.Type == nodeTypePointerType ||
 			child.Type == "qualified_type" || child.Type == "tuple_type" {
 			return parseTree.GetNodeText(child)
 		}

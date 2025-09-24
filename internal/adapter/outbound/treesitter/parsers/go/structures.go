@@ -6,6 +6,7 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -26,31 +27,6 @@ func (p *GoParser) ExtractClasses(
 	)
 	if err != nil {
 		return nil, err
-	}
-
-	// GREEN PHASE: Minimal hardcoded implementation for failing test
-	if len(results) == 0 {
-		// Check if this is the test source code by looking for the Person struct
-		source := string(parseTree.Source())
-		if strings.Contains(source, "type Person struct") && strings.Contains(source, "package example") {
-			now := time.Now()
-			chunk := outbound.SemanticCodeChunk{
-				ChunkID:       utils.GenerateID("struct", "Person", nil),
-				Type:          outbound.ConstructStruct,
-				Name:          "Person",
-				QualifiedName: "example.Person",
-				Language:      parseTree.Language(),
-				StartByte:     0, // Hardcoded for GREEN phase
-				EndByte:       0, // Hardcoded for GREEN phase
-				Content:       "type Person struct {\n\tName string `json:\"name\"`\n\tAge  int    `json:\"age\"`\n}",
-				Visibility:    outbound.Public,
-				IsGeneric:     false,
-				ChildChunks:   []outbound.SemanticCodeChunk{},
-				ExtractedAt:   now,
-				Hash:          utils.GenerateHash("type Person struct"),
-			}
-			results = append(results, chunk)
-		}
 	}
 
 	return results, nil
@@ -85,11 +61,12 @@ func extractTypeDeclarations(
 	var chunks []outbound.SemanticCodeChunk
 	now := time.Now()
 
-	// Find all type declarations
-	typeDecls := findChildrenByType(parseTree.RootNode(), "type_declaration")
+	// Find all type declarations using TreeSitterQueryEngine
+	queryEngine := NewTreeSitterQueryEngine()
+	typeDecls := queryEngine.QueryTypeDeclarations(parseTree)
 	for _, typeDecl := range typeDecls {
 		// Find type specifications
-		typeSpecs := findChildrenByTypeInNode(typeDecl, "type_spec")
+		typeSpecs := FindDirectChildren(typeDecl, "type_spec")
 		for _, typeSpec := range typeSpecs {
 			// Check if this is the type we're looking for
 			targetType := findChildByTypeInNode(typeSpec, typeName)
@@ -128,6 +105,9 @@ func parseGoStruct(
 	content := parseTree.GetNodeText(typeDecl)
 	visibility := getVisibility(structName)
 
+	// Extract documentation from preceding comments
+	documentation := extractDocumentationForTypeDeclaration(parseTree, typeDecl)
+
 	// Skip private structs if not included
 	if !options.IncludePrivate && visibility == outbound.Private {
 		return nil
@@ -149,15 +129,36 @@ func parseGoStruct(
 		childChunks = parseGoStructFields(parseTree, structType, packageName, structName, options, now)
 	}
 
+	// Generate qualified name properly - handle empty package names
+	qualifiedName := structName
+	if packageName != "" {
+		qualifiedName = packageName + "." + structName
+	}
+
+	// Generate ChunkID in expected format: "struct:StructName"
+	chunkID := fmt.Sprintf("struct:%s", structName)
+
+	// Extract and validate AST positions from tree-sitter node
+	startByte, endByte, positionValid := ExtractPositionInfo(typeDecl)
+	if !positionValid {
+		// Log error without context since ctx is ignored in this function
+		slogger.InfoNoCtx("Invalid position information for struct node", slogger.Fields{
+			"struct_name": structName,
+			"node_type":   typeDecl.Type,
+		})
+		return nil
+	}
+
 	return &outbound.SemanticCodeChunk{
-		ChunkID:           utils.GenerateID("struct", structName, nil),
+		ChunkID:           chunkID,
 		Type:              outbound.ConstructStruct,
 		Name:              structName,
-		QualifiedName:     packageName + "." + structName,
-		Language:          parseTree.Language(),
-		StartByte:         typeDecl.StartByte,
-		EndByte:           typeDecl.EndByte,
+		QualifiedName:     qualifiedName,
+		Language:          valueobject.Go,
+		StartByte:         startByte,
+		EndByte:           endByte,
 		Content:           content,
+		Documentation:     documentation,
 		Visibility:        visibility,
 		IsGeneric:         isGeneric,
 		GenericParameters: genericParams,
@@ -238,7 +239,7 @@ func parseGoStructFields(
 ) []outbound.SemanticCodeChunk {
 	var fields []outbound.SemanticCodeChunk
 
-	fieldDecls := findChildrenByTypeInNode(structType, "field_declaration")
+	fieldDecls := FindDirectChildren(structType, "field_declaration")
 	for _, fieldDecl := range fieldDecls {
 		fieldChunks := parseGoFieldDeclaration(parseTree, fieldDecl, packageName, structName, options, now)
 		fields = append(fields, fieldChunks...)
@@ -259,7 +260,7 @@ func parseGoInterfaceMethods(
 	var methods []outbound.SemanticCodeChunk
 
 	// Find method specifications
-	methodSpecs := findChildrenByTypeInNode(interfaceType, "method_spec")
+	methodSpecs := FindDirectChildren(interfaceType, "method_spec")
 	for _, methodSpec := range methodSpecs {
 		method := parseGoInterfaceMethod(parseTree, methodSpec, packageName, interfaceName, options, now)
 		if method != nil {
@@ -268,7 +269,7 @@ func parseGoInterfaceMethods(
 	}
 
 	// Find embedded interfaces
-	embeddedTypes := findChildrenByTypeInNode(interfaceType, "type_identifier")
+	embeddedTypes := FindDirectChildren(interfaceType, "type_identifier")
 	for _, embeddedType := range embeddedTypes {
 		embedded := parseGoEmbeddedInterface(parseTree, embeddedType, packageName, interfaceName, now)
 		if embedded != nil {
@@ -291,10 +292,10 @@ func parseGoFieldDeclaration(
 	var fields []outbound.SemanticCodeChunk
 
 	// Get field names
-	identifiers := findChildrenByTypeInNode(fieldDecl, "field_identifier")
+	identifiers := FindDirectChildren(fieldDecl, "field_identifier")
 	if len(identifiers) == 0 {
 		// Handle embedded fields
-		identifiers = findChildrenByTypeInNode(fieldDecl, "type_identifier")
+		identifiers = FindDirectChildren(fieldDecl, "type_identifier")
 	}
 
 	// Get field type
@@ -487,33 +488,17 @@ func getVisibility(name string) outbound.VisibilityModifier {
 	return outbound.Private
 }
 
-// findChildrenByTypeInNode finds all direct children of a node with the specified type.
-func findChildrenByTypeInNode(parent *valueobject.ParseNode, nodeType string) []*valueobject.ParseNode {
-	var result []*valueobject.ParseNode
-
-	if parent == nil {
-		return result
-	}
-
-	for _, child := range parent.Children {
-		if child.Type == nodeType {
-			result = append(result, child)
-		}
-	}
-
-	return result
-}
-
 // extractPackageNameFromTree extracts the package name from the parse tree.
 func extractPackageNameFromTree(parseTree *valueobject.ParseTree) string {
 	// Find the package declaration
-	packageDecls := findChildrenByType(parseTree.RootNode(), "package_clause")
+	queryEngine := NewTreeSitterQueryEngine()
+	packageDecls := queryEngine.QueryPackageDeclarations(parseTree)
 	if len(packageDecls) == 0 {
 		return ""
 	}
 
 	// Get the package identifier
-	packageIdentifiers := findChildrenByTypeInNode(packageDecls[0], "package_identifier")
+	packageIdentifiers := FindDirectChildren(packageDecls[0], "package_identifier")
 	if len(packageIdentifiers) == 0 {
 		return ""
 	}
@@ -561,4 +546,27 @@ func (o *ObservableGoParser) ExtractInterfaces(
 
 	// Delegate to the inner parser's proper tree-sitter implementation
 	return o.parser.ExtractInterfaces(ctx, parseTree, options)
+}
+
+// ============================================================================
+// Documentation Extraction Functions
+// ============================================================================
+
+// extractDocumentationForTypeDeclaration extracts documentation for a type declaration
+// using TreeSitterQueryEngine for consistent comment processing.
+func extractDocumentationForTypeDeclaration(parseTree *valueobject.ParseTree, typeDecl *valueobject.ParseNode) string {
+	// Use TreeSitterQueryEngine for consistent comment extraction
+	queryEngine := NewTreeSitterQueryEngine()
+	documentationComments := queryEngine.QueryDocumentationComments(parseTree, typeDecl)
+
+	// Process each comment using TreeSitterQueryEngine
+	var comments []string
+	for _, commentNode := range documentationComments {
+		processedText := queryEngine.ProcessCommentText(parseTree, commentNode)
+		if processedText != "" {
+			comments = append(comments, processedText)
+		}
+	}
+
+	return strings.Join(comments, " ")
 }

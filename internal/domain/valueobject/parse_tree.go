@@ -688,3 +688,65 @@ func (pn *ParseNode) TreeSitterNode() *tree_sitter.Node {
 func (pn *ParseNode) IsErrorNode() bool {
 	return pn != nil && pn.Type == "ERROR"
 }
+
+// ChildByFieldName returns a child node by its field name from the tree-sitter grammar.
+// This method uses tree-sitter's field access capabilities to find named fields
+// according to the grammar definition, providing a more reliable way to access
+// specific parts of a language construct than manual traversal.
+//
+// Parameters:
+//
+//	fieldName - The name of the field as defined in the tree-sitter grammar
+//
+// Returns:
+//
+//	*ParseNode - The child node for the specified field, or nil if not found
+//
+// Example usage:
+//
+//	// For a method_declaration node, get the receiver field
+//	receiverNode := methodNode.ChildByFieldName("receiver")
+//
+//	// For a function_declaration node, get parameters and result
+//	parametersNode := functionNode.ChildByFieldName("parameters")
+//	resultNode := functionNode.ChildByFieldName("result")
+func (pn *ParseNode) ChildByFieldName(fieldName string) *ParseNode {
+	if pn == nil || fieldName == "" {
+		return nil
+	}
+
+	// Use tree-sitter node field access if available
+	if pn.tsNode != nil {
+		// Get the child node by field name from tree-sitter
+		childTSNode := pn.tsNode.ChildByFieldName(fieldName)
+		if childTSNode.IsNull() {
+			return nil
+		}
+
+		// Get positions with safe conversion from uint to uint32
+		childStartByte := childTSNode.StartByte()
+		childEndByte := childTSNode.EndByte()
+
+		// Check for potential overflow before conversion
+		if childStartByte > 0xFFFFFFFF || childEndByte > 0xFFFFFFFF {
+			return nil // Position too large for uint32
+		}
+
+		// Find the corresponding ParseNode in our children
+		// We need to match by position since ParseNode wraps tree-sitter nodes
+		for _, child := range pn.Children {
+			if child != nil && child.StartByte == uint32(childStartByte) &&
+				child.EndByte == uint32(childEndByte) {
+				return child
+			}
+		}
+
+		// If we have a tree-sitter node but no corresponding ParseNode,
+		// we may need to create one (this shouldn't happen in normal use)
+		return nil
+	}
+
+	// Fallback: If no tree-sitter node, we cannot determine field names reliably
+	// Field access requires the grammar information from tree-sitter
+	return nil
+}

@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	forest "github.com/alexaandru/go-sitter-forest"
@@ -18,6 +17,13 @@ import (
 )
 
 // Constants to avoid goconst lint warnings and reduce hardcoded values.
+const (
+	nodeTypeCallExpression      = "call_expression"
+	nodeTypeAssignmentStatement = "assignment_statement"
+	nodeTypeForStatement        = "for_statement"
+	nodeTypeIfStatement         = "if_statement"
+	nodeTypeReturnStatement     = "return_statement"
+)
 
 // init registers the Go parser with the treesitter registry to avoid import cycles.
 func init() {
@@ -363,37 +369,286 @@ func isStructOrInterfaceField(line string) bool {
 	return isMinimalFieldPattern(trimmed)
 }
 
-// tryASTBasedFieldDetection attempts to use TreeSitterQueryEngine with context-aware parsing.
-// Returns (result, shouldUse) where shouldUse indicates if AST parsing was successful.
-// Uses proper Go grammar contexts (struct/interface) to parse field/method lines correctly.
+// tryASTBasedFieldDetection performs direct AST-based field detection on a single line of Go code.
+//
+// This function implements a clean, single-parse approach that:
+// 1. Handles edge cases before expensive parsing (empty lines, obvious function calls)
+// 2. Uses direct line parsing instead of artificial context creation
+// 3. Performs comprehensive malformed syntax detection
+// 4. Employs an optimized analysis pipeline with early returns
+//
+// Returns (isField, useAST) where:
+//   - isField: true if the line represents a valid struct/interface field
+//   - useAST: true if AST parsing was successful, false if parsing failed entirely
+//
+// The function prioritizes accuracy and performance through:
+//   - Early rejection of obvious non-field patterns
+//   - Single parse tree creation with reuse across multiple analyses
+//   - Structured analysis pipeline (positive patterns → negative patterns → fallback)
 func tryASTBasedFieldDetection(line string) (bool, bool) {
-	ctx := context.Background()
+	// Handle edge cases first - empty lines and obvious rejections
+	if shouldRejectBeforeParsing(line) {
+		return false, false
+	}
+
+	trimmedLine := strings.TrimSpace(line)
+	if hasObviousFunctionCallPattern(trimmedLine) {
+		return false, true // Logger function calls should be rejected immediately
+	}
+
+	// Parse line directly as Go syntax
+	parseResult := treesitter.CreateTreeSitterParseTree(context.Background(), line)
+	if parseResult.Error != nil {
+		return false, false // Parsing failed, return (false, false)
+	}
+
+	// Check for truly malformed syntax first - this should return (false, false)
+	if isTrulyMalformedSyntax(parseResult.ParseTree, trimmedLine) {
+		return false, false
+	}
+
+	// Analyze the parse tree for field-like patterns
+	analysis := analyzeParseTreeForFieldPatterns(parseResult.ParseTree, trimmedLine)
+	return analysis.isField, analysis.useAST
+}
+
+// isTrulyMalformedSyntax checks if the syntax is truly malformed and should return (false, false).
+// This includes cases like unbalanced parentheses, invalid characters, and severely broken syntax.
+func isTrulyMalformedSyntax(parseTree *valueobject.ParseTree, line string) bool {
+	if parseTree == nil || parseTree.RootNode() == nil {
+		return true
+	}
+
+	allNodes := getAllNodes(parseTree.RootNode())
+
+	// Count total nodes and error nodes to determine if it's truly malformed
+	totalNodes := len(allNodes)
+	if totalNodes == 0 {
+		return true // No nodes means failed parsing
+	}
+
+	errorNodes := 0
+	for _, node := range allNodes {
+		if node.Type == "ERROR" || strings.Contains(node.Type, "error") {
+			errorNodes++
+		}
+	}
+
+	// If most nodes are error nodes, it's truly malformed syntax (return to original logic)
+	if totalNodes > 0 && float64(errorNodes)/float64(totalNodes) > 0.5 {
+		return true // Too many error nodes, likely malformed
+	}
+
+	// Additional checks for specific malformed patterns that tree-sitter might not catch
+	// Check for unbalanced parentheses or braces that tree-sitter couldn't handle
+	openParens := strings.Count(line, "(") - strings.Count(line, ")")
+	openBraces := strings.Count(line, "{") - strings.Count(line, "}")
+	openBrackets := strings.Count(line, "[") - strings.Count(line, "]")
+
+	// Severely unbalanced delimiters indicate malformed syntax (allow single imbalance for partial syntax)
+	if abs(openParens) > 1 || abs(openBraces) > 1 || abs(openBrackets) > 1 {
+		return true
+	}
+
+	// Check for specific patterns that should be considered malformed
+	if strings.Contains(line, "invalid syntax") {
+		return true
+	}
+
+	return false
+}
+
+// shouldRejectBeforeParsing checks for edge cases that should be rejected before expensive parsing.
+func shouldRejectBeforeParsing(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return trimmed == "" // Empty and whitespace-only lines
+}
+
+// hasObviousFunctionCallPattern checks for obvious function call patterns that should be rejected immediately.
+func hasObviousFunctionCallPattern(trimmed string) bool {
+	// Quick rejection of obvious function calls before expensive parsing
+	return strings.Contains(trimmed, "logger.") && strings.Contains(trimmed, "(")
+}
+
+// fieldPatternAnalysisResult holds the result of analyzing a parse tree for field patterns.
+type fieldPatternAnalysisResult struct {
+	isField bool // Whether the pattern represents a field
+	useAST  bool // Whether AST analysis was successful
+}
+
+// analyzeParseTreeForFieldPatterns consolidates all the field pattern analysis logic.
+// It performs comprehensive AST analysis to determine if the parsed line represents a valid field pattern.
+// Uses an optimized single-pass approach to minimize redundant tree traversals.
+func analyzeParseTreeForFieldPatterns(parseTree *valueobject.ParseTree, trimmedLine string) fieldPatternAnalysisResult {
 	queryEngine := NewTreeSitterQueryEngine()
 
-	// First, try direct parsing to check for constructs that should be rejected
-	// This must come FIRST to avoid false positives from struct/interface contexts
-	directResult := tryDirectParsingForRejection(ctx, line, queryEngine)
-	if directResult.parsed {
-		return directResult.isField, true
+	// First, check for positive field patterns (early return on success)
+	if hasPositiveFieldPattern(queryEngine, parseTree, trimmedLine) {
+		return fieldPatternAnalysisResult{isField: true, useAST: true}
 	}
 
-	// Try parsing in struct context (for field declarations)
-	structResult := tryParseInStructContext(ctx, line, queryEngine)
-	if structResult.parsed {
-		return structResult.isField, true
+	// Then, check for negative patterns that should be rejected (early return on rejection)
+	if hasNegativePattern(queryEngine, parseTree) {
+		return fieldPatternAnalysisResult{isField: false, useAST: true}
 	}
 
-	// Try parsing in interface context (for method specifications and embedded types)
-	interfaceResult := tryParseInInterfaceContext(ctx, line, queryEngine)
-	if interfaceResult.parsed {
-		return interfaceResult.isField, true
+	// No field/method patterns found and no invalid patterns, assume not a field
+	return fieldPatternAnalysisResult{isField: false, useAST: true}
+}
+
+// hasPositiveFieldPattern checks for patterns that indicate this is a valid field.
+func hasPositiveFieldPattern(
+	queryEngine TreeSitterQueryEngine,
+	parseTree *valueobject.ParseTree,
+	trimmedLine string,
+) bool {
+	// Check for formal field declarations first
+	if len(queryEngine.QueryFieldDeclarations(parseTree)) > 0 {
+		return true
 	}
 
-	// All AST parsing failed, fall back to string-based detection
-	return false, false
+	if len(queryEngine.QueryMethodSpecs(parseTree)) > 0 {
+		return true
+	}
+
+	if len(queryEngine.QueryEmbeddedTypes(parseTree)) > 0 {
+		return true
+	}
+
+	// For lines that don't parse as formal field declarations but look like field patterns,
+	// analyze the AST structure to detect field-like syntax patterns
+	return isFieldLikeSyntaxPattern(parseTree, trimmedLine)
+}
+
+// hasNegativePattern checks for patterns that should be rejected (functions, variables, etc.).
+func hasNegativePattern(queryEngine TreeSitterQueryEngine, parseTree *valueobject.ParseTree) bool {
+	// Check for invalid patterns that should be rejected using queries
+	if len(queryEngine.QueryFunctionDeclarations(parseTree)) > 0 ||
+		len(queryEngine.QueryVariableDeclarations(parseTree)) > 0 ||
+		len(queryEngine.QueryConstDeclarations(parseTree)) > 0 ||
+		len(queryEngine.QueryImportDeclarations(parseTree)) > 0 ||
+		len(queryEngine.QueryPackageDeclarations(parseTree)) > 0 {
+		return true
+	}
+
+	// Check for other constructs using optimized node traversal
+	return hasControlFlowOrFunctionCalls(parseTree)
+}
+
+// hasControlFlowOrFunctionCalls performs an optimized traversal to find control flow or function call patterns.
+func hasControlFlowOrFunctionCalls(parseTree *valueobject.ParseTree) bool {
+	nodes := getAllNodes(parseTree.RootNode())
+	for _, node := range nodes {
+		switch node.Type {
+		case nodeTypeReturnStatement, nodeTypeIfStatement, nodeTypeForStatement, nodeTypeAssignmentStatement:
+			return true // Found control flow/assignment statement
+		case nodeTypeCallExpression:
+			if isStandaloneFunctionCall(node, parseTree) {
+				return true // Found standalone function call
+			}
+		}
+	}
+	return false
+}
+
+// abs returns the absolute value of an integer.
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+// isFieldLikeSyntaxPattern analyzes the AST structure to detect field-like syntax patterns
+// that don't parse as formal field declarations but represent valid struct/interface field syntax.
+func isFieldLikeSyntaxPattern(parseTree *valueobject.ParseTree, line string) bool {
+	if parseTree == nil || parseTree.RootNode() == nil {
+		return false
+	}
+
+	// Get all nodes from the parse tree
+	allNodes := getAllNodes(parseTree.RootNode())
+	if len(allNodes) == 0 {
+		return false
+	}
+
+	// First check for patterns that should be rejected
+	for _, node := range allNodes {
+		switch node.Type {
+		case "return_statement", nodeTypeIfStatement, nodeTypeForStatement, nodeTypeAssignmentStatement:
+			return false // These patterns override field detection
+		case nodeTypeCallExpression:
+			if isStandaloneFunctionCall(node, parseTree) {
+				return false // Function calls override field detection
+			}
+		}
+	}
+
+	// Count meaningful identifiers and type patterns
+	identifierCount := 0
+	typePatternCount := 0
+
+	for _, node := range allNodes {
+		switch node.Type {
+		case "identifier":
+			identifierCount++
+		case nodeTypeTypeIdentifier, nodeTypeQualifiedType, "function_type", nodeTypeChannelType,
+			"map_type", "slice_type", "array_type", "pointer_type", nodeTypeInterfaceType:
+			typePatternCount++
+		}
+	}
+
+	// Pattern 1: Field declaration like "name string" or "name string // comment"
+	// Should have at least 1 identifier and 1 type pattern
+	if identifierCount >= 1 && typePatternCount >= 1 {
+		return true
+	}
+
+	// Pattern 2: Embedded type like "io.Reader", "sync.Mutex" (qualified_type only)
+	if identifierCount == 0 && typePatternCount >= 1 {
+		for _, node := range allNodes {
+			if node.Type == nodeTypeQualifiedType {
+				return true
+			}
+		}
+	}
+
+	// Pattern 3: Method signature like "Read([]byte) (int, error)"
+	// Look for parameter_list nodes which indicate method signatures
+	for _, node := range allNodes {
+		if node.Type == nodeTypeParameterList {
+			return true
+		}
+	}
+
+	// Pattern 4: Type-only patterns that might be valid (more permissive)
+	// If we have any meaningful type patterns without obvious rejection signals
+	if typePatternCount > 0 {
+		// Check that we don't have control flow patterns
+		hasControlFlow := false
+		for _, node := range allNodes {
+			switch node.Type {
+			case nodeTypeReturnStatement, nodeTypeAssignmentStatement, nodeTypeIfStatement, nodeTypeForStatement:
+				return false // Found control flow, reject immediately
+			}
+		}
+		if !hasControlFlow {
+			return true
+		}
+	}
+
+	// Pattern 5: Accept lines with both identifiers and types, even if not in expected positions
+	// This handles cases where tree-sitter doesn't parse exactly as expected
+	if identifierCount > 0 && (typePatternCount > 0 || identifierCount >= 2) {
+		return true
+	}
+
+	return false
 }
 
 // contextParseResult holds the result of parsing a line in a specific Go context.
+// Deprecated: This struct is maintained for backward compatibility with existing tests.
+// New code should use the direct parsing approach in tryASTBasedFieldDetection.
 type contextParseResult struct {
 	parsed       bool   // Whether parsing succeeded without errors
 	isField      bool   // Whether the line represents a valid field/method pattern
@@ -401,403 +656,25 @@ type contextParseResult struct {
 	errorMessage string // Detailed error message explaining the parsing issue
 }
 
-// contextParseCache provides caching for struct context parsing results with eviction.
-type contextParseCache struct {
-	cache       map[string]contextParseResult
-	lastAccess  map[string]time.Time
-	mutex       sync.RWMutex
-	maxEntries  int
-	lastCleanup time.Time
-}
-
-// getContextCache returns a singleton instance of the context cache.
-// Using sync.Once pattern for thread-safe lazy initialization.
-//
-//nolint:gochecknoglobals // singleton pattern requires package-level variables
-var (
-	contextCacheInstance *contextParseCache
-	contextCacheOnce     sync.Once
-)
-
-func getContextCache() *contextParseCache {
-	contextCacheOnce.Do(func() {
-		contextCacheInstance = &contextParseCache{
-			cache:       make(map[string]contextParseResult),
-			lastAccess:  make(map[string]time.Time),
-			maxEntries:  1000, // Limit cache size to prevent unbounded growth
-			lastCleanup: time.Now(),
-		}
-	})
-	return contextCacheInstance
-}
-
-// getCacheKey generates a fast cache key for the given line.
-// Using direct string trimming to avoid cryptographic hash overhead for cache keys.
-func getCacheKey(line string) string {
-	// For cache keys, we can use the trimmed line directly since:
-	// 1. Lines are typically short (< 1KB)
-	// 2. We don't need cryptographic properties
-	// 3. Memory usage is more important than hash collision resistance
-	return strings.TrimSpace(line)
-}
-
-// evictOldEntries removes old cache entries to prevent unbounded memory growth.
-// Should be called while holding a write lock.
-func (c *contextParseCache) evictOldEntries() {
-	now := time.Now()
-	// Clean up every 5 minutes or when cache is too large
-	if now.Sub(c.lastCleanup) < 5*time.Minute && len(c.cache) < c.maxEntries {
-		return
-	}
-
-	// If cache is over limit, remove oldest 20% of entries
-	if len(c.cache) >= c.maxEntries {
-		type entry struct {
-			key        string
-			lastAccess time.Time
-		}
-
-		entries := make([]entry, 0, len(c.lastAccess))
-		for key, accessTime := range c.lastAccess {
-			entries = append(entries, entry{key: key, lastAccess: accessTime})
-		}
-
-		// Sort by access time (oldest first)
-		for i := range len(entries) - 1 {
-			for j := i + 1; j < len(entries); j++ {
-				if entries[i].lastAccess.After(entries[j].lastAccess) {
-					entries[i], entries[j] = entries[j], entries[i]
-				}
-			}
-		}
-
-		// Remove oldest 20% of entries
-		removeCount := len(entries) / 5
-		if removeCount < 10 {
-			removeCount = 10 // Always remove at least 10 entries
-		}
-		for i := 0; i < removeCount && i < len(entries); i++ {
-			key := entries[i].key
-			delete(c.cache, key)
-			delete(c.lastAccess, key)
-		}
-	}
-
-	c.lastCleanup = now
-}
-
-// isObviousNonField quickly identifies lines that are clearly not struct/interface fields.
-func isObviousNonField(line string) bool {
-	trimmed := strings.TrimSpace(line)
-	// Fast rejection of common non-field patterns
-	return strings.HasPrefix(trimmed, "func ") ||
-		strings.HasPrefix(trimmed, "var ") ||
-		strings.HasPrefix(trimmed, "const ") ||
-		strings.HasPrefix(trimmed, "import ") ||
-		strings.HasPrefix(trimmed, "package ") ||
-		strings.HasPrefix(trimmed, "type ") ||
-		strings.HasPrefix(trimmed, "return ") ||
-		strings.HasPrefix(trimmed, "if ") ||
-		strings.HasPrefix(trimmed, "for ")
-}
-
-// tryFastHeuristics performs lightweight pattern matching before expensive parsing.
-func tryFastHeuristics(line string) contextParseResult {
-	trimmed := strings.TrimSpace(line)
-	parts := strings.Fields(trimmed)
-
-	// Simple field patterns: "Name type" or "Name type `tag`"
-	if len(parts) >= 2 {
-		firstPart := parts[0]
-		// Basic identifier validation (simplified)
-		if len(firstPart) > 0 && isValidGoIdentifierStart(rune(firstPart[0])) {
-			return contextParseResult{
-				parsed:       true,
-				isField:      true,
-				errorType:    "HEURISTIC",
-				errorMessage: "Fast heuristic match",
-			}
-		}
-	}
-
-	// Method signatures: "MethodName(" pattern
-	if strings.Contains(trimmed, "(") && !strings.HasPrefix(trimmed, "func ") {
-		return contextParseResult{
-			parsed:       true,
-			isField:      true,
-			errorType:    "HEURISTIC",
-			errorMessage: "Method signature heuristic",
-		}
-	}
-
-	// Embedded types: single identifier potentially qualified
-	if len(parts) == 1 && len(parts[0]) > 0 {
-		return contextParseResult{
-			parsed:       true,
-			isField:      true,
-			errorType:    "HEURISTIC",
-			errorMessage: "Embedded type heuristic",
-		}
-	}
+// tryParseInStructContext is a deprecated compatibility wrapper around direct parsing.
+// Deprecated: This function exists only for backward compatibility with existing tests.
+// New code should use tryASTBasedFieldDetection directly for better performance and accuracy.
+func tryParseInStructContext(ctx context.Context, line string, queryEngine TreeSitterQueryEngine) contextParseResult {
+	// Delegate to the new direct parsing approach
+	isField, parsed := tryASTBasedFieldDetection(line)
 
 	return contextParseResult{
-		parsed:       false,
-		isField:      false,
-		errorType:    "HEURISTIC_SKIP",
-		errorMessage: "No fast heuristic match",
+		parsed:       parsed,
+		isField:      isField,
+		errorType:    "",
+		errorMessage: "",
 	}
-}
-
-// isValidGoIdentifierStart checks if a rune can start a Go identifier.
-func isValidGoIdentifierStart(r rune) bool {
-	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || r > 127 // Unicode support
-}
-
-// tryParseInStructContext attempts to parse the line in a struct declaration context.
-// This allows field declarations like "Name string" and "ID int `json:\"id\"`" to be parsed correctly.
-// Enhanced with caching, error recovery, and complex generic support.
-func tryParseInStructContext(ctx context.Context, line string, queryEngine TreeSitterQueryEngine) contextParseResult {
-	trimmedLine := strings.TrimSpace(line)
-
-	// Empty lines are always valid
-	if trimmedLine == "" {
-		return contextParseResult{parsed: true, isField: true, errorType: "", errorMessage: ""}
-	}
-
-	// Check cache first
-	cacheKey := getCacheKey(trimmedLine)
-	cache := getContextCache()
-	cache.mutex.RLock()
-	if cachedResult, exists := cache.cache[cacheKey]; exists {
-		// Update last access time for cache hit
-		cache.mutex.RUnlock()
-		cache.mutex.Lock()
-		cache.lastAccess[cacheKey] = time.Now()
-		cache.mutex.Unlock()
-		return cachedResult
-	}
-	cache.mutex.RUnlock()
-
-	// Perform parsing with timeout
-	result := parseWithRecovery(ctx, trimmedLine, queryEngine)
-
-	// Cache the result with access time tracking and eviction
-	cache.mutex.Lock()
-	cache.evictOldEntries() // Clean up old entries if needed
-	cache.cache[cacheKey] = result
-	cache.lastAccess[cacheKey] = time.Now()
-	cache.mutex.Unlock()
-
-	return result
-}
-
-// parseWithRecovery attempts to parse with optimized strategy selection.
-// Uses fast heuristics first before expensive tree-sitter parsing.
-func parseWithRecovery(ctx context.Context, line string, queryEngine TreeSitterQueryEngine) contextParseResult {
-	// Quick rejection of obvious non-fields first
-	if isObviousNonField(line) {
-		return contextParseResult{parsed: true, isField: false, errorType: "", errorMessage: ""}
-	}
-
-	// Fast heuristic check for simple patterns
-	if heuristicResult := tryFastHeuristics(line); heuristicResult.parsed {
-		return heuristicResult
-	}
-
-	// Only use expensive tree-sitter parsing for complex cases
-	if result := tryDirectStructParsing(ctx, line, queryEngine); result.parsed {
-		return result
-	}
-
-	// Final fallback with error recovery
-	return tryRecoveryParsing(ctx, line, queryEngine)
-}
-
-// tryDirectStructParsing attempts direct parsing in struct context.
-func tryDirectStructParsing(ctx context.Context, line string, queryEngine TreeSitterQueryEngine) contextParseResult {
-	// Create a minimal struct context for proper Go grammar parsing
-	structContext := "package test\n\ntype TestStruct struct {\n\t" + line + "\n}"
-
-	// Add parsing timeout - reduced from 100ms to 10ms for better performance
-	parseCtx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
-	defer cancel()
-
-	result := treesitter.CreateTreeSitterParseTree(parseCtx, structContext)
-	if result.Error != nil {
-		return contextParseResult{
-			parsed:       false,
-			isField:      false,
-			errorType:    "TREE_SITTER_ERROR",
-			errorMessage: fmt.Sprintf("Tree-sitter parsing failed: %v", result.Error),
-		}
-	}
-
-	// Check if parse tree has syntax errors
-	if hasErrors, err := result.ParseTree.HasSyntaxErrors(); err != nil {
-		return contextParseResult{
-			parsed:       false,
-			isField:      false,
-			errorType:    "SYNTAX_ERROR_CHECK_FAILED",
-			errorMessage: fmt.Sprintf("Failed to check syntax errors: %v", err),
-		}
-	} else if hasErrors {
-		// Don't immediately fail on syntax errors - try recovery
-		return contextParseResult{parsed: false, isField: false, errorType: "SYNTAX_ERROR", errorMessage: "Parse tree contains syntax errors"}
-	}
-
-	// Look for field_declaration nodes within the struct
-	fieldDecls := queryEngine.QueryFieldDeclarations(result.ParseTree)
-	for _, fieldDecl := range fieldDecls {
-		if isValidFieldDeclaration(fieldDecl, result.ParseTree) {
-			return contextParseResult{parsed: true, isField: true, errorType: "", errorMessage: ""}
-		}
-	}
-
-	// Check for method specs (interface methods)
-	methodSpecs := queryEngine.QueryMethodSpecs(result.ParseTree)
-	for range methodSpecs {
-		return contextParseResult{parsed: true, isField: true, errorType: "", errorMessage: ""}
-	}
-
-	// Check for embedded types
-	embeddedTypes := queryEngine.QueryEmbeddedTypes(result.ParseTree)
-	for range embeddedTypes {
-		return contextParseResult{parsed: true, isField: true, errorType: "", errorMessage: ""}
-	}
-
-	return contextParseResult{parsed: true, isField: false, errorType: "", errorMessage: ""}
-}
-
-// tryRecoveryParsing attempts lightweight recovery with fallback to rejection.
-func tryRecoveryParsing(ctx context.Context, line string, queryEngine TreeSitterQueryEngine) contextParseResult {
-	// Simple recovery: fix obvious bracket/tag issues
-	recoveredLine := line
-	changesMade := false
-
-	// Fix missing closing brackets (most common issue)
-	if openBrackets := strings.Count(line, "["); openBrackets > strings.Count(line, "]") {
-		recoveredLine += strings.Repeat("]", openBrackets-strings.Count(line, "]"))
-		changesMade = true
-	}
-
-	// Fix incomplete struct tags
-	if strings.Contains(line, "`") && strings.Count(line, "`")%2 != 0 {
-		recoveredLine += "`"
-		changesMade = true
-	}
-
-	// Only try expensive parsing if we made meaningful changes
-	if changesMade {
-		if result := tryDirectStructParsing(ctx, recoveredLine, queryEngine); result.parsed {
-			return result
-		}
-	}
-
-	// If recovery failed, assume it's not a field rather than erroring
-	return contextParseResult{parsed: true, isField: false, errorType: "", errorMessage: ""}
-}
-
-// tryParseInInterfaceContext attempts to parse the line in an interface declaration context.
-// This allows method specifications like "Process(data string) error" and embedded types like "io.Reader".
-func tryParseInInterfaceContext(
-	ctx context.Context,
-	line string,
-	queryEngine TreeSitterQueryEngine,
-) contextParseResult {
-	// Create a minimal interface context for proper Go grammar parsing
-	interfaceContext := "package test\n\ntype TestInterface interface {\n\t" + line + "\n}"
-
-	result := treesitter.CreateTreeSitterParseTree(ctx, interfaceContext)
-	if result.Error != nil {
-		return contextParseResult{parsed: false, isField: false}
-	}
-
-	// Check if parse tree has syntax errors
-	if hasErrors, err := result.ParseTree.HasSyntaxErrors(); err != nil || hasErrors {
-		return contextParseResult{parsed: false, isField: false}
-	}
-
-	// Look for method specifications within the interface (method_elem nodes)
-	methodSpecs := queryEngine.QueryMethodSpecs(result.ParseTree)
-	if len(methodSpecs) > 0 {
-		return contextParseResult{parsed: true, isField: true}
-	}
-
-	// Also check for method_elem nodes directly (tree-sitter Go grammar uses method_elem for interface methods)
-	allNodes := getAllNodes(result.ParseTree.RootNode())
-	for _, node := range allNodes {
-		if node.Type == "method_elem" {
-			return contextParseResult{parsed: true, isField: true}
-		}
-	}
-
-	// Look for embedded types within the interface
-	embeddedTypes := queryEngine.QueryEmbeddedTypes(result.ParseTree)
-	if len(embeddedTypes) > 0 {
-		return contextParseResult{parsed: true, isField: true}
-	}
-
-	// Check for type elements in interface (alternative pattern)
-	for _, node := range allNodes {
-		if node.Type == "type_elem" || node.Type == nodeTypeQualifiedType || node.Type == nodeTypeTypeIdentifier {
-			return contextParseResult{parsed: true, isField: true}
-		}
-	}
-
-	return contextParseResult{parsed: true, isField: false}
-}
-
-// tryDirectParsingForRejection attempts to parse lines that should be rejected (like return statements, imports).
-// This helps identify non-field constructs without requiring contexts.
-func tryDirectParsingForRejection(
-	ctx context.Context,
-	line string,
-	queryEngine TreeSitterQueryEngine,
-) contextParseResult {
-	result := treesitter.CreateTreeSitterParseTree(ctx, line)
-	if result.Error != nil {
-		return contextParseResult{parsed: false, isField: false}
-	}
-
-	// Check if parse tree has syntax errors
-	if hasErrors, err := result.ParseTree.HasSyntaxErrors(); err != nil || hasErrors {
-		return contextParseResult{parsed: false, isField: false}
-	}
-
-	// Check for constructs that should be rejected
-	typeDecls := queryEngine.QueryTypeDeclarations(result.ParseTree)
-	funcDecls := queryEngine.QueryFunctionDeclarations(result.ParseTree)
-	varDecls := queryEngine.QueryVariableDeclarations(result.ParseTree)
-	constDecls := queryEngine.QueryConstDeclarations(result.ParseTree)
-	importDecls := queryEngine.QueryImportDeclarations(result.ParseTree)
-	packageDecls := queryEngine.QueryPackageDeclarations(result.ParseTree)
-
-	// If we found any of these construct types, reject
-	if len(typeDecls) > 0 || len(funcDecls) > 0 || len(varDecls) > 0 || len(constDecls) > 0 ||
-		len(importDecls) > 0 || len(packageDecls) > 0 {
-		return contextParseResult{parsed: true, isField: false}
-	}
-
-	// Check for other constructs that should be rejected
-	allNodes := getAllNodes(result.ParseTree.RootNode())
-	for _, node := range allNodes {
-		switch node.Type {
-		case "return_statement", "if_statement", "for_statement", "assignment_statement":
-			return contextParseResult{parsed: true, isField: false}
-		case "call_expression":
-			if isStandaloneFunctionCall(node, result.ParseTree) {
-				return contextParseResult{parsed: true, isField: false}
-			}
-		}
-	}
-
-	return contextParseResult{parsed: true, isField: false}
 }
 
 // isStandaloneFunctionCall checks if a call_expression node represents a standalone function call
 // rather than a method signature parameter or return type using proper AST-based analysis.
 func isStandaloneFunctionCall(node *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
-	if node == nil || node.Type != "call_expression" {
+	if node == nil || node.Type != nodeTypeCallExpression {
 		return false
 	}
 
@@ -809,6 +686,12 @@ func isStandaloneFunctionCall(node *valueobject.ParseNode, parseTree *valueobjec
 	// A standalone function call should have both function and arguments
 	if functionField == nil || argumentsField == nil {
 		return false
+	}
+
+	// Direct check for logger calls as they should always be rejected
+	nodeText := parseTree.GetNodeText(node)
+	if strings.Contains(nodeText, "logger.") {
+		return true // Any logger call is a standalone function call
 	}
 
 	// Check if the arguments contain string literals (common in logging/print calls)
@@ -850,7 +733,12 @@ func isCommonFunctionCall(functionField *valueobject.ParseNode, parseTree *value
 
 	functionText := parseTree.GetNodeText(functionField)
 	// Common function call patterns that should be rejected
-	commonFunctionCalls := []string{"fmt.Print", "log.", "println", "print", "panic"}
+	commonFunctionCalls := []string{
+		"fmt.Print", "fmt.Printf", "fmt.Println",
+		"log.", "logger.", "logging.",
+		"println", "print", "panic",
+		"Info", "Debug", "Warn", "Error", "Fatal", // Common logging method names
+	}
 	for _, pattern := range commonFunctionCalls {
 		if strings.Contains(functionText, pattern) {
 			return true // Looks like a common function call

@@ -227,7 +227,7 @@ func (p *GoParser) parseGoFunction(
 	var nameNode *valueobject.ParseNode
 	for _, child := range node.Children {
 		// function_declaration uses "identifier", method_declaration uses "field_identifier"
-		if child.Type == "identifier" {
+		if child.Type == nodeTypeIdentifier {
 			nameNode = child
 			break
 		}
@@ -676,14 +676,45 @@ func extractReceiverTypeFromNode(methodNode *valueobject.ParseNode, parseTree *v
 		return ""
 	}
 
+	ctx := context.TODO()
+	slogger.Debug(ctx, "extractReceiverTypeFromNode called", slogger.Fields{
+		"methodNode_type": methodNode.Type,
+	})
+
 	// Use field access to get the receiver field
 	receiverField := methodNode.ChildByFieldName("receiver")
 	if receiverField == nil {
-		return ""
+		slogger.Debug(ctx, "No receiver field found, trying manual traversal", slogger.Fields{
+			"methodNode_type": methodNode.Type,
+		})
+		// Fallback: manually traverse children to find receiver parameter_list
+		for _, child := range methodNode.Children {
+			if child.Type == nodeTypeParameterList {
+				// This might be the receiver parameter_list (first parameter_list in method)
+				receiverField = child
+				break
+			}
+		}
+		if receiverField == nil {
+			return ""
+		}
 	}
+
+	slogger.Debug(ctx, "Found receiver field", slogger.Fields{
+		"receiverField_type": receiverField.Type,
+	})
 
 	// The receiver field should be a parameter_list containing parameter_declaration
 	var paramDecl *valueobject.ParseNode
+	slogger.Debug(ctx, "Searching for parameter_declaration in receiver", slogger.Fields{
+		"receiverField_children": func() []string {
+			var types []string
+			for _, child := range receiverField.Children {
+				types = append(types, child.Type)
+			}
+			return types
+		}(),
+	})
 	for _, child := range receiverField.Children {
 		if child.Type == "parameter_declaration" {
 			paramDecl = child
@@ -692,17 +723,60 @@ func extractReceiverTypeFromNode(methodNode *valueobject.ParseNode, parseTree *v
 	}
 
 	if paramDecl == nil {
+		slogger.Debug(ctx, "No parameter_declaration found in receiver", slogger.Fields{
+			"receiverField_children": func() []string {
+				var types []string
+				for _, child := range receiverField.Children {
+					types = append(types, child.Type)
+				}
+				return types
+			}(),
+		})
 		return ""
 	}
+
+	slogger.Debug(ctx, "Found parameter declaration", slogger.Fields{
+		"paramDecl_type": paramDecl.Type,
+	})
 
 	// Use field access to get the type field from parameter_declaration
 	typeField := paramDecl.ChildByFieldName("type")
 	if typeField == nil {
-		return ""
+		slogger.Debug(ctx, "No type field found in parameter_declaration, trying manual traversal", slogger.Fields{
+			"paramDecl_children": func() []string {
+				var types []string
+				for _, child := range paramDecl.Children {
+					types = append(types, child.Type)
+				}
+				return types
+			}(),
+		})
+		// Fallback: look for type nodes manually
+		for _, child := range paramDecl.Children {
+			if strings.Contains(child.Type, "type") ||
+				child.Type == nodeTypeTypeIdentifier ||
+				child.Type == nodeTypePointerType ||
+				child.Type == nodeTypeQualifiedType {
+				typeField = child
+				break
+			}
+		}
+		if typeField == nil {
+			return ""
+		}
 	}
 
+	slogger.Debug(ctx, "Found type field", slogger.Fields{
+		"typeField_type": typeField.Type,
+	})
+
 	// Handle different type structures through field access
-	return extractTypeNameFromTypeNode(typeField, parseTree)
+	result := extractTypeNameFromTypeNode(typeField, parseTree)
+	slogger.Debug(ctx, "Extracted receiver type", slogger.Fields{
+		"result": result,
+	})
+
+	return result
 }
 
 // extractTypeNameFromTypeNode extracts the base type name from a type node using field access.
@@ -712,12 +786,41 @@ func extractTypeNameFromTypeNode(typeNode *valueobject.ParseNode, parseTree *val
 		return ""
 	}
 
+	ctx := context.TODO()
+	slogger.Debug(ctx, "extractTypeNameFromTypeNode called", slogger.Fields{
+		"typeNode_type": typeNode.Type,
+	})
+
 	switch typeNode.Type {
 	case nodeTypePointerType:
+		slogger.Debug(ctx, "Processing pointer type", slogger.Fields{})
 		// For pointer types, get the underlying type via field access
 		underlyingType := typeNode.ChildByFieldName("type")
 		if underlyingType != nil {
+			slogger.Debug(ctx, "Found underlying type via field access", slogger.Fields{
+				"underlyingType_type": underlyingType.Type,
+			})
 			return extractTypeNameFromTypeNode(underlyingType, parseTree)
+		}
+		slogger.Debug(ctx, "No underlying type found via field access, trying manual traversal", slogger.Fields{
+			"typeNode_children": func() []string {
+				var types []string
+				for _, child := range typeNode.Children {
+					types = append(types, child.Type)
+				}
+				return types
+			}(),
+		})
+		// Fallback: manual traversal for pointer types
+		for _, child := range typeNode.Children {
+			if child.Type == nodeTypeTypeIdentifier ||
+				child.Type == nodeTypeQualifiedType ||
+				strings.Contains(child.Type, "type") {
+				slogger.Debug(ctx, "Found underlying type via manual traversal", slogger.Fields{
+					"child_type": child.Type,
+				})
+				return extractTypeNameFromTypeNode(child, parseTree)
+			}
 		}
 		return ""
 

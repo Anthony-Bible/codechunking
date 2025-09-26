@@ -153,6 +153,22 @@ type TreeSitterQueryEngine interface {
 	//   - Package-qualified types: "http.Handler", "context.Context"
 	QueryEmbeddedTypes(parseTree *valueobject.ParseTree) []*valueobject.ParseNode
 
+	// QueryCallExpressions finds all call_expression nodes in the parse tree.
+	// Returns all function call expressions found in the Go source file,
+	// including method calls, function calls, and constructor calls.
+	//
+	// Parameters:
+	//   parseTree - The parsed syntax tree to query (can be nil)
+	//
+	// Returns:
+	//   []*valueobject.ParseNode - Slice of call expression nodes, empty if none found
+	//
+	// Example node types this finds:
+	//   - Function calls: "fmt.Println(\"hello\")", "log.Fatal(err)"
+	//   - Method calls: "obj.Method(args)", "receiver.Function()"
+	//   - Constructor calls: "NewStruct(params)", "make([]int, 10)"
+	QueryCallExpressions(parseTree *valueobject.ParseTree) []*valueobject.ParseNode
+
 	// QueryMultipleTypes performs multiple queries in a single tree traversal for better performance.
 	// This method is optimized for cases where multiple types of declarations need to be extracted
 	// from the same parse tree, reducing the overall traversal cost from O(n*m) to O(n) where
@@ -319,14 +335,14 @@ func NewTreeSitterQueryEngine() TreeSitterQueryEngine {
 func (e *ConcreteTreeSitterQueryEngine) QueryPackageDeclarations(
 	parseTree *valueobject.ParseTree,
 ) []*valueobject.ParseNode {
-	return e.queryNodesByType(parseTree, "package_clause")
+	return e.queryNodesByType(parseTree, nodeTypePackageClause)
 }
 
 // QueryImportDeclarations finds all import_declaration nodes in the parse tree.
 func (e *ConcreteTreeSitterQueryEngine) QueryImportDeclarations(
 	parseTree *valueobject.ParseTree,
 ) []*valueobject.ParseNode {
-	return e.queryNodesByType(parseTree, "import_declaration")
+	return e.queryNodesByType(parseTree, nodeTypeImportDeclaration)
 }
 
 // QueryFunctionDeclarations finds all function_declaration nodes in the parse tree.
@@ -347,35 +363,35 @@ func (e *ConcreteTreeSitterQueryEngine) QueryMethodDeclarations(
 func (e *ConcreteTreeSitterQueryEngine) QueryVariableDeclarations(
 	parseTree *valueobject.ParseTree,
 ) []*valueobject.ParseNode {
-	return e.queryNodesByType(parseTree, "var_declaration")
+	return e.queryNodesByType(parseTree, nodeTypeVarDeclaration)
 }
 
 // QueryConstDeclarations finds all const_declaration nodes in the parse tree.
 func (e *ConcreteTreeSitterQueryEngine) QueryConstDeclarations(
 	parseTree *valueobject.ParseTree,
 ) []*valueobject.ParseNode {
-	return e.queryNodesByType(parseTree, "const_declaration")
+	return e.queryNodesByType(parseTree, nodeTypeConstDeclaration)
 }
 
 // QueryTypeDeclarations finds all type_declaration nodes in the parse tree.
 func (e *ConcreteTreeSitterQueryEngine) QueryTypeDeclarations(
 	parseTree *valueobject.ParseTree,
 ) []*valueobject.ParseNode {
-	return e.queryNodesByType(parseTree, "type_declaration")
+	return e.queryNodesByType(parseTree, nodeTypeTypeDeclaration)
 }
 
 // QueryFieldDeclarations finds all field_declaration nodes within struct types.
 func (e *ConcreteTreeSitterQueryEngine) QueryFieldDeclarations(
 	parseTree *valueobject.ParseTree,
 ) []*valueobject.ParseNode {
-	return e.queryNodesByType(parseTree, "field_declaration")
+	return e.queryNodesByType(parseTree, nodeTypeFieldDeclaration)
 }
 
-// QueryMethodSpecs finds all method_spec nodes within interface types.
+// QueryMethodSpecs finds all method_elem nodes within interface types.
 func (e *ConcreteTreeSitterQueryEngine) QueryMethodSpecs(
 	parseTree *valueobject.ParseTree,
 ) []*valueobject.ParseNode {
-	return e.queryNodesByType(parseTree, "method_spec")
+	return e.queryNodesByType(parseTree, nodeTypeMethodElem)
 }
 
 // QueryEmbeddedTypes finds embedded type nodes within struct and interface definitions.
@@ -392,7 +408,7 @@ func (e *ConcreteTreeSitterQueryEngine) QueryEmbeddedTypes(
 	results := []*valueobject.ParseNode{}
 
 	// Get field declarations (some may be embedded types)
-	fieldDecls := e.queryNodesByType(parseTree, "field_declaration")
+	fieldDecls := e.queryNodesByType(parseTree, nodeTypeFieldDeclaration)
 	results = append(results, fieldDecls...)
 
 	// Get type identifiers that might be embedded types
@@ -474,7 +490,24 @@ func (e *ConcreteTreeSitterQueryEngine) QueryMultipleTypes(
 func (e *ConcreteTreeSitterQueryEngine) QueryComments(
 	parseTree *valueobject.ParseTree,
 ) []*valueobject.ParseNode {
-	return e.queryNodesByType(parseTree, "comment")
+	return e.queryNodesByType(parseTree, nodeTypeComment)
+}
+
+// QueryCallExpressions finds all call_expression and type_conversion_expression nodes in the parse tree.
+// Tree-sitter Go grammar parses function calls like fmt.Println() as type_conversion_expression.
+func (e *ConcreteTreeSitterQueryEngine) QueryCallExpressions(
+	parseTree *valueobject.ParseTree,
+) []*valueobject.ParseNode {
+	results := []*valueobject.ParseNode{}
+
+	// Query both node types since tree-sitter parses some calls as type conversions
+	callExprs := e.queryNodesByType(parseTree, "call_expression")
+	results = append(results, callExprs...)
+
+	typeConversionExprs := e.queryNodesByType(parseTree, nodeTypeTypeConversionExpr)
+	results = append(results, typeConversionExprs...)
+
+	return results
 }
 
 // ProcessCommentText processes a comment node to extract clean, readable text content

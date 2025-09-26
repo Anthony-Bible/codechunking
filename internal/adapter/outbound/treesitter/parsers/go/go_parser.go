@@ -18,11 +18,31 @@ import (
 
 // Constants to avoid goconst lint warnings and reduce hardcoded values.
 const (
+	// Control flow and function call node types.
 	nodeTypeCallExpression      = "call_expression"
 	nodeTypeAssignmentStatement = "assignment_statement"
 	nodeTypeForStatement        = "for_statement"
 	nodeTypeIfStatement         = "if_statement"
 	nodeTypeReturnStatement     = "return_statement"
+
+	// Declaration node types.
+	nodeTypePackageClause     = "package_clause"
+	nodeTypeImportDeclaration = "import_declaration"
+	nodeTypeFieldDeclaration  = "field_declaration"
+	nodeTypeVarDeclaration    = "var_declaration"
+	nodeTypeConstDeclaration  = "const_declaration"
+	nodeTypeTypeDeclaration   = "type_declaration"
+
+	// Method and interface element types.
+	nodeTypeMethodElem = "method_elem"
+	nodeTypeTypeElem   = "type_elem"
+
+	// Additional node types used in field detection.
+	nodeTypeShortVarDeclaration = "short_var_declaration"
+	nodeTypeTypeConversionExpr  = "type_conversion_expression"
+	nodeTypeComment             = "comment"
+	nodeTypePackageIdentifier   = "package_identifier"
+	nodeTypeError               = "ERROR"
 )
 
 // init registers the Go parser with the treesitter registry to avoid import cycles.
@@ -170,11 +190,11 @@ func parseGoGenericParameters(
 }
 
 func (p *GoParser) extractPackageNameFromTree(tree *valueobject.ParseTree) string {
-	packageNodes := tree.GetNodesByType("package_clause")
+	packageNodes := tree.GetNodesByType(nodeTypePackageClause)
 	if len(packageNodes) > 0 {
 		// Look for package identifier in the package clause
 		for _, child := range packageNodes[0].Children {
-			if child.Type == "package_identifier" || child.Type == "_package_identifier" {
+			if child.Type == nodeTypePackageIdentifier || child.Type == "_package_identifier" {
 				return tree.GetNodeText(child)
 			}
 		}
@@ -429,7 +449,7 @@ func isTrulyMalformedSyntax(parseTree *valueobject.ParseTree, line string) bool 
 
 	errorNodes := 0
 	for _, node := range allNodes {
-		if node.Type == "ERROR" || strings.Contains(node.Type, "error") {
+		if node.Type == nodeTypeError || strings.Contains(node.Type, "error") {
 			errorNodes++
 		}
 	}
@@ -502,6 +522,15 @@ func hasPositiveFieldPattern(
 	parseTree *valueobject.ParseTree,
 	trimmedLine string,
 ) bool {
+	// First, reject function calls before checking positive patterns using direct node traversal
+	// Tree-sitter parses fmt.Println("hello") as type_conversion_expression, not call_expression
+	allNodes := getAllNodes(parseTree.RootNode())
+	for _, node := range allNodes {
+		if node.Type == nodeTypeCallExpression || node.Type == nodeTypeTypeConversionExpr {
+			return false // Found function call, not a field
+		}
+	}
+
 	// Check for formal field declarations first
 	if len(queryEngine.QueryFieldDeclarations(parseTree)) > 0 {
 		return true
@@ -527,7 +556,8 @@ func hasNegativePattern(queryEngine TreeSitterQueryEngine, parseTree *valueobjec
 		len(queryEngine.QueryVariableDeclarations(parseTree)) > 0 ||
 		len(queryEngine.QueryConstDeclarations(parseTree)) > 0 ||
 		len(queryEngine.QueryImportDeclarations(parseTree)) > 0 ||
-		len(queryEngine.QueryPackageDeclarations(parseTree)) > 0 {
+		len(queryEngine.QueryPackageDeclarations(parseTree)) > 0 ||
+		len(queryEngine.QueryCallExpressions(parseTree)) > 0 {
 		return true
 	}
 
@@ -575,7 +605,7 @@ func isFieldLikeSyntaxPattern(parseTree *valueobject.ParseTree, line string) boo
 	// First check for patterns that should be rejected
 	for _, node := range allNodes {
 		switch node.Type {
-		case "return_statement", nodeTypeIfStatement, nodeTypeForStatement, nodeTypeAssignmentStatement:
+		case nodeTypeReturnStatement, nodeTypeIfStatement, nodeTypeForStatement, nodeTypeAssignmentStatement:
 			return false // These patterns override field detection
 		case nodeTypeCallExpression:
 			if isStandaloneFunctionCall(node, parseTree) {
@@ -678,79 +708,15 @@ func isStandaloneFunctionCall(node *valueobject.ParseNode, parseTree *valueobjec
 		return false
 	}
 
-	// Use proper AST-based analysis instead of string literal heuristics
-	// Check if this call_expression has a function field and arguments field (proper function call structure)
-	functionField := node.ChildByFieldName("function")
-	argumentsField := node.ChildByFieldName("arguments")
-
-	// A standalone function call should have both function and arguments
-	if functionField == nil || argumentsField == nil {
-		return false
-	}
-
-	// Direct check for logger calls as they should always be rejected
-	nodeText := parseTree.GetNodeText(node)
-	if strings.Contains(nodeText, "logger.") {
-		return true // Any logger call is a standalone function call
-	}
-
-	// Check if the arguments contain string literals (common in logging/print calls)
-	if hasStringLiteralArguments(argumentsField) {
-		return true
-	}
-
-	// Check if the function being called looks like a typical function call
-	return isCommonFunctionCall(functionField, parseTree)
-}
-
-// isStringLiteralNode checks if a node is a string literal using proper AST node type checking.
-func isStringLiteralNode(node *valueobject.ParseNode) bool {
-	if node == nil {
-		return false
-	}
-	return node.Type == "interpreted_string_literal" || node.Type == "raw_string_literal"
-}
-
-// hasStringLiteralArguments checks if the arguments field contains string literal nodes.
-func hasStringLiteralArguments(argumentsField *valueobject.ParseNode) bool {
-	if argumentsField == nil {
-		return false
-	}
-
-	for _, arg := range argumentsField.Children {
-		if isStringLiteralNode(arg) {
-			return true // Found string literal arguments, likely a function call
-		}
-	}
-	return false
-}
-
-// isCommonFunctionCall checks if the function field represents a common function call pattern.
-func isCommonFunctionCall(functionField *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
-	if functionField == nil {
-		return false
-	}
-
-	functionText := parseTree.GetNodeText(functionField)
-	// Common function call patterns that should be rejected
-	commonFunctionCalls := []string{
-		"fmt.Print", "fmt.Printf", "fmt.Println",
-		"log.", "logger.", "logging.",
-		"println", "print", "panic",
-		"Info", "Debug", "Warn", "Error", "Fatal", // Common logging method names
-	}
-	for _, pattern := range commonFunctionCalls {
-		if strings.Contains(functionText, pattern) {
-			return true // Looks like a common function call
-		}
-	}
-	return false
+	// Simplified detection - any call_expression at the top level is a standalone function call
+	// This covers all the cases we need to reject (fmt.Println, logger.Info, etc.)
+	return true
 }
 
 // isValidFieldDeclaration checks if a field_declaration node has proper structure according to Go grammar.
 // According to grammar: field_declaration has 'name' field (multiple, optional) and 'type' field (required).
 func isValidFieldDeclaration(fieldDecl *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
-	if fieldDecl == nil || fieldDecl.Type != "field_declaration" {
+	if fieldDecl == nil || fieldDecl.Type != nodeTypeFieldDeclaration {
 		return false
 	}
 
@@ -787,7 +753,7 @@ func isValidFieldDeclaration(fieldDecl *valueobject.ParseNode, parseTree *valueo
 // isValidMethodElem checks if a method_elem node has proper structure according to Go grammar.
 // According to grammar: method_elem has 'name' field (required), 'parameters' field (required), 'result' field (optional).
 func isValidMethodElem(methodElem *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
-	if methodElem == nil || methodElem.Type != "method_elem" {
+	if methodElem == nil || methodElem.Type != nodeTypeMethodElem {
 		return false
 	}
 
@@ -820,7 +786,7 @@ func isValidMethodElem(methodElem *valueobject.ParseNode, parseTree *valueobject
 
 // isValidEmbeddedType checks if a type_elem node represents a valid embedded type.
 func isValidEmbeddedType(typeElem *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
-	if typeElem == nil || typeElem.Type != "type_elem" {
+	if typeElem == nil || typeElem.Type != nodeTypeTypeElem {
 		return false
 	}
 

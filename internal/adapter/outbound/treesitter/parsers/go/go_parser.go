@@ -522,13 +522,33 @@ func hasPositiveFieldPattern(
 	parseTree *valueobject.ParseTree,
 	trimmedLine string,
 ) bool {
-	// First, reject function calls before checking positive patterns using direct node traversal
-	// Tree-sitter parses fmt.Println("hello") as type_conversion_expression, not call_expression
+	// Direct pattern matching for method signatures that AST parsing might miss
+	// Method signatures have parentheses for parameters and often return types
+	if isMethodSignatureLike(trimmedLine) {
+		return true
+	}
+
+	// Check if this looks like a method signature by looking for parameter lists first
 	allNodes := getAllNodes(parseTree.RootNode())
+	hasParameterList := false
+	hasCallExpression := false
+	hasTypeConversionExpr := false
+
 	for _, node := range allNodes {
-		if node.Type == nodeTypeCallExpression || node.Type == nodeTypeTypeConversionExpr {
-			return false // Found function call, not a field
+		switch node.Type {
+		case nodeTypeParameterList:
+			hasParameterList = true
+		case nodeTypeCallExpression:
+			hasCallExpression = true
+		case nodeTypeTypeConversionExpr:
+			hasTypeConversionExpr = true
 		}
+	}
+
+	// If we have parameter lists, this might be a method signature, so don't reject early
+	// Otherwise, reject function calls and type conversions
+	if !hasParameterList && (hasCallExpression || hasTypeConversionExpr) {
+		return false // Found function call without parameter list structure, not a field
 	}
 
 	// Check for formal field declarations first
@@ -544,9 +564,64 @@ func hasPositiveFieldPattern(
 		return true
 	}
 
+	// Special check for method signatures: if line contains parameter_list nodes, treat as method signature
+	allNodes = getAllNodes(parseTree.RootNode())
+	for _, node := range allNodes {
+		if node.Type == nodeTypeParameterList {
+			return true // Found parameter list, this is likely a method signature
+		}
+	}
+
 	// For lines that don't parse as formal field declarations but look like field patterns,
 	// analyze the AST structure to detect field-like syntax patterns
 	return isFieldLikeSyntaxPattern(parseTree, trimmedLine)
+}
+
+// isMethodSignatureLike checks if a line looks like a method signature using string patterns.
+// This is a fallback for cases where AST parsing doesn't properly detect method signatures.
+func isMethodSignatureLike(line string) bool {
+	trimmed := strings.TrimSpace(line)
+
+	// Must have parentheses (method parameters)
+	if !strings.Contains(trimmed, "(") || !strings.Contains(trimmed, ")") {
+		return false
+	}
+
+	// Should not be obvious function calls (contains dots before parentheses)
+	if strings.Contains(trimmed, "fmt.") || strings.Contains(trimmed, "logger.") {
+		return false
+	}
+
+	// Should not start with control flow keywords
+	if strings.HasPrefix(trimmed, "if ") || strings.HasPrefix(trimmed, "for ") ||
+		strings.HasPrefix(trimmed, "return ") || strings.HasPrefix(trimmed, "switch ") {
+		return false
+	}
+
+	// Look for common method signature patterns:
+	// - Parameters followed by return types: "Method(params) returnType"
+	// - Just parameters: "Method(params)"
+	// Common Go types that indicate return values
+	hasLikelyReturnType := strings.Contains(trimmed, "error") ||
+		strings.Contains(trimmed, "int") || strings.Contains(trimmed, "string") ||
+		strings.Contains(trimmed, "bool") || strings.Contains(trimmed, "[]byte")
+
+	// If it has parentheses and likely return types, treat as method signature
+	if hasLikelyReturnType {
+		return true
+	}
+
+	// Also check for method-like patterns without obvious rejection signals
+	parenIndex := strings.Index(trimmed, "(")
+	if parenIndex > 0 {
+		// Check if there's a valid identifier before the parentheses
+		beforeParen := strings.TrimSpace(trimmed[:parenIndex])
+		if len(beforeParen) > 0 && !strings.ContainsAny(beforeParen, " \t") {
+			return true // Looks like "MethodName(params)"
+		}
+	}
+
+	return false
 }
 
 // hasNegativePattern checks for patterns that should be rejected (functions, variables, etc.).
@@ -708,8 +783,32 @@ func isStandaloneFunctionCall(node *valueobject.ParseNode, parseTree *valueobjec
 		return false
 	}
 
-	// Simplified detection - any call_expression at the top level is a standalone function call
-	// This covers all the cases we need to reject (fmt.Println, logger.Info, etc.)
+	// Check if this call expression is part of a method signature by looking for sibling return types
+	// Method signatures have both parameter lists and return types, while standalone calls don't
+	allNodes := getAllNodes(parseTree.RootNode())
+
+	hasParameterList := false
+	hasReturnTypes := false
+
+	for _, n := range allNodes {
+		switch n.Type {
+		case nodeTypeParameterList:
+			hasParameterList = true
+		case nodeTypeTypeIdentifier, nodeTypePointerType, nodeTypeSliceType, nodeTypeArrayType,
+			nodeTypeMapType, nodeTypeChannelType, nodeTypeFunctionType, nodeTypeInterfaceType:
+			// These could be return types if they appear alongside parameter lists
+			if hasParameterList {
+				hasReturnTypes = true
+			}
+		}
+	}
+
+	// If we have both parameter lists and return types, this is likely a method signature, not a standalone call
+	if hasParameterList && hasReturnTypes {
+		return false // Don't reject - this is likely a method signature
+	}
+
+	// Otherwise, treat as a standalone function call
 	return true
 }
 

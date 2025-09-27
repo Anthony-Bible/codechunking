@@ -1,7 +1,6 @@
 package goparser
 
 import (
-	"codechunking/internal/adapter/outbound/treesitter"
 	"codechunking/internal/domain/valueobject"
 	"context"
 	"testing"
@@ -14,10 +13,16 @@ func analyzeFailureReason(t *testing.T, line string, expectedResult, actualResul
 
 	// Analyze why this is happening
 	ctx := context.Background()
-	parseResult := treesitter.CreateTreeSitterParseTree(ctx, line)
+	// Create a simple parse tree for testing without importing treesitter
+	// This avoids the circular dependency
+	goParser, err := NewGoParser()
+	if err != nil {
+		t.Fatalf("Failed to create parser: %v", err)
+	}
+	parseTreeResult, err := goParser.Parse(ctx, []byte(line))
 
-	if parseResult.Error == nil {
-		allNodes := getAllNodes(parseResult.ParseTree.RootNode())
+	if err == nil && parseTreeResult != nil {
+		allNodes := getAllNodes(parseTreeResult.ParseTree.RootNode())
 		nodeTypes := []string{}
 		for _, node := range allNodes {
 			if node.Type != "" {
@@ -30,9 +35,9 @@ func analyzeFailureReason(t *testing.T, line string, expectedResult, actualResul
 		// Test current TreeSitterQueryEngine methods
 		queryEngine := NewTreeSitterQueryEngine()
 
-		methodSpecs := queryEngine.QueryMethodSpecs(parseResult.ParseTree)
-		embeddedTypes := queryEngine.QueryEmbeddedTypes(parseResult.ParseTree)
-		fieldDecls := queryEngine.QueryFieldDeclarations(parseResult.ParseTree)
+		methodSpecs := queryEngine.QueryMethodSpecs(parseTreeResult.ParseTree)
+		embeddedTypes := queryEngine.QueryEmbeddedTypes(parseTreeResult.ParseTree)
+		fieldDecls := queryEngine.QueryFieldDeclarations(parseTreeResult.ParseTree)
 
 		t.Logf("QueryMethodSpecs results: %d (should be 0 - wrong node type)", len(methodSpecs))
 		t.Logf("QueryEmbeddedTypes results: %d (may be wrong due to incorrect logic)", len(embeddedTypes))
@@ -107,10 +112,14 @@ func TestTreeSitterQueryEngine_CallExpressionDetection(t *testing.T) {
 
 	for _, fc := range functionCalls {
 		t.Run(fc.name, func(t *testing.T) {
-			parseResult := treesitter.CreateTreeSitterParseTree(ctx, fc.code)
+			goParser, err := NewGoParser()
+			if err != nil {
+				t.Fatalf("Failed to create parser: %v", err)
+			}
+			parseResult, err := goParser.Parse(ctx, []byte(fc.code))
 
-			if parseResult.Error != nil {
-				t.Fatalf("Parse error for %s: %v", fc.code, parseResult.Error)
+			if err != nil || parseResult == nil {
+				t.Fatalf("Parse error for %s: %v", fc.code, err)
 			}
 
 			// Verify call_expression node type is present
@@ -173,7 +182,14 @@ func TestHasNegativePattern_CallExpressionRejection(t *testing.T) {
 
 	for _, call := range functionCalls {
 		t.Run(call, func(t *testing.T) {
-			parseResult := treesitter.CreateTreeSitterParseTree(ctx, call)
+			goParser, err := NewGoParser()
+			if err != nil {
+				t.Fatalf("Failed to create parser: %v", err)
+			}
+			parseResult, err := goParser.Parse(ctx, []byte(call))
+			if err != nil {
+				t.Fatalf("Parse error: %v", err)
+			}
 
 			if parseResult.Error != nil {
 				t.Fatalf("Parse error: %v", parseResult.Error)
@@ -221,7 +237,14 @@ func TestTreeSitterQueryEngine_MissingCallExpressionMethod(t *testing.T) {
 
 	ctx := context.Background()
 	functionCall := "fmt.Println(\"test\")"
-	parseResult := treesitter.CreateTreeSitterParseTree(ctx, functionCall)
+	goParser, err := NewGoParser()
+	if err != nil {
+		t.Fatalf("Failed to create parser: %v", err)
+	}
+	parseResult, err := goParser.Parse(ctx, []byte(functionCall))
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
 
 	if parseResult.Error != nil {
 		t.Fatalf("Parse error: %v", parseResult.Error)
@@ -326,7 +349,14 @@ func TestFieldDetectionWorkflow_WithCorrectNodeTypes(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Parse and verify expected node types exist
-			parseResult := treesitter.CreateTreeSitterParseTree(ctx, tc.input)
+			goParser, err := NewGoParser()
+			if err != nil {
+				t.Fatalf("Failed to create parser: %v", err)
+			}
+			parseResult, err := goParser.Parse(ctx, []byte(tc.input))
+			if err != nil {
+				t.Fatalf("Parse error: %v", err)
+			}
 			if parseResult.Error != nil {
 				t.Fatalf("Parse error: %v", parseResult.Error)
 			}

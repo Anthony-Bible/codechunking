@@ -1,0 +1,499 @@
+package goparser
+
+import (
+	"codechunking/internal/domain/valueobject"
+	"codechunking/internal/port/outbound"
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+type testCase struct {
+	name           string
+	sourceCode     string
+	expectedChunks []outbound.SemanticCodeChunk
+	description    string
+}
+
+func runVariableConstantTest(t *testing.T, tests []testCase) {
+	ctx := context.Background()
+	// Use GoParser directly to avoid circular dependencies
+	parser, err := NewGoParser()
+	require.NoError(t, err)
+	require.NotNil(t, parser)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Logf("Test Description: %s", tt.description)
+
+			parseTree, err := parser.Parse(ctx, []byte(tt.sourceCode))
+			require.NoError(t, err)
+			require.NotNil(t, parseTree)
+
+			// Use the parser's direct variable extraction method to avoid import cycles
+			options := outbound.SemanticExtractionOptions{
+				IncludePrivate: true,
+			}
+
+			varConstChunks, err := parser.ExtractVariables(ctx, parseTree.ParseTree, options)
+			require.NoError(t, err)
+
+			// Assert we have the expected number of chunks
+			require.Len(t, varConstChunks, len(tt.expectedChunks),
+				"Expected %d variable/constant chunks but got %d", len(tt.expectedChunks), len(varConstChunks))
+
+			// Assert each chunk matches expectations exactly
+			for i, expected := range tt.expectedChunks {
+				require.Less(t, i, len(varConstChunks), "Missing chunk at index %d", i)
+				actual := varConstChunks[i]
+
+				// Assert ChunkID format - CRITICAL requirement
+				assert.Equal(t, expected.ChunkID, actual.ChunkID,
+					"ChunkID must follow format 'var:name' or 'const:name', not hash-based IDs")
+
+				// Assert basic properties
+				assert.Equal(t, expected.Type, actual.Type)
+				assert.Equal(t, expected.Name, actual.Name)
+
+				// Assert QualifiedName - must NOT include package prefix
+				assert.Equal(t, expected.QualifiedName, actual.QualifiedName,
+					"QualifiedName must be simple name without package prefix like 'main.'")
+
+				// Assert Visibility detection
+				assert.Equal(t, expected.Visibility, actual.Visibility,
+					"Visibility must be correctly detected from name capitalization")
+
+				// Assert Documentation extraction
+				assert.Equal(t, expected.Documentation, actual.Documentation)
+
+				// Assert Content format - critical for standalone vs grouped declarations
+				assert.Equal(t, expected.Content, actual.Content,
+					"Content must include 'var'/'const' keyword for standalone declarations, exclude for grouped")
+
+				// Assert position information
+				assert.Equal(t, expected.StartByte, actual.StartByte)
+				assert.Equal(t, expected.EndByte, actual.EndByte)
+
+				// Assert Language object is properly initialized
+				assert.Equal(t, expected.Language.Name(), actual.Language.Name(),
+					"Language must be properly initialized Go language object")
+				assert.NotEmpty(t, actual.Language.Name(), "Language name must not be empty")
+			}
+		})
+	}
+}
+
+// TestVariableAndConstantExtractionRedPhase defines the expected behavior for variable and constant extraction
+// These tests should initially FAIL to define the requirements for the implementation.
+func TestVariableAndConstantExtractionRedPhase(t *testing.T) {
+	t.Run("SingleDeclarations", testSingleDeclarations)
+	t.Run("VisibilityDetection", testVisibilityDetection)
+	t.Run("MultipleDeclarations", testMultipleDeclarations)
+	t.Run("GroupedDeclarations", testGroupedDeclarations)
+	t.Run("InitializationAndComplexExpressions", testInitializationAndComplexExpressions)
+	t.Run("DocumentationExtraction", testDocumentationExtraction)
+}
+
+func testSingleDeclarations(t *testing.T) {
+	runVariableConstantTest(t, []testCase{
+		{
+			name:        "Single variable declaration",
+			description: "Variable declarations should have ChunkID format 'var:name', QualifiedName without package prefix, and Content including 'var' keyword",
+			sourceCode:  `var counter int`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "var:counter",
+					Type:          outbound.ConstructVariable,
+					Name:          "counter",
+					QualifiedName: "counter", // NOT "main.counter"
+					Visibility:    outbound.Private,
+					Documentation: "",
+					Content:       "var counter int", // Must include "var" keyword
+					StartByte:     0,
+					EndByte:       15,
+					Language:      valueobject.Go, // Must be properly initialized Go language object
+				},
+			},
+		},
+		{
+			name:        "Single constant declaration",
+			description: "Constant declarations should have ChunkID format 'const:name', QualifiedName without package prefix, and Content including 'const' keyword",
+			sourceCode:  `const MaxValue = 42`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "const:MaxValue",
+					Type:          outbound.ConstructConstant,
+					Name:          "MaxValue",
+					QualifiedName: "MaxValue", // NOT "main.MaxValue"
+					Visibility:    outbound.Public,
+					Documentation: "",
+					Content:       "const MaxValue = 42", // Must include "const" keyword
+					StartByte:     0,
+					EndByte:       19,
+					Language:      valueobject.Go, // Must be properly initialized Go language object
+				},
+			},
+		},
+	})
+}
+
+func testVisibilityDetection(t *testing.T) {
+	runVariableConstantTest(t, []testCase{
+		{
+			name:        "Public variable with proper visibility detection",
+			description: "Variables starting with uppercase letter should be detected as Public visibility",
+			sourceCode:  `var PublicVar string`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "var:PublicVar",
+					Type:          outbound.ConstructVariable,
+					Name:          "PublicVar",
+					QualifiedName: "PublicVar",
+					Visibility:    outbound.Public, // Must detect Public visibility from uppercase name
+					Documentation: "",
+					Content:       "var PublicVar string",
+					StartByte:     0,
+					EndByte:       20,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name:        "Private constant with proper visibility detection",
+			description: "Constants starting with lowercase letter should be detected as Private visibility",
+			sourceCode:  `const maxRetries = 3`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "const:maxRetries",
+					Type:          outbound.ConstructConstant,
+					Name:          "maxRetries",
+					QualifiedName: "maxRetries",
+					Visibility:    outbound.Private, // Must detect Private visibility from lowercase name
+					Documentation: "",
+					Content:       "const maxRetries = 3",
+					StartByte:     0,
+					EndByte:       20,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+	})
+}
+
+func testMultipleDeclarations(t *testing.T) {
+	runVariableConstantTest(t, []testCase{
+		{
+			name:        "Multiple variable declaration",
+			description: "Multiple variables in a single declaration should each generate separate chunks with the same Content",
+			sourceCode:  `var a, b, c int`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "var:a",
+					Type:          outbound.ConstructVariable,
+					Name:          "a",
+					QualifiedName: "a",
+					Visibility:    outbound.Private,
+					Documentation: "",
+					Content:       "var a, b, c int", // All variables share the same content
+					StartByte:     0,
+					EndByte:       15,
+					Language:      valueobject.Go,
+				},
+				{
+					ChunkID:       "var:b",
+					Type:          outbound.ConstructVariable,
+					Name:          "b",
+					QualifiedName: "b",
+					Visibility:    outbound.Private,
+					Documentation: "",
+					Content:       "var a, b, c int", // All variables share the same content
+					StartByte:     0,
+					EndByte:       15,
+					Language:      valueobject.Go,
+				},
+				{
+					ChunkID:       "var:c",
+					Type:          outbound.ConstructVariable,
+					Name:          "c",
+					QualifiedName: "c",
+					Visibility:    outbound.Private,
+					Documentation: "",
+					Content:       "var a, b, c int", // All variables share the same content
+					StartByte:     0,
+					EndByte:       15,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+	})
+}
+
+func testGroupedDeclarations(t *testing.T) {
+	runVariableConstantTest(t, []testCase{
+		{
+			name:        "Variable group declaration",
+			description: "Variables in a group should have Content without 'var' keyword prefix",
+			sourceCode: `var (
+	x int
+	y string
+)`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "var:x",
+					Type:          outbound.ConstructVariable,
+					Name:          "x",
+					QualifiedName: "x",
+					Visibility:    outbound.Private,
+					Documentation: "",
+					Content:       "x int", // No "var" prefix for grouped declarations
+					StartByte:     6,
+					EndByte:       11,
+					Language:      valueobject.Go,
+				},
+				{
+					ChunkID:       "var:y",
+					Type:          outbound.ConstructVariable,
+					Name:          "y",
+					QualifiedName: "y",
+					Visibility:    outbound.Private,
+					Documentation: "",
+					Content:       "y string", // No "var" prefix for grouped declarations
+					StartByte:     13,
+					EndByte:       21,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name:        "Constant group declaration",
+			description: "Constants in a group should have Content without 'const' keyword prefix",
+			sourceCode: `const (
+	MaxInt32 int32 = 1<<31 - 1
+	MinInt32 int32 = -1 << 31
+)`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "const:MaxInt32",
+					Type:          outbound.ConstructConstant,
+					Name:          "MaxInt32",
+					QualifiedName: "MaxInt32",
+					Visibility:    outbound.Public,
+					Documentation: "",
+					Content:       "MaxInt32 int32 = 1<<31 - 1", // No "const" prefix for grouped declarations
+					StartByte:     8,
+					EndByte:       35,
+					Language:      valueobject.Go,
+				},
+				{
+					ChunkID:       "const:MinInt32",
+					Type:          outbound.ConstructConstant,
+					Name:          "MinInt32",
+					QualifiedName: "MinInt32",
+					Visibility:    outbound.Public,
+					Documentation: "",
+					Content:       "MinInt32 int32 = -1 << 31", // No "const" prefix for grouped declarations
+					StartByte:     37,
+					EndByte:       63,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+	})
+}
+
+func testInitializationAndComplexExpressions(t *testing.T) {
+	runVariableConstantTest(t, []testCase{
+		{
+			name:        "Variable with initialization",
+			description: "Variable declarations with initialization should include the full declaration",
+			sourceCode:  `var initializedVar int = 42`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "var:initializedVar",
+					Type:          outbound.ConstructVariable,
+					Name:          "initializedVar",
+					QualifiedName: "initializedVar",
+					Visibility:    outbound.Private,
+					Documentation: "",
+					Content:       "var initializedVar int = 42",
+					StartByte:     0,
+					EndByte:       27,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name:        "Complex expressions in constants",
+			description: "Constants with complex expressions should preserve the full expression",
+			sourceCode:  `const timeout = time.Second * 30`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "const:timeout",
+					Type:          outbound.ConstructConstant,
+					Name:          "timeout",
+					QualifiedName: "timeout",
+					Visibility:    outbound.Private,
+					Documentation: "",
+					Content:       "const timeout = time.Second * 30",
+					StartByte:     0,
+					EndByte:       33,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+	})
+}
+
+func testDocumentationExtraction(t *testing.T) {
+	runVariableConstantTest(t, []testCase{
+		{
+			name:        "Documentation comment extraction",
+			description: "Variables and constants with documentation comments should extract them",
+			sourceCode: `// GlobalCounter tracks the current count
+var GlobalCounter int
+
+// MaxRetries defines the maximum number of retry attempts
+const MaxRetries = 5`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "var:GlobalCounter",
+					Type:          outbound.ConstructVariable,
+					Name:          "GlobalCounter",
+					QualifiedName: "GlobalCounter",
+					Visibility:    outbound.Public,
+					Documentation: "GlobalCounter tracks the current count",
+					Content:       "var GlobalCounter int",
+					StartByte:     42,
+					EndByte:       63,
+					Language:      valueobject.Go,
+				},
+				{
+					ChunkID:       "const:MaxRetries",
+					Type:          outbound.ConstructConstant,
+					Name:          "MaxRetries",
+					QualifiedName: "MaxRetries",
+					Visibility:    outbound.Public,
+					Documentation: "MaxRetries defines the maximum number of retry attempts",
+					Content:       "const MaxRetries = 5",
+					StartByte:     123,
+					EndByte:       143,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+	})
+}
+
+// TestVariableConstantExtractionEdgeCases defines edge cases that must be handled.
+func TestVariableConstantExtractionEdgeCases(t *testing.T) {
+	t.Run("EmptyAndMinimalSources", testEmptyAndMinimalSources)
+	t.Run("ScopeHandling", testScopeHandling)
+	t.Run("IotaConstants", testIotaConstants)
+}
+
+func testEmptyAndMinimalSources(t *testing.T) {
+	runVariableConstantTest(t, []testCase{
+		{
+			name:           "Empty source code",
+			description:    "Empty source should return no chunks without error",
+			sourceCode:     ``,
+			expectedChunks: []outbound.SemanticCodeChunk{},
+		},
+		{
+			name:           "Only package declaration",
+			description:    "Source with only package declaration should return no variable/constant chunks",
+			sourceCode:     `package main`,
+			expectedChunks: []outbound.SemanticCodeChunk{},
+		},
+	})
+}
+
+func testScopeHandling(t *testing.T) {
+	runVariableConstantTest(t, []testCase{
+		{
+			name:        "Variable in function scope",
+			description: "Local variables within functions should not be extracted as global chunks",
+			sourceCode: `func main() {
+	var localVar int
+}`,
+			expectedChunks: []outbound.SemanticCodeChunk{},
+		},
+		{
+			name:        "Mixed global and local declarations",
+			description: "Only global variables should be extracted, not local ones",
+			sourceCode: `var globalVar int
+
+func main() {
+	var localVar string
+}`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "var:globalVar",
+					Type:          outbound.ConstructVariable,
+					Name:          "globalVar",
+					QualifiedName: "globalVar",
+					Visibility:    outbound.Private,
+					Documentation: "",
+					Content:       "var globalVar int",
+					StartByte:     0,
+					EndByte:       17,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+	})
+}
+
+func testIotaConstants(t *testing.T) {
+	runVariableConstantTest(t, []testCase{
+		{
+			name:        "Iota constants",
+			description: "Constants using iota should be properly extracted",
+			sourceCode: `const (
+	First = iota
+	Second
+	Third
+)`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "const:First",
+					Type:          outbound.ConstructConstant,
+					Name:          "First",
+					QualifiedName: "First",
+					Visibility:    outbound.Public,
+					Documentation: "",
+					Content:       "First = iota",
+					StartByte:     8,
+					EndByte:       20,
+					Language:      valueobject.Go,
+				},
+				{
+					ChunkID:       "const:Second",
+					Type:          outbound.ConstructConstant,
+					Name:          "Second",
+					QualifiedName: "Second",
+					Visibility:    outbound.Public,
+					Documentation: "",
+					Content:       "Second",
+					StartByte:     22,
+					EndByte:       28,
+					Language:      valueobject.Go,
+				},
+				{
+					ChunkID:       "const:Third",
+					Type:          outbound.ConstructConstant,
+					Name:          "Third",
+					QualifiedName: "Third",
+					Visibility:    outbound.Public,
+					Documentation: "",
+					Content:       "Third",
+					StartByte:     30,
+					EndByte:       35,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+	})
+}

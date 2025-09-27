@@ -524,8 +524,275 @@ func (s *SemanticTraverserAdapter) extractGoVariables(
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
 ) []outbound.SemanticCodeChunk {
-	// Return empty for now as we're focusing on function extraction
-	return []outbound.SemanticCodeChunk{}
+	// Use the same logic as GoParser.ExtractVariables but adapted for the adapter pattern
+	var variables []outbound.SemanticCodeChunk
+	packageName := s.extractGoPackageName(parseTree)
+
+	// Use local implementation for consistent AST querying without import cycles
+	// Process variable declarations using direct node traversal
+	varNodes := parseTree.GetNodesByType("var_declaration")
+	for _, node := range varNodes {
+		if node == nil {
+			continue
+		}
+		vars := s.parseGoVariableDeclaration(parseTree, node, packageName, outbound.ConstructVariable, options, now)
+		variables = append(variables, vars...)
+	}
+
+	// Process constant declarations
+	constNodes := parseTree.GetNodesByType("const_declaration")
+	for _, node := range constNodes {
+		if node == nil {
+			continue
+		}
+		consts := s.parseGoVariableDeclaration(parseTree, node, packageName, outbound.ConstructConstant, options, now)
+		variables = append(variables, consts...)
+	}
+
+	return variables
+}
+
+// parseGoVariableDeclaration parses variable/constant declarations using the same logic as GoParser
+func (s *SemanticTraverserAdapter) parseGoVariableDeclaration(
+	parseTree *valueobject.ParseTree,
+	varDecl *valueobject.ParseNode,
+	packageName string,
+	constructType outbound.SemanticConstructType,
+	options outbound.SemanticExtractionOptions,
+	now time.Time,
+) []outbound.SemanticCodeChunk {
+	// Use the same logic as in variables.go but adapted for the adapter
+	var variables []outbound.SemanticCodeChunk
+
+	// Find variable specifications
+	specType := "var_spec"
+	if constructType == outbound.ConstructConstant {
+		specType = "const_spec"
+	}
+
+	varSpecs := s.findDirectChildren(varDecl, specType)
+
+	// If no direct specs found, check for grouped declarations (var_spec_list)
+	if len(varSpecs) == 0 {
+		if constructType == outbound.ConstructVariable {
+			// Look for var_spec_list for grouped variable declarations like var ( x int; y string )
+			varSpecLists := s.findDirectChildren(varDecl, "var_spec_list")
+			for _, varSpecList := range varSpecLists {
+				if varSpecList != nil {
+					specs := s.findDirectChildren(varSpecList, "var_spec")
+					varSpecs = append(varSpecs, specs...)
+				}
+			}
+		} else if constructType == outbound.ConstructConstant {
+			// Similar logic for const_spec in grouped declarations
+			// Constants might be grouped differently, let's check for const_spec within parentheses
+			allConstSpecs := s.findChildrenRecursive(varDecl, "const_spec")
+			varSpecs = append(varSpecs, allConstSpecs...)
+		}
+	}
+
+	if len(varSpecs) == 0 {
+		return variables
+	}
+
+	for _, varSpec := range varSpecs {
+		if varSpec == nil {
+			continue
+		}
+
+		vars := s.parseGoVariableSpec(parseTree, varDecl, varSpec, packageName, constructType, options, now)
+		variables = append(variables, vars...)
+	}
+
+	return variables
+}
+
+// parseGoVariableSpec parses a variable specification
+func (s *SemanticTraverserAdapter) parseGoVariableSpec(
+	parseTree *valueobject.ParseTree,
+	varDecl *valueobject.ParseNode,
+	varSpec *valueobject.ParseNode,
+	packageName string,
+	constructType outbound.SemanticConstructType,
+	options outbound.SemanticExtractionOptions,
+	now time.Time,
+) []outbound.SemanticCodeChunk {
+	var variables []outbound.SemanticCodeChunk
+
+	// Get variable names
+	identifiers := s.findDirectChildren(varSpec, "identifier")
+	if len(identifiers) == 0 {
+		return variables
+	}
+
+	// Get variable type
+	varType := s.getVariableType(parseTree, varSpec)
+
+	// Determine appropriate content
+	content := s.determineContentForVariable(parseTree, varDecl, varSpec)
+
+	for _, identifier := range identifiers {
+		if identifier == nil {
+			continue
+		}
+
+		chunk := s.createSemanticCodeChunk(
+			identifier,
+			parseTree,
+			varDecl,
+			varSpec,
+			packageName,
+			constructType,
+			varType,
+			content,
+			options,
+			now,
+		)
+
+		if chunk != nil {
+			variables = append(variables, *chunk)
+		}
+	}
+
+	return variables
+}
+
+// determineContentForVariable determines the appropriate content text for a variable
+func (s *SemanticTraverserAdapter) determineContentForVariable(
+	parseTree *valueobject.ParseTree,
+	varDecl *valueobject.ParseNode,
+	varSpec *valueobject.ParseNode,
+) string {
+	if parseTree == nil || varDecl == nil || varSpec == nil {
+		return ""
+	}
+
+	// Check if this is a grouped declaration (parentheses)
+	varSpecs := s.findDirectChildren(varDecl, "var_spec")
+	constSpecs := s.findDirectChildren(varDecl, "const_spec")
+	totalSpecs := len(varSpecs) + len(constSpecs)
+
+	if totalSpecs > 1 {
+		// Multiple variables in a group, use just the spec content
+		return parseTree.GetNodeText(varSpec)
+	} else {
+		// Single variable declaration, use the full declaration including keyword
+		return parseTree.GetNodeText(varDecl)
+	}
+}
+
+// createSemanticCodeChunk creates a SemanticCodeChunk for a variable
+func (s *SemanticTraverserAdapter) createSemanticCodeChunk(
+	identifier *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+	varDecl *valueobject.ParseNode,
+	varSpec *valueobject.ParseNode,
+	packageName string,
+	constructType outbound.SemanticConstructType,
+	varType string,
+	content string,
+	options outbound.SemanticExtractionOptions,
+	now time.Time,
+) *outbound.SemanticCodeChunk {
+	if identifier == nil || parseTree == nil || varDecl == nil || varSpec == nil {
+		return nil
+	}
+
+	varName := parseTree.GetNodeText(identifier)
+	if varName == "" {
+		return nil
+	}
+
+	visibility := s.getVisibility(varName)
+
+	// Skip private variables if not included
+	if !options.IncludePrivate && visibility == outbound.Private {
+		return nil
+	}
+
+	// Determine positions based on grouped vs non-grouped declarations
+	var startByte, endByte uint32
+
+	// Check if this is a grouped declaration (parentheses)
+	varSpecs := s.findDirectChildren(varDecl, "var_spec")
+	constSpecs := s.findDirectChildren(varDecl, "const_spec")
+	totalSpecs := len(varSpecs) + len(constSpecs)
+
+	if totalSpecs > 1 {
+		// Multiple variables in a group, use spec positions
+		startByte, endByte = varSpec.StartByte, varSpec.EndByte
+	} else {
+		// Single variable declaration, use declaration positions
+		startByte, endByte = varDecl.StartByte, varDecl.EndByte
+	}
+
+	// Generate ChunkID in expected format: var:name or const:name
+	var chunkIDPrefix string
+	switch constructType {
+	case outbound.ConstructVariable:
+		chunkIDPrefix = "var"
+	case outbound.ConstructConstant:
+		chunkIDPrefix = "const"
+	default:
+		chunkIDPrefix = string(constructType)
+	}
+	chunkID := fmt.Sprintf("%s:%s", chunkIDPrefix, varName)
+
+	return &outbound.SemanticCodeChunk{
+		ChunkID:       chunkID,
+		Type:          constructType,
+		Name:          varName,
+		QualifiedName: varName, // Use just the name, not package.name
+		Language:      valueobject.Go,
+		StartByte:     startByte,
+		EndByte:       endByte,
+		Content:       content,
+		ReturnType:    varType,
+		Visibility:    visibility,
+		IsStatic:      true,
+		ExtractedAt:   now,
+		Hash:          s.generateHash(content),
+	}
+}
+
+// getVariableType gets the type of a variable
+func (s *SemanticTraverserAdapter) getVariableType(
+	parseTree *valueobject.ParseTree,
+	varSpec *valueobject.ParseNode,
+) string {
+	if varSpec == nil {
+		return ""
+	}
+
+	// Look for type nodes in the spec
+	typeNodes := []string{
+		"type_identifier",
+		"pointer_type",
+		"array_type",
+		"slice_type",
+		"map_type",
+		"channel_type",
+		"function_type",
+		"interface_type",
+		"struct_type",
+	}
+
+	for _, typeNodeName := range typeNodes {
+		typeMatchNodes := s.findChildrenRecursive(varSpec, typeNodeName)
+		if len(typeMatchNodes) > 0 {
+			return parseTree.GetNodeText(typeMatchNodes[0])
+		}
+	}
+
+	return ""
+}
+
+// getVisibility determines if a variable name is public or private
+func (s *SemanticTraverserAdapter) getVisibility(name string) outbound.VisibilityModifier {
+	if len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z' {
+		return outbound.Public
+	}
+	return outbound.Private
 }
 
 func (s *SemanticTraverserAdapter) extractGoImports(
@@ -1648,4 +1915,52 @@ func (s *SemanticTraverserAdapter) tryParserFactory(
 	}
 
 	return result, nil
+}
+
+// Helper methods to replace goparser functions and avoid import cycles
+
+// findDirectChildren finds direct children of a node with the specified type
+func (s *SemanticTraverserAdapter) findDirectChildren(
+	node *valueobject.ParseNode,
+	nodeType string,
+) []*valueobject.ParseNode {
+	if node == nil {
+		return nil
+	}
+
+	var result []*valueobject.ParseNode
+	for _, child := range node.Children {
+		if child != nil && child.Type == nodeType {
+			result = append(result, child)
+		}
+	}
+	return result
+}
+
+// findChildrenRecursive finds children recursively with the specified type
+func (s *SemanticTraverserAdapter) findChildrenRecursive(
+	node *valueobject.ParseNode,
+	nodeType string,
+) []*valueobject.ParseNode {
+	if node == nil {
+		return nil
+	}
+
+	var result []*valueobject.ParseNode
+	if node.Type == nodeType {
+		result = append(result, node)
+	}
+
+	for _, child := range node.Children {
+		if child != nil {
+			result = append(result, s.findChildrenRecursive(child, nodeType)...)
+		}
+	}
+	return result
+}
+
+// generateHash generates a hash for content
+func (s *SemanticTraverserAdapter) generateHash(content string) string {
+	hash := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(hash[:])
 }

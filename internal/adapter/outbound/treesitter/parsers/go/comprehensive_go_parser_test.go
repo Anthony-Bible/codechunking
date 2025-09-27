@@ -1613,6 +1613,7 @@ const PublicConst = 42
 			options := &treesitter.SemanticExtractionOptions{
 				IncludeVariables: true,
 				IncludeConstants: true,
+				IncludePrivate:   true,
 			}
 
 			chunks := adapter.ExtractCodeChunks(domainTree, options)

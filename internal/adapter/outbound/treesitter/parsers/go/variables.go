@@ -33,6 +33,7 @@ import (
 	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -85,6 +86,18 @@ func (p *GoParser) ExtractVariables(
 	varNodes := queryEngine.QueryVariableDeclarations(parseTree)
 	slogger.Debug(ctx, "Found variable declaration nodes", slogger.Fields{
 		"variable_node_count": len(varNodes),
+	})
+
+	// Debug: check what types of nodes we have in the parse tree
+	allNodes := parseTree.GetNodesByType("var_declaration")
+	slogger.Debug(ctx, "Direct var_declaration query result", slogger.Fields{
+		"direct_query_count": len(allNodes),
+	})
+
+	// Check for alternative node types that might represent grouped variables
+	groupedVarNodes := parseTree.GetNodesByType("var_spec")
+	slogger.Debug(ctx, "var_spec nodes found", slogger.Fields{
+		"var_spec_count": len(groupedVarNodes),
 	})
 
 	for i, node := range varNodes {
@@ -205,7 +218,7 @@ func parseGoVariableDeclaration(
 }
 
 // determineContentForVariable determines the appropriate content text for a variable.
-// For single declarations, it uses the spec content; for grouped declarations, it uses the full declaration.
+// For single declarations, it uses the full declaration; for grouped declarations, it uses just the spec.
 func determineContentForVariable(
 	parseTree *valueobject.ParseTree,
 	varDecl *valueobject.ParseNode,
@@ -215,21 +228,25 @@ func determineContentForVariable(
 		return ""
 	}
 
-	// Get content (use full declaration for grouped vars)
-	content := parseTree.GetNodeText(varDecl)
-	if len(FindDirectChildren(varDecl, nodeTypeVarSpec)) == 1 ||
-		len(FindDirectChildren(varDecl, nodeTypeConstSpec)) == 1 {
-		// Single variable, use spec content
-		content = parseTree.GetNodeText(varSpec)
-	}
+	// Check if this is a grouped declaration (parentheses)
+	varSpecs := FindDirectChildren(varDecl, nodeTypeVarSpec)
+	constSpecs := FindDirectChildren(varDecl, nodeTypeConstSpec)
+	totalSpecs := len(varSpecs) + len(constSpecs)
 
-	return content
+	if totalSpecs > 1 {
+		// Multiple variables in a group, use just the spec content
+		return parseTree.GetNodeText(varSpec)
+	} else {
+		// Single variable declaration, use the full declaration including keyword
+		return parseTree.GetNodeText(varDecl)
+	}
 }
 
 // createSemanticCodeChunk creates a SemanticCodeChunk for a variable with proper validation.
 func createSemanticCodeChunk(
 	identifier *valueobject.ParseNode,
 	parseTree *valueobject.ParseTree,
+	varDecl *valueobject.ParseNode,
 	varSpec *valueobject.ParseNode,
 	packageName string,
 	constructType outbound.SemanticConstructType,
@@ -238,7 +255,7 @@ func createSemanticCodeChunk(
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
 ) *outbound.SemanticCodeChunk {
-	if identifier == nil || parseTree == nil || varSpec == nil {
+	if identifier == nil || parseTree == nil || varDecl == nil || varSpec == nil {
 		return nil
 	}
 
@@ -254,19 +271,52 @@ func createSemanticCodeChunk(
 		return nil
 	}
 
-	// Validate position information
-	startByte, endByte, valid := ExtractPositionInfo(varSpec)
-	if !valid {
-		// Fallback to zero positions if validation fails
-		startByte, endByte = 0, 0
+	// Determine positions based on grouped vs non-grouped declarations
+	var startByte, endByte uint32
+
+	// Check if this is a grouped declaration (parentheses)
+	varSpecs := FindDirectChildren(varDecl, nodeTypeVarSpec)
+	constSpecs := FindDirectChildren(varDecl, nodeTypeConstSpec)
+	totalSpecs := len(varSpecs) + len(constSpecs)
+
+	if totalSpecs > 1 {
+		// Multiple variables in a group, use spec positions
+		startByte, endByte = varSpec.StartByte, varSpec.EndByte
+		if endByte > 0 {
+			endByte-- // Make EndByte inclusive
+		}
+	} else {
+		// Single variable declaration, use declaration positions
+		startByte, endByte = varDecl.StartByte, varDecl.EndByte
+		if endByte > 0 {
+			endByte-- // Make EndByte inclusive
+		}
 	}
 
+	// Generate ChunkID in expected format: var:name or const:name
+	var chunkIDPrefix string
+	switch constructType {
+	case outbound.ConstructVariable:
+		chunkIDPrefix = "var"
+	case outbound.ConstructConstant:
+		chunkIDPrefix = "const"
+	case outbound.ConstructFunction, outbound.ConstructMethod, outbound.ConstructClass,
+		outbound.ConstructStruct, outbound.ConstructInterface, outbound.ConstructEnum,
+		outbound.ConstructField, outbound.ConstructProperty, outbound.ConstructModule,
+		outbound.ConstructPackage, outbound.ConstructNamespace, outbound.ConstructType,
+		outbound.ConstructComment, outbound.ConstructDecorator, outbound.ConstructAttribute,
+		outbound.ConstructLambda, outbound.ConstructClosure, outbound.ConstructGenerator,
+		outbound.ConstructAsyncFunction:
+		chunkIDPrefix = string(constructType)
+	}
+	chunkID := fmt.Sprintf("%s:%s", chunkIDPrefix, varName)
+
 	return &outbound.SemanticCodeChunk{
-		ChunkID:       utils.GenerateID(string(constructType), varName, nil),
+		ChunkID:       chunkID,
 		Type:          constructType,
 		Name:          varName,
-		QualifiedName: packageName + "." + varName,
-		Language:      parseTree.Language(),
+		QualifiedName: varName, // Use just the name, not package.name
+		Language:      valueobject.Go,
 		StartByte:     startByte,
 		EndByte:       endByte,
 		Content:       content,
@@ -316,6 +366,7 @@ func parseGoVariableSpec(
 		chunk := createSemanticCodeChunk(
 			identifier,
 			parseTree,
+			varDecl,
 			varSpec,
 			packageName,
 			constructType,
@@ -452,13 +503,16 @@ func parseGoTypeSpec(
 		// Fallback to node positions if validation fails
 		startByte, endByte = typeDecl.StartByte, typeDecl.EndByte
 	}
+	if endByte > 0 {
+		endByte-- // Make EndByte inclusive
+	}
 
 	return &outbound.SemanticCodeChunk{
 		ChunkID:       utils.GenerateID("type", typeName, nil),
 		Type:          outbound.ConstructType,
 		Name:          typeName,
 		QualifiedName: packageName + "." + typeName,
-		Language:      parseTree.Language(),
+		Language:      valueobject.Go,
 		StartByte:     startByte,
 		EndByte:       endByte,
 		Content:       content,

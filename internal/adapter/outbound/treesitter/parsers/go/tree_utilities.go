@@ -208,6 +208,100 @@ func ExtractPositionInfoWithFallback(
 }
 
 // ============================================================================
+// Grammar Field Access Utilities
+// ============================================================================
+
+// GetFieldByName retrieves a child node using the tree-sitter grammar field name.
+// This is the preferred method for accessing nodes according to the grammar specification.
+//
+// Parameters:
+//
+//	node - The parent node to search in (can be nil)
+//	fieldName - The grammar field name (e.g., "name", "type", "value")
+//
+// Returns:
+//
+//	*valueobject.ParseNode - The field node if found, nil otherwise
+func GetFieldByName(node *valueobject.ParseNode, fieldName string) *valueobject.ParseNode {
+	if node == nil || fieldName == "" {
+		return nil
+	}
+
+	return node.ChildByFieldName(fieldName)
+}
+
+// GetMultipleFieldsByName retrieves multiple child nodes for a field that can have multiple values.
+// This is useful for fields like "name" in variable declarations which can contain multiple identifiers.
+//
+// This function handles the grammar-specific differences between var_spec and const_spec:
+// - var_spec: has multiple "name" fields (one per identifier)
+// - const_spec: has one "name" field containing a sequence of identifiers
+//
+// Parameters:
+//
+//	node - The parent node to search in (can be nil)
+//	fieldName - The grammar field name (e.g., "name")
+//
+// Returns:
+//
+//	[]*valueobject.ParseNode - All field nodes if found, empty slice otherwise
+func GetMultipleFieldsByName(node *valueobject.ParseNode, fieldName string) []*valueobject.ParseNode {
+	if node == nil || fieldName == "" {
+		return []*valueobject.ParseNode{}
+	}
+
+	var results []*valueobject.ParseNode
+
+	// Handle var_spec nodes - they have multiple "name" fields
+	if node.Type == "var_spec" && fieldName == "name" {
+		return getVarSpecNames(node)
+	}
+
+	// Handle const_spec nodes - they have one "name" field with sequence of identifiers
+	if node.Type == "const_spec" && fieldName == "name" {
+		return getConstSpecNames(node)
+	}
+
+	// General field access for other node types
+	fieldNode := node.ChildByFieldName(fieldName)
+	if fieldNode != nil {
+		results = append(results, fieldNode)
+	}
+
+	return results
+}
+
+// getVarSpecNames extracts variable names from var_spec nodes.
+// var_spec has multiple "name" fields - one per identifier.
+func getVarSpecNames(node *valueobject.ParseNode) []*valueobject.ParseNode {
+	if node == nil {
+		return []*valueobject.ParseNode{}
+	}
+
+	// For var_spec, we find all direct child identifiers
+	// since each identifier is a separate "name" field
+	return FindDirectChildren(node, nodeTypeIdentifier)
+}
+
+// getConstSpecNames extracts constant names from const_spec nodes.
+// const_spec has one "name" field with a sequence of identifiers.
+func getConstSpecNames(node *valueobject.ParseNode) []*valueobject.ParseNode {
+	if node == nil {
+		return []*valueobject.ParseNode{}
+	}
+
+	// For const_spec, get the "name" field first, then traverse its children
+	nameField := node.ChildByFieldName("name")
+	if nameField != nil {
+		// The name field contains the sequence of identifiers
+		return FindDirectChildren(nameField, nodeTypeIdentifier)
+	}
+
+	// Fallback: direct children that are identifiers
+	return FindDirectChildren(node, nodeTypeIdentifier)
+}
+
+// ============================================================================
 // Shared TreeSitter Utilities Reference
 // ============================================================================
 

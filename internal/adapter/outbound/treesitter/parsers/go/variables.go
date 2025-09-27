@@ -34,6 +34,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -42,9 +43,24 @@ import (
 // Note: Type-related constants (nodeTypePointerType, nodeTypeArrayType, etc.) are imported from functions.go.
 const (
 	// Variable and constant declaration node types.
-	nodeTypeVarSpec   = "var_spec"
-	nodeTypeConstSpec = "const_spec"
-	nodeTypeTypeSpec  = "type_spec"
+	nodeTypeVarSpec       = "var_spec"
+	nodeTypeConstSpec     = "const_spec"
+	nodeTypeTypeSpec      = "type_spec"
+	nodeTypeVarSpecList   = "var_spec_list"
+	nodeTypeConstSpecList = "const_spec_list"
+
+	// Token types for parentheses in grouped declarations.
+	tokenTypeOpenParen  = "("
+	tokenTypeCloseParen = ")"
+
+	// Grammar field names.
+	fieldNameName  = "name"
+	fieldNameType  = "type"
+	fieldNameValue = "value"
+
+	// Chunk ID prefixes.
+	chunkPrefixVar   = "var"
+	chunkPrefixConst = "const"
 )
 
 // ObservableGoParser delegation methods for variable extraction
@@ -67,12 +83,14 @@ func (p *GoParser) ExtractVariables(
 ) ([]outbound.SemanticCodeChunk, error) {
 	slogger.Info(ctx, "Extracting Go variables", slogger.Fields{})
 
-	// Validate input parameters
+	// Validate input parameters with detailed error context
 	if err := p.validateInput(parseTree); err != nil {
 		slogger.Error(ctx, "Variable extraction validation failed", slogger.Fields{
-			"error": err.Error(),
+			"error":      err.Error(),
+			"parse_tree": parseTree != nil,
+			"root_node":  parseTree != nil && parseTree.RootNode() != nil,
 		})
-		return nil, err
+		return nil, fmt.Errorf("variable extraction failed validation: %w", err)
 	}
 
 	var variables []outbound.SemanticCodeChunk
@@ -82,52 +100,59 @@ func (p *GoParser) ExtractVariables(
 	// Use TreeSitterQueryEngine for consistent AST querying
 	queryEngine := NewTreeSitterQueryEngine()
 
-	// Process variable declarations with error handling
+	// Get both variable and constant declarations
 	varNodes := queryEngine.QueryVariableDeclarations(parseTree)
-	slogger.Debug(ctx, "Found variable declaration nodes", slogger.Fields{
-		"variable_node_count": len(varNodes),
-	})
-
-	// Debug: check what types of nodes we have in the parse tree
-	allNodes := parseTree.GetNodesByType("var_declaration")
-	slogger.Debug(ctx, "Direct var_declaration query result", slogger.Fields{
-		"direct_query_count": len(allNodes),
-	})
-
-	// Check for alternative node types that might represent grouped variables
-	groupedVarNodes := parseTree.GetNodesByType("var_spec")
-	slogger.Debug(ctx, "var_spec nodes found", slogger.Fields{
-		"var_spec_count": len(groupedVarNodes),
-	})
-
-	for i, node := range varNodes {
-		if node == nil {
-			slogger.Warn(ctx, "Encountered nil variable node, skipping", slogger.Fields{
-				"node_index": i,
-			})
-			continue
-		}
-
-		vars := parseGoVariableDeclaration(parseTree, node, packageName, outbound.ConstructVariable, options, now)
-		variables = append(variables, vars...)
-	}
-
-	// Process constant declarations with error handling
 	constNodes := queryEngine.QueryConstDeclarations(parseTree)
-	slogger.Debug(ctx, "Found constant declaration nodes", slogger.Fields{
+
+	slogger.Debug(ctx, "Found declaration nodes", slogger.Fields{
+		"variable_node_count": len(varNodes),
 		"constant_node_count": len(constNodes),
 	})
 
-	for i, node := range constNodes {
-		if node == nil {
-			slogger.Warn(ctx, "Encountered nil constant node, skipping", slogger.Fields{
-				"node_index": i,
+	// Combine and sort declarations by source position to maintain source order
+	type declarationInfo struct {
+		node          *valueobject.ParseNode
+		constructType outbound.SemanticConstructType
+	}
+
+	var allDeclarations []declarationInfo
+
+	// Add variable declarations
+	for _, node := range varNodes {
+		if node != nil {
+			allDeclarations = append(allDeclarations, declarationInfo{
+				node:          node,
+				constructType: outbound.ConstructVariable,
+			})
+		}
+	}
+
+	// Add constant declarations
+	for _, node := range constNodes {
+		if node != nil {
+			allDeclarations = append(allDeclarations, declarationInfo{
+				node:          node,
+				constructType: outbound.ConstructConstant,
+			})
+		}
+	}
+
+	// Sort by start position to maintain source order using Go's standard library
+	sort.Slice(allDeclarations, func(i, j int) bool {
+		return allDeclarations[i].node.StartByte < allDeclarations[j].node.StartByte
+	})
+
+	// Process declarations in source order
+	for i, decl := range allDeclarations {
+		if decl.node == nil {
+			slogger.Warn(ctx, "Encountered nil declaration node, skipping", slogger.Fields{
+				"declaration_index": i,
 			})
 			continue
 		}
 
-		consts := parseGoVariableDeclaration(parseTree, node, packageName, outbound.ConstructConstant, options, now)
-		variables = append(variables, consts...)
+		declVars := parseGoVariableDeclaration(parseTree, decl.node, packageName, decl.constructType, options, now)
+		variables = append(variables, declVars...)
 	}
 
 	// Process type declarations with error handling
@@ -147,38 +172,61 @@ func (p *GoParser) ExtractVariables(
 }
 
 // validateVariableDeclarationInputs validates the inputs for variable declaration parsing.
+// This function provides comprehensive validation with detailed error messages for debugging.
 func validateVariableDeclarationInputs(
 	parseTree *valueobject.ParseTree,
 	varDecl *valueobject.ParseNode,
 	packageName string,
 ) error {
 	if parseTree == nil {
-		return errors.New("parseTree cannot be nil")
+		return errors.New("parseTree cannot be nil: required for node text extraction")
 	}
 	if varDecl == nil {
-		return errors.New("varDecl cannot be nil")
+		return errors.New("varDecl cannot be nil: required for variable declaration parsing")
 	}
 	if packageName == "" {
-		return errors.New("packageName cannot be empty")
+		return errors.New("packageName cannot be empty: required for qualified name generation")
 	}
+
+	// Additional validation for parse tree integrity
+	if parseTree.RootNode() == nil {
+		return errors.New("parseTree root node is nil: parse tree appears corrupted")
+	}
+
 	return nil
 }
 
 // findVariableSpecs finds variable or constant specifications within a declaration node.
-// This function handles both var_spec and const_spec node types.
+// This function handles both var_spec and const_spec node types, including grouped declarations.
 func findVariableSpecs(varDecl *valueobject.ParseNode) []*valueobject.ParseNode {
 	if varDecl == nil {
 		return nil
 	}
 
-	// Find variable specifications
-	varSpecs := FindDirectChildren(varDecl, nodeTypeVarSpec)
-	if len(varSpecs) == 0 {
-		// Try const_spec for constants
-		varSpecs = FindDirectChildren(varDecl, nodeTypeConstSpec)
+	var allSpecs []*valueobject.ParseNode
+
+	// Check for grouped declarations (spec_list pattern)
+	allSpecs = append(allSpecs, findGroupedSpecs(varDecl, nodeTypeVarSpecList, nodeTypeVarSpec)...)
+	allSpecs = append(allSpecs, findGroupedSpecs(varDecl, nodeTypeConstSpecList, nodeTypeConstSpec)...)
+
+	// Check for direct specifications (single declarations)
+	allSpecs = append(allSpecs, FindDirectChildren(varDecl, nodeTypeVarSpec)...)
+	allSpecs = append(allSpecs, FindDirectChildren(varDecl, nodeTypeConstSpec)...)
+
+	return allSpecs
+}
+
+// findGroupedSpecs finds specs within grouped declarations (var_spec_list or const_spec_list).
+// This helper function reduces duplication in findVariableSpecs.
+func findGroupedSpecs(varDecl *valueobject.ParseNode, listType, specType string) []*valueobject.ParseNode {
+	var specs []*valueobject.ParseNode
+
+	specLists := FindDirectChildren(varDecl, listType)
+	for _, specList := range specLists {
+		specs = append(specs, FindDirectChildren(specList, specType)...)
 	}
 
-	return varSpecs
+	return specs
 }
 
 // parseGoVariableDeclaration parses variable/constant declarations with proper validation.
@@ -191,9 +239,19 @@ func parseGoVariableDeclaration(
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
 ) []outbound.SemanticCodeChunk {
-	// Validate inputs
+	// Validate inputs with comprehensive error handling
 	if err := validateVariableDeclarationInputs(parseTree, varDecl, packageName); err != nil {
-		// Log error but don't fail the entire extraction
+		// Log detailed error information for debugging
+		slogger.Error(context.Background(), "Variable declaration parsing failed validation", slogger.Fields{
+			"error": err.Error(),
+			"var_decl_type": func() string {
+				if varDecl != nil {
+					return varDecl.Type
+				}
+				return "nil"
+			}(),
+			"construct_type": string(constructType),
+		})
 		return nil
 	}
 
@@ -228,21 +286,114 @@ func determineContentForVariable(
 		return ""
 	}
 
-	// Check if this is a grouped declaration (parentheses)
-	varSpecs := FindDirectChildren(varDecl, nodeTypeVarSpec)
-	constSpecs := FindDirectChildren(varDecl, nodeTypeConstSpec)
-	totalSpecs := len(varSpecs) + len(constSpecs)
+	// Check if this is a grouped declaration by looking for var_spec_list or multiple specs
+	isGrouped := isGroupedDeclaration(varDecl)
 
-	if totalSpecs > 1 {
+	if isGrouped {
 		// Multiple variables in a group, use just the spec content
-		return parseTree.GetNodeText(varSpec)
+		// For grouped declarations, we need to include any trailing comments
+		content := parseTree.GetNodeText(varSpec)
+
+		// Check if there's a comment right after this var_spec
+		content = includeTrailingComment(parseTree, varSpec, content)
+
+		return content
 	} else {
 		// Single variable declaration, use the full declaration including keyword
 		return parseTree.GetNodeText(varDecl)
 	}
 }
 
-// createSemanticCodeChunk creates a SemanticCodeChunk for a variable with proper validation.
+// includeTrailingComment includes any comment that immediately follows a variable specification.
+// This is a minimal implementation to handle comments in grouped declarations.
+func includeTrailingComment(
+	parseTree *valueobject.ParseTree,
+	varSpec *valueobject.ParseNode,
+	originalContent string,
+) string {
+	if parseTree == nil || varSpec == nil {
+		return originalContent
+	}
+
+	// Get the full source text to check for trailing comments
+	sourceBytes := parseTree.Source()
+	if sourceBytes == nil {
+		return originalContent
+	}
+
+	source := string(sourceBytes)
+	endPos := int(varSpec.EndByte)
+
+	// Look for a comment starting right after the var_spec
+	if endPos < len(source) {
+		// Skip whitespace after the var_spec
+		i := endPos
+		for i < len(source) && (source[i] == ' ' || source[i] == '\t') {
+			i++
+		}
+
+		// Check if there's a comment starting with "//"
+		if i+1 < len(source) && source[i:i+2] == "//" {
+			// Find the end of the comment (end of line)
+			commentEnd := i
+			for commentEnd < len(source) && source[commentEnd] != '\n' && source[commentEnd] != '\r' {
+				commentEnd++
+			}
+
+			// Include the comment in the content
+			return originalContent + source[endPos:commentEnd]
+		}
+	}
+
+	return originalContent
+}
+
+// isGroupedDeclaration determines if a variable/constant declaration is grouped (has parentheses).
+// This function checks for var_spec_list, const_spec_list nodes or parentheses patterns.
+func isGroupedDeclaration(varDecl *valueobject.ParseNode) bool {
+	if varDecl == nil {
+		return false
+	}
+
+	// Check for var_spec_list which indicates grouped variables
+	varSpecLists := FindDirectChildren(varDecl, nodeTypeVarSpecList)
+	if len(varSpecLists) > 0 {
+		return true
+	}
+
+	// Check for const_spec_list which indicates grouped constants
+	constSpecLists := FindDirectChildren(varDecl, nodeTypeConstSpecList)
+	if len(constSpecLists) > 0 {
+		return true
+	}
+
+	// Check for parentheses which indicate grouped declarations
+	// Look for "(" and ")" tokens in the children
+	hasOpenParen := false
+	hasCloseParen := false
+	for _, child := range varDecl.Children {
+		if child.Type == tokenTypeOpenParen {
+			hasOpenParen = true
+		}
+		if child.Type == tokenTypeCloseParen {
+			hasCloseParen = true
+		}
+	}
+	if hasOpenParen && hasCloseParen {
+		return true
+	}
+
+	// Check if there are multiple var_spec or const_spec nodes as a fallback
+	varSpecs := FindDirectChildren(varDecl, nodeTypeVarSpec)
+	constSpecs := FindDirectChildren(varDecl, nodeTypeConstSpec)
+	totalSpecs := len(varSpecs) + len(constSpecs)
+
+	return totalSpecs > 1
+}
+
+// createSemanticCodeChunk creates a SemanticCodeChunk for a variable with comprehensive validation.
+// This function handles the complete creation process including position calculation, visibility determination,
+// and content generation. It returns nil if any validation fails, ensuring robust error handling.
 func createSemanticCodeChunk(
 	identifier *valueobject.ParseNode,
 	parseTree *valueobject.ParseTree,
@@ -274,32 +425,27 @@ func createSemanticCodeChunk(
 	// Determine positions based on grouped vs non-grouped declarations
 	var startByte, endByte uint32
 
-	// Check if this is a grouped declaration (parentheses)
-	varSpecs := FindDirectChildren(varDecl, nodeTypeVarSpec)
-	constSpecs := FindDirectChildren(varDecl, nodeTypeConstSpec)
-	totalSpecs := len(varSpecs) + len(constSpecs)
+	// Use the same logic as content determination for consistency
+	isGrouped := isGroupedDeclaration(varDecl)
 
-	if totalSpecs > 1 {
+	if isGrouped {
 		// Multiple variables in a group, use spec positions
 		startByte, endByte = varSpec.StartByte, varSpec.EndByte
-		if endByte > 0 {
-			endByte-- // Make EndByte inclusive
-		}
 	} else {
 		// Single variable declaration, use declaration positions
 		startByte, endByte = varDecl.StartByte, varDecl.EndByte
-		if endByte > 0 {
-			endByte-- // Make EndByte inclusive
-		}
 	}
+
+	// Ensure EndByte is exclusive (tree-sitter standard)
+	// Don't subtract 1 to keep it consistent with other parsers
 
 	// Generate ChunkID in expected format: var:name or const:name
 	var chunkIDPrefix string
 	switch constructType {
 	case outbound.ConstructVariable:
-		chunkIDPrefix = "var"
+		chunkIDPrefix = chunkPrefixVar
 	case outbound.ConstructConstant:
-		chunkIDPrefix = "const"
+		chunkIDPrefix = chunkPrefixConst
 	case outbound.ConstructFunction, outbound.ConstructMethod, outbound.ConstructClass,
 		outbound.ConstructStruct, outbound.ConstructInterface, outbound.ConstructEnum,
 		outbound.ConstructField, outbound.ConstructProperty, outbound.ConstructModule,
@@ -328,8 +474,16 @@ func createSemanticCodeChunk(
 	}
 }
 
-// parseGoVariableSpec parses a variable specification with improved validation and structure.
-// This function has been broken down into smaller, focused helper functions.
+// parseGoVariableSpec parses a variable specification with comprehensive validation and error handling.
+// This function processes individual variable specifications (var_spec or const_spec) and extracts
+// all identifiers within the specification. It handles both simple and complex variable declarations
+// while maintaining proper error handling and logging throughout the process.
+//
+// The function supports:
+// - Multiple variable names in a single specification (e.g., var a, b, c int)
+// - Type inference from the specification
+// - Grammar-based field access with fallback to direct children search
+// - Proper content determination for grouped vs single declarations.
 func parseGoVariableSpec(
 	parseTree *valueobject.ParseTree,
 	varDecl *valueobject.ParseNode,
@@ -346,14 +500,18 @@ func parseGoVariableSpec(
 		return variables
 	}
 
-	// Get variable names
-	identifiers := FindDirectChildren(varSpec, nodeTypeIdentifier)
+	// Get variable names using grammar field access
+	identifiers := GetMultipleFieldsByName(varSpec, fieldNameName)
 	if len(identifiers) == 0 {
-		return variables
+		// Fallback to direct children search for compatibility
+		identifiers = FindDirectChildren(varSpec, nodeTypeIdentifier)
+		if len(identifiers) == 0 {
+			return variables
+		}
 	}
 
-	// Get variable type
-	varType := getVariableType(parseTree, varSpec)
+	// Get variable type using grammar field access
+	varType := getVariableTypeFromField(parseTree, varSpec)
 
 	// Determine appropriate content
 	content := determineContentForVariable(parseTree, varDecl, varSpec)
@@ -571,6 +729,26 @@ func getVariableType(
 	}
 
 	return findFirstTypeNode(parseTree, varSpec, getSupportedTypeNodes())
+}
+
+// getVariableTypeFromField gets the type of a variable using grammar field access.
+// This is the preferred method that uses tree-sitter's field-based access.
+func getVariableTypeFromField(
+	parseTree *valueobject.ParseTree,
+	varSpec *valueobject.ParseNode,
+) string {
+	if parseTree == nil || varSpec == nil {
+		return ""
+	}
+
+	// First try to get type using grammar field access
+	typeField := GetFieldByName(varSpec, fieldNameType)
+	if typeField != nil {
+		return parseTree.GetNodeText(typeField)
+	}
+
+	// Fallback to the original method for compatibility
+	return getVariableType(parseTree, varSpec)
 }
 
 // getAliasedType gets the type that a type alias points to.

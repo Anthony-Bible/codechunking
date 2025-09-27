@@ -247,6 +247,38 @@ type TreeSitterQueryEngine interface {
 		parseTree *valueobject.ParseTree,
 		declarationNode *valueobject.ParseNode,
 	) []*valueobject.ParseNode
+
+	// QueryVariableSpecs finds all var_spec nodes in the parse tree.
+	// These represent individual variable specifications within var_declaration nodes,
+	// including both single and grouped variable declarations.
+	//
+	// Parameters:
+	//   parseTree - The parsed syntax tree to query (can be nil)
+	//
+	// Returns:
+	//   []*valueobject.ParseNode - Slice of variable specification nodes, empty if none found
+	QueryVariableSpecs(parseTree *valueobject.ParseTree) []*valueobject.ParseNode
+
+	// QueryConstSpecs finds all const_spec nodes in the parse tree.
+	// These represent individual constant specifications within const_declaration nodes,
+	// including both single and grouped constant declarations.
+	//
+	// Parameters:
+	//   parseTree - The parsed syntax tree to query (can be nil)
+	//
+	// Returns:
+	//   []*valueobject.ParseNode - Slice of constant specification nodes, empty if none found
+	QueryConstSpecs(parseTree *valueobject.ParseTree) []*valueobject.ParseNode
+
+	// QueryVariableSpecLists finds all var_spec_list nodes in the parse tree.
+	// These represent grouped variable declarations with parentheses.
+	//
+	// Parameters:
+	//   parseTree - The parsed syntax tree to query (can be nil)
+	//
+	// Returns:
+	//   []*valueobject.ParseNode - Slice of variable specification list nodes, empty if none found
+	QueryVariableSpecLists(parseTree *valueobject.ParseTree) []*valueobject.ParseNode
 }
 
 // ConcreteTreeSitterQueryEngine implements the TreeSitterQueryEngine interface
@@ -706,4 +738,25 @@ func (e *ConcreteTreeSitterQueryEngine) QueryDocumentationComments(
 	}
 
 	return documentationComments
+}
+
+// QueryVariableSpecs finds all var_spec nodes in the parse tree.
+func (e *ConcreteTreeSitterQueryEngine) QueryVariableSpecs(
+	parseTree *valueobject.ParseTree,
+) []*valueobject.ParseNode {
+	return e.queryNodesByType(parseTree, nodeTypeVarSpec)
+}
+
+// QueryConstSpecs finds all const_spec nodes in the parse tree.
+func (e *ConcreteTreeSitterQueryEngine) QueryConstSpecs(
+	parseTree *valueobject.ParseTree,
+) []*valueobject.ParseNode {
+	return e.queryNodesByType(parseTree, nodeTypeConstSpec)
+}
+
+// QueryVariableSpecLists finds all var_spec_list nodes in the parse tree.
+func (e *ConcreteTreeSitterQueryEngine) QueryVariableSpecLists(
+	parseTree *valueobject.ParseTree,
+) []*valueobject.ParseNode {
+	return e.queryNodesByType(parseTree, "var_spec_list")
 }

@@ -54,6 +54,141 @@ func calculateExpectedPositions(t *testing.T, sourceCode, functionName string) (
 	return 0, 0
 }
 
+// calculateExpectedVariablePositions parses source code with tree-sitter and returns
+// the actual byte positions for the specified variable name.
+func calculateExpectedVariablePositions(t *testing.T, sourceCode, variableName string) (uint32, uint32) {
+	ctx := context.Background()
+	factory, err := treesitter.NewTreeSitterParserFactory(ctx)
+	require.NoError(t, err)
+
+	goLang, err := valueobject.NewLanguage(valueobject.LanguageGo)
+	require.NoError(t, err)
+
+	parser, err := factory.CreateParser(ctx, goLang)
+	require.NoError(t, err)
+
+	parseTree, err := parser.Parse(ctx, []byte(sourceCode))
+	require.NoError(t, err)
+
+	domainTree, err := treesitter.ConvertPortParseTreeToDomain(parseTree.ParseTree)
+	require.NoError(t, err)
+
+	// Debug: Print the root node structure
+	root := domainTree.RootNode()
+	t.Logf("Root node: %s, children: %d", root.Type, len(root.Children))
+	for i, child := range root.Children {
+		t.Logf("  Child %d: %s", i, child.Type)
+	}
+
+	// Use TreeSitterQueryEngine to find variable declarations
+	queryEngine := NewTreeSitterQueryEngine()
+	varDecls := queryEngine.QueryVariableDeclarations(domainTree)
+	constDecls := queryEngine.QueryConstDeclarations(domainTree)
+
+	t.Logf("Found %d var_declaration nodes", len(varDecls))
+	t.Logf("Found %d const_declaration nodes", len(constDecls))
+
+	allDecls := make([]*valueobject.ParseNode, 0, len(varDecls)+len(constDecls))
+	allDecls = append(allDecls, varDecls...)
+	allDecls = append(allDecls, constDecls...)
+
+	for _, decl := range allDecls {
+		t.Logf("Processing declaration: %s", decl.Type)
+
+		// First check for var_spec_list (grouped declarations)
+		varSpecLists := FindDirectChildren(decl, "var_spec_list")
+		if len(varSpecLists) > 0 {
+			t.Logf("Found var_spec_list with %d items", len(varSpecLists))
+			for _, varSpecList := range varSpecLists {
+				varSpecs := FindDirectChildren(varSpecList, nodeTypeVarSpec)
+				t.Logf("Found %d var_spec nodes in var_spec_list", len(varSpecs))
+				for _, spec := range varSpecs {
+					if processVariableSpec(t, domainTree, decl, spec, variableName) {
+						return spec.StartByte, spec.EndByte
+					}
+				}
+			}
+		}
+
+		// Then check for direct var_spec and const_spec children
+		varSpecs := FindDirectChildren(decl, nodeTypeVarSpec)
+		constSpecs := FindDirectChildren(decl, nodeTypeConstSpec)
+		allSpecs := make([]*valueobject.ParseNode, 0, len(varSpecs)+len(constSpecs))
+		allSpecs = append(allSpecs, varSpecs...)
+		allSpecs = append(allSpecs, constSpecs...)
+
+		t.Logf("Found %d direct specs", len(allSpecs))
+
+		for _, spec := range allSpecs {
+			if processVariableSpec(t, domainTree, decl, spec, variableName) {
+				// Determine if this is a grouped declaration
+				isGrouped := isGroupedDeclaration(decl)
+				if isGrouped {
+					// Use spec positions for grouped declarations
+					return spec.StartByte, spec.EndByte
+				} else {
+					// Use declaration positions for single declarations
+					return decl.StartByte, decl.EndByte
+				}
+			}
+		}
+	}
+
+	// Debug: Print all variables found
+	t.Logf("Variables found in source code:")
+	for _, decl := range allDecls {
+		varSpecs := FindDirectChildren(decl, nodeTypeVarSpec)
+		constSpecs := FindDirectChildren(decl, nodeTypeConstSpec)
+		allSpecs := make([]*valueobject.ParseNode, 0, len(varSpecs)+len(constSpecs))
+		allSpecs = append(allSpecs, varSpecs...)
+		allSpecs = append(allSpecs, constSpecs...)
+
+		for _, spec := range allSpecs {
+			identifiers := GetMultipleFieldsByName(spec, "name")
+			if len(identifiers) == 0 {
+				identifiers = FindDirectChildren(spec, "identifier")
+			}
+			for _, identifier := range identifiers {
+				if identifier != nil {
+					varName := domainTree.GetNodeText(identifier)
+					t.Logf("  Found variable: %s", varName)
+				}
+			}
+		}
+	}
+
+	t.Fatalf("Variable '%s' not found in source code", variableName)
+	return 0, 0
+}
+
+// processVariableSpec processes a variable specification and returns true if it matches the target variable name.
+func processVariableSpec(
+	t *testing.T,
+	domainTree *valueobject.ParseTree,
+	decl *valueobject.ParseNode,
+	spec *valueobject.ParseNode,
+	variableName string,
+) bool {
+	// Get variable names using field access
+	identifiers := GetMultipleFieldsByName(spec, "name")
+	if len(identifiers) == 0 {
+		// Fallback to direct children
+		identifiers = FindDirectChildren(spec, "identifier")
+	}
+
+	for _, identifier := range identifiers {
+		if identifier == nil {
+			continue
+		}
+		varName := domainTree.GetNodeText(identifier)
+		t.Logf("  Found variable: %s", varName)
+		if varName == variableName {
+			return true
+		}
+	}
+	return false
+}
+
 // calculateExpectedStructPositionsForComprehensiveTest parses source code with tree-sitter and returns
 // the actual byte positions for the specified struct name for the comprehensive test.
 // This function provides dynamic position calculation to ensure tests remain accurate
@@ -1350,252 +1485,502 @@ func TestGoParserVariableAndConstantExtraction(t *testing.T) {
 	require.NotNil(t, parser)
 
 	tests := []struct {
-		name           string
-		sourceCode     string
-		expectedChunks []outbound.SemanticCodeChunk
+		name                string
+		sourceCode          string
+		expectedChunks      []outbound.SemanticCodeChunk
+		expectedChunksFunc  func(t *testing.T) []outbound.SemanticCodeChunk
+		useDynamicPositions bool
+		description         string // Red phase: clear description of what should work
 	}{
 		{
-			name: "Global variable declarations",
-			sourceCode: `
-var counter int
-var name string
-`,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "var:counter",
-					Type:          outbound.ConstructVariable,
-					Name:          "counter",
-					QualifiedName: "counter",
-					Visibility:    outbound.Private,
-					Content:       "var counter int",
-					StartByte:     1,
-					EndByte:       15,
-					Language:      valueobject.Go,
-				},
-				{
-					ChunkID:       "var:name",
-					Type:          outbound.ConstructVariable,
-					Name:          "name",
-					QualifiedName: "name",
-					Visibility:    outbound.Private,
-					Content:       "var name string",
-					StartByte:     16,
-					EndByte:       31,
-					Language:      valueobject.Go,
-				},
+			name:        "Single variable declaration position calculation",
+			description: "Test correct position calculation for single variable declarations - positions should match tree-sitter spec positions exactly",
+			sourceCode:  `var x int`,
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `var x int`
+				startByte, endByte := calculateExpectedVariablePositions(t, sourceCode, "x")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "var:x",
+						Type:          outbound.ConstructVariable,
+						Name:          "x",
+						QualifiedName: "x",
+						Visibility:    outbound.Private,
+						Content:       "var x int",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
-			name: "Multiple variable declarations",
-			sourceCode: `
-var a, b, c int
-`,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "var:a",
-					Type:          outbound.ConstructVariable,
-					Name:          "a",
-					QualifiedName: "a",
-					Visibility:    outbound.Private,
-					Content:       "var a, b, c int",
-					StartByte:     1,
-					EndByte:       15,
-					Language:      valueobject.Go,
-				},
-				{
-					ChunkID:       "var:b",
-					Type:          outbound.ConstructVariable,
-					Name:          "b",
-					QualifiedName: "b",
-					Visibility:    outbound.Private,
-					Content:       "var a, b, c int",
-					StartByte:     1,
-					EndByte:       15,
-					Language:      valueobject.Go,
-				},
-				{
-					ChunkID:       "var:c",
-					Type:          outbound.ConstructVariable,
-					Name:          "c",
-					QualifiedName: "c",
-					Visibility:    outbound.Private,
-					Content:       "var a, b, c int",
-					StartByte:     1,
-					EndByte:       15,
-					Language:      valueobject.Go,
-				},
+			name:        "Single constant declaration position calculation",
+			description: "Test correct position calculation for single constant declarations",
+			sourceCode:  `const y = 1`,
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `const y = 1`
+				startByte, endByte := calculateExpectedVariablePositions(t, sourceCode, "y")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "const:y",
+						Type:          outbound.ConstructConstant,
+						Name:          "y",
+						QualifiedName: "y",
+						Visibility:    outbound.Private,
+						Content:       "const y = 1",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
-			name: "Variable declarations with initialization",
-			sourceCode: `
-var initializedCounter int = 10
-var initializedName string = "test"
-`,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "var:initializedCounter",
-					Type:          outbound.ConstructVariable,
-					Name:          "initializedCounter",
-					QualifiedName: "initializedCounter",
-					Visibility:    outbound.Private,
-					Content:       "var initializedCounter int = 10",
-					StartByte:     1,
-					EndByte:       32,
-					Language:      valueobject.Go,
-				},
-				{
-					ChunkID:       "var:initializedName",
-					Type:          outbound.ConstructVariable,
-					Name:          "initializedName",
-					QualifiedName: "initializedName",
-					Visibility:    outbound.Private,
-					Content:       "var initializedName string = \"test\"",
-					StartByte:     33,
-					EndByte:       67,
-					Language:      valueobject.Go,
-				},
+			name:        "Multiple variable declaration field access pattern",
+			description: "Test that var_spec with multiple identifiers correctly extracts all variable names using proper field access",
+			sourceCode:  `var a, b, c int`,
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `var a, b, c int`
+				startByte, endByte := calculateExpectedVariablePositions(t, sourceCode, "a")
+
+				// All variables in the same declaration should have the same positions (declaration positions)
+				// and same content (full declaration text) since it's a single declaration
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "var:a",
+						Type:          outbound.ConstructVariable,
+						Name:          "a",
+						QualifiedName: "a",
+						Visibility:    outbound.Private,
+						Content:       "var a, b, c int",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "var:b",
+						Type:          outbound.ConstructVariable,
+						Name:          "b",
+						QualifiedName: "b",
+						Visibility:    outbound.Private,
+						Content:       "var a, b, c int",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "var:c",
+						Type:          outbound.ConstructVariable,
+						Name:          "c",
+						QualifiedName: "c",
+						Visibility:    outbound.Private,
+						Content:       "var a, b, c int",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
-			name: "Constant declarations",
-			sourceCode: `
-const maxRetries = 3
-const defaultTimeout = time.Second * 30
-`,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "const:maxRetries",
-					Type:          outbound.ConstructConstant,
-					Name:          "maxRetries",
-					QualifiedName: "maxRetries",
-					Visibility:    outbound.Private,
-					Content:       "const maxRetries = 3",
-					StartByte:     1,
-					EndByte:       21,
-					Language:      valueobject.Go,
-				},
-				{
-					ChunkID:       "const:defaultTimeout",
-					Type:          outbound.ConstructConstant,
-					Name:          "defaultTimeout",
-					QualifiedName: "defaultTimeout",
-					Visibility:    outbound.Private,
-					Content:       "const defaultTimeout = time.Second * 30",
-					StartByte:     22,
-					EndByte:       61,
-					Language:      valueobject.Go,
-				},
+			name:        "Multiple constant declaration field access pattern",
+			description: "Test that const_spec correctly handles multiple identifiers in one declaration",
+			sourceCode:  `const x, y = 1, 2`,
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `const x, y = 1, 2`
+				startByte, endByte := calculateExpectedVariablePositions(t, sourceCode, "x")
+
+				// Both constants should share the same positions and content since it's one declaration
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "const:x",
+						Type:          outbound.ConstructConstant,
+						Name:          "x",
+						QualifiedName: "x",
+						Visibility:    outbound.Private,
+						Content:       "const x, y = 1, 2",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "const:y",
+						Type:          outbound.ConstructConstant,
+						Name:          "y",
+						QualifiedName: "y",
+						Visibility:    outbound.Private,
+						Content:       "const x, y = 1, 2",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
-			name: "Typed constants",
-			sourceCode: `
-const (
-	MaxInt32 int32 = 1<<31 - 1
-	MinInt32 int32 = -1 << 31
-)
-`,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "const:MaxInt32",
-					Type:          outbound.ConstructConstant,
-					Name:          "MaxInt32",
-					QualifiedName: "MaxInt32",
-					Visibility:    outbound.Public,
-					Content:       "MaxInt32 int32 = 1<<31 - 1",
-					StartByte:     8,
-					EndByte:       33,
-					Language:      valueobject.Go,
-				},
-				{
-					ChunkID:       "const:MinInt32",
-					Type:          outbound.ConstructConstant,
-					Name:          "MinInt32",
-					QualifiedName: "MinInt32",
-					Visibility:    outbound.Public,
-					Content:       "MinInt32 int32 = -1 << 31",
-					StartByte:     37,
-					EndByte:       62,
-					Language:      valueobject.Go,
-				},
-			},
-		},
-		{
-			name: "Variable groups",
-			sourceCode: `
-var (
+			name:        "Grouped variable declarations position calculation",
+			description: "Test that grouped declarations use spec positions, not declaration positions",
+			sourceCode: `var (
 	x int
 	y string
-	z bool
-)
-`,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "var:x",
-					Type:          outbound.ConstructVariable,
-					Name:          "x",
-					QualifiedName: "x",
-					Visibility:    outbound.Private,
-					Content:       "x int",
-					StartByte:     7,
-					EndByte:       12,
-					Language:      valueobject.Go,
-				},
-				{
-					ChunkID:       "var:y",
-					Type:          outbound.ConstructVariable,
-					Name:          "y",
-					QualifiedName: "y",
-					Visibility:    outbound.Private,
-					Content:       "y string",
-					StartByte:     16,
-					EndByte:       24,
-					Language:      valueobject.Go,
-				},
-				{
-					ChunkID:       "var:z",
-					Type:          outbound.ConstructVariable,
-					Name:          "z",
-					QualifiedName: "z",
-					Visibility:    outbound.Private,
-					Content:       "z bool",
-					StartByte:     28,
-					EndByte:       34,
-					Language:      valueobject.Go,
-				},
+)`,
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `var (
+	x int
+	y string
+)`
+				startByteX, endByteX := calculateExpectedVariablePositions(t, sourceCode, "x")
+				startByteY, endByteY := calculateExpectedVariablePositions(t, sourceCode, "y")
+
+				// Grouped declarations should use individual spec positions and content
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "var:x",
+						Type:          outbound.ConstructVariable,
+						Name:          "x",
+						QualifiedName: "x",
+						Visibility:    outbound.Private,
+						Content:       "x int",
+						StartByte:     startByteX,
+						EndByte:       endByteX,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "var:y",
+						Type:          outbound.ConstructVariable,
+						Name:          "y",
+						QualifiedName: "y",
+						Visibility:    outbound.Private,
+						Content:       "y string",
+						StartByte:     startByteY,
+						EndByte:       endByteY,
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
-			name: "Public variables and constants",
-			sourceCode: `
-var PublicVar string
-const PublicConst = 42
-`,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "var:PublicVar",
-					Type:          outbound.ConstructVariable,
-					Name:          "PublicVar",
-					QualifiedName: "PublicVar",
-					Visibility:    outbound.Public,
-					Content:       "var PublicVar string",
-					StartByte:     1,
-					EndByte:       20,
-					Language:      valueobject.Go,
-				},
-				{
-					ChunkID:       "const:PublicConst",
-					Type:          outbound.ConstructConstant,
-					Name:          "PublicConst",
-					QualifiedName: "PublicConst",
-					Visibility:    outbound.Public,
-					Content:       "const PublicConst = 42",
-					StartByte:     21,
-					EndByte:       44,
-					Language:      valueobject.Go,
-				},
+			name:        "Grouped constant declarations position calculation",
+			description: "Test that grouped constant declarations use spec positions",
+			sourceCode: `const (
+	A = 1
+	B = 2
+)`,
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `const (
+	A = 1
+	B = 2
+)`
+				startByteA, endByteA := calculateExpectedVariablePositions(t, sourceCode, "A")
+				startByteB, endByteB := calculateExpectedVariablePositions(t, sourceCode, "B")
+
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "const:A",
+						Type:          outbound.ConstructConstant,
+						Name:          "A",
+						QualifiedName: "A",
+						Visibility:    outbound.Public,
+						Content:       "A = 1",
+						StartByte:     startByteA,
+						EndByte:       endByteA,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "const:B",
+						Type:          outbound.ConstructConstant,
+						Name:          "B",
+						QualifiedName: "B",
+						Visibility:    outbound.Public,
+						Content:       "B = 2",
+						StartByte:     startByteB,
+						EndByte:       endByteB,
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
+		},
+		{
+			name:        "Variable spec field access for var_spec with multiple names",
+			description: "Test that GetMultipleFieldsByName correctly extracts all identifiers from var_spec node",
+			sourceCode:  `var first, second, third string`,
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `var first, second, third string`
+				startByte, endByte := calculateExpectedVariablePositions(t, sourceCode, "first")
+
+				// All three variables should be extracted with correct names
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "var:first",
+						Type:          outbound.ConstructVariable,
+						Name:          "first",
+						QualifiedName: "first",
+						Visibility:    outbound.Private,
+						Content:       "var first, second, third string",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "var:second",
+						Type:          outbound.ConstructVariable,
+						Name:          "second",
+						QualifiedName: "second",
+						Visibility:    outbound.Private,
+						Content:       "var first, second, third string",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "var:third",
+						Type:          outbound.ConstructVariable,
+						Name:          "third",
+						QualifiedName: "third",
+						Visibility:    outbound.Private,
+						Content:       "var first, second, third string",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+				}
+			},
+			useDynamicPositions: true,
+		},
+		{
+			name:        "Constant spec field access for const_spec with multiple names",
+			description: "Test that const_spec correctly handles sequence of identifiers in one declaration",
+			sourceCode:  `const alpha, beta, gamma = 1, 2, 3`,
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `const alpha, beta, gamma = 1, 2, 3`
+				startByte, endByte := calculateExpectedVariablePositions(t, sourceCode, "alpha")
+
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "const:alpha",
+						Type:          outbound.ConstructConstant,
+						Name:          "alpha",
+						QualifiedName: "alpha",
+						Visibility:    outbound.Private,
+						Content:       "const alpha, beta, gamma = 1, 2, 3",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "const:beta",
+						Type:          outbound.ConstructConstant,
+						Name:          "beta",
+						QualifiedName: "beta",
+						Visibility:    outbound.Private,
+						Content:       "const alpha, beta, gamma = 1, 2, 3",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "const:gamma",
+						Type:          outbound.ConstructConstant,
+						Name:          "gamma",
+						QualifiedName: "gamma",
+						Visibility:    outbound.Private,
+						Content:       "const alpha, beta, gamma = 1, 2, 3",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+				}
+			},
+			useDynamicPositions: true,
+		},
+		{
+			name:        "Complex grouped vs single declaration handling",
+			description: "Test that the system correctly distinguishes between grouped and single declarations for position calculation",
+			sourceCode: `var singleVar int
+var (
+	groupedVar1 string
+	groupedVar2 bool
+)
+var anotherSingle float64`,
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `var singleVar int
+var (
+	groupedVar1 string
+	groupedVar2 bool
+)
+var anotherSingle float64`
+
+				// Single declarations should use declaration positions
+				startByteSingle1, endByteSingle1 := calculateExpectedVariablePositions(t, sourceCode, "singleVar")
+				startByteSingle2, endByteSingle2 := calculateExpectedVariablePositions(t, sourceCode, "anotherSingle")
+
+				// Grouped declarations should use spec positions
+				startByteGrouped1, endByteGrouped1 := calculateExpectedVariablePositions(t, sourceCode, "groupedVar1")
+				startByteGrouped2, endByteGrouped2 := calculateExpectedVariablePositions(t, sourceCode, "groupedVar2")
+
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "var:singleVar",
+						Type:          outbound.ConstructVariable,
+						Name:          "singleVar",
+						QualifiedName: "singleVar",
+						Visibility:    outbound.Private,
+						Content:       "var singleVar int",
+						StartByte:     startByteSingle1,
+						EndByte:       endByteSingle1,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "var:groupedVar1",
+						Type:          outbound.ConstructVariable,
+						Name:          "groupedVar1",
+						QualifiedName: "groupedVar1",
+						Visibility:    outbound.Private,
+						Content:       "groupedVar1 string",
+						StartByte:     startByteGrouped1,
+						EndByte:       endByteGrouped1,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "var:groupedVar2",
+						Type:          outbound.ConstructVariable,
+						Name:          "groupedVar2",
+						QualifiedName: "groupedVar2",
+						Visibility:    outbound.Private,
+						Content:       "groupedVar2 bool",
+						StartByte:     startByteGrouped2,
+						EndByte:       endByteGrouped2,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "var:anotherSingle",
+						Type:          outbound.ConstructVariable,
+						Name:          "anotherSingle",
+						QualifiedName: "anotherSingle",
+						Visibility:    outbound.Private,
+						Content:       "var anotherSingle float64",
+						StartByte:     startByteSingle2,
+						EndByte:       endByteSingle2,
+						Language:      valueobject.Go,
+					},
+				}
+			},
+			useDynamicPositions: true,
+		},
+		{
+			name:        "Edge case: single variable in parentheses",
+			description: "Test that a single variable in parentheses is still treated as a grouped declaration",
+			sourceCode: `var (
+	lonely int
+)`,
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `var (
+	lonely int
+)`
+				startByte, endByte := calculateExpectedVariablePositions(t, sourceCode, "lonely")
+
+				// Even though there's only one variable, parentheses make it grouped
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "var:lonely",
+						Type:          outbound.ConstructVariable,
+						Name:          "lonely",
+						QualifiedName: "lonely",
+						Visibility:    outbound.Private,
+						Content:       "lonely int",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+				}
+			},
+			useDynamicPositions: true,
+		},
+		{
+			name:        "Mixed visibility in declarations",
+			description: "Test that public and private variables are correctly identified",
+			sourceCode: `var PublicVar string
+var privateVar int
+const PublicConst = 42
+const privateConst = 24`,
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `var PublicVar string
+var privateVar int
+const PublicConst = 42
+const privateConst = 24`
+
+				startBytePublicVar, endBytePublicVar := calculateExpectedVariablePositions(t, sourceCode, "PublicVar")
+				startBytePrivateVar, endBytePrivateVar := calculateExpectedVariablePositions(
+					t,
+					sourceCode,
+					"privateVar",
+				)
+				startBytePublicConst, endBytePublicConst := calculateExpectedVariablePositions(
+					t,
+					sourceCode,
+					"PublicConst",
+				)
+				startBytePrivateConst, endBytePrivateConst := calculateExpectedVariablePositions(
+					t,
+					sourceCode,
+					"privateConst",
+				)
+
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "var:PublicVar",
+						Type:          outbound.ConstructVariable,
+						Name:          "PublicVar",
+						QualifiedName: "PublicVar",
+						Visibility:    outbound.Public,
+						Content:       "var PublicVar string",
+						StartByte:     startBytePublicVar,
+						EndByte:       endBytePublicVar,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "var:privateVar",
+						Type:          outbound.ConstructVariable,
+						Name:          "privateVar",
+						QualifiedName: "privateVar",
+						Visibility:    outbound.Private,
+						Content:       "var privateVar int",
+						StartByte:     startBytePrivateVar,
+						EndByte:       endBytePrivateVar,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "const:PublicConst",
+						Type:          outbound.ConstructConstant,
+						Name:          "PublicConst",
+						QualifiedName: "PublicConst",
+						Visibility:    outbound.Public,
+						Content:       "const PublicConst = 42",
+						StartByte:     startBytePublicConst,
+						EndByte:       endBytePublicConst,
+						Language:      valueobject.Go,
+					},
+					{
+						ChunkID:       "const:privateConst",
+						Type:          outbound.ConstructConstant,
+						Name:          "privateConst",
+						QualifiedName: "privateConst",
+						Visibility:    outbound.Private,
+						Content:       "const privateConst = 24",
+						StartByte:     startBytePrivateConst,
+						EndByte:       endBytePrivateConst,
+						Language:      valueobject.Go,
+					},
+				}
+			},
+			useDynamicPositions: true,
 		},
 	}
 
@@ -1626,9 +2011,15 @@ const PublicConst = 42
 				}
 			}
 
-			assert.Len(t, varConstChunks, len(tt.expectedChunks))
+			var expectedChunks []outbound.SemanticCodeChunk
+			if tt.useDynamicPositions {
+				expectedChunks = tt.expectedChunksFunc(t)
+			} else {
+				expectedChunks = tt.expectedChunks
+			}
+			assert.Len(t, varConstChunks, len(expectedChunks))
 
-			for i, expected := range tt.expectedChunks {
+			for i, expected := range expectedChunks {
 				if i < len(varConstChunks) {
 					actual := varConstChunks[i]
 

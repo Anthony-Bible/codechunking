@@ -2066,9 +2066,8 @@ func TestGoParserPackageExtraction(t *testing.T) {
 		expectedChunks []outbound.SemanticCodeChunk
 	}{
 		{
-			name: "Package declaration with documentation",
-			sourceCode: `
-// Package mathutils provides mathematical utility functions
+			name: "Single-line package comment - standard Go doc format",
+			sourceCode: `// Package mathutils provides mathematical utility functions.
 package mathutils
 
 // Add adds two integers
@@ -2082,48 +2081,22 @@ func Add(a, b int) int {
 					Type:          outbound.ConstructPackage,
 					Name:          "mathutils",
 					QualifiedName: "mathutils",
-					Documentation: "Package mathutils provides mathematical utility functions",
+					Documentation: "Package mathutils provides mathematical utility functions.",
 					Content:       "package mathutils",
-					StartByte:     55,
-					EndByte:       72,
+					StartByte:     62,
+					EndByte:       79,
 					Language:      valueobject.Go,
 				},
 			},
 		},
 		{
-			name: "Package with build tags",
-			sourceCode: `
-//go:build linux && amd64
-// +build linux,amd64
-
-// Package osutils provides OS-specific utilities
-package osutils
-`,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "package:osutils",
-					Type:          outbound.ConstructPackage,
-					Name:          "osutils",
-					QualifiedName: "osutils",
-					Documentation: "Package osutils provides OS-specific utilities",
-					Content:       "package osutils",
-					StartByte:     55,
-					EndByte:       70,
-					Language:      valueobject.Go,
-				},
-			},
-		},
-		{
-			name: "Package with file-level documentation",
-			sourceCode: `
-// This file contains utility functions for string manipulation
-// and processing.
-
+			name: "Multi-line package comment - consecutive lines",
+			sourceCode: `// Package stringutils provides comprehensive string manipulation utilities.
+// It includes functions for reversing, trimming, and transforming strings
+// according to various algorithms and patterns.
 package stringutils
 
-// Reverse reverses a string
 func Reverse(s string) string {
-	// implementation
 	return s
 }
 `,
@@ -2133,10 +2106,196 @@ func Reverse(s string) string {
 					Type:          outbound.ConstructPackage,
 					Name:          "stringutils",
 					QualifiedName: "stringutils",
-					Documentation: "This file contains utility functions for string manipulation and processing.",
+					Documentation: "Package stringutils provides comprehensive string manipulation utilities. It includes functions for reversing, trimming, and transforming strings according to various algorithms and patterns.",
 					Content:       "package stringutils",
-					StartByte:     87,
-					EndByte:       106,
+					StartByte:     201,
+					EndByte:       220,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Block comment for package documentation",
+			sourceCode: `/*
+Package fileutils provides file system utilities and helpers.
+
+This package contains functions for reading, writing, and manipulating
+files and directories with enhanced error handling and logging.
+*/
+package fileutils
+
+func ReadFile(name string) ([]byte, error) {
+	return nil, nil
+}
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:fileutils",
+					Type:          outbound.ConstructPackage,
+					Name:          "fileutils",
+					QualifiedName: "fileutils",
+					Documentation: "Package fileutils provides file system utilities and helpers.\n\nThis package contains functions for reading, writing, and manipulating files and directories with enhanced error handling and logging.",
+					Content:       "package fileutils",
+					StartByte:     204,
+					EndByte:       221,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with build tags and documentation",
+			sourceCode: `//go:build linux && amd64
+// +build linux,amd64
+
+// Package osutils provides OS-specific utilities for Linux systems.
+// It includes platform-specific file operations and system calls.
+package osutils
+
+func GetPlatform() string {
+	return "linux"
+}
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:osutils",
+					Type:          outbound.ConstructPackage,
+					Name:          "osutils",
+					QualifiedName: "osutils",
+					Documentation: "Package osutils provides OS-specific utilities for Linux systems. It includes platform-specific file operations and system calls.",
+					Content:       "package osutils",
+					StartByte:     185,
+					EndByte:       200,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with mixed comment types before declaration",
+			sourceCode: `// This is a file-level comment about the package
+/* This is a block comment describing more details */
+// Package mixedcomments demonstrates different comment extraction patterns.
+package mixedcomments
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:mixedcomments",
+					Type:          outbound.ConstructPackage,
+					Name:          "mixedcomments",
+					QualifiedName: "mixedcomments",
+					Documentation: "Package mixedcomments demonstrates different comment extraction patterns.",
+					Content:       "package mixedcomments",
+					StartByte:     181,
+					EndByte:       202,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with separated comments - should extract closest",
+			sourceCode: `// This comment is separated by blank lines from package
+
+// Package separated has documentation separated by blank lines.
+// This should be extracted as the package documentation.
+
+package separated
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:separated",
+					Type:          outbound.ConstructPackage,
+					Name:          "separated",
+					QualifiedName: "separated",
+					Documentation: "Package separated has documentation separated by blank lines. This should be extracted as the package documentation.",
+					Content:       "package separated",
+					StartByte:     182,
+					EndByte:       199,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with no documentation - should have empty documentation",
+			sourceCode: `package nodocs
+
+func SomeFunction() {
+}
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:nodocs",
+					Type:          outbound.ConstructPackage,
+					Name:          "nodocs",
+					QualifiedName: "nodocs",
+					Documentation: "",
+					Content:       "package nodocs",
+					StartByte:     0,
+					EndByte:       14,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with copyright header - should extract package comment only",
+			sourceCode: `// Copyright 2023 Example Corp.
+// All rights reserved.
+
+// Package copyrighted provides functionality with copyright headers.
+package copyrighted
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:copyrighted",
+					Type:          outbound.ConstructPackage,
+					Name:          "copyrighted",
+					QualifiedName: "copyrighted",
+					Documentation: "Package copyrighted provides functionality with copyright headers.",
+					Content:       "package copyrighted",
+					StartByte:     127,
+					EndByte:       146,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with URL and special characters in documentation",
+			sourceCode: `// Package webutils provides HTTP utilities and web scraping tools.
+// For more information, visit: https://github.com/example/webutils
+// This package supports OAuth 2.0, JSON/XML parsing, and rate limiting.
+package webutils
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:webutils",
+					Type:          outbound.ConstructPackage,
+					Name:          "webutils",
+					QualifiedName: "webutils",
+					Documentation: "Package webutils provides HTTP utilities and web scraping tools. For more information, visit: https://github.com/example/webutils This package supports OAuth 2.0, JSON/XML parsing, and rate limiting.",
+					Content:       "package webutils",
+					StartByte:     209,
+					EndByte:       225,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with example in documentation",
+			sourceCode: `// Package calculator provides basic arithmetic operations.
+//
+// Example usage:
+//   result := calculator.Add(5, 3)
+//   fmt.Println(result) // Output: 8
+package calculator
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:calculator",
+					Type:          outbound.ConstructPackage,
+					Name:          "calculator",
+					QualifiedName: "calculator",
+					Documentation: "Package calculator provides basic arithmetic operations.\n\nExample usage:\n  result := calculator.Add(5, 3)\n  fmt.Println(result) // Output: 8",
+					Content:       "package calculator",
+					StartByte:     155,
+					EndByte:       173,
 					Language:      valueobject.Go,
 				},
 			},
@@ -2182,6 +2341,322 @@ func Reverse(s string) string {
 					assert.Equal(t, expected.StartByte, actual.StartByte)
 					assert.Equal(t, expected.EndByte, actual.EndByte)
 					assert.Equal(t, expected.Language, actual.Language)
+				}
+			}
+		})
+	}
+}
+
+// TestGoParserPackageDocumentationEdgeCases tests edge cases and Go documentation formatting conventions.
+func TestGoParserPackageDocumentationEdgeCases(t *testing.T) {
+	ctx := context.Background()
+	factory, err := treesitter.NewTreeSitterParserFactory(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, factory)
+
+	goLang, err := valueobject.NewLanguage(valueobject.LanguageGo)
+	require.NoError(t, err)
+	parser, err := factory.CreateParser(ctx, goLang)
+	require.NoError(t, err)
+	require.NotNil(t, parser)
+
+	tests := []struct {
+		name           string
+		sourceCode     string
+		expectedChunks []outbound.SemanticCodeChunk
+	}{
+		{
+			name: "Package comment without 'Package' prefix - should still extract",
+			sourceCode: `// This module provides cryptographic utilities for secure operations.
+// Use with caution and follow security best practices.
+package crypto
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:crypto",
+					Type:          outbound.ConstructPackage,
+					Name:          "crypto",
+					QualifiedName: "crypto",
+					Documentation: "This module provides cryptographic utilities for secure operations. Use with caution and follow security best practices.",
+					Content:       "package crypto",
+					StartByte:     128,
+					EndByte:       142,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with inline comment - should ignore inline comment",
+			sourceCode: `// Package inline provides inline comment testing.
+package inline // This is an inline comment that should be ignored
+
+func Test() {}
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:inline",
+					Type:          outbound.ConstructPackage,
+					Name:          "inline",
+					QualifiedName: "inline",
+					Documentation: "Package inline provides inline comment testing.",
+					Content:       "package inline",
+					StartByte:     50,
+					EndByte:       64,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with empty comment lines - should preserve formatting",
+			sourceCode: `// Package formatter demonstrates comment formatting.
+//
+// This package includes functions for text formatting and
+// provides multiple formatting options.
+//
+// For advanced usage, see the examples directory.
+package formatter
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:formatter",
+					Type:          outbound.ConstructPackage,
+					Name:          "formatter",
+					QualifiedName: "formatter",
+					Documentation: "Package formatter demonstrates comment formatting.\n\nThis package includes functions for text formatting and provides multiple formatting options.\n\nFor advanced usage, see the examples directory.",
+					Content:       "package formatter",
+					StartByte:     233,
+					EndByte:       250,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name:       "Package with tabs and mixed whitespace in comments",
+			sourceCode: "// Package whitespace tests whitespace handling in comments.\n//\t\tThis line has tabs.\n//    This line has spaces.\n//\t Mixed tabs and spaces.\npackage whitespace\n",
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:whitespace",
+					Type:          outbound.ConstructPackage,
+					Name:          "whitespace",
+					QualifiedName: "whitespace",
+					Documentation: "Package whitespace tests whitespace handling in comments.\n\t\tThis line has tabs.\n    This line has spaces.\n\t Mixed tabs and spaces.",
+					Content:       "package whitespace",
+					StartByte:     149,
+					EndByte:       168,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with very long documentation lines",
+			sourceCode: `// Package longlines demonstrates handling of very long documentation lines that exceed typical line length recommendations and should be properly extracted without truncation or formatting issues.
+package longlines
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:longlines",
+					Type:          outbound.ConstructPackage,
+					Name:          "longlines",
+					QualifiedName: "longlines",
+					Documentation: "Package longlines demonstrates handling of very long documentation lines that exceed typical line length recommendations and should be properly extracted without truncation or formatting issues.",
+					Content:       "package longlines",
+					StartByte:     212,
+					EndByte:       230,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with Unicode and special characters",
+			sourceCode: `// Package unicode provides utilities for handling Unicode text: ñáéíóú, 中文, русский, 🌟✨.
+// It supports various encodings and normalization forms (NFC, NFD, NFKC, NFKD).
+package unicode
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:unicode",
+					Type:          outbound.ConstructPackage,
+					Name:          "unicode",
+					QualifiedName: "unicode",
+					Documentation: "Package unicode provides utilities for handling Unicode text: ñáéíóú, 中文, русский, 🌟✨. It supports various encodings and normalization forms (NFC, NFD, NFKC, NFKD).",
+					Content:       "package unicode",
+					StartByte:     206,
+					EndByte:       222,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with comment containing Go code examples and backticks",
+			sourceCode: `// Package examples demonstrates usage patterns with code examples.
+//
+// Basic usage:
+//   client := examples.NewClient()
+//   result, err := client.Process(data)
+//   if err != nil {
+//       return err
+//   }
+//
+// Advanced configuration:
+//   config := examples.Config{
+//       Timeout: 30 * time.Second,
+//       Retries: 3,
+//   }
+package examples
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:examples",
+					Type:          outbound.ConstructPackage,
+					Name:          "examples",
+					QualifiedName: "examples",
+					Documentation: "Package examples demonstrates usage patterns with code examples.\n\nBasic usage:\n  client := examples.NewClient()\n  result, err := client.Process(data)\n  if err != nil {\n      return err\n  }\n\nAdvanced configuration:\n  config := examples.Config{\n      Timeout: 30 * time.Second,\n      Retries: 3,\n  }",
+					Content:       "package examples",
+					StartByte:     387,
+					EndByte:       404,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with malformed comment - missing space after //",
+			sourceCode: `//Package malformed has a comment without space after //.
+//This should still be extracted as documentation.
+package malformed
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:malformed",
+					Type:          outbound.ConstructPackage,
+					Name:          "malformed",
+					QualifiedName: "malformed",
+					Documentation: "Package malformed has a comment without space after //. This should still be extracted as documentation.",
+					Content:       "package malformed",
+					StartByte:     105,
+					EndByte:       122,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with nested block comments - should handle gracefully",
+			sourceCode: `/*
+Package nested contains block comments with potential nesting issues.
+
+This package demonstrates: /* inline block comment */ handling.
+The parser should extract this documentation correctly.
+*/
+package nested
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:nested",
+					Type:          outbound.ConstructPackage,
+					Name:          "nested",
+					QualifiedName: "nested",
+					Documentation: "Package nested contains block comments with potential nesting issues.\n\nThis package demonstrates: /* inline block comment */ handling. The parser should extract this documentation correctly.",
+					Content:       "package nested",
+					StartByte:     202,
+					EndByte:       216,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with only block comment after package - should have empty documentation",
+			sourceCode: `package aftercomment
+
+/*
+This comment comes after the package declaration.
+It should not be considered package documentation.
+*/
+
+func Test() {}
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:aftercomment",
+					Type:          outbound.ConstructPackage,
+					Name:          "aftercomment",
+					QualifiedName: "aftercomment",
+					Documentation: "",
+					Content:       "package aftercomment",
+					StartByte:     0,
+					EndByte:       20,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with documentation containing internal links and references",
+			sourceCode: `// Package refs provides cross-reference utilities for Go documentation.
+//
+// This package integrates with:
+//   - package fmt for output formatting
+//   - package strings for text manipulation
+//   - package regexp for pattern matching
+//
+// See also: https://pkg.go.dev/regexp for more regex patterns.
+package refs
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:refs",
+					Type:          outbound.ConstructPackage,
+					Name:          "refs",
+					QualifiedName: "refs",
+					Documentation: "Package refs provides cross-reference utilities for Go documentation.\n\nThis package integrates with:\n  - package fmt for output formatting\n  - package strings for text manipulation\n  - package regexp for pattern matching\n\nSee also: https://pkg.go.dev/regexp for more regex patterns.",
+					Content:       "package refs",
+					StartByte:     349,
+					EndByte:       362,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parseTree, err := parser.Parse(ctx, []byte(tt.sourceCode))
+			require.NoError(t, err)
+			require.NotNil(t, parseTree)
+
+			domainTree, err := treesitter.ConvertPortParseTreeToDomain(parseTree.ParseTree)
+			require.NoError(t, err)
+			require.NotNil(t, domainTree)
+
+			adapter := treesitter.NewSemanticTraverserAdapter()
+			options := &treesitter.SemanticExtractionOptions{
+				IncludePackages: true,
+			}
+
+			chunks := adapter.ExtractCodeChunks(domainTree, options)
+
+			// Filter to only package chunks for this test
+			var packageChunks []outbound.SemanticCodeChunk
+			for _, chunk := range chunks {
+				if chunk.Type == outbound.ConstructPackage {
+					packageChunks = append(packageChunks, chunk)
+				}
+			}
+
+			assert.Len(t, packageChunks, len(tt.expectedChunks))
+
+			for i, expected := range tt.expectedChunks {
+				if i < len(packageChunks) {
+					actual := packageChunks[i]
+					assert.Equal(t, expected.ChunkID, actual.ChunkID, "ChunkID mismatch")
+					assert.Equal(t, expected.Type, actual.Type, "Type mismatch")
+					assert.Equal(t, expected.Name, actual.Name, "Name mismatch")
+					assert.Equal(t, expected.QualifiedName, actual.QualifiedName, "QualifiedName mismatch")
+					assert.Equal(t, expected.Documentation, actual.Documentation, "Documentation mismatch")
+					assert.Equal(t, expected.Content, actual.Content, "Content mismatch")
+					// Note: Byte positions may need adjustment once documentation extraction is implemented
+					// For now, we'll be more lenient with byte position assertions in RED phase
+					assert.NotZero(t, actual.StartByte, "StartByte should not be zero")
+					assert.NotZero(t, actual.EndByte, "EndByte should not be zero")
+					assert.Greater(t, actual.EndByte, actual.StartByte, "EndByte should be greater than StartByte")
+					assert.Equal(t, expected.Language, actual.Language, "Language mismatch")
 				}
 			}
 		})

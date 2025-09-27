@@ -192,7 +192,7 @@ func parseGoGenericParameters(
 		}
 
 		// Get parameter name
-		nameNode := findChildByTypeInNode(paramDecl, "identifier")
+		nameNode := findChildByTypeInNode(paramDecl, nodeTypeIdentifier)
 		if nameNode == nil {
 			// Skip malformed parameter declarations without names
 			continue
@@ -757,10 +757,10 @@ func isFieldLikeSyntaxPattern(parseTree *valueobject.ParseTree, line string) boo
 
 	for _, node := range allNodes {
 		switch node.Type {
-		case "identifier":
+		case nodeTypeIdentifier:
 			identifierCount++
 		case nodeTypeTypeIdentifier, nodeTypeQualifiedType, "function_type", nodeTypeChannelType,
-			"map_type", "slice_type", "array_type", "pointer_type", nodeTypeInterfaceType:
+			"map_type", "slice_type", "array_type", nodeTypePointerType, nodeTypeInterfaceType:
 			typePatternCount++
 		}
 	}
@@ -1207,59 +1207,12 @@ func (o *ObservableGoParser) ExtractModules(
 
 	if len(packageClauses) > 0 {
 		packageClause := packageClauses[0] // Use the first package clause
-
-		// Extract package name from package_identifier
-		packageIdentifiers := FindDirectChildren(packageClause, "package_identifier")
-		if len(packageIdentifiers) > 0 {
-			packageName := parseTree.GetNodeText(packageIdentifiers[0])
-			content := parseTree.GetNodeText(packageClause)
-
-			slogger.Info(ctx, "Found package in source", slogger.Fields{
-				"package_name": packageName,
-			})
-
-			// Create properly configured Language object (reuse from ExtractClasses)
-			goLang, _ := valueobject.NewLanguageWithDetails(
-				"Go",
-				[]string{},
-				[]string{".go"},
-				valueobject.LanguageTypeCompiled,
-				valueobject.DetectionMethodExtension,
-				1.0,
-			)
-
-			// Extract and validate AST positions from tree-sitter node
-			startByte, endByte, positionValid := ExtractPositionInfo(packageClause)
-			if !positionValid {
-				slogger.Error(ctx, "Invalid position information for package node", slogger.Fields{
-					"package_name": packageName,
-					"node_type":    packageClause.Type,
-				})
-				return modules, fmt.Errorf("invalid position information for package node: %s", packageName)
-			}
-
-			chunk := outbound.SemanticCodeChunk{
-				ChunkID:       fmt.Sprintf("package:%s", packageName),
-				Name:          packageName,
-				QualifiedName: packageName, // Package name is the qualified name
-				Language:      goLang,
-				Type:          outbound.ConstructPackage,
-				Visibility:    outbound.Public, // All packages are considered public
-				Content:       content,
-				StartByte:     startByte,
-				EndByte:       endByte,
-				Documentation: "", // Documentation extraction handled by TreeSitterQueryEngine
-				ExtractedAt:   time.Now(),
-				IsStatic:      true, // Package declarations are static
-				Hash:          "",   // Hash calculation not implemented
-			}
-
-			modules = append(modules, chunk)
-
-			slogger.Info(ctx, "Extracted package", slogger.Fields{
-				"package_name": packageName,
-				"chunk_id":     chunk.ChunkID,
-			})
+		chunk, err := processPackageClause(ctx, parseTree, packageClause, queryEngine)
+		if err != nil {
+			return modules, err
+		}
+		if chunk != nil {
+			modules = append(modules, *chunk)
 		}
 	}
 
@@ -1269,6 +1222,436 @@ func (o *ObservableGoParser) ExtractModules(
 	})
 
 	return modules, nil
+}
+
+// extractPackageDocumentation extracts documentation comments that immediately precede a package declaration
+// using a direct approach to find comments before the package declaration in the source.
+func extractPackageDocumentation(
+	parseTree *valueobject.ParseTree,
+	packageClause *valueobject.ParseNode,
+	queryEngine TreeSitterQueryEngine,
+) string {
+	allComments := queryEngine.QueryComments(parseTree)
+	if len(allComments) == 0 {
+		return ""
+	}
+
+	sortedComments := sortCommentsByPosition(allComments)
+	packageComments := findPackageDocumentationComments(parseTree, packageClause, sortedComments)
+	processedComments := processCommentNodes(parseTree, packageComments)
+
+	return joinCommentsWithGoDocFormatting(processedComments)
+}
+
+// sortCommentsByPosition sorts comments by their start position in ascending order.
+func sortCommentsByPosition(comments []*valueobject.ParseNode) []*valueobject.ParseNode {
+	sorted := make([]*valueobject.ParseNode, len(comments))
+	copy(sorted, comments)
+
+	// Use bubble sort for simplicity and maintainability
+	for i := range len(sorted) - 1 {
+		for j := i + 1; j < len(sorted); j++ {
+			if sorted[i].StartByte > sorted[j].StartByte {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+
+	return sorted
+}
+
+// findPackageDocumentationComments identifies comments that form the package documentation
+// by finding the last comment group that connects to the package declaration.
+func findPackageDocumentationComments(
+	parseTree *valueobject.ParseTree,
+	packageClause *valueobject.ParseNode,
+	sortedComments []*valueobject.ParseNode,
+) []*valueobject.ParseNode {
+	packageStart := packageClause.StartByte
+	sourceText := string(parseTree.Source())
+	lastValidCommentIndex := findLastValidCommentIndex(sortedComments, packageStart, sourceText)
+
+	if lastValidCommentIndex < 0 {
+		return nil
+	}
+
+	return selectPackageComments(sortedComments, lastValidCommentIndex, parseTree, sourceText)
+}
+
+// findLastValidCommentIndex finds the index of the last comment that connects to the package declaration.
+func findLastValidCommentIndex(comments []*valueobject.ParseNode, packageStart uint32, sourceText string) int {
+	// Walk backwards through comments to find the last group that connects to package
+	for i := len(comments) - 1; i >= 0; i-- {
+		comment := comments[i]
+		if comment.EndByte <= packageStart {
+			// Check if this comment connects to the package (no non-empty lines between)
+			betweenText := sourceText[comment.EndByte:packageStart]
+			if hasOnlyWhitespaceAndNewlines(betweenText) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// processCommentNodes processes a slice of comment nodes into their text content.
+func processCommentNodes(parseTree *valueobject.ParseTree, commentNodes []*valueobject.ParseNode) []string {
+	var processedComments []string
+
+	for _, commentNode := range commentNodes {
+		processedText := processPackageCommentText(parseTree, commentNode)
+		processedComments = append(processedComments, processedText)
+	}
+
+	return processedComments
+}
+
+// joinCommentsWithGoDocFormatting joins comments following Go documentation conventions:
+// - Regular text flows together with spaces
+// - Empty lines create paragraph breaks
+// - Indented lines (code examples) preserve structure
+//
+// This function implements Go's standard documentation formatting rules to ensure
+// that package documentation appears properly formatted when viewed with 'go doc'.
+func joinCommentsWithGoDocFormatting(comments []string) string {
+	if len(comments) == 0 {
+		return ""
+	}
+
+	var result []string
+	var currentParagraph []string
+
+	for _, comment := range comments {
+		switch {
+		case comment == "":
+			// Empty comment creates paragraph break
+			if len(currentParagraph) > 0 {
+				result = append(result, strings.Join(currentParagraph, " "))
+				currentParagraph = nil
+			}
+			// Add empty line for paragraph separation
+			if len(result) > 0 {
+				result = append(result, "")
+			}
+		case strings.HasPrefix(comment, " ") || strings.HasPrefix(comment, "\t"):
+			// Indented content (code examples) - preserve as separate lines
+			if len(currentParagraph) > 0 {
+				result = append(result, strings.Join(currentParagraph, " "))
+				currentParagraph = nil
+			}
+			result = append(result, comment)
+		default:
+			// Regular text - accumulate for flowing
+			currentParagraph = append(currentParagraph, comment)
+		}
+	}
+
+	// Handle any remaining paragraph
+	if len(currentParagraph) > 0 {
+		result = append(result, strings.Join(currentParagraph, " "))
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// isPackageDocComment checks if a comment text appears to be package documentation
+// by looking for the "Package <name>" pattern at the start of the comment.
+//
+// According to Go documentation conventions, a package comment should start with
+// "Package <packagename>" and provide a high-level overview of the package's purpose.
+// This function recognizes both line comments (//) and block comments (/* */) formats.
+func isPackageDocComment(commentText string) bool {
+	// Handle // style comments
+	if strings.HasPrefix(commentText, "//") {
+		content := strings.TrimPrefix(commentText, "//")
+		content = strings.TrimPrefix(content, " ")
+		return strings.HasPrefix(content, "Package ")
+	}
+
+	// Handle /* */ style block comments
+	if strings.HasPrefix(commentText, "/*") && strings.HasSuffix(commentText, "*/") {
+		content := commentText[2 : len(commentText)-2]
+		content = strings.TrimSpace(content)
+		// Remove leading * from formatted block comments
+		if strings.HasPrefix(content, "*") {
+			content = strings.TrimSpace(strings.TrimPrefix(content, "*"))
+		}
+		return strings.HasPrefix(content, "Package ")
+	}
+
+	return false
+}
+
+// selectPackageComments selects the appropriate comments for package documentation
+// based on Go documentation conventions.
+func selectPackageComments(
+	comments []*valueobject.ParseNode,
+	lastValidCommentIndex int,
+	parseTree *valueobject.ParseTree,
+	sourceText string,
+) []*valueobject.ParseNode {
+	endIndex := lastValidCommentIndex
+	startIndex := findCommentBlockStart(comments, endIndex, sourceText)
+	packageDocIndex := findPackageDocCommentIndex(comments, startIndex, endIndex, parseTree)
+
+	// Determine final start index based on whether we found a package doc comment
+	finalStartIndex := determineFinalStartIndex(comments, startIndex, endIndex, packageDocIndex, sourceText)
+
+	return extractCommentRange(comments, finalStartIndex, endIndex)
+}
+
+// findCommentBlockStart walks backwards to find the start of a consecutive comment block.
+func findCommentBlockStart(comments []*valueobject.ParseNode, endIndex int, sourceText string) int {
+	startIndex := endIndex
+
+	// Walk backwards to find the start of the comment block
+	for startIndex > 0 {
+		currentComment := comments[startIndex]
+		prevComment := comments[startIndex-1]
+
+		betweenComments := sourceText[prevComment.EndByte:currentComment.StartByte]
+		if hasOnlyWhitespaceAndNewlines(betweenComments) && !hasBlankLine(betweenComments) {
+			startIndex--
+		} else {
+			break
+		}
+	}
+
+	return startIndex
+}
+
+// findPackageDocCommentIndex looks for a "Package ..." comment within the comment block.
+func findPackageDocCommentIndex(
+	comments []*valueobject.ParseNode,
+	startIndex, endIndex int,
+	parseTree *valueobject.ParseTree,
+) int {
+	for i := startIndex; i <= endIndex; i++ {
+		commentText := parseTree.GetNodeText(comments[i])
+		if isPackageDocComment(commentText) {
+			return i
+		}
+	}
+	return -1
+}
+
+// determineFinalStartIndex determines the final start index based on Go documentation conventions.
+func determineFinalStartIndex(
+	comments []*valueobject.ParseNode,
+	startIndex, endIndex, packageDocIndex int,
+	sourceText string,
+) int {
+	// If we found a proper package doc comment, include the whole block from that point
+	if packageDocIndex >= 0 {
+		return packageDocIndex
+	}
+
+	// Use conservative approach - include only immediate comments (limit scope)
+	finalStartIndex := endIndex
+	for finalStartIndex > 0 && (endIndex-finalStartIndex) < 2 {
+		currentComment := comments[finalStartIndex]
+		prevComment := comments[finalStartIndex-1]
+
+		betweenComments := sourceText[prevComment.EndByte:currentComment.StartByte]
+		if hasOnlyWhitespaceAndNewlines(betweenComments) && !hasBlankLine(betweenComments) {
+			finalStartIndex--
+		} else {
+			break
+		}
+	}
+
+	return finalStartIndex
+}
+
+// extractCommentRange extracts comments from startIndex to endIndex (inclusive).
+func extractCommentRange(comments []*valueobject.ParseNode, startIndex, endIndex int) []*valueobject.ParseNode {
+	var result []*valueobject.ParseNode
+	for i := startIndex; i <= endIndex; i++ {
+		result = append(result, comments[i])
+	}
+	return result
+}
+
+// hasOnlyWhitespaceAndNewlines checks if text contains only whitespace and newlines.
+// This function is used to determine if comments are directly connected to a package
+// declaration without any intervening code or non-whitespace content.
+func hasOnlyWhitespaceAndNewlines(text string) bool {
+	for _, char := range text {
+		if char != ' ' && char != '\t' && char != '\n' && char != '\r' {
+			return false
+		}
+	}
+	return true
+}
+
+// hasBlankLine checks if text contains a blank line (two consecutive newlines).
+// This is used to determine comment block boundaries according to Go documentation
+// conventions, where blank lines separate distinct comment sections.
+func hasBlankLine(text string) bool {
+	return strings.Contains(text, "\n\n") || strings.Contains(text, "\r\n\r\n")
+}
+
+// processPackageCommentText processes a comment node to extract text content
+// while preserving formatting that's expected for package documentation.
+//
+// This function handles both line comments (//) and block comments (/* */),
+// following Go's standard comment processing rules:
+// - For line comments: removes // prefix and at most one leading space
+// - For block comments: delegates to processBlockComment for advanced formatting.
+func processPackageCommentText(
+	parseTree *valueobject.ParseTree,
+	commentNode *valueobject.ParseNode,
+) string {
+	if parseTree == nil || commentNode == nil {
+		return ""
+	}
+
+	raw := parseTree.GetNodeText(commentNode)
+	raw = strings.TrimSpace(raw)
+
+	// Handle // style comments - preserve indentation for code examples
+	if strings.HasPrefix(raw, "//") {
+		content := strings.TrimPrefix(raw, "//")
+		// Standard Go documentation: trim exactly one leading space if present
+		content = strings.TrimPrefix(content, " ")
+		return content
+	}
+
+	// Handle /* */ style block comments with preserved formatting
+	if strings.HasPrefix(raw, "/*") && strings.HasSuffix(raw, "*/") {
+		return processBlockComment(raw)
+	}
+
+	// Fallback for any other comment format
+	return strings.TrimSpace(raw)
+}
+
+// processBlockComment processes block comment content preserving package documentation formatting.
+func processBlockComment(raw string) string {
+	contentWithoutMarkers := stripBlockCommentMarkers(raw)
+	cleanedLines := cleanBlockCommentLines(contentWithoutMarkers)
+	paragraphs := groupLinesByParagraphs(cleanedLines)
+
+	return joinParagraphs(paragraphs)
+}
+
+// stripBlockCommentMarkers removes the /* and */ markers from block comment content.
+func stripBlockCommentMarkers(raw string) string {
+	return raw[2 : len(raw)-2]
+}
+
+// cleanBlockCommentLines processes each line to remove leading asterisks and trim whitespace.
+func cleanBlockCommentLines(content string) []string {
+	lines := strings.Split(content, "\n")
+	cleanedLines := make([]string, 0, len(lines))
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Remove leading * from formatted block comments but preserve spacing
+		if strings.HasPrefix(line, "*") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "*"))
+		}
+		cleanedLines = append(cleanedLines, line)
+	}
+
+	return cleanedLines
+}
+
+// groupLinesByParagraphs groups consecutive non-empty lines into paragraphs.
+func groupLinesByParagraphs(lines []string) []string {
+	var paragraphs []string
+	var currentParagraph []string
+
+	for _, line := range lines {
+		if line == "" {
+			// Empty line indicates paragraph break
+			if len(currentParagraph) > 0 {
+				paragraphs = append(paragraphs, strings.Join(currentParagraph, " "))
+				currentParagraph = nil
+			}
+		} else {
+			currentParagraph = append(currentParagraph, line)
+		}
+	}
+
+	// Add the last paragraph if any
+	if len(currentParagraph) > 0 {
+		paragraphs = append(paragraphs, strings.Join(currentParagraph, " "))
+	}
+
+	return paragraphs
+}
+
+// joinParagraphs joins paragraphs with double newlines for proper Go documentation formatting.
+func joinParagraphs(paragraphs []string) string {
+	return strings.Join(paragraphs, "\n\n")
+}
+
+// processPackageClause processes a package clause node and returns a SemanticCodeChunk.
+func processPackageClause(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	packageClause *valueobject.ParseNode,
+	queryEngine TreeSitterQueryEngine,
+) (*outbound.SemanticCodeChunk, error) {
+	// Extract package name from package_identifier
+	packageIdentifiers := FindDirectChildren(packageClause, "package_identifier")
+	if len(packageIdentifiers) == 0 {
+		return nil, errors.New("no package identifier found in package clause")
+	}
+
+	packageName := parseTree.GetNodeText(packageIdentifiers[0])
+	content := parseTree.GetNodeText(packageClause)
+
+	slogger.Info(ctx, "Found package in source", slogger.Fields{
+		"package_name": packageName,
+	})
+
+	// Create properly configured Language object
+	goLang, _ := valueobject.NewLanguageWithDetails(
+		"Go",
+		[]string{},
+		[]string{".go"},
+		valueobject.LanguageTypeCompiled,
+		valueobject.DetectionMethodExtension,
+		1.0,
+	)
+
+	// Extract documentation using tree-sitter-based implementation
+	documentation := extractPackageDocumentation(parseTree, packageClause, queryEngine)
+
+	// Get byte positions from tree-sitter
+	startByte, endByte, positionValid := ExtractPositionInfo(packageClause)
+	if !positionValid {
+		slogger.Error(ctx, "Invalid position information for package node", slogger.Fields{
+			"package_name": packageName,
+			"node_type":    packageClause.Type,
+		})
+		return nil, fmt.Errorf("invalid position information for package node: %s", packageName)
+	}
+
+	chunk := &outbound.SemanticCodeChunk{
+		ChunkID:       fmt.Sprintf("package:%s", packageName),
+		Name:          packageName,
+		QualifiedName: packageName,
+		Language:      goLang,
+		Type:          outbound.ConstructPackage,
+		Visibility:    outbound.Public,
+		Content:       content,
+		StartByte:     startByte,
+		EndByte:       endByte,
+		Documentation: documentation,
+		ExtractedAt:   time.Now(),
+		IsStatic:      true,
+		Hash:          "",
+	}
+
+	slogger.Info(ctx, "Extracted package", slogger.Fields{
+		"chunk_id":     chunk.ChunkID,
+		"package_name": packageName,
+	})
+
+	return chunk, nil
 }
 
 // GetSupportedLanguage implements the LanguageParser interface.

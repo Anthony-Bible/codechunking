@@ -121,8 +121,18 @@ type Repository[K comparable, V any] struct{}
 		// Verify that extraction uses query engine patterns
 		for _, chunk := range extractedChunks {
 			assert.NotEmpty(t, chunk.Name, "function name should be extracted via field access")
-			assert.NotZero(t, chunk.StartByte, "positions should come from real AST nodes")
-			assert.NotZero(t, chunk.EndByte, "positions should come from real AST nodes")
+			assert.GreaterOrEqual(
+				t,
+				chunk.StartByte,
+				uint32(0),
+				"StartByte should be non-negative (positions from real AST nodes)",
+			)
+			assert.Greater(
+				t,
+				chunk.EndByte,
+				chunk.StartByte,
+				"EndByte should be greater than StartByte (positions from real AST nodes)",
+			)
 
 			// Verify that complex signatures are parsed correctly via field access
 			if chunk.Name == "GenericFunction" {

@@ -1845,25 +1845,14 @@ func processPackageClause(
 	// Extract documentation using tree-sitter-based implementation
 	documentation := extractPackageDocumentation(parseTree, packageClause, queryEngine)
 
-	// Get byte positions from tree-sitter
-	startByte, endByte, positionValid := ExtractPositionInfo(packageClause)
+	// Extract position information using the specialized package position utility
+	startByte, endByte, metadata, positionValid := ExtractPackagePositionInfo(packageClause, packageName)
 	if !positionValid {
 		slogger.Error(ctx, "Invalid position information for package node", slogger.Fields{
 			"package_name": packageName,
 			"node_type":    packageClause.Type,
 		})
 		return nil, fmt.Errorf("invalid position information for package node: %s", packageName)
-	}
-
-	// Use actual tree-sitter positions - StartByte=0 is valid for packages at file start
-	var metadata map[string]interface{}
-	if startByte == 0 {
-		// Track original AST positions for debugging, but don't override them
-		metadata = map[string]interface{}{
-			"ast_start_byte": startByte,
-			"ast_end_byte":   endByte,
-			"position_note":  "package at file start",
-		}
 	}
 
 	chunk := &outbound.SemanticCodeChunk{

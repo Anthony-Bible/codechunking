@@ -111,6 +111,10 @@ func FindDirectChildren(parent *valueobject.ParseNode, nodeType string) []*value
 // This is useful for ensuring that position extraction is working correctly
 // and that nodes have been properly parsed by tree-sitter.
 //
+// IMPORTANT: This function considers StartByte=0 as VALID since tree-sitter
+// correctly reports byte position 0 for constructs at the beginning of files
+// (such as package declarations). Zero is not an error condition.
+//
 // Parameters:
 //
 //	node - The node to validate (can be nil)
@@ -121,7 +125,7 @@ func FindDirectChildren(parent *valueobject.ParseNode, nodeType string) []*value
 //
 // A node is considered to have valid position information if:
 //   - The node is not nil
-//   - StartByte is less than or equal to EndByte
+//   - StartByte is less than or equal to EndByte (StartByte=0 is valid)
 //   - StartPos.Row is less than or equal to EndPos.Row
 //   - If rows are equal, StartPos.Column is less than or equal to EndPos.Column
 func ValidateNodePosition(node *valueobject.ParseNode) bool {
@@ -129,7 +133,7 @@ func ValidateNodePosition(node *valueobject.ParseNode) bool {
 		return false
 	}
 
-	// Validate byte positions
+	// Validate byte positions - StartByte can be 0 (valid for file start)
 	if node.StartByte > node.EndByte {
 		return false
 	}
@@ -151,6 +155,10 @@ func ValidateNodePosition(node *valueobject.ParseNode) bool {
 // This utility ensures consistent position handling across all extraction methods.
 // It validates the node and its position data before returning the byte positions.
 //
+// IMPORTANT: StartByte=0 is VALID for nodes that appear at the very beginning of a file.
+// Tree-sitter correctly reports StartByte=0 for package declarations and other constructs
+// that start at file position 0. This is not an error condition and should be preserved.
+//
 // Parameters:
 //
 //	node - The node to extract position from (can be nil)
@@ -162,10 +170,11 @@ func ValidateNodePosition(node *valueobject.ParseNode) bool {
 //
 // Example:
 //
-//	startByte, endByte, valid := ExtractPositionInfo(structNode)
+//	startByte, endByte, valid := ExtractPositionInfo(packageNode)
 //	if !valid {
-//	    return nil, fmt.Errorf("invalid position information for struct node")
+//	    return nil, fmt.Errorf("invalid position information")
 //	}
+//	// Note: startByte may be 0 for nodes at file start - this is correct!
 func ExtractPositionInfo(node *valueobject.ParseNode) (uint32, uint32, bool) {
 	if !ValidateNodePosition(node) {
 		return 0, 0, false
@@ -205,6 +214,57 @@ func ExtractPositionInfoWithFallback(
 
 	// Neither node has valid position information
 	return 0, 0, false, "none"
+}
+
+// ExtractPackagePositionInfo is a specialized position extractor for package declarations
+// that includes enhanced metadata tracking for package nodes at file start.
+//
+// This function handles the common case where package declarations appear at the very
+// beginning of Go source files (StartByte=0), which is normal tree-sitter behavior.
+//
+// Parameters:
+//
+//	packageNode - The package_clause node to extract position from
+//	packageName - The name of the package (for error reporting and metadata)
+//
+// Returns:
+//
+//	startByte, endByte - The byte positions in the source code
+//	metadata - Optional metadata map for debugging/tracking (may be nil)
+//	valid - True if the position information is valid
+//
+// Example:
+//
+//	startByte, endByte, metadata, valid := ExtractPackagePositionInfo(packageClause, "main")
+//	if !valid {
+//	    return nil, fmt.Errorf("invalid position information for package: %s", packageName)
+//	}
+//	chunk.StartByte = startByte  // May be 0 for packages at file start
+//	if metadata != nil {
+//	    chunk.Metadata = metadata
+//	}
+func ExtractPackagePositionInfo(
+	packageNode *valueobject.ParseNode,
+	packageName string,
+) (uint32, uint32, map[string]interface{}, bool) {
+	// Extract basic position information
+	startByte, endByte, valid := ExtractPositionInfo(packageNode)
+	if !valid {
+		return 0, 0, nil, false
+	}
+
+	// Create metadata for packages at file start to aid debugging and documentation
+	var metadata map[string]interface{}
+	if startByte == 0 {
+		metadata = map[string]interface{}{
+			"ast_start_byte": startByte,
+			"ast_end_byte":   endByte,
+			"position_note":  "package at file start",
+			"package_name":   packageName,
+		}
+	}
+
+	return startByte, endByte, metadata, true
 }
 
 // ============================================================================

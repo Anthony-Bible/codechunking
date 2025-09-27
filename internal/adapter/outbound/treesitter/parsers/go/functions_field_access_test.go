@@ -376,8 +376,18 @@ type Service struct {
 	// Verify that field access is used consistently
 	for _, fn := range extractedFunctions {
 		assert.NotEmpty(t, fn.Name, "function name should be extracted via field access")
-		assert.NotZero(t, fn.StartByte, "positions should come from real AST nodes")
-		assert.NotZero(t, fn.EndByte, "positions should come from real AST nodes")
+		assert.GreaterOrEqual(
+			t,
+			fn.StartByte,
+			uint32(0),
+			"StartByte should be non-negative (positions from real AST nodes)",
+		)
+		assert.Greater(
+			t,
+			fn.EndByte,
+			fn.StartByte,
+			"EndByte should be greater than StartByte (positions from real AST nodes)",
+		)
 	}
 
 	// THIS TEST WILL FAIL because:

@@ -6,17 +6,24 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 )
 
 // ExtractClasses extracts struct definitions from a Go parse tree (Go's equivalent to classes).
+// It processes all struct type declarations and returns them as SemanticCodeChunk objects
+// with proper visibility filtering, generic parameter extraction, and field parsing.
 func (p *GoParser) ExtractClasses(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
+	if parseTree == nil {
+		return nil, errors.New("parse tree cannot be nil")
+	}
+
 	results, err := extractTypeDeclarations(
 		ctx,
 		parseTree,
@@ -26,19 +33,25 @@ func (p *GoParser) ExtractClasses(
 		parseGoStruct,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to extract struct declarations: %w", err)
 	}
 
 	return results, nil
 }
 
 // ExtractInterfaces extracts interface definitions from a Go parse tree.
+// It processes all interface type declarations and returns them as SemanticCodeChunk objects
+// with proper method extraction, embedded interface handling, and generic parameter support.
 func (p *GoParser) ExtractInterfaces(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	return extractTypeDeclarations(
+	if parseTree == nil {
+		return nil, errors.New("parse tree cannot be nil")
+	}
+
+	result, err := extractTypeDeclarations(
 		ctx,
 		parseTree,
 		options,
@@ -46,9 +59,16 @@ func (p *GoParser) ExtractInterfaces(
 		"Extracting Go interfaces",
 		parseGoInterface,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract interface declarations: %w", err)
+	}
+
+	return result, nil
 }
 
 // extractTypeDeclarations is a generic method for extracting type declarations.
+// It handles the common pattern of finding type declarations, filtering by type,
+// and delegating parsing to type-specific parser functions.
 func extractTypeDeclarations(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
@@ -57,6 +77,16 @@ func extractTypeDeclarations(
 	progressMessage string,
 	parserFunc func(context.Context, *valueobject.ParseTree, *valueobject.ParseNode, *valueobject.ParseNode, string, outbound.SemanticExtractionOptions, time.Time) *outbound.SemanticCodeChunk,
 ) ([]outbound.SemanticCodeChunk, error) {
+	if parseTree == nil {
+		return nil, errors.New("parse tree cannot be nil")
+	}
+	if typeName == "" {
+		return nil, errors.New("type name cannot be empty")
+	}
+	if parserFunc == nil {
+		return nil, errors.New("parser function cannot be nil")
+	}
+
 	packageName := extractPackageNameFromTree(parseTree)
 	var chunks []outbound.SemanticCodeChunk
 	now := time.Now()
@@ -64,10 +94,19 @@ func extractTypeDeclarations(
 	// Find all type declarations using TreeSitterQueryEngine
 	queryEngine := NewTreeSitterQueryEngine()
 	typeDecls := queryEngine.QueryTypeDeclarations(parseTree)
+
 	for _, typeDecl := range typeDecls {
+		if typeDecl == nil {
+			continue
+		}
+
 		// Find type specifications
 		typeSpecs := FindDirectChildren(typeDecl, "type_spec")
 		for _, typeSpec := range typeSpecs {
+			if typeSpec == nil {
+				continue
+			}
+
 			// Check if this is the type we're looking for
 			targetType := findChildByTypeInNode(typeSpec, typeName)
 			if targetType == nil {
@@ -85,9 +124,11 @@ func extractTypeDeclarations(
 	return chunks, nil
 }
 
-// parseGoStruct parses a Go struct declaration.
+// parseGoStruct parses a Go struct declaration and returns a SemanticCodeChunk.
+// It extracts the struct name, content, visibility, documentation, generic parameters,
+// and field information while applying visibility filtering based on the provided options.
 func parseGoStruct(
-	_ context.Context,
+	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	typeDecl *valueobject.ParseNode,
 	typeSpec *valueobject.ParseNode,
@@ -95,13 +136,32 @@ func parseGoStruct(
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
 ) *outbound.SemanticCodeChunk {
+	if parseTree == nil || typeDecl == nil || typeSpec == nil {
+		slogger.Error(ctx, "Invalid input parameters for struct parsing", slogger.Fields{
+			"parse_tree_nil": parseTree == nil,
+			"type_decl_nil":  typeDecl == nil,
+			"type_spec_nil":  typeSpec == nil,
+		})
+		return nil
+	}
+
 	// Find struct name
 	nameNode := findChildByTypeInNode(typeSpec, "type_identifier")
 	if nameNode == nil {
+		slogger.Debug(ctx, "No type_identifier found in type_spec", slogger.Fields{
+			"type_spec_type": typeSpec.Type,
+		})
 		return nil
 	}
 
 	structName := parseTree.GetNodeText(nameNode)
+	if structName == "" {
+		slogger.Debug(ctx, "Empty struct name extracted", slogger.Fields{
+			"node_type": nameNode.Type,
+		})
+		return nil
+	}
+
 	content := parseTree.GetNodeText(typeDecl)
 	visibility := getVisibility(structName)
 
@@ -110,6 +170,10 @@ func parseGoStruct(
 
 	// Skip private structs if not included
 	if !options.IncludePrivate && visibility == outbound.Private {
+		slogger.Debug(ctx, "Skipping private struct", slogger.Fields{
+			"struct_name": structName,
+			"visibility":  string(visibility),
+		})
 		return nil
 	}
 
@@ -141,10 +205,11 @@ func parseGoStruct(
 	// Extract and validate AST positions from tree-sitter node
 	startByte, endByte, positionValid := ExtractPositionInfo(typeDecl)
 	if !positionValid {
-		// Log error without context since ctx is ignored in this function
-		slogger.InfoNoCtx("Invalid position information for struct node", slogger.Fields{
+		slogger.Error(ctx, "Invalid position information for struct node", slogger.Fields{
 			"struct_name": structName,
 			"node_type":   typeDecl.Type,
+			"start_byte":  typeDecl.StartByte,
+			"end_byte":    typeDecl.EndByte,
 		})
 		return nil
 	}
@@ -168,9 +233,11 @@ func parseGoStruct(
 	}
 }
 
-// parseGoInterface parses a Go interface declaration.
+// parseGoInterface parses a Go interface declaration and returns a SemanticCodeChunk.
+// It extracts the interface name, content, visibility, generic parameters, and method information
+// while applying visibility filtering based on the provided options.
 func parseGoInterface(
-	_ context.Context,
+	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	typeDecl *valueobject.ParseNode,
 	typeSpec *valueobject.ParseNode,
@@ -178,18 +245,41 @@ func parseGoInterface(
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
 ) *outbound.SemanticCodeChunk {
+	if parseTree == nil || typeDecl == nil || typeSpec == nil {
+		slogger.Error(ctx, "Invalid input parameters for interface parsing", slogger.Fields{
+			"parse_tree_nil": parseTree == nil,
+			"type_decl_nil":  typeDecl == nil,
+			"type_spec_nil":  typeSpec == nil,
+		})
+		return nil
+	}
+
 	// Find interface name
 	nameNode := findChildByTypeInNode(typeSpec, "type_identifier")
 	if nameNode == nil {
+		slogger.Debug(ctx, "No type_identifier found in interface type_spec", slogger.Fields{
+			"type_spec_type": typeSpec.Type,
+		})
 		return nil
 	}
 
 	interfaceName := parseTree.GetNodeText(nameNode)
+	if interfaceName == "" {
+		slogger.Debug(ctx, "Empty interface name extracted", slogger.Fields{
+			"node_type": nameNode.Type,
+		})
+		return nil
+	}
+
 	content := parseTree.GetNodeText(typeDecl)
 	visibility := getVisibility(interfaceName)
 
 	// Skip private interfaces if not included
 	if !options.IncludePrivate && visibility == outbound.Private {
+		slogger.Debug(ctx, "Skipping private interface", slogger.Fields{
+			"interface_name": interfaceName,
+			"visibility":     string(visibility),
+		})
 		return nil
 	}
 
@@ -209,14 +299,32 @@ func parseGoInterface(
 		childChunks = parseGoInterfaceMethods(parseTree, interfaceType, packageName, interfaceName, options, now)
 	}
 
+	// Extract and validate AST positions from tree-sitter node
+	startByte, endByte, positionValid := ExtractPositionInfo(typeDecl)
+	if !positionValid {
+		slogger.Error(ctx, "Invalid position information for interface node", slogger.Fields{
+			"interface_name": interfaceName,
+			"node_type":      typeDecl.Type,
+			"start_byte":     typeDecl.StartByte,
+			"end_byte":       typeDecl.EndByte,
+		})
+		return nil
+	}
+
+	// Generate qualified name properly - handle empty package names
+	qualifiedName := interfaceName
+	if packageName != "" {
+		qualifiedName = packageName + "." + interfaceName
+	}
+
 	return &outbound.SemanticCodeChunk{
 		ChunkID:           utils.GenerateID("interface", interfaceName, nil),
 		Type:              outbound.ConstructInterface,
 		Name:              interfaceName,
-		QualifiedName:     packageName + "." + interfaceName,
+		QualifiedName:     qualifiedName,
 		Language:          parseTree.Language(),
-		StartByte:         typeDecl.StartByte,
-		EndByte:           typeDecl.EndByte,
+		StartByte:         startByte,
+		EndByte:           endByte,
 		Content:           content,
 		Visibility:        visibility,
 		IsAbstract:        true,

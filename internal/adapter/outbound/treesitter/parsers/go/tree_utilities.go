@@ -22,6 +22,9 @@ type TreeTraversalUtilities struct{}
 // Use this function when you need to find all occurrences of a node type within
 // a subtree, regardless of their depth or nesting level.
 //
+// Performance note: For large trees, consider using FindDirectChildren when you only
+// need immediate children, as it's more efficient.
+//
 // Parameters:
 //
 //	node - The root node to start searching from (can be nil)
@@ -53,8 +56,10 @@ func FindChildrenRecursive(node *valueobject.ParseNode, nodeType string) []*valu
 
 	// Recursively search all children
 	for _, child := range node.Children {
-		childResults := FindChildrenRecursive(child, nodeType)
-		results = append(results, childResults...)
+		if child != nil { // Additional nil check for safety
+			childResults := FindChildrenRecursive(child, nodeType)
+			results = append(results, childResults...)
+		}
 	}
 
 	return results
@@ -144,14 +149,15 @@ func ValidateNodePosition(node *valueobject.ParseNode) bool {
 
 // ExtractPositionInfo extracts standardized position information from a parse node.
 // This utility ensures consistent position handling across all extraction methods.
+// It validates the node and its position data before returning the byte positions.
 //
 // Parameters:
 //
-//	node - The node to extract position from (must not be nil)
+//	node - The node to extract position from (can be nil)
 //
 // Returns:
 //
-//	startByte, endByte - The byte positions in the source code
+//	startByte, endByte - The byte positions in the source code (0, 0 if invalid)
 //	valid - True if the position information is valid
 //
 // Example:
@@ -166,6 +172,39 @@ func ExtractPositionInfo(node *valueobject.ParseNode) (uint32, uint32, bool) {
 	}
 
 	return node.StartByte, node.EndByte, true
+}
+
+// ExtractPositionInfoWithFallback extracts position information with a fallback strategy.
+// If the primary node's position is invalid, it attempts to use a fallback node's position.
+// This is useful when dealing with complex AST structures where position information
+// might be inconsistent across different node types.
+//
+// Parameters:
+//
+//	primaryNode - The primary node to extract position from
+//	fallbackNode - The fallback node to use if primary fails (can be nil)
+//
+// Returns:
+//
+//	startByte, endByte - The byte positions in the source code
+//	valid - True if either primary or fallback position is valid
+//	source - Indicates which node was used ("primary", "fallback", or "none")
+func ExtractPositionInfoWithFallback(
+	primaryNode *valueobject.ParseNode,
+	fallbackNode *valueobject.ParseNode,
+) (uint32, uint32, bool, string) {
+	// Try primary node first
+	if startByte, endByte, valid := ExtractPositionInfo(primaryNode); valid {
+		return startByte, endByte, true, "primary"
+	}
+
+	// Fall back to fallback node
+	if startByte, endByte, valid := ExtractPositionInfo(fallbackNode); valid {
+		return startByte, endByte, true, "fallback"
+	}
+
+	// Neither node has valid position information
+	return 0, 0, false, "none"
 }
 
 // ============================================================================

@@ -166,27 +166,89 @@ func (p *GoParser) getVisibility(name string) outbound.VisibilityModifier {
 	return outbound.Private
 }
 
+// parseGoGenericParameters extracts generic type parameters from a type_parameter_list node.
+// It handles various constraint types including simple constraints (like "any"), union types,
+// and interface constraints while providing robust error handling for malformed generics.
 func parseGoGenericParameters(
 	parseTree *valueobject.ParseTree,
 	node *valueobject.ParseNode,
 ) []outbound.GenericParameter {
+	if parseTree == nil || node == nil {
+		return nil
+	}
+
 	var params []outbound.GenericParameter
 
-	// Look for generic parameters in the node's children
-	typeParams := findChildByTypeInNode(node, "type_parameters")
-	if typeParams == nil {
+	// Find type_parameter_declaration nodes directly in the type_parameter_list
+	paramDecls := FindDirectChildren(node, "type_parameter_declaration")
+	if len(paramDecls) == 0 {
+		// No generic parameters found
 		return params
 	}
 
-	// Find all type identifiers within the type parameters
-	paramNodes := FindChildrenRecursive(typeParams, "type_identifier")
-	for _, paramNode := range paramNodes {
+	for _, paramDecl := range paramDecls {
+		if paramDecl == nil {
+			continue
+		}
+
+		// Get parameter name
+		nameNode := findChildByTypeInNode(paramDecl, "identifier")
+		if nameNode == nil {
+			// Skip malformed parameter declarations without names
+			continue
+		}
+
+		paramName := strings.TrimSpace(parseTree.GetNodeText(nameNode))
+		if paramName == "" {
+			// Skip empty parameter names
+			continue
+		}
+
+		// Extract constraints with improved handling
+		constraints := extractGenericConstraints(parseTree, paramDecl)
+
 		params = append(params, outbound.GenericParameter{
-			Name: parseTree.GetNodeText(paramNode),
+			Name:        paramName,
+			Constraints: constraints,
 		})
 	}
 
 	return params
+}
+
+// extractGenericConstraints extracts type constraints from a type_parameter_declaration.
+// It handles various constraint forms including simple types, union types, and interface constraints.
+func extractGenericConstraints(
+	parseTree *valueobject.ParseTree,
+	paramDecl *valueobject.ParseNode,
+) []string {
+	if parseTree == nil || paramDecl == nil {
+		return nil
+	}
+
+	var constraints []string
+
+	// Look for type_constraint node
+	typeNode := findChildByTypeInNode(paramDecl, "type_constraint")
+	if typeNode != nil {
+		// Extract constraint text and handle various forms
+		constraintText := strings.TrimSpace(parseTree.GetNodeText(typeNode))
+		if constraintText != "" {
+			// For union types like "string | int", we could split on "|" here
+			// For now, treat the entire constraint as a single constraint
+			constraints = []string{constraintText}
+		}
+	}
+
+	// If no explicit constraint found, check for implicit "any" constraint
+	// (Go 1.18+ allows omitting constraints which defaults to "any")
+	if len(constraints) == 0 {
+		// Check if this parameter has no explicit constraint (defaults to "any")
+		// This is a common pattern in Go generics
+		constraints = []string{"any"}
+	}
+
+	return constraints
 }
 
 func (p *GoParser) extractPackageNameFromTree(tree *valueobject.ParseTree) string {

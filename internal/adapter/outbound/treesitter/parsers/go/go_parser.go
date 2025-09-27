@@ -75,38 +75,59 @@ func (p *GoParser) Parse(ctx context.Context, sourceCode string) (*valueobject.P
 		return nil, errors.New("source code cannot be empty")
 	}
 
-	rootNode := &valueobject.ParseNode{}
-	metadata, err := valueobject.NewParseMetadata(0, "0.0.0", "0.0.0")
+	// Use proper tree-sitter parsing
+	source := []byte(sourceCode)
+	start := time.Now()
+
+	// Validate Go source before parsing
+	if err := p.validateGoSource(ctx, source); err != nil {
+		return nil, err
+	}
+
+	grammar := forest.GetLanguage("go")
+	if grammar == nil {
+		return nil, errors.New("failed to get Go grammar from forest")
+	}
+
+	parser := tree_sitter.NewParser()
+	if parser == nil {
+		return nil, errors.New("failed to create tree-sitter parser")
+	}
+
+	if ok := parser.SetLanguage(grammar); !ok {
+		return nil, errors.New("failed to set Go language in tree-sitter parser")
+	}
+
+	tree, err := parser.ParseString(ctx, nil, source)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse Go source: %w", err)
 	}
 
-	tree, err := valueobject.NewParseTree(ctx, p.supportedLanguage, rootNode, []byte(sourceCode), metadata)
+	if tree == nil {
+		return nil, errors.New("parse tree is nil")
+	}
+	defer tree.Close()
+
+	// Convert tree-sitter tree to domain
+	rootTS := tree.RootNode()
+	rootNode, nodeCount, maxDepth := convertTSNodeToDomain(rootTS, 0)
+
+	metadata, err := valueobject.NewParseMetadata(time.Since(start), "go-tree-sitter-bare", "1.0.0")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create parse metadata: %w", err)
+	}
+	metadata.NodeCount = nodeCount
+	metadata.MaxDepth = maxDepth
+
+	domainTree, err := valueobject.NewParseTree(ctx, p.supportedLanguage, rootNode, source, metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create domain parse tree: %w", err)
 	}
 
-	if err := p.validateInput(tree); err != nil {
-		return nil, err
-	}
-
-	p.ExtractModules(sourceCode, tree)
-	p.extractDeclarations(sourceCode, tree)
-
-	return tree, nil
+	return domainTree, nil
 }
 
-func (p *GoParser) ExtractModules(sourceCode string, tree *valueobject.ParseTree) {
-	lines := strings.Split(sourceCode, "\n")
-	for i, line := range lines {
-		if strings.HasPrefix(line, "package ") {
-			packageName := strings.TrimSpace(strings.TrimPrefix(line, "package "))
-			position := valueobject.Position{Row: valueobject.ClampToUint32(i + 1), Column: 0}
-			p.addConstruct(tree, "package", packageName, position, position)
-			break
-		}
-	}
-}
+// ExtractModules is now handled by tree-sitter parsing in the Parse method
 
 func (p *GoParser) GetSupportedLanguage() string {
 	return p.supportedLanguage.String()
@@ -135,23 +156,7 @@ func (p *GoParser) IsSupported(constructType string) bool {
 	return false
 }
 
-func (p *GoParser) ExtractMethodsFromStruct(structName string, structBody string, tree *valueobject.ParseTree) {
-	lines := strings.Split(structBody, "\n")
-	for i, line := range lines {
-		if strings.Contains(line, "func (") && strings.Contains(line, ")") {
-			methodStart := strings.Index(line, structName)
-			if methodStart != -1 {
-				methodPart := line[methodStart+len(structName)+1:]
-				endParen := strings.Index(methodPart, ")")
-				if endParen != -1 {
-					methodName := strings.TrimSpace(methodPart[:endParen])
-					position := valueobject.Position{Row: valueobject.ClampToUint32(i + 1), Column: 0}
-					p.addConstruct(tree, "method", structName+"."+methodName, position, position)
-				}
-			}
-		}
-	}
-}
+// ExtractMethodsFromStruct is now handled by tree-sitter parsing
 
 func (p *GoParser) validateInput(tree *valueobject.ParseTree) error {
 	if tree == nil {
@@ -293,63 +298,7 @@ func (p *GoParser) getParameterType(decl *valueobject.ParseNode) *valueobject.Pa
 	return nil
 }
 
-func (p *GoParser) extractDeclarations(sourceCode string, tree *valueobject.ParseTree) {
-	lines := strings.Split(sourceCode, "\n")
-	for i, line := range lines {
-		trimmedLine := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(trimmedLine, "func "):
-			p.extractFuncDecl(trimmedLine, i+1, tree)
-		case strings.HasPrefix(trimmedLine, "type "):
-			p.extractTypeSpec(trimmedLine, i+1, tree)
-		case strings.HasPrefix(trimmedLine, "var "):
-			p.extractValueSpec("variable", trimmedLine, i+1, tree)
-		case strings.HasPrefix(trimmedLine, "const "):
-			p.extractValueSpec("constant", trimmedLine, i+1, tree)
-		}
-	}
-}
-
-func (p *GoParser) extractFuncDecl(line string, lineNumber int, tree *valueobject.ParseTree) {
-	funcName := strings.TrimSpace(strings.TrimPrefix(line, "func "))
-	if idx := strings.Index(funcName, "("); idx != -1 {
-		funcName = funcName[:idx]
-	}
-
-	position := valueobject.Position{Row: valueobject.ClampToUint32(lineNumber), Column: 0}
-	p.addConstruct(tree, "function", funcName, position, position)
-}
-
-func (p *GoParser) extractTypeSpec(line string, lineNumber int, tree *valueobject.ParseTree) {
-	typeName := strings.TrimSpace(strings.TrimPrefix(line, "type "))
-	if idx := strings.Index(typeName, "struct"); idx != -1 {
-		structName := strings.TrimSpace(typeName[:idx])
-		position := valueobject.Position{Row: valueobject.ClampToUint32(lineNumber), Column: 0}
-		p.addConstruct(tree, "struct", structName, position, position)
-	} else if idx := strings.Index(typeName, "interface"); idx != -1 {
-		interfaceName := strings.TrimSpace(typeName[:idx])
-		position := valueobject.Position{Row: valueobject.ClampToUint32(lineNumber), Column: 0}
-		p.addConstruct(tree, "interface", interfaceName, position, position)
-	}
-}
-
-func (p *GoParser) extractValueSpec(constructType string, line string, lineNumber int, tree *valueobject.ParseTree) {
-	varName := strings.TrimSpace(strings.TrimPrefix(line, constructType+" "))
-	if idx := strings.Index(varName, "="); idx != -1 {
-		varName = strings.TrimSpace(varName[:idx])
-	}
-
-	position := valueobject.Position{Row: valueobject.ClampToUint32(lineNumber), Column: 0}
-	p.addConstruct(tree, constructType, varName, position, position)
-}
-
-func (p *GoParser) addConstruct(
-	tree *valueobject.ParseTree,
-	constructType, name string,
-	start, end valueobject.Position,
-) {
-	// Stub method to replace removed AddConstruct
-}
+// Removed unused string-based parsing methods - now using proper tree-sitter parsing
 
 // ============================================================================
 // Error Validation Methods - REFACTORED Production Implementation

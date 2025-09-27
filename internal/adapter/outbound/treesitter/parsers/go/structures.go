@@ -274,6 +274,9 @@ func parseGoInterface(
 	content := parseTree.GetNodeText(typeDecl)
 	visibility := getVisibility(interfaceName)
 
+	// Extract documentation from preceding comments
+	documentation := extractDocumentationForTypeDeclaration(parseTree, typeDecl)
+
 	// Skip private interfaces if not included
 	if !options.IncludePrivate && visibility == outbound.Private {
 		slogger.Debug(ctx, "Skipping private interface", slogger.Fields{
@@ -317,15 +320,19 @@ func parseGoInterface(
 		qualifiedName = packageName + "." + interfaceName
 	}
 
+	// Generate ChunkID in expected format: "interface:InterfaceName"
+	chunkID := fmt.Sprintf("interface:%s", interfaceName)
+
 	return &outbound.SemanticCodeChunk{
-		ChunkID:           utils.GenerateID("interface", interfaceName, nil),
+		ChunkID:           chunkID,
 		Type:              outbound.ConstructInterface,
 		Name:              interfaceName,
 		QualifiedName:     qualifiedName,
-		Language:          parseTree.Language(),
+		Language:          valueobject.Go,
 		StartByte:         startByte,
 		EndByte:           endByte,
 		Content:           content,
+		Documentation:     documentation,
 		Visibility:        visibility,
 		IsAbstract:        true,
 		IsGeneric:         isGeneric,

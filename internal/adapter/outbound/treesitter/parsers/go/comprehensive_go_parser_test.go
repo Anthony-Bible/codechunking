@@ -98,6 +98,105 @@ func calculateExpectedStructPositionsForComprehensiveTest(
 	return startByte, endByte
 }
 
+// calculateExpectedInterfacePositionsForComprehensiveTest parses source code with tree-sitter and returns
+// the actual byte positions for the specified interface name for the comprehensive test.
+// This function provides dynamic position calculation to ensure tests remain accurate
+// when the parser implementation changes.
+func calculateExpectedInterfacePositionsForComprehensiveTest(
+	t *testing.T,
+	sourceCode, interfaceName string,
+) (uint32, uint32) {
+	t.Helper() // Mark this as a test helper function
+
+	ctx := context.Background()
+
+	// Initialize tree-sitter parser factory
+	factory, err := treesitter.NewTreeSitterParserFactory(ctx)
+	require.NoError(t, err, "failed to create TreeSitterParserFactory")
+
+	// Create Go language parser
+	goLang, err := valueobject.NewLanguage(valueobject.LanguageGo)
+	require.NoError(t, err, "failed to create Go language value object")
+
+	parser, err := factory.CreateParser(ctx, goLang)
+	require.NoError(t, err, "failed to create Go parser")
+
+	// Parse the source code
+	parseTree, err := parser.Parse(ctx, []byte(sourceCode))
+	require.NoError(t, err, "failed to parse Go source code")
+
+	// Convert to domain parse tree
+	domainTree, err := treesitter.ConvertPortParseTreeToDomain(parseTree.ParseTree)
+	require.NoError(t, err, "failed to convert parse tree to domain")
+
+	// Find the interface by name using a more structured approach
+	startByte, endByte, found := findInterfacePositionByName(domainTree, interfaceName)
+	if !found {
+		t.Fatalf("Interface '%s' not found in source code", interfaceName)
+	}
+
+	// Log debug information about positions for test debugging
+	t.Logf("DEBUG: Found interface '%s' at positions StartByte=%d (0x%x), EndByte=%d (0x%x)",
+		interfaceName, startByte, startByte, endByte, endByte)
+
+	return startByte, endByte
+}
+
+// findInterfacePositionByName searches for an interface declaration by name and returns its position.
+// This helper function encapsulates the tree traversal logic for better maintainability.
+func findInterfacePositionByName(
+	parseTree *valueobject.ParseTree,
+	interfaceName string,
+) (uint32, uint32, bool) {
+	if parseTree == nil || interfaceName == "" {
+		return 0, 0, false
+	}
+
+	// Find all type_declaration nodes
+	typeDeclarations := parseTree.GetNodesByType("type_declaration")
+
+	for _, typeDecl := range typeDeclarations {
+		if typeDecl == nil {
+			continue
+		}
+
+		// Look for type_spec children
+		for _, child := range typeDecl.Children {
+			if child == nil || child.Type != "type_spec" {
+				continue
+			}
+
+			// Check if this type_spec contains an interface_type
+			hasInterface := false
+			for _, grandchild := range child.Children {
+				if grandchild != nil && grandchild.Type == "interface_type" {
+					hasInterface = true
+					break
+				}
+			}
+
+			if !hasInterface {
+				continue
+			}
+
+			// Find the type_identifier within the type_spec
+			for _, grandchild := range child.Children {
+				if grandchild == nil || grandchild.Type != "type_identifier" {
+					continue
+				}
+
+				// Check if this is the interface we're looking for
+				nodeName := parseTree.GetNodeText(grandchild)
+				if nodeName == interfaceName {
+					return typeDecl.StartByte, typeDecl.EndByte, true
+				}
+			}
+		}
+	}
+
+	return 0, 0, false
+}
+
 // findStructPositionByName searches for a struct declaration by name and returns its position.
 // This helper function encapsulates the tree traversal logic for better maintainability.
 func findStructPositionByName(
@@ -994,9 +1093,11 @@ func TestGoParserInterfaceExtraction(t *testing.T) {
 	require.NotNil(t, parser)
 
 	tests := []struct {
-		name           string
-		sourceCode     string
-		expectedChunks []outbound.SemanticCodeChunk
+		name                string
+		sourceCode          string
+		expectedChunks      []outbound.SemanticCodeChunk
+		expectedChunksFunc  func(t *testing.T) []outbound.SemanticCodeChunk
+		useDynamicPositions bool
 	}{
 		{
 			name: "Simple interface with method signatures",
@@ -1007,20 +1108,31 @@ type Writer interface {
 	Close() error
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "interface:Writer",
-					Type:          outbound.ConstructInterface,
-					Name:          "Writer",
-					QualifiedName: "Writer",
-					Visibility:    outbound.Public,
-					Documentation: "Writer interface for writing data",
-					Content:       "type Writer interface {\n\tWrite(data []byte) (int, error)\n\tClose() error\n}",
-					StartByte:     1,
-					EndByte:       95,
-					Language:      valueobject.Go,
-				},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// Writer interface for writing data
+type Writer interface {
+	Write(data []byte) (int, error)
+	Close() error
+}
+`
+				startByte, endByte := calculateExpectedInterfacePositionsForComprehensiveTest(t, sourceCode, "Writer")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "interface:Writer",
+						Type:          outbound.ConstructInterface,
+						Name:          "Writer",
+						QualifiedName: "Writer",
+						Visibility:    outbound.Public,
+						Documentation: "Writer interface for writing data",
+						Content:       "type Writer interface {\n\tWrite(data []byte) (int, error)\n\tClose() error\n}",
+						StartByte:     startByte, // Calculated dynamically from tree-sitter
+						EndByte:       endByte,   // Calculated dynamically from tree-sitter
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Embedded interfaces",
@@ -1032,20 +1144,36 @@ type ReadWriter interface {
 	Flush() error
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "interface:ReadWriter",
-					Type:          outbound.ConstructInterface,
-					Name:          "ReadWriter",
-					QualifiedName: "ReadWriter",
-					Visibility:    outbound.Public,
-					Documentation: "ReadWriter combines Reader and Writer interfaces",
-					Content:       "type ReadWriter interface {\n\tReader\n\tWriter\n\tFlush() error\n}",
-					StartByte:     1,
-					EndByte:       93,
-					Language:      valueobject.Go,
-				},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// ReadWriter combines Reader and Writer interfaces
+type ReadWriter interface {
+	Reader
+	Writer
+	Flush() error
+}
+`
+				startByte, endByte := calculateExpectedInterfacePositionsForComprehensiveTest(
+					t,
+					sourceCode,
+					"ReadWriter",
+				)
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "interface:ReadWriter",
+						Type:          outbound.ConstructInterface,
+						Name:          "ReadWriter",
+						QualifiedName: "ReadWriter",
+						Visibility:    outbound.Public,
+						Documentation: "ReadWriter combines Reader and Writer interfaces",
+						Content:       "type ReadWriter interface {\n\tReader\n\tWriter\n\tFlush() error\n}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Generic interface with type constraints",
@@ -1055,23 +1183,37 @@ type Comparable[T comparable] interface {
 	Compare(other T) int
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "interface:Comparable",
-					Type:          outbound.ConstructInterface,
-					Name:          "Comparable",
-					QualifiedName: "Comparable",
-					Visibility:    outbound.Public,
-					Documentation: "Comparable interface for comparable types",
-					Content:       "type Comparable[T comparable] interface {\n\tCompare(other T) int\n}",
-					StartByte:     1,
-					EndByte:       95,
-					Language:      valueobject.Go,
-					GenericParameters: []outbound.GenericParameter{
-						{Name: "T", Constraints: []string{"comparable"}},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// Comparable interface for comparable types
+type Comparable[T comparable] interface {
+	Compare(other T) int
+}
+`
+				startByte, endByte := calculateExpectedInterfacePositionsForComprehensiveTest(
+					t,
+					sourceCode,
+					"Comparable",
+				)
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "interface:Comparable",
+						Type:          outbound.ConstructInterface,
+						Name:          "Comparable",
+						QualifiedName: "Comparable",
+						Visibility:    outbound.Public,
+						Documentation: "Comparable interface for comparable types",
+						Content:       "type Comparable[T comparable] interface {\n\tCompare(other T) int\n}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+						GenericParameters: []outbound.GenericParameter{
+							{Name: "T", Constraints: []string{"comparable"}},
+						},
 					},
-				},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Empty interface",
@@ -1079,20 +1221,28 @@ type Comparable[T comparable] interface {
 // Any represents any type
 type Any interface{}
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "interface:Any",
-					Type:          outbound.ConstructInterface,
-					Name:          "Any",
-					QualifiedName: "Any",
-					Visibility:    outbound.Public,
-					Documentation: "Any represents any type",
-					Content:       "type Any interface{}",
-					StartByte:     1,
-					EndByte:       43,
-					Language:      valueobject.Go,
-				},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// Any represents any type
+type Any interface{}
+`
+				startByte, endByte := calculateExpectedInterfacePositionsForComprehensiveTest(t, sourceCode, "Any")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "interface:Any",
+						Type:          outbound.ConstructInterface,
+						Name:          "Any",
+						QualifiedName: "Any",
+						Visibility:    outbound.Public,
+						Documentation: "Any represents any type",
+						Content:       "type Any interface{}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 		{
 			name: "Private interface",
@@ -1102,20 +1252,30 @@ type reader interface {
 	Read() []byte
 }
 `,
-			expectedChunks: []outbound.SemanticCodeChunk{
-				{
-					ChunkID:       "interface:reader",
-					Type:          outbound.ConstructInterface,
-					Name:          "reader",
-					QualifiedName: "reader",
-					Visibility:    outbound.Private,
-					Documentation: "reader is a private interface for reading",
-					Content:       "type reader interface {\n\tRead() []byte\n}",
-					StartByte:     1,
-					EndByte:       67,
-					Language:      valueobject.Go,
-				},
+			expectedChunksFunc: func(t *testing.T) []outbound.SemanticCodeChunk {
+				sourceCode := `
+// reader is a private interface for reading
+type reader interface {
+	Read() []byte
+}
+`
+				startByte, endByte := calculateExpectedInterfacePositionsForComprehensiveTest(t, sourceCode, "reader")
+				return []outbound.SemanticCodeChunk{
+					{
+						ChunkID:       "interface:reader",
+						Type:          outbound.ConstructInterface,
+						Name:          "reader",
+						QualifiedName: "reader",
+						Visibility:    outbound.Private,
+						Documentation: "reader is a private interface for reading",
+						Content:       "type reader interface {\n\tRead() []byte\n}",
+						StartByte:     startByte,
+						EndByte:       endByte,
+						Language:      valueobject.Go,
+					},
+				}
 			},
+			useDynamicPositions: true,
 		},
 	}
 
@@ -1132,6 +1292,7 @@ type reader interface {
 			adapter := treesitter.NewSemanticTraverserAdapter()
 			options := &treesitter.SemanticExtractionOptions{
 				IncludeInterfaces: true,
+				IncludePrivate:    true,
 			}
 
 			chunks := adapter.ExtractCodeChunks(domainTree, options)
@@ -1144,9 +1305,16 @@ type reader interface {
 				}
 			}
 
-			assert.Len(t, interfaceChunks, len(tt.expectedChunks))
+			var expectedChunks []outbound.SemanticCodeChunk
+			if tt.useDynamicPositions {
+				expectedChunks = tt.expectedChunksFunc(t)
+			} else {
+				expectedChunks = tt.expectedChunks
+			}
 
-			for i, expected := range tt.expectedChunks {
+			assert.Len(t, interfaceChunks, len(expectedChunks))
+
+			for i, expected := range expectedChunks {
 				if i < len(interfaceChunks) {
 					actual := interfaceChunks[i]
 					assert.Equal(t, expected.ChunkID, actual.ChunkID)

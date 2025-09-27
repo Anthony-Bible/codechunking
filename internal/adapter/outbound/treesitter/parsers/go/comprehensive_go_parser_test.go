@@ -1631,6 +1631,17 @@ const PublicConst = 42
 			for i, expected := range tt.expectedChunks {
 				if i < len(varConstChunks) {
 					actual := varConstChunks[i]
+
+					// Debug logging for position mismatches
+					if expected.StartByte != actual.StartByte {
+						t.Logf("StartByte mismatch for %s: expected 0x%x (%d), actual 0x%x (%d)",
+							expected.Name, expected.StartByte, expected.StartByte, actual.StartByte, actual.StartByte)
+					}
+					if expected.EndByte != actual.EndByte {
+						t.Logf("EndByte mismatch for %s: expected 0x%x (%d), actual 0x%x (%d)",
+							expected.Name, expected.EndByte, expected.EndByte, actual.EndByte, actual.EndByte)
+					}
+
 					assert.Equal(t, expected.ChunkID, actual.ChunkID)
 					assert.Equal(t, expected.Type, actual.Type)
 					assert.Equal(t, expected.Name, actual.Name)

@@ -28,7 +28,7 @@ type LocalLanguageParser interface {
 	Parse(ctx context.Context, source []byte) (*ParseResult, error)
 }
 
-// LocalParserFactory creates parsers without import cycles
+// LocalParserFactory creates parsers without import cycles.
 type LocalParserFactory interface {
 	CreateLocalParser(ctx context.Context, language valueobject.Language) (LocalLanguageParser, error)
 }

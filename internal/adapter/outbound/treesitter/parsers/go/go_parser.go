@@ -9,12 +9,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	forest "github.com/alexaandru/go-sitter-forest"
 	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
-	"sort"
 )
 
 // Constants to avoid goconst lint warnings and reduce hardcoded values.
@@ -1459,7 +1459,7 @@ func processCommentLikeNodes(
 			continue
 		}
 		if node.Type == nodeTypeError {
-			lines = append(lines, processErrorNodeForPackageDoc(parseTree, node)...) //nolint:gocritic
+			lines = append(lines, processErrorNodeForPackageDoc(parseTree, node)...)
 		}
 	}
 	return lines
@@ -1855,13 +1855,14 @@ func processPackageClause(
 		return nil, fmt.Errorf("invalid position information for package node: %s", packageName)
 	}
 
-	normalizedStart := startByte
+	// Use actual tree-sitter positions - StartByte=0 is valid for packages at file start
 	var metadata map[string]interface{}
 	if startByte == 0 {
-		normalizedStart = 1
+		// Track original AST positions for debugging, but don't override them
 		metadata = map[string]interface{}{
 			"ast_start_byte": startByte,
 			"ast_end_byte":   endByte,
+			"position_note":  "package at file start",
 		}
 	}
 
@@ -1873,7 +1874,7 @@ func processPackageClause(
 		Type:          outbound.ConstructPackage,
 		Visibility:    outbound.Public,
 		Content:       content,
-		StartByte:     normalizedStart,
+		StartByte:     startByte,
 		EndByte:       endByte,
 		Documentation: documentation,
 		ExtractedAt:   time.Now(),

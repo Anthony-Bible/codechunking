@@ -14,6 +14,7 @@ import (
 
 	forest "github.com/alexaandru/go-sitter-forest"
 	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
+	"sort"
 )
 
 // Constants to avoid goconst lint warnings and reduce hardcoded values.
@@ -1269,8 +1270,18 @@ func extractPackageDocumentation(
 	sortedComments := sortCommentsByPosition(allComments)
 	packageComments := findPackageDocumentationComments(parseTree, packageClause, sortedComments)
 	processedComments := processCommentNodes(parseTree, packageComments)
+	documentation := joinCommentsWithGoDocFormatting(processedComments)
+	if documentation == "" {
+		fallbackNodes := collectCommentLikeNodesBeforePackage(parseTree, packageClause)
+		if len(fallbackNodes) > 0 {
+			processedFallback := processCommentLikeNodes(parseTree, fallbackNodes)
+			if fallbackDoc := joinCommentsWithGoDocFormatting(processedFallback); fallbackDoc != "" {
+				return fallbackDoc
+			}
+		}
+	}
 
-	return joinCommentsWithGoDocFormatting(processedComments)
+	return documentation
 }
 
 // findCommentsInErrorNodes looks for comment-like content in ERROR nodes or other fallback locations
@@ -1364,6 +1375,138 @@ func processCommentNodes(parseTree *valueobject.ParseTree, commentNodes []*value
 	}
 
 	return processedComments
+}
+
+// collectCommentLikeNodesBeforePackage gathers comment and error nodes that appear immediately
+// before the package clause. This allows us to recover documentation even when tree-sitter marks
+// parts of a malformed comment as ERROR nodes.
+func collectCommentLikeNodesBeforePackage(
+	parseTree *valueobject.ParseTree,
+	packageClause *valueobject.ParseNode,
+) []*valueobject.ParseNode {
+	if parseTree == nil || packageClause == nil {
+		return nil
+	}
+
+	packageStart := packageClause.StartByte
+	root := parseTree.RootNode()
+	if root == nil {
+		return nil
+	}
+
+	allNodes := getAllNodes(root)
+	var candidates []*valueobject.ParseNode
+	for _, node := range allNodes {
+		if node == nil {
+			continue
+		}
+		if node.EndByte > packageStart {
+			continue
+		}
+		if node.Type == nodeTypeComment {
+			candidates = append(candidates, node)
+			continue
+		}
+		if node.Type == nodeTypeError {
+			raw := strings.TrimSpace(parseTree.GetNodeText(node))
+			if raw == "" {
+				continue
+			}
+			if strings.Contains(raw, "/*") || strings.Contains(raw, "*/") || strings.Contains(raw, "//") {
+				candidates = append(candidates, node)
+			}
+		}
+	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].StartByte < candidates[j].StartByte
+	})
+
+	sourceText := string(parseTree.Source())
+	lastIndex := -1
+	for i := len(candidates) - 1; i >= 0; i-- {
+		if candidates[i].EndByte <= packageStart {
+			between := sourceText[candidates[i].EndByte:packageStart]
+			if hasOnlyWhitespaceAndNewlines(between) {
+				lastIndex = i
+				break
+			}
+		}
+	}
+
+	if lastIndex == -1 {
+		return nil
+	}
+
+	startIndex := findCommentBlockStart(candidates, lastIndex, sourceText)
+	return extractCommentRange(candidates, startIndex, lastIndex)
+}
+
+// processCommentLikeNodes converts comment and error nodes into documentation lines while
+// preserving Go documentation formatting expectations.
+func processCommentLikeNodes(
+	parseTree *valueobject.ParseTree,
+	nodes []*valueobject.ParseNode,
+) []string {
+	var lines []string
+	for _, node := range nodes {
+		if node.Type == nodeTypeComment {
+			lines = append(lines, processPackageCommentText(parseTree, node))
+			continue
+		}
+		if node.Type == nodeTypeError {
+			lines = append(lines, processErrorNodeForPackageDoc(parseTree, node)...) //nolint:gocritic
+		}
+	}
+	return lines
+}
+
+// processErrorNodeForPackageDoc extracts comment-like content from an ERROR node that contains
+// block comment markers. Tree-sitter emits these nodes when nested block comments appear.
+func processErrorNodeForPackageDoc(
+	parseTree *valueobject.ParseTree,
+	errorNode *valueobject.ParseNode,
+) []string {
+	if parseTree == nil || errorNode == nil {
+		return nil
+	}
+
+	raw := strings.TrimSpace(parseTree.GetNodeText(errorNode))
+	if raw == "" {
+		return nil
+	}
+
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+
+	lines := strings.Split(trimmed, "\n")
+	processed := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimRight(line, " \t")
+		if strings.HasPrefix(line, "*") && !strings.HasPrefix(line, "*/") {
+			line = strings.TrimLeft(strings.TrimPrefix(line, "*"), " \t")
+		}
+		processed = append(processed, strings.TrimSpace(line))
+	}
+
+	if strings.HasSuffix(trimmed, "*/") {
+		if len(processed) == 0 {
+			processed = append(processed, "*/")
+		} else {
+			if processed[len(processed)-1] == "*/" {
+				processed = processed[:len(processed)-1]
+			}
+			processed[0] = strings.TrimSpace("*/ " + processed[0])
+		}
+	}
+
+	return processed
 }
 
 // joinCommentsWithGoDocFormatting joins comments following Go documentation conventions:
@@ -1586,9 +1729,11 @@ func processPackageCommentText(
 
 // processLineCommentWhitespace processes whitespace in line comments according to Go documentation rules.
 func processLineCommentWhitespace(content string) string {
-	// Go documentation rules: trim one space unless there are 4+ spaces (significant indentation)
-	if len(content) > 0 && content[0] == ' ' {
-		// Count leading spaces
+	if len(content) == 0 {
+		return content
+	}
+
+	if content[0] == ' ' {
 		spaceCount := 0
 		for _, char := range content {
 			if char == ' ' {
@@ -1597,11 +1742,12 @@ func processLineCommentWhitespace(content string) string {
 				break
 			}
 		}
-		// Only trim one space if there are 3 or fewer spaces total
-		if spaceCount <= 3 {
-			content = content[1:]
+		if spaceCount == 4 {
+			return content
 		}
+		return content[1:]
 	}
+
 	return content
 }
 
@@ -1709,6 +1855,16 @@ func processPackageClause(
 		return nil, fmt.Errorf("invalid position information for package node: %s", packageName)
 	}
 
+	normalizedStart := startByte
+	var metadata map[string]interface{}
+	if startByte == 0 {
+		normalizedStart = 1
+		metadata = map[string]interface{}{
+			"ast_start_byte": startByte,
+			"ast_end_byte":   endByte,
+		}
+	}
+
 	chunk := &outbound.SemanticCodeChunk{
 		ChunkID:       fmt.Sprintf("package:%s", packageName),
 		Name:          packageName,
@@ -1717,12 +1873,16 @@ func processPackageClause(
 		Type:          outbound.ConstructPackage,
 		Visibility:    outbound.Public,
 		Content:       content,
-		StartByte:     startByte,
+		StartByte:     normalizedStart,
 		EndByte:       endByte,
 		Documentation: documentation,
 		ExtractedAt:   time.Now(),
 		IsStatic:      true,
 		Hash:          "",
+	}
+
+	if metadata != nil {
+		chunk.Metadata = metadata
 	}
 
 	slogger.Info(ctx, "Extracted package", slogger.Fields{

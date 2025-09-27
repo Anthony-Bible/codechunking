@@ -733,28 +733,41 @@ func isFieldLikeSyntaxPattern(parseTree *valueobject.ParseTree, line string) boo
 		return false
 	}
 
-	// Get all nodes from the parse tree
 	allNodes := getAllNodes(parseTree.RootNode())
 	if len(allNodes) == 0 {
 		return false
 	}
 
-	// First check for patterns that should be rejected
-	for _, node := range allNodes {
-		switch node.Type {
-		case nodeTypeReturnStatement, nodeTypeIfStatement, nodeTypeForStatement, nodeTypeAssignmentStatement:
-			return false // These patterns override field detection
-		case nodeTypeCallExpression:
-			if isStandaloneFunctionCall(node, parseTree) {
-				return false // Function calls override field detection
-			}
-		}
+	// Check for patterns that should be rejected
+	if hasRejectingPatterns(allNodes, parseTree) {
+		return false
 	}
 
 	// Count meaningful identifiers and type patterns
-	identifierCount := 0
-	typePatternCount := 0
+	identifierCount, typePatternCount := countNodeTypes(allNodes)
 
+	// Check various field-like patterns
+	return checkFieldPatterns(allNodes, identifierCount, typePatternCount)
+}
+
+// hasRejectingPatterns checks for AST patterns that should reject field detection.
+func hasRejectingPatterns(allNodes []*valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
+	for _, node := range allNodes {
+		switch node.Type {
+		case nodeTypeReturnStatement, nodeTypeIfStatement, nodeTypeForStatement, nodeTypeAssignmentStatement:
+			return true // These patterns override field detection
+		case nodeTypeCallExpression:
+			if isStandaloneFunctionCall(node, parseTree) {
+				return true // Function calls override field detection
+			}
+		}
+	}
+	return false
+}
+
+// countNodeTypes counts identifiers and type patterns in the node list.
+func countNodeTypes(allNodes []*valueobject.ParseNode) (int, int) {
+	var identifierCount, typePatternCount int
 	for _, node := range allNodes {
 		switch node.Type {
 		case nodeTypeIdentifier:
@@ -764,52 +777,63 @@ func isFieldLikeSyntaxPattern(parseTree *valueobject.ParseTree, line string) boo
 			typePatternCount++
 		}
 	}
+	return identifierCount, typePatternCount
+}
 
+// checkFieldPatterns evaluates various field-like patterns and returns true if any match.
+func checkFieldPatterns(allNodes []*valueobject.ParseNode, identifierCount, typePatternCount int) bool {
 	// Pattern 1: Field declaration like "name string" or "name string // comment"
-	// Should have at least 1 identifier and 1 type pattern
 	if identifierCount >= 1 && typePatternCount >= 1 {
 		return true
 	}
 
 	// Pattern 2: Embedded type like "io.Reader", "sync.Mutex" (qualified_type only)
-	if identifierCount == 0 && typePatternCount >= 1 {
-		for _, node := range allNodes {
-			if node.Type == nodeTypeQualifiedType {
-				return true
-			}
-		}
+	if identifierCount == 0 && typePatternCount >= 1 && hasQualifiedType(allNodes) {
+		return true
 	}
 
 	// Pattern 3: Method signature like "Read([]byte) (int, error)"
-	// Look for parameter_list nodes which indicate method signatures
+	if hasParameterList(allNodes) {
+		return true
+	}
+
+	// Pattern 4: Type-only patterns that might be valid (more permissive)
+	if typePatternCount > 0 && !hasControlFlowPatterns(allNodes) {
+		return true
+	}
+
+	// Pattern 5: Accept lines with both identifiers and types, even if not in expected positions
+	return identifierCount > 0 && (typePatternCount > 0 || identifierCount >= 2)
+}
+
+// hasQualifiedType checks if any node is a qualified type.
+func hasQualifiedType(allNodes []*valueobject.ParseNode) bool {
+	for _, node := range allNodes {
+		if node.Type == nodeTypeQualifiedType {
+			return true
+		}
+	}
+	return false
+}
+
+// hasParameterList checks if any node is a parameter list.
+func hasParameterList(allNodes []*valueobject.ParseNode) bool {
 	for _, node := range allNodes {
 		if node.Type == nodeTypeParameterList {
 			return true
 		}
 	}
+	return false
+}
 
-	// Pattern 4: Type-only patterns that might be valid (more permissive)
-	// If we have any meaningful type patterns without obvious rejection signals
-	if typePatternCount > 0 {
-		// Check that we don't have control flow patterns
-		hasControlFlow := false
-		for _, node := range allNodes {
-			switch node.Type {
-			case nodeTypeReturnStatement, nodeTypeAssignmentStatement, nodeTypeIfStatement, nodeTypeForStatement:
-				return false // Found control flow, reject immediately
-			}
-		}
-		if !hasControlFlow {
+// hasControlFlowPatterns checks for control flow patterns that should reject field detection.
+func hasControlFlowPatterns(allNodes []*valueobject.ParseNode) bool {
+	for _, node := range allNodes {
+		switch node.Type {
+		case nodeTypeReturnStatement, nodeTypeAssignmentStatement, nodeTypeIfStatement, nodeTypeForStatement:
 			return true
 		}
 	}
-
-	// Pattern 5: Accept lines with both identifiers and types, even if not in expected positions
-	// This handles cases where tree-sitter doesn't parse exactly as expected
-	if identifierCount > 0 && (typePatternCount > 0 || identifierCount >= 2) {
-		return true
-	}
-
 	return false
 }
 
@@ -1232,6 +1256,12 @@ func extractPackageDocumentation(
 	queryEngine TreeSitterQueryEngine,
 ) string {
 	allComments := queryEngine.QueryComments(parseTree)
+
+	// If no comment nodes found, try looking for ERROR nodes or other potential comment content
+	if len(allComments) == 0 {
+		allComments = findCommentsInErrorNodes(parseTree, queryEngine)
+	}
+
 	if len(allComments) == 0 {
 		return ""
 	}
@@ -1241,6 +1271,36 @@ func extractPackageDocumentation(
 	processedComments := processCommentNodes(parseTree, packageComments)
 
 	return joinCommentsWithGoDocFormatting(processedComments)
+}
+
+// findCommentsInErrorNodes looks for comment-like content in ERROR nodes or other fallback locations
+// when tree-sitter fails to parse comments correctly due to malformed syntax.
+func findCommentsInErrorNodes(
+	parseTree *valueobject.ParseTree,
+	queryEngine TreeSitterQueryEngine,
+) []*valueobject.ParseNode {
+	// Get all nodes to inspect what tree-sitter actually parsed
+	root := parseTree.RootNode()
+	if root == nil {
+		return nil
+	}
+
+	var commentLikeNodes []*valueobject.ParseNode
+
+	// Traverse all nodes to find any that might be comments
+	allNodes := getAllNodes(root)
+	for _, node := range allNodes {
+		text := parseTree.GetNodeText(node)
+		// Look for nodes that contain comment markers
+		if strings.Contains(text, "/*") && strings.Contains(text, "*/") {
+			// Check if this looks like a block comment
+			if strings.HasPrefix(strings.TrimSpace(text), "/*") {
+				commentLikeNodes = append(commentLikeNodes, node)
+			}
+		}
+	}
+
+	return commentLikeNodes
 }
 
 // sortCommentsByPosition sorts comments by their start position in ascending order.
@@ -1512,9 +1572,7 @@ func processPackageCommentText(
 	// Handle // style comments - preserve indentation for code examples
 	if strings.HasPrefix(raw, "//") {
 		content := strings.TrimPrefix(raw, "//")
-		// Standard Go documentation: trim exactly one leading space if present
-		content = strings.TrimPrefix(content, " ")
-		return content
+		return processLineCommentWhitespace(content)
 	}
 
 	// Handle /* */ style block comments with preserved formatting
@@ -1524,6 +1582,27 @@ func processPackageCommentText(
 
 	// Fallback for any other comment format
 	return strings.TrimSpace(raw)
+}
+
+// processLineCommentWhitespace processes whitespace in line comments according to Go documentation rules.
+func processLineCommentWhitespace(content string) string {
+	// Go documentation rules: trim one space unless there are 4+ spaces (significant indentation)
+	if len(content) > 0 && content[0] == ' ' {
+		// Count leading spaces
+		spaceCount := 0
+		for _, char := range content {
+			if char == ' ' {
+				spaceCount++
+			} else {
+				break
+			}
+		}
+		// Only trim one space if there are 3 or fewer spaces total
+		if spaceCount <= 3 {
+			content = content[1:]
+		}
+	}
+	return content
 }
 
 // processBlockComment processes block comment content preserving package documentation formatting.

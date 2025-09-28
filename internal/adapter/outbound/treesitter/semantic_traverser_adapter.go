@@ -1989,6 +1989,10 @@ func (s *SemanticTraverserAdapter) searchNestedTypeSpecs(
 			continue // Skip parentheses
 		}
 		if child.Type == "type_spec" {
+			// Skip struct and interface types - they are handled by dedicated extractors
+			if s.shouldSkipTypeSpec(child) {
+				continue
+			}
 			if chunk := s.parseGoTypeSpec(parseTree, child, typeDecl, packageName, false, options, now); chunk != nil {
 				types = append(types, *chunk)
 			}
@@ -2208,7 +2212,6 @@ func (s *SemanticTraverserAdapter) shouldSkipTypeSpec(typeSpec *valueobject.Pars
 			return true
 		}
 	}
-
 	return false
 }
 

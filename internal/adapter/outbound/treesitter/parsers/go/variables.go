@@ -550,9 +550,11 @@ func shouldSkipTypeSpec(typeSpec *valueobject.ParseNode) bool {
 	}
 
 	// Skip struct and interface types (they're handled elsewhere)
-	structTypes := FindChildrenRecursive(typeSpec, nodeTypeStructType)
-	interfaceTypes := FindChildrenRecursive(typeSpec, nodeTypeInterfaceType)
-	return len(structTypes) > 0 || len(interfaceTypes) > 0
+	// Use the same logic as structures.go which is proven to work
+	structType := findChildByTypeInNode(typeSpec, nodeTypeStructType)
+	interfaceType := findChildByTypeInNode(typeSpec, nodeTypeInterfaceType)
+
+	return structType != nil || interfaceType != nil
 }
 
 // parseGoTypeDeclarationsFromNodes parses type alias declarations from provided nodes.
@@ -563,6 +565,8 @@ func shouldSkipTypeSpec(typeSpec *valueobject.ParseNode) bool {
 // - type UserID int
 // - type Handler func(string) error
 // - type StringMap map[string]interface{}.
+//
+
 func parseGoTypeDeclarationsFromNodes(
 	parseTree *valueobject.ParseTree,
 	typeNodes []*valueobject.ParseNode,
@@ -601,6 +605,8 @@ func parseGoTypeDeclarationsFromNodes(
 
 // extractTypeNameFromSpec extracts the type name from a type specification node.
 // Returns the first type_identifier found, which represents the alias name.
+//
+
 func extractTypeNameFromSpec(
 	parseTree *valueobject.ParseTree,
 	typeSpec *valueobject.ParseNode,
@@ -625,6 +631,8 @@ func extractTypeNameFromSpec(
 //
 // The function extracts the alias name, determines the aliased type, and creates
 // a SemanticCodeChunk with proper metadata and position information.
+//
+
 func parseGoTypeSpec(
 	parseTree *valueobject.ParseTree,
 	typeDecl *valueobject.ParseNode,
@@ -754,6 +762,8 @@ func getVariableTypeFromField(
 // getAliasedType gets the type that a type alias points to.
 // This function finds the type that comes after the first type_identifier (the alias name)
 // using the centralized type detection logic.
+//
+
 func getAliasedType(
 	parseTree *valueobject.ParseTree,
 	typeSpec *valueobject.ParseNode,

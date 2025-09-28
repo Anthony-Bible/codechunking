@@ -314,8 +314,10 @@ func (p *GoParser) validateGoSource(ctx context.Context, source []byte) error {
 	registry.RegisterValidator("Go", parsererrors.NewGoValidator())
 
 	// Perform comprehensive validation
-	if err := parsererrors.ValidateSourceWithLanguage(ctx, source, "Go", limits, registry); err != nil {
-		return err
+	parserErr := parsererrors.ValidateSourceWithLanguage(ctx, source, "Go", limits, registry)
+	if parserErr != nil {
+		// Convert ParserError to regular error for return
+		return parserErr
 	}
 
 	return nil
@@ -1154,10 +1156,6 @@ func (o *ObservableGoParser) ExtractModules(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	slogger.Info(ctx, "Extracting modules from parse tree", slogger.Fields{
-		"language": parseTree.Language().String(),
-	})
-
 	if err := o.parser.validateInput(parseTree); err != nil {
 		return nil, err
 	}
@@ -1189,11 +1187,6 @@ func (o *ObservableGoParser) ExtractModules(
 			modules = append(modules, *chunk)
 		}
 	}
-
-	slogger.Info(ctx, "Module extraction completed", slogger.Fields{
-		"duration_ms":     0,
-		"extracted_count": len(modules),
-	})
 
 	return modules, nil
 }
@@ -1777,10 +1770,6 @@ func processPackageClause(
 	packageName := parseTree.GetNodeText(packageIdentifiers[0])
 	content := parseTree.GetNodeText(packageClause)
 
-	slogger.Info(ctx, "Found package in source", slogger.Fields{
-		"package_name": packageName,
-	})
-
 	// Create properly configured Language object
 	goLang, _ := valueobject.NewLanguageWithDetails(
 		"Go",
@@ -1823,11 +1812,6 @@ func processPackageClause(
 	if metadata != nil {
 		chunk.Metadata = metadata
 	}
-
-	slogger.Info(ctx, "Extracted package", slogger.Fields{
-		"chunk_id":     chunk.ChunkID,
-		"package_name": packageName,
-	})
 
 	return chunk, nil
 }

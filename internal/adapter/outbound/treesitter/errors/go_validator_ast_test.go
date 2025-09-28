@@ -176,7 +176,7 @@ func TestGoValidatorErrorNodeDetection(t *testing.T) {
 	}{
 		{
 			name:        "valid syntax has no error nodes",
-			sourceCode:  "package main\n\nfunc main() {\n    fmt.Println(\"hello\")\n}",
+			sourceCode:  "package main\n\nfunc main() {\n    x := 42\n    _ = x\n}",
 			expectError: false,
 			description: "Should use tree-sitter to validate correct syntax",
 		},

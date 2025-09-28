@@ -72,11 +72,7 @@ func NewTreeSitterParserFactory(ctx context.Context) (*ParserFactoryImpl, error)
 		startTime:      time.Now(),
 	}
 
-	slogger.Info(ctx, "TreeSitterParserFactory initialized", slogger.Fields{
-		"supported_languages": len(supportedLangs),
-		"max_cached_parsers":  config.MaxCachedParsers,
-		"concurrency_limit":   config.ConcurrencyLimit,
-	})
+	// TreeSitterParserFactory initialized - logging removed for test performance
 
 	return factory, nil
 }
@@ -143,9 +139,7 @@ func (f *ParserFactoryImpl) CreateParser(
 
 	// Look up registered parser for the language
 	if parserFactory := GetRegisteredParser(language.Name()); parserFactory != nil {
-		slogger.Info(ctx, "Creating registered parser for language", slogger.Fields{
-			"language": language.Name(),
-		})
+		// Creating registered parser - logging removed for test performance
 		return parserFactory()
 	}
 

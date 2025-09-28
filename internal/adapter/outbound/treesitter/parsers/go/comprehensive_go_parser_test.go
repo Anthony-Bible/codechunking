@@ -2698,8 +2698,8 @@ type Reader = io.Reader
 					Visibility:    outbound.Public,
 					Documentation: "MyInt is an alias for int",
 					Content:       "type MyInt = int",
-					StartByte:     1,
-					EndByte:       17,
+					StartByte:     30,
+					EndByte:       46,
 					Language:      valueobject.Go,
 				},
 				{
@@ -2710,8 +2710,8 @@ type Reader = io.Reader
 					Visibility:    outbound.Public,
 					Documentation: "Reader is an alias for io.Reader",
 					Content:       "type Reader = io.Reader",
-					StartByte:     19,
-					EndByte:       42,
+					StartByte:     84,
+					EndByte:       107,
 					Language:      valueobject.Go,
 				},
 			},
@@ -2736,8 +2736,8 @@ type Point struct {
 					Visibility:    outbound.Public,
 					Documentation: "MyString is a custom string type",
 					Content:       "type MyString string",
-					StartByte:     1,
-					EndByte:       21,
+					StartByte:     37,
+					EndByte:       57,
 					Language:      valueobject.Go,
 				},
 			},
@@ -2769,7 +2769,7 @@ var bidirectionalChan chan bool
 					Visibility:    outbound.Private,
 					Content:       "var outputChan chan<- string",
 					StartByte:     26,
-					EndByte:       55,
+					EndByte:       54,
 					Language:      valueobject.Go,
 				},
 				{
@@ -2779,8 +2779,8 @@ var bidirectionalChan chan bool
 					QualifiedName: "bidirectionalChan",
 					Visibility:    outbound.Private,
 					Content:       "var bidirectionalChan chan bool",
-					StartByte:     56,
-					EndByte:       87,
+					StartByte:     55,
+					EndByte:       86,
 					Language:      valueobject.Go,
 				},
 			},
@@ -2800,6 +2800,7 @@ var bidirectionalChan chan bool
 			adapter := treesitter.NewSemanticTraverserAdapter()
 			options := &treesitter.SemanticExtractionOptions{
 				IncludeVariables: true,
+				IncludePrivate:   true,
 			}
 
 			chunks := adapter.ExtractCodeChunks(domainTree, options)

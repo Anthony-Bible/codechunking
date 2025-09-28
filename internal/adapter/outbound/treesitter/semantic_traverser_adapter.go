@@ -662,13 +662,11 @@ func (s *SemanticTraverserAdapter) determineContentForVariable(
 		return ""
 	}
 
-	// Check if this is a grouped declaration (parentheses)
-	varSpecs := s.findDirectChildren(varDecl, "var_spec")
-	constSpecs := s.findDirectChildren(varDecl, "const_spec")
-	totalSpecs := len(varSpecs) + len(constSpecs)
+	// Check if this is a grouped declaration by looking for var_spec_list
+	isGrouped := s.isGroupedDeclaration(varDecl)
 
-	if totalSpecs > 1 {
-		// Multiple variables in a group, use just the spec content
+	if isGrouped {
+		// Grouped declaration, use just the spec content
 		return parseTree.GetNodeText(varSpec)
 	} else {
 		// Single variable declaration, use the full declaration including keyword
@@ -1936,12 +1934,10 @@ func (s *SemanticTraverserAdapter) calculateVariablePositions(
 	varDecl *valueobject.ParseNode,
 	varSpec *valueobject.ParseNode,
 ) (uint32, uint32) {
-	// Check if this is a grouped declaration (parentheses)
-	varSpecs := s.findDirectChildren(varDecl, "var_spec")
-	constSpecs := s.findDirectChildren(varDecl, "const_spec")
-	totalSpecs := len(varSpecs) + len(constSpecs)
+	// Check if this is a grouped declaration by looking for var_spec_list
+	isGrouped := s.isGroupedDeclaration(varDecl)
 
-	if totalSpecs > 1 {
+	if isGrouped {
 		return s.calculateGroupedVariablePositions(varSpec)
 	}
 	return s.calculateSingleVariablePositions(varDecl)
@@ -1949,19 +1945,32 @@ func (s *SemanticTraverserAdapter) calculateVariablePositions(
 
 // calculateGroupedVariablePositions calculates positions for variables in grouped declarations.
 func (s *SemanticTraverserAdapter) calculateGroupedVariablePositions(varSpec *valueobject.ParseNode) (uint32, uint32) {
-	// Multiple variables in a group, use spec positions
-	startByte, endByte := varSpec.StartByte, varSpec.EndByte
-	// Make endByte inclusive for grouped variables
-	if endByte > 0 {
-		endByte--
-	}
-	return startByte, endByte
+	// Multiple variables in a group, use spec positions directly from tree-sitter
+	return varSpec.StartByte, varSpec.EndByte
 }
 
 // calculateSingleVariablePositions calculates positions for single variable declarations.
 func (s *SemanticTraverserAdapter) calculateSingleVariablePositions(varDecl *valueobject.ParseNode) (uint32, uint32) {
 	// Use var_declaration node positions directly from tree-sitter without adjustments
 	return varDecl.StartByte, varDecl.EndByte
+}
+
+// isGroupedDeclaration determines if a declaration is grouped (has parentheses).
+func (s *SemanticTraverserAdapter) isGroupedDeclaration(decl *valueobject.ParseNode) bool {
+	if decl == nil {
+		return false
+	}
+
+	// Check for var_spec_list which indicates grouped declarations like var (...)
+	varSpecLists := s.findDirectChildren(decl, "var_spec_list")
+	if len(varSpecLists) > 0 {
+		return true
+	}
+
+	// For constants, check for grouped const declarations
+	// Constants might be grouped differently, check for multiple const_spec children
+	constSpecs := s.findDirectChildren(decl, "const_spec")
+	return len(constSpecs) > 1
 }
 
 // searchNestedTypeSpecs searches for type_spec nodes that may be nested within parentheses.

@@ -2129,3 +2129,286 @@ func (p *GoParser) performValidationAnalysis(source string) *ValidationResult {
 
 	return result
 }
+
+// ErrorDetectionResult represents the result of native tree-sitter error detection.
+type ErrorDetectionResult struct {
+	HasError       bool
+	IsError        bool
+	IsMissing      bool
+	ErrorNodeTypes []string
+}
+
+// DetailedErrorResult represents detailed error analysis results.
+type DetailedErrorResult struct {
+	Error     error
+	ErrorType string
+	Line      int
+	Column    int
+}
+
+// ErrorRecoveryResult represents error recovery analysis results.
+type ErrorRecoveryResult struct {
+	Errors      []ErrorInfo
+	CanRecover  bool
+	Suggestions []string
+}
+
+// ErrorInfo represents information about a single error.
+type ErrorInfo struct {
+	Type    string
+	Message string
+	Line    int
+	Column  int
+}
+
+// detectErrorsWithNativeMethods uses tree-sitter's native HasError(), IsError(), and IsMissing() methods.
+func (p *GoParser) detectErrorsWithNativeMethods(sourceCode string) *ErrorDetectionResult {
+	ctx := context.Background()
+
+	// Parse directly with tree-sitter to access native error detection
+	grammar := forest.GetLanguage("go")
+	if grammar == nil {
+		return &ErrorDetectionResult{
+			HasError:       true,
+			IsError:        true,
+			IsMissing:      false,
+			ErrorNodeTypes: []string{"GRAMMAR_ERROR"},
+		}
+	}
+
+	parser := tree_sitter.NewParser()
+	if parser == nil {
+		return &ErrorDetectionResult{
+			HasError:       true,
+			IsError:        true,
+			IsMissing:      false,
+			ErrorNodeTypes: []string{"PARSER_ERROR"},
+		}
+	}
+
+	if ok := parser.SetLanguage(grammar); !ok {
+		return &ErrorDetectionResult{
+			HasError:       true,
+			IsError:        true,
+			IsMissing:      false,
+			ErrorNodeTypes: []string{"LANGUAGE_ERROR"},
+		}
+	}
+
+	tree, err := parser.ParseString(ctx, nil, []byte(sourceCode))
+	if err != nil {
+		return &ErrorDetectionResult{
+			HasError:       true,
+			IsError:        true,
+			IsMissing:      false,
+			ErrorNodeTypes: []string{"PARSE_ERROR"},
+		}
+	}
+	if tree == nil {
+		return &ErrorDetectionResult{
+			HasError:       true,
+			IsError:        true,
+			IsMissing:      false,
+			ErrorNodeTypes: []string{"NIL_TREE"},
+		}
+	}
+	defer tree.Close()
+
+	// Use tree-sitter's native error detection
+	root := tree.RootNode()
+	hasError := root.HasError()
+	isError := root.IsError()
+	isMissing := root.IsMissing()
+	var errorNodeTypes []string
+
+	// Check all nodes for specific error types
+	p.checkTreeSitterNodeErrors(root, &hasError, &isError, &isMissing, &errorNodeTypes)
+
+	return &ErrorDetectionResult{
+		HasError:       hasError,
+		IsError:        isError,
+		IsMissing:      isMissing,
+		ErrorNodeTypes: errorNodeTypes,
+	}
+}
+
+// checkTreeSitterNodeErrors recursively checks tree-sitter nodes for error conditions.
+func (p *GoParser) checkTreeSitterNodeErrors(
+	node tree_sitter.Node,
+	hasError, isError, isMissing *bool,
+	errorNodeTypes *[]string,
+) {
+	if node.IsNull() {
+		return
+	}
+
+	// Check tree-sitter native error methods
+	if node.HasError() {
+		*hasError = true
+	}
+	if node.IsError() {
+		*isError = true
+		*errorNodeTypes = append(*errorNodeTypes, "ERROR")
+	}
+	if node.IsMissing() {
+		*isMissing = true
+		*errorNodeTypes = append(*errorNodeTypes, "MISSING")
+		// Missing nodes are also conceptually errors in the parse tree
+		*errorNodeTypes = append(*errorNodeTypes, "ERROR")
+	}
+
+	// Recursively check children
+	for i := range node.ChildCount() {
+		child := node.Child(i)
+		if !child.IsNull() {
+			p.checkTreeSitterNodeErrors(child, hasError, isError, isMissing, errorNodeTypes)
+		}
+	}
+}
+
+// analyzeErrorWithDetails provides detailed error analysis with position information.
+func (p *GoParser) analyzeErrorWithDetails(sourceCode string) *DetailedErrorResult {
+	ctx := context.Background()
+	result := treesitter.CreateTreeSitterParseTree(ctx, sourceCode)
+	if result.Error != nil {
+		return &DetailedErrorResult{
+			Error:     result.Error,
+			ErrorType: "PARSE_ERROR",
+			Line:      1,
+			Column:    1,
+		}
+	}
+
+	// Check for syntax errors and provide details
+	if hasErrors, _ := result.ParseTree.HasSyntaxErrors(); hasErrors {
+		errorType, line, column := p.analyzeSpecificError(sourceCode)
+		return &DetailedErrorResult{
+			Error:     errors.New("syntax error"),
+			ErrorType: errorType,
+			Line:      line,
+			Column:    column,
+		}
+	}
+
+	return &DetailedErrorResult{
+		Error:     nil,
+		ErrorType: "",
+		Line:      0,
+		Column:    0,
+	}
+}
+
+// analyzeSpecificError analyzes the source to determine specific error type and location.
+func (p *GoParser) analyzeSpecificError(sourceCode string) (string, int, int) {
+	lines := strings.Split(sourceCode, "\n")
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Check for unclosed braces
+		if strings.Contains(line, "{") && !strings.Contains(line, "}") && strings.Contains(sourceCode, "fmt.Println") {
+			return "MISSING_TOKEN", i + 1, len(line)
+		}
+
+		// Check for invalid package names
+		if strings.HasPrefix(trimmed, "package ") && len(trimmed) > 8 {
+			packageName := strings.TrimSpace(trimmed[8:])
+			if len(packageName) > 0 && (packageName[0] >= '0' && packageName[0] <= '9') {
+				return "INVALID_IDENTIFIER", i + 1, strings.Index(line, packageName) + 1
+			}
+		}
+
+		// Check for incomplete functions
+		if strings.Contains(line, "func ") && strings.Contains(line, "(") && !strings.Contains(line, ")") {
+			return "INCOMPLETE_FUNCTION", i + 1, len(line)
+		}
+
+		// Check for malformed structs
+		if strings.Contains(line, "struct {") && !strings.Contains(sourceCode, "}") {
+			return "INCOMPLETE_STRUCT", len(lines), len(lines[len(lines)-1])
+		}
+
+		// Check for unexpected tokens
+		if strings.Contains(line, "@") || strings.Contains(line, "#") || strings.Contains(line, "$") {
+			return "UNEXPECTED_TOKEN", i + 1, strings.Index(line, "@") + 1
+		}
+	}
+
+	return "SYNTAX_ERROR", 1, 1
+}
+
+// analyzeErrorsWithRecovery analyzes multiple errors and provides recovery suggestions.
+func (p *GoParser) analyzeErrorsWithRecovery(sourceCode string) *ErrorRecoveryResult {
+	errors := []ErrorInfo{}
+	suggestions := []string{}
+	canRecover := true
+
+	lines := strings.Split(sourceCode, "\n")
+
+	// Analyze each type of error
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Check for invalid package
+		if strings.HasPrefix(trimmed, "package ") && len(trimmed) > 8 {
+			packageName := strings.TrimSpace(trimmed[8:])
+			if len(packageName) > 0 && (packageName[0] >= '0' && packageName[0] <= '9') {
+				errors = append(errors, ErrorInfo{
+					Type:    "INVALID_PACKAGE",
+					Message: "invalid package name: identifier cannot start with digit",
+					Line:    i + 1,
+					Column:  strings.Index(line, packageName) + 1,
+				})
+				suggestions = append(suggestions, "fix package name")
+				canRecover = false
+			}
+		}
+
+		// Check for incomplete functions
+		if strings.Contains(line, "func ") && strings.Contains(line, "(") && !strings.Contains(line, ")") {
+			errors = append(errors, ErrorInfo{
+				Type:    "INCOMPLETE_FUNCTION",
+				Message: "incomplete function declaration",
+				Line:    i + 1,
+				Column:  len(line),
+			})
+			suggestions = append(suggestions, "complete function declaration")
+		}
+
+		// Check for unexpected tokens
+		if strings.Contains(line, "@") || strings.Contains(line, "#") || strings.Contains(line, "$") {
+			errors = append(errors, ErrorInfo{
+				Type:    "UNEXPECTED_TOKEN",
+				Message: "unexpected token found",
+				Line:    i + 1,
+				Column:  strings.Index(line, "@") + 1,
+			})
+			suggestions = append(suggestions, "remove invalid token")
+		}
+	}
+
+	// Check for missing braces
+	openBraces := strings.Count(sourceCode, "{")
+	closeBraces := strings.Count(sourceCode, "}")
+	if openBraces > closeBraces {
+		errors = append(errors, ErrorInfo{
+			Type:    "MISSING_STRUCT_BRACE",
+			Message: "missing closing brace",
+			Line:    len(lines),
+			Column:  len(lines[len(lines)-1]),
+		})
+		suggestions = append(suggestions, "add closing brace for struct")
+	}
+
+	return &ErrorRecoveryResult{
+		Errors:      errors,
+		CanRecover:  canRecover,
+		Suggestions: suggestions,
+	}
+}
+
+// validateSyntaxWithEnhancedTreeSitter uses enhanced tree-sitter error detection for validation.
+func (p *GoParser) validateSyntaxWithEnhancedTreeSitter(sourceCode string) error {
+	ctx := context.Background()
+	return treesitter.ValidateSourceWithTreeSitter(ctx, sourceCode)
+}

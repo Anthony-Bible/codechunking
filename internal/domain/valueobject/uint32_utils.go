@@ -30,3 +30,12 @@ func ClampUintToUint32(u uint) uint32 {
 	}
 	return uint32(u)
 }
+
+// ClampUintToInt safely converts a uint to int by clamping to max int when needed.
+func ClampUintToInt(u uint) int {
+	const maxInt = int(^uint(0) >> 1)
+	if u > uint(maxInt) {
+		return maxInt
+	}
+	return int(u)
+}

@@ -140,6 +140,13 @@ func NewParseTree(
 	return pt, nil
 }
 
+// SetTreeSitterTree sets the tree-sitter tree reference for native error detection.
+func (pt *ParseTree) SetTreeSitterTree(tree *tree_sitter.Tree) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	pt.treeSitterTree = tree
+}
+
 // NewParseMetadata creates a new ParseMetadata value object.
 func NewParseMetadata(duration time.Duration, treeSitterVersion, grammarVersion string) (ParseMetadata, error) {
 	if duration < 0 {
@@ -379,31 +386,61 @@ func (pt *ParseTree) validateNode(node *ParseNode) (bool, error) {
 	return true, nil
 }
 
-// HasSyntaxErrors checks if the parse tree has syntax errors.
+// HasSyntaxErrors checks if the parse tree has syntax errors using tree-sitter's native error detection.
 func (pt *ParseTree) HasSyntaxErrors() (bool, error) {
 	if pt.isCleanedUp {
 		return false, errors.New("parse tree has been cleaned up")
 	}
 
-	return pt.hasErrorNodes(pt.rootNode), nil
+	// First check if we have tree-sitter tree reference for native error detection
+	if pt.treeSitterTree != nil {
+		rootTSNode := pt.treeSitterTree.RootNode()
+		if !rootTSNode.IsNull() {
+			return rootTSNode.HasError(), nil
+		}
+	}
+
+	// Fallback to checking nodes for tree-sitter native methods if available
+	return pt.hasErrorNodesWithNativeMethods(pt.rootNode), nil
 }
 
-// hasErrorNodes recursively checks for error nodes.
-func (pt *ParseTree) hasErrorNodes(node *ParseNode) bool {
+// hasErrorNodesWithNativeMethods recursively checks for error nodes using tree-sitter's native methods.
+func (pt *ParseTree) hasErrorNodesWithNativeMethods(node *ParseNode) bool {
 	if node == nil {
 		return false
 	}
 
-	if node.Type == "ERROR" {
+	// Use tree-sitter native error detection if available
+	if tsNode := node.TreeSitterNode(); tsNode != nil && !tsNode.IsNull() {
+		return pt.checkTreeSitterNodeErrors(tsNode)
+	} else if node.Type == "ERROR" || node.Type == "MISSING" {
 		return true
 	}
 
+	// Recursively check children
 	for _, child := range node.Children {
-		if pt.hasErrorNodes(child) {
+		if pt.hasErrorNodesWithNativeMethods(child) {
 			return true
 		}
 	}
 
+	return false
+}
+
+// checkTreeSitterNodeErrors checks tree-sitter native error methods for a node.
+func (pt *ParseTree) checkTreeSitterNodeErrors(tsNode *tree_sitter.Node) bool {
+	// Check HasError() - if node or children have errors
+	if tsNode.HasError() {
+		return true
+	}
+	// Check IsError() - if node is specifically an error node
+	if tsNode.IsError() {
+		return true
+	}
+	// Check IsMissing() - if required tokens are missing
+	if tsNode.IsMissing() {
+		return true
+	}
 	return false
 }
 

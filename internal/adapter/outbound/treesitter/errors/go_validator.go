@@ -188,20 +188,9 @@ func (v *GoValidator) wrapSnippetIfNeeded(source string) (string, bool) {
 		return source, false
 	}
 
-	// Check if source already has a package declaration (anywhere in the source, not just at start)
-	// This handles cases where comments precede the package declaration
-	if strings.Contains(source, "package ") {
-		// Verify it's actually a package declaration by looking for package keyword followed by identifier
-		// Simple heuristic: if we see "package " followed by a word, it's likely a real package declaration
-		packageIdx := strings.Index(source, "package ")
-		if packageIdx != -1 {
-			afterPackage := source[packageIdx+8:]
-			// Check if there's an identifier after "package "
-			if len(afterPackage) > 0 &&
-				(afterPackage[0] >= 'a' && afterPackage[0] <= 'z' || afterPackage[0] >= 'A' && afterPackage[0] <= 'Z') {
-				return source, false // Has package declaration
-			}
-		}
+	// Check if source already has a package declaration
+	if v.hasPackageDeclaration(source) {
+		return source, false // Has package declaration, don't wrap
 	}
 
 	// Check if source contains constructs that should be wrapped
@@ -219,6 +208,22 @@ func (v *GoValidator) wrapSnippetIfNeeded(source string) (string, bool) {
 	// Wrap in minimal package context
 	wrapped := "package snippet\n" + source
 	return wrapped, true
+}
+
+// hasPackageDeclaration checks if source contains a package declaration attempt.
+// Returns true if source has "package" keyword, regardless of what follows.
+// This includes:
+//   - Valid identifiers: "package main"
+//   - Invalid identifiers: "package 123invalid"
+//   - Incomplete declarations: "package\n"
+//   - Empty declarations: "package "
+//
+// The actual validity is determined later by tree-sitter ERROR node detection.
+// We want to avoid wrapping any "package" attempts so tree-sitter can parse them as-is.
+func (v *GoValidator) hasPackageDeclaration(source string) bool {
+	// Simple check: if source contains "package ", treat it as having a package declaration attempt
+	// This prevents wrapping, allowing tree-sitter to parse it natively
+	return strings.Contains(source, "package ")
 }
 
 // unwrapAndAdjustPositions removes the package declaration node and adjusts byte positions
@@ -683,18 +688,39 @@ func (v *GoValidator) checkPackageRelatedSyntaxErrors(parseTree *valueobject.Par
 		return nil
 	}
 
-	// Check for syntax errors via tree-sitter ERROR nodes
-	if hasErrors, err := parseTree.HasSyntaxErrors(); err == nil && hasErrors {
-		// Look for specific package-related errors
-		packageNodes := v.queryEngine.QueryPackageDeclarations(parseTree)
-		if len(packageNodes) > 0 {
-			// Has package declaration but with syntax errors
+	// Query for package declarations
+	packageNodes := v.queryEngine.QueryPackageDeclarations(parseTree)
+	if len(packageNodes) == 0 {
+		return nil // No package declaration to validate
+	}
+
+	// Check if any package_clause contains ERROR nodes as children
+	// This detects invalid package names like "package 123invalid"
+	for _, pkgNode := range packageNodes {
+		if v.hasErrorChildren(pkgNode) {
+			// Found ERROR node within package_clause
 			return NewSyntaxError("invalid package declaration").
 				WithSuggestion("Fix the package name syntax - package names must be valid Go identifiers")
 		}
 	}
 
 	return nil
+}
+
+// hasErrorChildren checks if a parse node has any immediate children of type "ERROR".
+// This is used to detect syntax errors within specific nodes like package_clause.
+func (v *GoValidator) hasErrorChildren(node *valueobject.ParseNode) bool {
+	if node == nil {
+		return false
+	}
+
+	for _, child := range node.Children {
+		if child != nil && child.Type == "ERROR" {
+			return true
+		}
+	}
+
+	return false
 }
 
 // validatePackageRequirement validates whether a package declaration is required based on file content.

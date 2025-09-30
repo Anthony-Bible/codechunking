@@ -122,14 +122,15 @@ func TestValidateLargeFilePackageDeclarationTreeSitterBased(t *testing.T) {
 		{
 			name:          "malformed_package_syntax_tree_sitter_detection",
 			sourceCode:    "package main-invalid\n\nfunc calculate() int {\n    return 42\n}\n\nfunc process() {\n    // logic\n}\n\ntype Data struct {\n    Value string\n}\n\nfunc validate() bool {\n    return true\n}",
-			expectedError: false, // Tree-sitter parses this successfully (though semantically invalid)
-			description:   "Tree-sitter's Go grammar accepts hyphenated package names (semantic validation is out of scope)",
+			expectedError: false, // Tree-sitter parses "main" as valid, treats "-invalid" as separate expression (no ERROR node)
+			description:   "Tree-sitter's Go grammar parses 'main' successfully, treats hyphen as separate expression (semantic validation is out of scope)",
 		},
 		{
 			name:          "incomplete_package_declaration_error_nodes",
 			sourceCode:    "package\n\nfunc main() {\n    println(\"hello\")\n}\n\nfunc helper() int {\n    return 42\n}\n\ntype Config struct {\n    Host string\n}\n\nfunc processData() {\n    // processing\n}",
-			expectedError: false, // Tree-sitter parses 'package' keyword without identifier as valid (lenient)
-			description:   "Tree-sitter's Go grammar is lenient with incomplete package declarations (semantic validation is out of scope)",
+			expectedError: true, // Tree-sitter requires package_identifier after 'package' keyword
+			errorMessage:  "missing package declaration",
+			description:   "Tree-sitter Go grammar requires package_identifier - 'package' alone doesn't create valid package_clause",
 		},
 
 		// Edge cases with comments, whitespace, etc.

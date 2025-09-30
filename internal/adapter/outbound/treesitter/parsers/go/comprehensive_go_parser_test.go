@@ -2539,25 +2539,29 @@ package malformed
 			},
 		},
 		{
-			name: "Package with nested block comments - should handle gracefully",
+			name: "Package with block comment containing asterisks - should handle gracefully",
 			sourceCode: `/*
-Package nested contains block comments with potential nesting issues.
+Package asterisk contains block comments with asterisks.
 
-This package demonstrates: /* inline block comment */ handling.
+This package demonstrates handling of:
+  * Asterisks at line start (common in docs)
+  * Multiple asterisks ** for emphasis
+  * Bullet points with asterisks
+
 The parser should extract this documentation correctly.
 */
-package nested
+package asterisk
 `,
 			expectedChunks: []outbound.SemanticCodeChunk{
 				{
-					ChunkID:       "package:nested",
+					ChunkID:       "package:asterisk",
 					Type:          outbound.ConstructPackage,
-					Name:          "nested",
-					QualifiedName: "nested",
-					Documentation: "Package nested contains block comments with potential nesting issues.\n\nThis package demonstrates: /* inline block comment */ handling. The parser should extract this documentation correctly.",
-					Content:       "package nested",
-					StartByte:     202,
-					EndByte:       216,
+					Name:          "asterisk",
+					QualifiedName: "asterisk",
+					Documentation: "Package asterisk contains block comments with asterisks.\n\nThis package demonstrates handling of: Asterisks at line start (common in docs) Multiple asterisks ** for emphasis Bullet points with asterisks\n\nThe parser should extract this documentation correctly.",
+					Content:       "package asterisk",
+					StartByte:     243,
+					EndByte:       260,
 					Language:      valueobject.Go,
 				},
 			},
@@ -2583,6 +2587,29 @@ func Test() {}
 					Content:       "package aftercomment",
 					StartByte:     0,
 					EndByte:       20,
+					Language:      valueobject.Go,
+				},
+			},
+		},
+		{
+			name: "Package with block comment and separate inline documentation",
+			sourceCode: `/* Package blockdoc provides utilities for block documentation handling.
+
+This demonstrates proper block comment usage without nesting issues.
+The comment is valid Go syntax and should parse correctly.
+*/
+package blockdoc
+`,
+			expectedChunks: []outbound.SemanticCodeChunk{
+				{
+					ChunkID:       "package:blockdoc",
+					Type:          outbound.ConstructPackage,
+					Name:          "blockdoc",
+					QualifiedName: "blockdoc",
+					Documentation: "Package blockdoc provides utilities for block documentation handling.\n\nThis demonstrates proper block comment usage without nesting issues. The comment is valid Go syntax and should parse correctly.",
+					Content:       "package blockdoc",
+					StartByte:     176,
+					EndByte:       193,
 					Language:      valueobject.Go,
 				},
 			},

@@ -117,6 +117,9 @@ func (v *GoValidator) getOrCreateParseTree(source string) *valueobject.ParseTree
 // createParseTreeWithoutValidation creates a parse tree directly without triggering validation
 // to avoid circular dependency when validator needs to create parse trees.
 func (v *GoValidator) createParseTreeWithoutValidation(ctx context.Context, source string) *valueobject.ParseTree {
+	// For snippets without package declarations, wrap them to avoid ERROR nodes
+	wrappedSource, isWrapped := v.wrapSnippetIfNeeded(source)
+
 	// Use direct tree-sitter parsing without going through the validation layer
 	grammar := forest.GetLanguage("go")
 	if grammar == nil {
@@ -132,7 +135,7 @@ func (v *GoValidator) createParseTreeWithoutValidation(ctx context.Context, sour
 		return nil
 	}
 
-	tree, err := parser.ParseString(ctx, nil, []byte(source))
+	tree, err := parser.ParseString(ctx, nil, []byte(wrappedSource))
 	if err != nil {
 		return nil
 	}
@@ -146,6 +149,15 @@ func (v *GoValidator) createParseTreeWithoutValidation(ctx context.Context, sour
 	rootTS := tree.RootNode()
 	rootNode, nodeCount, maxDepth := v.convertTSNodeToDomain(rootTS, 0)
 
+	// If we wrapped the source, we need to adjust positions back to original
+	if isWrapped {
+		// Calculate the offset added by wrapping
+		wrapperOffset := uint32(len("package snippet\n"))
+
+		// Remove the package declaration node and adjust positions
+		rootNode = v.unwrapAndAdjustPositions(rootNode, wrapperOffset)
+	}
+
 	metadata, err := valueobject.NewParseMetadata(0, "go-tree-sitter-bare", "1.0.0")
 	if err != nil {
 		return nil
@@ -158,12 +170,122 @@ func (v *GoValidator) createParseTreeWithoutValidation(ctx context.Context, sour
 		return nil
 	}
 
+	// Use original source for parse tree, not wrapped version
 	domainTree, err := valueobject.NewParseTree(ctx, goLang, rootNode, []byte(source), metadata)
 	if err != nil {
 		return nil
 	}
 
 	return domainTree
+}
+
+// wrapSnippetIfNeeded wraps Go code snippets without package declarations in a minimal package context.
+// This allows tree-sitter to parse the code without generating ERROR nodes for valid constructs.
+// Returns the potentially wrapped source and a boolean indicating if wrapping occurred.
+func (v *GoValidator) wrapSnippetIfNeeded(source string) (string, bool) {
+	trimmed := strings.TrimSpace(source)
+	if trimmed == "" {
+		return source, false
+	}
+
+	// Check if source already has a package declaration (anywhere in the source, not just at start)
+	// This handles cases where comments precede the package declaration
+	if strings.Contains(source, "package ") {
+		// Verify it's actually a package declaration by looking for package keyword followed by identifier
+		// Simple heuristic: if we see "package " followed by a word, it's likely a real package declaration
+		packageIdx := strings.Index(source, "package ")
+		if packageIdx != -1 {
+			afterPackage := source[packageIdx+8:]
+			// Check if there's an identifier after "package "
+			if len(afterPackage) > 0 &&
+				(afterPackage[0] >= 'a' && afterPackage[0] <= 'z' || afterPackage[0] >= 'A' && afterPackage[0] <= 'Z') {
+				return source, false // Has package declaration
+			}
+		}
+	}
+
+	// Check if source contains constructs that should be wrapped
+	// (variables, constants, types, functions, etc.)
+	shouldWrap := strings.Contains(source, "var ") ||
+		strings.Contains(source, "const ") ||
+		strings.Contains(source, "type ") ||
+		strings.Contains(source, "func ") ||
+		strings.Contains(source, "import ")
+
+	if !shouldWrap {
+		return source, false
+	}
+
+	// Wrap in minimal package context
+	wrapped := "package snippet\n" + source
+	return wrapped, true
+}
+
+// unwrapAndAdjustPositions removes the package declaration node and adjusts byte positions
+// to account for the wrapper that was added during parsing.
+func (v *GoValidator) unwrapAndAdjustPositions(root *valueobject.ParseNode, offset uint32) *valueobject.ParseNode {
+	if root == nil {
+		return nil
+	}
+
+	// Filter out package_clause nodes and adjust positions of remaining nodes
+	var filteredChildren []*valueobject.ParseNode
+	for _, child := range root.Children {
+		if child.Type != "package_clause" {
+			// Adjust byte positions by subtracting the wrapper offset
+			adjustedChild := v.adjustNodePositions(child, offset)
+			filteredChildren = append(filteredChildren, adjustedChild)
+		}
+	}
+
+	// Adjust root node positions as well
+	if len(filteredChildren) > 0 {
+		// Set root start/end based on first and last child
+		root.StartByte = filteredChildren[0].StartByte
+		root.EndByte = filteredChildren[len(filteredChildren)-1].EndByte
+		root.StartPos = filteredChildren[0].StartPos
+		root.EndPos = filteredChildren[len(filteredChildren)-1].EndPos
+	} else {
+		// No children after unwrapping, set to zero
+		root.StartByte = 0
+		root.EndByte = 0
+		root.StartPos = valueobject.Position{Row: 0, Column: 0}
+		root.EndPos = valueobject.Position{Row: 0, Column: 0}
+	}
+
+	root.Children = filteredChildren
+	return root
+}
+
+// adjustNodePositions recursively adjusts byte and position offsets for a node and all its children.
+func (v *GoValidator) adjustNodePositions(node *valueobject.ParseNode, offset uint32) *valueobject.ParseNode {
+	if node == nil {
+		return nil
+	}
+
+	// Create adjusted copy
+	adjusted := &valueobject.ParseNode{
+		Type:      node.Type,
+		StartByte: node.StartByte - offset,
+		EndByte:   node.EndByte - offset,
+		StartPos: valueobject.Position{
+			Row:    node.StartPos.Row - 1, // Subtract 1 line for "package snippet\n"
+			Column: node.StartPos.Column,
+		},
+		EndPos: valueobject.Position{
+			Row:    node.EndPos.Row - 1,
+			Column: node.EndPos.Column,
+		},
+		Children: make([]*valueobject.ParseNode, 0, len(node.Children)),
+	}
+
+	// Adjust all children recursively
+	for _, child := range node.Children {
+		adjustedChild := v.adjustNodePositions(child, offset)
+		adjusted.Children = append(adjusted.Children, adjustedChild)
+	}
+
+	return adjusted
 }
 
 // convertTSNodeToDomain converts a tree-sitter node to domain ParseNode (internal method for validation).

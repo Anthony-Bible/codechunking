@@ -407,17 +407,23 @@ func isStructOrInterfaceField(line string) bool {
 //
 // This function implements a clean, single-parse approach that:
 // 1. Handles edge cases before expensive parsing (empty lines, obvious function calls)
-// 2. Uses direct line parsing instead of artificial context creation
+// 2. Uses context-based parsing when direct parsing fails (tree-sitter requirement)
 // 3. Performs comprehensive malformed syntax detection
 // 4. Employs an optimized analysis pipeline with early returns
 //
+// IMPORTANT: Tree-sitter's Go grammar requires structural context to parse field declarations
+// and method signatures correctly. Standalone fragments like "username string" or
+// "Read([]byte) (int, error)" produce ERROR nodes when parsed directly. Therefore, this
+// function uses context-based parsing by wrapping lines in struct/interface declarations
+// when direct parsing fails. This is the correct approach, not a workaround.
+//
 // Returns (isField, useAST) where:
 //   - isField: true if the line represents a valid struct/interface field
-//   - useAST: true if AST parsing was successful, false if parsing failed entirely
+//   - useAST: true if AST parsing was attempted, false if rejected before parsing
 //
 // The function prioritizes accuracy and performance through:
-//   - Early rejection of obvious non-field patterns
-//   - Single parse tree creation with reuse across multiple analyses
+//   - Early rejection of obvious non-field patterns (returns, imports, assignments)
+//   - Context-based parsing with struct/interface wrappers when needed
 //   - Structured analysis pipeline (positive patterns → negative patterns → fallback)
 func tryASTBasedFieldDetection(line string) (bool, bool) {
 	// Handle edge cases first - empty lines and obvious rejections
@@ -426,6 +432,12 @@ func tryASTBasedFieldDetection(line string) (bool, bool) {
 	}
 
 	trimmedLine := strings.TrimSpace(line)
+
+	// Check for method signature patterns early - these are valid fields
+	if isMethodSignatureLike(trimmedLine) {
+		return true, true
+	}
+
 	if hasObviousFunctionCallPattern(trimmedLine) {
 		return false, true // Logger function calls should be rejected immediately
 	}
@@ -444,6 +456,16 @@ func tryASTBasedFieldDetection(line string) (bool, bool) {
 
 	// Analyze the parse tree for field-like patterns
 	analysis := analyzeParseTreeForFieldPatterns(parseResult.ParseTree, trimmedLine)
+
+	// If direct parsing didn't find field/method patterns, try context-based parsing
+	// This handles cases like interface methods that need proper context to be detected
+	if !analysis.isField && analysis.useAST {
+		contextResult, contextUsed := tryParseWithContext(line)
+		if contextUsed && contextResult {
+			return true, true
+		}
+	}
+
 	return analysis.isField, analysis.useAST
 }
 
@@ -683,7 +705,21 @@ func isTrulyMalformedSyntax(parseTree *valueobject.ParseTree, line string) bool 
 // shouldRejectBeforeParsing checks for edge cases that should be rejected before expensive parsing.
 func shouldRejectBeforeParsing(line string) bool {
 	trimmed := strings.TrimSpace(line)
-	return trimmed == "" // Empty and whitespace-only lines
+	if trimmed == "" {
+		return true // Empty and whitespace-only lines
+	}
+	// Reject return statements and import statements before parsing
+	if strings.HasPrefix(trimmed, "return ") || trimmed == "return" {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "import ") || strings.HasPrefix(trimmed, "import(") {
+		return true
+	}
+	// Reject variable assignments (:=) before parsing
+	if strings.Contains(trimmed, ":=") {
+		return true
+	}
+	return false
 }
 
 // hasObviousFunctionCallPattern checks for obvious function call patterns that should be rejected immediately.

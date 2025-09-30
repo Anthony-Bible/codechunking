@@ -87,6 +87,14 @@ func NewGoValidator() *GoValidator {
 	}
 }
 
+// ensureQueryEngine ensures the query engine is initialized.
+// This helper method eliminates duplication and provides consistent initialization.
+func (v *GoValidator) ensureQueryEngine() {
+	if v.queryEngine == nil {
+		v.queryEngine = NewSimpleQueryEngine()
+	}
+}
+
 // getOrCreateParseTree gets a cached parse tree or creates a new one if source changed.
 func (v *GoValidator) getOrCreateParseTree(source string) *valueobject.ParseTree {
 	// Use cached parse tree if source hasn't changed
@@ -514,19 +522,142 @@ func (v *GoValidator) validatePackageSyntax(source string) *ParserError {
 	}
 
 	// Simple heuristic: allow small snippets without package declarations
+	if err := v.validateLargeFilePackageDeclaration(source); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// isLargeFile determines if the source file is large enough to require package declaration validation.
+// Small files and snippets are allowed without package declarations for testing and examples.
+func (v *GoValidator) isLargeFile(source string) bool {
 	trimmed := strings.TrimSpace(source)
-	if len(trimmed) > 0 && len(strings.Split(trimmed, "\n")) > 10 {
-		// Only check for package in larger files
-		if !strings.HasPrefix(trimmed, "package ") && !strings.Contains(trimmed, "package ") {
-			hasCode := strings.Contains(source, "func ") || strings.Contains(source, "type ")
-			if hasCode {
-				return NewSyntaxError("missing package declaration: Go files must start with package").
-					WithSuggestion("Add a package declaration at the top of the file")
-			}
+	if len(trimmed) == 0 {
+		return false // Empty files are never considered large
+	}
+	return len(strings.Split(trimmed, "\n")) > 10
+}
+
+// getParseTreeForValidation gets a parse tree for validation, ensuring proper initialization.
+// Returns nil if the parse tree cannot be created, which indicates the source should skip validation.
+func (v *GoValidator) getParseTreeForValidation(source string) *valueobject.ParseTree {
+	ctx := context.Background()
+	parseTree := v.createParseTreeWithoutValidation(ctx, source)
+	if parseTree == nil {
+		return nil // Unable to parse - skip validation
+	}
+
+	// Ensure queryEngine is initialized (for tests that don't use NewGoValidator)
+	v.ensureQueryEngine()
+
+	return parseTree
+}
+
+// checkPackageRelatedSyntaxErrors checks for syntax errors related to package declarations.
+// Returns an error if package-specific syntax errors are found.
+func (v *GoValidator) checkPackageRelatedSyntaxErrors(parseTree *valueobject.ParseTree) *ParserError {
+	if parseTree == nil {
+		return nil
+	}
+
+	// Check for syntax errors via tree-sitter ERROR nodes
+	if hasErrors, err := parseTree.HasSyntaxErrors(); err == nil && hasErrors {
+		// Look for specific package-related errors
+		packageNodes := v.queryEngine.QueryPackageDeclarations(parseTree)
+		if len(packageNodes) > 0 {
+			// Has package declaration but with syntax errors
+			return NewSyntaxError("invalid package declaration").
+				WithSuggestion("Fix the package name syntax - package names must be valid Go identifiers")
 		}
 	}
 
 	return nil
+}
+
+// validatePackageRequirement validates whether a package declaration is required based on file content.
+// Uses AST-based analysis to determine if the file contains constructs that require package declarations.
+func (v *GoValidator) validatePackageRequirement(parseTree *valueobject.ParseTree) *ParserError {
+	if parseTree == nil {
+		return nil
+	}
+
+	// Query for actual package declarations via AST
+	packageNodes := v.queryEngine.QueryPackageDeclarations(parseTree)
+	if len(packageNodes) > 0 {
+		return nil // Has valid package declaration
+	}
+
+	// Query for function and type declarations via AST
+	functionNodes := v.queryEngine.QueryFunctionDeclarations(parseTree)
+	typeNodes := v.queryEngine.QueryTypeDeclarations(parseTree)
+
+	hasFunc := len(functionNodes) > 0
+	hasType := len(typeNodes) > 0
+
+	// Only enforce package declaration for files with actual function definitions
+	// Type-only files (structs, interfaces, constants, variables) should be allowed without package
+	if hasFunc || hasType {
+		if hasFunc && !v.isPartialTypeOnlySnippetAST(parseTree) {
+			return NewSyntaxError("missing package declaration: Go files must start with package").
+				WithSuggestion("Add a package declaration at the top of the file")
+		}
+	}
+
+	return nil
+}
+
+// validateLargeFilePackageDeclaration performs package validation for larger files.
+// This reduces complexity by extracting the nested validation logic.
+// Uses tree-sitter AST parsing for accurate syntax analysis instead of string-based validation.
+func (v *GoValidator) validateLargeFilePackageDeclaration(source string) *ParserError {
+	if !v.isLargeFile(source) {
+		return nil // Small files or empty - skip validation
+	}
+
+	// Create AST parse tree for accurate analysis
+	parseTree := v.getParseTreeForValidation(source)
+	if parseTree == nil {
+		return nil // Unable to parse - skip validation
+	}
+
+	// Check for syntax errors via tree-sitter ERROR nodes
+	if err := v.checkPackageRelatedSyntaxErrors(parseTree); err != nil {
+		return err
+	}
+
+	// Validate package declaration requirement based on file content
+	return v.validatePackageRequirement(parseTree)
+}
+
+// isPartialTypeOnlySnippetAST determines if the parse tree appears to contain only type declarations
+// using AST-based analysis instead of string parsing.
+func (v *GoValidator) isPartialTypeOnlySnippetAST(parseTree *valueobject.ParseTree) bool {
+	if parseTree == nil {
+		return true // Empty/unparseable content is allowed
+	}
+
+	// Ensure queryEngine is initialized (for tests that don't use NewGoValidator)
+	v.ensureQueryEngine()
+
+	// Query for different kinds of declarations
+	functionNodes := v.queryEngine.QueryFunctionDeclarations(parseTree)
+	typeNodes := v.queryEngine.QueryTypeDeclarations(parseTree)
+
+	// If has functions, it's not type-only
+	if len(functionNodes) > 0 {
+		return false
+	}
+
+	// If has types but no functions, it's type-only
+	if len(typeNodes) > 0 {
+		return true
+	}
+
+	// Check for const and var declarations (also allowed without package)
+	// These would need additional query methods, but for now we fall back to
+	// the existing string-based method to maintain compatibility
+	return true // Default to allowing when uncertain
 }
 
 // validateMixedLanguage checks for non-Go language constructs.

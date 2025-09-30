@@ -433,7 +433,8 @@ func tryASTBasedFieldDetection(line string) (bool, bool) {
 	// Parse line directly as Go syntax
 	parseResult := treesitter.CreateTreeSitterParseTree(context.Background(), line)
 	if parseResult.Error != nil {
-		return false, false // Parsing failed, return (false, false)
+		// If direct parsing fails, try parsing with struct context for field declarations
+		return tryParseWithContext(line)
 	}
 
 	// Check for truly malformed syntax first - this should return (false, false)
@@ -446,9 +447,182 @@ func tryASTBasedFieldDetection(line string) (bool, bool) {
 	return analysis.isField, analysis.useAST
 }
 
+// tryParseWithContext attempts to parse a line by wrapping it in struct/interface contexts
+// when direct parsing fails. This handles field declarations that need proper Go context.
+// Uses direct tree-sitter parsing to avoid recursive validation issues.
+func tryParseWithContext(line string) (bool, bool) {
+	trimmedLine := strings.TrimSpace(line)
+
+	// Try parsing as a struct field first using direct tree-sitter parser
+	structContext := fmt.Sprintf("package test\n\ntype TestStruct struct {\n\t%s\n}", trimmedLine)
+	if parseTree := parseWithDirectTreeSitter(structContext); parseTree != nil {
+		// Check for ERROR nodes first - malformed syntax should be rejected
+		if containsErrorNodes(parseTree) {
+			return false, false
+		}
+
+		queryEngine := NewTreeSitterQueryEngine()
+		fields := queryEngine.QueryFieldDeclarations(parseTree)
+		if len(fields) > 0 {
+			return true, true
+		}
+	}
+
+	// Try parsing as an interface method using direct tree-sitter parser
+	interfaceContext := fmt.Sprintf("package test\n\ntype TestInterface interface {\n\t%s\n}", trimmedLine)
+	if parseTree := parseWithDirectTreeSitter(interfaceContext); parseTree != nil {
+		// Check for ERROR nodes first - malformed syntax should be rejected
+		if containsErrorNodes(parseTree) {
+			return false, false
+		}
+
+		queryEngine := NewTreeSitterQueryEngine()
+		methods := queryEngine.QueryMethodSpecs(parseTree)
+		if len(methods) > 0 {
+			return true, true
+		}
+	}
+
+	return false, false
+}
+
+// parseWithDirectTreeSitter parses source code using direct tree-sitter parser without validation.
+// This avoids recursive validation issues when called from within validation pipeline.
+func parseWithDirectTreeSitter(source string) *valueobject.ParseTree {
+	ctx := context.Background()
+
+	// Get Go grammar directly
+	grammar := forest.GetLanguage("go")
+	if grammar == nil {
+		return nil
+	}
+
+	// Create parser without going through factory/validation
+	parser := tree_sitter.NewParser()
+	if parser == nil {
+		return nil
+	}
+
+	if ok := parser.SetLanguage(grammar); !ok {
+		return nil
+	}
+
+	// Parse directly without validation
+	tree, err := parser.ParseString(ctx, nil, []byte(source))
+	if err != nil || tree == nil {
+		return nil
+	}
+
+	// Convert to domain parse tree
+	root := tree.RootNode()
+	if root.IsNull() {
+		tree.Close()
+		return nil
+	}
+
+	// Create Go language value object
+	goLang, err := valueobject.NewLanguage(valueobject.LanguageGo)
+	if err != nil {
+		tree.Close()
+		return nil
+	}
+
+	// Convert root node to domain format
+	domainRoot := convertNodeToDomain(root)
+	if domainRoot == nil {
+		tree.Close()
+		return nil
+	}
+
+	// Create parse metadata
+	metadata := valueobject.ParseMetadata{
+		NodeCount: calculateNodeCount(domainRoot),
+		MaxDepth:  calculateMaxDepth(domainRoot),
+	}
+
+	// Create domain parse tree using constructor
+	domainTree, err := valueobject.NewParseTree(ctx, goLang, domainRoot, []byte(source), metadata)
+	if err != nil {
+		tree.Close()
+		return nil
+	}
+
+	// Keep reference to tree-sitter tree to prevent GC
+	domainTree.SetTreeSitterTree(tree)
+
+	return domainTree
+}
+
+// convertNodeToDomain converts a tree-sitter node to domain node format.
+func convertNodeToDomain(node tree_sitter.Node) *valueobject.ParseNode {
+	if node.IsNull() {
+		return nil
+	}
+
+	// Use safe conversion to avoid overflow
+	startByte := node.StartByte()
+	endByte := node.EndByte()
+	if startByte > 0xFFFFFFFF {
+		startByte = 0xFFFFFFFF
+	}
+	if endByte > 0xFFFFFFFF {
+		endByte = 0xFFFFFFFF
+	}
+
+	domainNode := &valueobject.ParseNode{
+		Type:      node.Type(),
+		StartByte: uint32(startByte), //nolint:gosec // Safe after overflow check
+		EndByte:   uint32(endByte),   //nolint:gosec // Safe after overflow check
+		Children:  make([]*valueobject.ParseNode, 0, node.ChildCount()),
+	}
+
+	// Convert children recursively
+	childCount := node.ChildCount()
+	for i := range childCount {
+		child := node.Child(i)
+		if !child.IsNull() {
+			domainChild := convertNodeToDomain(child)
+			if domainChild != nil {
+				domainNode.Children = append(domainNode.Children, domainChild)
+			}
+		}
+	}
+
+	return domainNode
+}
+
+// calculateNodeCount recursively counts nodes in the parse tree.
+func calculateNodeCount(node *valueobject.ParseNode) int {
+	if node == nil {
+		return 0
+	}
+	count := 1
+	for _, child := range node.Children {
+		count += calculateNodeCount(child)
+	}
+	return count
+}
+
+// calculateMaxDepth recursively calculates the maximum depth of the parse tree.
+func calculateMaxDepth(node *valueobject.ParseNode) int {
+	if node == nil {
+		return 0
+	}
+	maxChildDepth := 0
+	for _, child := range node.Children {
+		childDepth := calculateMaxDepth(child)
+		if childDepth > maxChildDepth {
+			maxChildDepth = childDepth
+		}
+	}
+	return maxChildDepth + 1
+}
+
 // isTrulyMalformedSyntax checks if the syntax is truly malformed and should return (false, false).
 // This includes cases like unbalanced parentheses, invalid characters, and severely broken syntax.
 func isTrulyMalformedSyntax(parseTree *valueobject.ParseTree, line string) bool {
+	ctx := context.Background()
+
 	if parseTree == nil || parseTree.RootNode() == nil {
 		return true
 	}
@@ -470,6 +644,11 @@ func isTrulyMalformedSyntax(parseTree *valueobject.ParseTree, line string) bool 
 
 	// If most nodes are error nodes, it's truly malformed syntax (return to original logic)
 	if totalNodes > 0 && float64(errorNodes)/float64(totalNodes) > 0.5 {
+		slogger.Debug(ctx, "Too many error nodes detected", slogger.Fields{
+			"line":        line,
+			"error_nodes": errorNodes,
+			"total_nodes": totalNodes,
+		})
 		return true // Too many error nodes, likely malformed
 	}
 
@@ -479,13 +658,22 @@ func isTrulyMalformedSyntax(parseTree *valueobject.ParseTree, line string) bool 
 	openBraces := strings.Count(line, "{") - strings.Count(line, "}")
 	openBrackets := strings.Count(line, "[") - strings.Count(line, "]")
 
+	slogger.Debug(ctx, "Checking delimiter balance", slogger.Fields{
+		"line":          line,
+		"open_parens":   openParens,
+		"open_braces":   openBraces,
+		"open_brackets": openBrackets,
+	})
+
 	// Severely unbalanced delimiters indicate malformed syntax (allow single imbalance for partial syntax)
 	if abs(openParens) > 1 || abs(openBraces) > 1 || abs(openBrackets) > 1 {
+		slogger.Debug(ctx, "Unbalanced delimiters detected", slogger.Fields{"line": line})
 		return true
 	}
 
 	// Check for specific patterns that should be considered malformed
 	if strings.Contains(line, "invalid syntax") {
+		slogger.Debug(ctx, "Invalid syntax pattern found", slogger.Fields{"line": line})
 		return true
 	}
 
@@ -973,6 +1161,22 @@ func getAllNodes(rootNode *valueobject.ParseNode) []*valueobject.ParseNode {
 		nodes = append(nodes, childNodes...)
 	}
 	return nodes
+}
+
+// containsErrorNodes checks if a parse tree contains any ERROR nodes,
+// indicating malformed syntax that should be rejected.
+func containsErrorNodes(parseTree *valueobject.ParseTree) bool {
+	if parseTree == nil || parseTree.RootNode() == nil {
+		return true // Treat nil as error
+	}
+
+	allNodes := getAllNodes(parseTree.RootNode())
+	for _, node := range allNodes {
+		if node.Type == nodeTypeError || strings.Contains(node.Type, "ERROR") {
+			return true
+		}
+	}
+	return false
 }
 
 // isMinimalFieldPattern provides minimal string-based fallback detection for cases where AST parsing fails.

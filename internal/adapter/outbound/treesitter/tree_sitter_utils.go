@@ -542,5 +542,106 @@ func ValidateSourceWithTreeSitter(ctx context.Context, source string) error {
 		}
 	}
 
+	// Additional Go-specific validation for type-only snippets
+	// This preserves the behavior that was in the old validator
+	if err := validateGoPackageDeclaration(source); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// validateGoPackageDeclaration performs Go-specific package validation for larger files.
+// This preserves the behavior from the old validator while reducing complexity.
+func validateGoPackageDeclaration(source string) error {
+	trimmed := strings.TrimSpace(source)
+	lineCount := len(strings.Split(trimmed, "\n"))
+
+	if len(trimmed) == 0 || lineCount <= 10 {
+		return nil // Small files or empty - skip validation
+	}
+
+	// Only check for package in larger files
+	if strings.HasPrefix(trimmed, "package ") || strings.Contains(trimmed, "package ") {
+		return nil // Has package declaration
+	}
+
+	hasFunc := strings.Contains(source, "func ")
+	hasType := strings.Contains(source, "type ")
+
+	if !hasFunc && !hasType {
+		return nil // No significant code
+	}
+
+	// Only enforce package declaration for files with actual function definitions
+	// Type-only files (structs, interfaces, constants, variables) should be allowed without package
+	if hasFunc && !isPartialTypeOnlySnippetForValidation(source) {
+		return errors.New(
+			"syntax error in Go: missing package declaration: Go files must start with package",
+		)
+	}
+
+	return nil
+}
+
+// isPartialTypeOnlySnippetForValidation checks if source is a type-only snippet that should be allowed without package declaration.
+// This is a simplified version of the Go parser's isPartialTypeOnlySnippet function to avoid circular dependencies.
+func isPartialTypeOnlySnippetForValidation(source string) bool {
+	trimmed := strings.TrimSpace(source)
+	if trimmed == "" {
+		return true
+	}
+
+	lines := strings.Split(trimmed, "\n")
+	nonEmptyLines := make([]string, 0, len(lines))
+
+	// Collect non-empty, non-comment lines
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "//") {
+			nonEmptyLines = append(nonEmptyLines, line)
+		}
+	}
+
+	if len(nonEmptyLines) == 0 {
+		return true
+	}
+
+	// Check if all non-comment lines are type declarations or related constructs
+	for _, line := range nonEmptyLines {
+		if !strings.HasPrefix(line, "type ") &&
+			!strings.HasPrefix(line, "}") &&
+			!strings.Contains(line, "struct {") &&
+			!strings.Contains(line, "interface {") &&
+			!isSimpleFieldLine(line) {
+			return false
+		}
+	}
+	return true
+}
+
+// isSimpleFieldLine does basic field detection without complex AST parsing to avoid recursion.
+func isSimpleFieldLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return true
+	}
+
+	// Simple heuristics for field-like patterns
+	parts := strings.Fields(trimmed)
+	if len(parts) >= 2 {
+		// Check for field patterns like "Name string" or "ID int"
+		if !strings.Contains(parts[0], "(") && !strings.Contains(parts[0], ")") &&
+			!strings.HasPrefix(trimmed, "func ") && !strings.HasPrefix(trimmed, "var ") &&
+			!strings.HasPrefix(trimmed, "const ") && !strings.HasPrefix(trimmed, "import ") {
+			return true
+		}
+	}
+
+	// Single word could be embedded field like "Person" or "Address"
+	if len(parts) == 1 && !strings.Contains(parts[0], "(") && !strings.Contains(parts[0], ")") {
+		return true
+	}
+
+	return false
 }

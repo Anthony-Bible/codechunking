@@ -574,12 +574,126 @@ func (v *GoValidator) validateSyntaxErrorNodes(parseTree *valueobject.ParseTree)
 	errorNodes := parseTree.GetNodesByType("ERROR")
 	if len(errorNodes) > 0 {
 		errorNode := errorNodes[0]
-		return NewSyntaxError("syntax error detected by tree-sitter parser").
+
+		// Check for specific error patterns to provide better error messages
+		errorMsg := analyzeErrorForSpecificPattern(errorNode, parseTree)
+
+		return NewSyntaxError(errorMsg).
 			WithDetails("error_position", errorNode.StartByte).
 			WithSuggestion("Fix the syntax error at the indicated position")
 	}
 
 	return nil
+}
+
+// analyzeErrorForSpecificPattern examines an ERROR node for specific patterns.
+func analyzeErrorForSpecificPattern(errorNode *valueobject.ParseNode, parseTree *valueobject.ParseTree) string {
+	if errorNode == nil || parseTree == nil {
+		return "syntax error detected by tree-sitter parser"
+	}
+
+	// Extract tokens from ERROR node
+	tokens := extractAllTokens(errorNode, parseTree)
+
+	// Check for package declaration errors
+	if containsTokenInList(tokens, "package") {
+		if len(errorNode.Children) <= 1 || !hasChildWithType(errorNode, "package_identifier") {
+			return "invalid package declaration: missing package name"
+		}
+	}
+
+	// Check for function declaration errors
+	if containsTokenInList(tokens, "func") && containsTokenInList(tokens, "(") && containsTokenInList(tokens, "{") {
+		if !hasChildWithType(errorNode, "parameter_list") {
+			return "invalid function declaration: malformed parameter list"
+		}
+	}
+
+	// Check for struct errors
+	if containsTokenInList(tokens, "type") && containsTokenInList(tokens, "struct") {
+		if containsTokenInList(tokens, "{") && !hasMatchingBraces(tokens) {
+			return "invalid struct definition: missing closing brace"
+		}
+	}
+
+	// Check for interface errors
+	if containsTokenInList(tokens, "type") && containsTokenInList(tokens, "interface") {
+		if !containsTokenInList(tokens, "{") {
+			return "invalid interface definition: missing opening brace"
+		}
+	}
+
+	// Check for variable declaration errors
+	if containsTokenInList(tokens, "var") && containsTokenInList(tokens, "=") {
+		if !hasValueAfterEquals(tokens) {
+			return "invalid variable declaration: missing value after assignment"
+		}
+	}
+
+	return "syntax error detected by tree-sitter parser"
+}
+
+// Helper functions for error analysis.
+func extractAllTokens(node *valueobject.ParseNode, parseTree *valueobject.ParseTree) []string {
+	if node == nil {
+		return nil
+	}
+	var tokens []string
+	nodeText := parseTree.GetNodeText(node)
+	if nodeText != "" && len(node.Children) == 0 {
+		tokens = append(tokens, nodeText)
+	}
+	for _, child := range node.Children {
+		tokens = append(tokens, extractAllTokens(child, parseTree)...)
+	}
+	return tokens
+}
+
+func containsTokenInList(tokens []string, target string) bool {
+	for _, token := range tokens {
+		if strings.TrimSpace(token) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func hasChildWithType(node *valueobject.ParseNode, childType string) bool {
+	if node == nil {
+		return false
+	}
+	for _, child := range node.Children {
+		if child.Type == childType {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMatchingBraces(tokens []string) bool {
+	openCount, closeCount := 0, 0
+	for _, token := range tokens {
+		if token == "{" {
+			openCount++
+		}
+		if token == "}" {
+			closeCount++
+		}
+	}
+	return openCount > 0 && openCount == closeCount
+}
+
+func hasValueAfterEquals(tokens []string) bool {
+	foundEquals := false
+	for _, token := range tokens {
+		if foundEquals && token != "=" && strings.TrimSpace(token) != "" {
+			return true
+		}
+		if token == "=" {
+			foundEquals = true
+		}
+	}
+	return false
 }
 
 // validateStructSyntax validates Go struct syntax.

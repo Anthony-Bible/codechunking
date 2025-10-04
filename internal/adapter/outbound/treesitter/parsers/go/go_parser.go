@@ -1452,9 +1452,9 @@ func (o *ObservableGoParser) ExtractModules(
 		return nil, err
 	}
 
-	// Check for syntax errors in the parse tree
-	if containsErrorNodes(parseTree) {
-		return nil, errors.New("invalid syntax: syntax error detected by tree-sitter parser")
+	// Check for syntax errors in the parse tree with specific error detection
+	if err := detectSpecificSyntaxError(parseTree); err != nil {
+		return nil, err
 	}
 
 	var modules []outbound.SemanticCodeChunk

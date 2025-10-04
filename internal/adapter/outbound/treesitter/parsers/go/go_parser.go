@@ -1254,6 +1254,31 @@ type ObservableGoParser struct {
 	parser *GoParser
 }
 
+// hasMissingNodes recursively checks if the parse tree contains any MISSING nodes.
+// MISSING nodes indicate that tree-sitter performed error recovery by inserting
+// missing tokens (e.g., missing closing parenthesis).
+func (p *GoParser) hasMissingNodes(node tree_sitter.Node) bool {
+	if node.IsNull() {
+		return false
+	}
+
+	// Check if current node is marked as missing
+	if node.IsMissing() {
+		return true
+	}
+
+	// Recursively check all child nodes
+	childCount := node.ChildCount()
+	for i := range childCount {
+		child := node.Child(i)
+		if p.hasMissingNodes(child) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (o *ObservableGoParser) Parse(ctx context.Context, source []byte) (*treesitter.ParseResult, error) {
 	// Real Tree-sitter based parsing using forest grammar (fixes empty AST)
 	start := time.Now()
@@ -1285,8 +1310,16 @@ func (o *ObservableGoParser) Parse(ctx context.Context, source []byte) (*treesit
 	}
 	defer tree.Close()
 
-	// Convert TS tree to domain
+	// Check for syntax errors using tree-sitter's error detection
+	// Note: We only check for MISSING nodes, not HasError(), because HasError()
+	// can be triggered by valid code snippets without package declarations.
+	// MISSING nodes indicate true syntax errors (e.g., missing closing braces).
 	rootTS := tree.RootNode()
+	if o.parser.hasMissingNodes(rootTS) {
+		return nil, errors.New("incomplete Go syntax detected (missing tokens)")
+	}
+
+	// Convert TS tree to domain
 	rootNode, nodeCount, maxDepth := convertTSNodeToDomain(rootTS, 0)
 
 	metadata, err := valueobject.NewParseMetadata(time.Since(start), "go-tree-sitter-bare", "1.0.0")
@@ -1349,7 +1382,15 @@ func (o *ObservableGoParser) ParseSource(
 	}
 	defer tree.Close()
 
+	// Check for syntax errors using tree-sitter's error detection
+	// Note: We only check for MISSING nodes, not HasError(), because HasError()
+	// can be triggered by valid code snippets without package declarations.
+	// MISSING nodes indicate true syntax errors (e.g., missing closing braces).
 	rootTS := tree.RootNode()
+	if o.parser.hasMissingNodes(rootTS) {
+		return nil, errors.New("incomplete Go syntax detected (missing tokens)")
+	}
+
 	rootNode, nodeCount, maxDepth := convertTSNodeToDomain(rootTS, 0)
 
 	metadata, err := valueobject.NewParseMetadata(time.Since(start), "go-tree-sitter-bare", "1.0.0")

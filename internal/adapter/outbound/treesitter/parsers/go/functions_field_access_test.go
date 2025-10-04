@@ -505,13 +505,12 @@ func ReadFile(path string) (data []byte, err error) {
 // These represent the required API that needs to be implemented
 
 // getChildByFieldName retrieves a child node by its field name from tree-sitter grammar.
-// EXPECTED TO FAIL: This method doesn't exist in current implementation.
-// REQUIRED: Should use tree-sitter's ChildByFieldName functionality.
+// Uses tree-sitter's ChildByFieldName functionality.
 func getChildByFieldName(node *valueobject.ParseNode, fieldName string) *valueobject.ParseNode {
-	// THIS METHOD DOESN'T EXIST - EXPECTED TO FAIL
-	// Implementation should use tree-sitter field access:
-	// return node.tsNode.ChildByFieldName(fieldName)
-	panic("getChildByFieldName not implemented - expected test failure")
+	if node == nil || fieldName == "" {
+		return nil
+	}
+	return node.ChildByFieldName(fieldName)
 }
 
 // findFirstChildByType finds the first direct child of the specified type.
@@ -527,10 +526,11 @@ func findFirstChildByType(node *valueobject.ParseNode, nodeType string) *valueob
 }
 
 // findDirectChildren finds all direct children of the specified type (non-recursive).
-// EXPECTED TO FAIL: Current implementation has similar function but inconsistent naming/location.
 func findDirectChildren(node *valueobject.ParseNode, nodeType string) []*valueobject.ParseNode {
-	// THIS METHOD DOESN'T EXIST IN EXPECTED LOCATION - EXPECTED TO FAIL
 	var results []*valueobject.ParseNode
+	if node == nil || nodeType == "" {
+		return results
+	}
 	for _, child := range node.Children {
 		if child.Type == nodeType {
 			results = append(results, child)

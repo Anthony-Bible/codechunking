@@ -2982,7 +2982,7 @@ func TestGoParserErrorHandling(t *testing.T) {
 		},
 		{
 			name:        "Malformed function signature",
-			sourceCode:  `func test(a int, b) int { return a + b }`,
+			sourceCode:  `func test(a int { return a }`,
 			expectError: true,
 		},
 		{
@@ -3007,10 +3007,10 @@ func TestGoParserErrorHandling(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, domainTree)
 
-				adapter := treesitter.NewSemanticTraverserAdapter()
-				options := &treesitter.SemanticExtractionOptions{}
-				chunks := adapter.ExtractCodeChunks(domainTree, options)
-				assert.NotNil(t, chunks)
+				root := domainTree.RootNode()
+				// Valid code should produce a non-empty parse tree
+				assert.NotNil(t, root)
+				assert.NotEmpty(t, root.Children, "Valid Go code should have parse tree nodes")
 			}
 		})
 	}

@@ -108,6 +108,11 @@ func (p *GoParser) extractFunctionsShared(
 		return nil, err
 	}
 
+	// Check for syntax errors in the parse tree
+	if containsErrorNodes(parseTree) {
+		return nil, errors.New("invalid syntax: syntax error detected by tree-sitter parser")
+	}
+
 	var functions []outbound.SemanticCodeChunk
 	functionNodes := parseTree.GetNodesByType(nodeTypeFunctionDecl)
 	methodNodes := parseTree.GetNodesByType(nodeTypeMethodDecl)
@@ -861,18 +866,39 @@ func (p *GoParser) parseGoReturnType(node *valueobject.ParseNode, parseTree *val
 		return parseTree.GetNodeText(node)
 	case nodeTypeParameterList:
 		// Handle multiple return values in parameter_list format
-		var types []string
+		// For named returns like (result string, count int, err error)
+		// we need to extract both names and types
+		var returnParts []string
 		for _, child := range node.Children {
 			if child.Type == "parameter_declaration" {
+				// Extract parameter names (identifiers) and type
+				var names []string
+				var typeText string
+
+				for _, paramChild := range child.Children {
+					if paramChild.Type == nodeTypeIdentifier {
+						names = append(names, parseTree.GetNodeText(paramChild))
+					}
+				}
+
 				if typeNode := p.getParameterType(child); typeNode != nil {
-					types = append(types, parseTree.GetNodeText(typeNode))
+					typeText = parseTree.GetNodeText(typeNode)
+				}
+
+				// Build the return part with names if present
+				if len(names) > 0 && typeText != "" {
+					// Named returns: "name type" or "name1, name2 type"
+					returnParts = append(returnParts, strings.Join(names, ", ")+" "+typeText)
+				} else if typeText != "" {
+					// Unnamed returns: just the type
+					returnParts = append(returnParts, typeText)
 				}
 			}
 		}
-		if len(types) > 1 {
-			return "(" + strings.Join(types, ", ") + ")"
-		} else if len(types) == 1 {
-			return types[0]
+		if len(returnParts) > 1 {
+			return "(" + strings.Join(returnParts, ", ") + ")"
+		} else if len(returnParts) == 1 {
+			return returnParts[0]
 		}
 		return ""
 	default:

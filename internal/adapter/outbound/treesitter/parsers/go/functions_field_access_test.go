@@ -4,8 +4,13 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
+	"errors"
+	"fmt"
 	"testing"
+	"time"
 
+	forest "github.com/alexaandru/go-sitter-forest"
+	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -57,12 +62,13 @@ func (p *Person) GetName() string {
 				require.NotNil(t, typeField, "parameter_declaration must have type field access")
 
 				// REQUIRED: type extraction should handle pointer types via AST structure
+				// Note: pointer_type has NO fields in the grammar - only unnamed children
 				actualType := parseTree.GetNodeText(typeField)
 				if typeField.Type == "pointer_type" {
-					// Should find the underlying type via field access, not string manipulation
-					baseTypeField := getChildByFieldName(typeField, "type")
-					require.NotNil(t, baseTypeField, "pointer_type must have type field access")
-					actualType = parseTree.GetNodeText(baseTypeField)
+					// Find the type_identifier child (skip the "*")
+					typeChildren := findDirectChildren(typeField, "type_identifier")
+					require.NotEmpty(t, typeChildren, "pointer_type should have type_identifier child")
+					actualType = parseTree.GetNodeText(typeChildren[0])
 				}
 
 				assert.Equal(t, "Person", actualType, "receiver type should be extracted via field access")
@@ -115,10 +121,13 @@ func (s *MyService[T]) Process() error {
 				require.NotNil(t, typeField, "parameter_declaration must have type field")
 
 				// Handle pointer to generic type
+				// Note: pointer_type has NO fields in the grammar - only unnamed children
 				var baseTypeField *valueobject.ParseNode
 				if typeField.Type == "pointer_type" {
-					baseTypeField = getChildByFieldName(typeField, "type")
-					require.NotNil(t, baseTypeField, "pointer_type must have type field")
+					// Find the generic_type child (skip the "*")
+					typeChildren := findDirectChildren(typeField, "generic_type")
+					require.NotEmpty(t, typeChildren, "pointer_type should have generic_type child")
+					baseTypeField = typeChildren[0]
 				} else {
 					baseTypeField = typeField
 				}
@@ -540,9 +549,125 @@ func findDirectChildren(node *valueobject.ParseNode, nodeType string) []*valueob
 }
 
 // parseGoSourceCode is a test helper for parsing Go source code.
-// This should work with current implementation.
 func parseGoSourceCode(sourceCode string) (*valueobject.ParseTree, error) {
-	// This would use the existing tree-sitter parsing infrastructure
-	// Implementation details depend on existing parser setup
-	panic("parseGoSourceCode helper not implemented in tests")
+	// Get Go grammar from forest
+	grammar := forest.GetLanguage("go")
+	if grammar == nil {
+		return nil, errors.New("failed to get Go grammar from forest")
+	}
+
+	// Create tree-sitter parser
+	parser := tree_sitter.NewParser()
+	if parser == nil {
+		return nil, errors.New("failed to create tree-sitter parser")
+	}
+
+	success := parser.SetLanguage(grammar)
+	if !success {
+		return nil, errors.New("failed to set Go language")
+	}
+
+	// Parse the source code
+	tree, err := parser.ParseString(context.Background(), nil, []byte(sourceCode))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Go source: %w", err)
+	}
+	if tree == nil {
+		return nil, errors.New("parse tree should not be nil")
+	}
+
+	// Convert tree-sitter tree to domain ParseNode
+	rootTSNode := tree.RootNode()
+	rootNode, nodeCount, maxDepth := convertTreeSitterNodeForFieldAccessTest(rootTSNode, 0)
+
+	// Create metadata with parsing statistics
+	metadata, err := valueobject.NewParseMetadata(
+		time.Millisecond, // placeholder duration
+		"go-tree-sitter-bare",
+		"1.0.0",
+	)
+	if err != nil {
+		tree.Close()
+		return nil, fmt.Errorf("failed to create metadata: %w", err)
+	}
+
+	// Update metadata with actual counts
+	metadata.NodeCount = nodeCount
+	metadata.MaxDepth = maxDepth
+
+	// Create ParseTree
+	parseTree, err := valueobject.NewParseTree(
+		context.Background(),
+		valueobject.Go,
+		rootNode,
+		[]byte(sourceCode),
+		metadata,
+	)
+	if err != nil {
+		tree.Close()
+		return nil, fmt.Errorf("failed to create ParseTree: %w", err)
+	}
+
+	// Set tree-sitter tree reference for field access and proper cleanup
+	parseTree.SetTreeSitterTree(tree)
+
+	return parseTree, nil
+}
+
+// convertTreeSitterNodeForFieldAccessTest converts a tree-sitter node to domain ParseNode.
+func convertTreeSitterNodeForFieldAccessTest(node tree_sitter.Node, depth int) (*valueobject.ParseNode, int, int) {
+	if node.IsNull() {
+		return nil, 0, depth
+	}
+
+	// Convert tree-sitter node to domain ParseNode with tsNode reference for field access
+	parseNode, err := valueobject.NewParseNodeWithTreeSitter(
+		node.Type(),
+		safeUintToUint32ForFieldAccessTest(node.StartByte()),
+		safeUintToUint32ForFieldAccessTest(node.EndByte()),
+		valueobject.Position{
+			Row:    safeUintToUint32ForFieldAccessTest(node.StartPoint().Row),
+			Column: safeUintToUint32ForFieldAccessTest(node.StartPoint().Column),
+		},
+		valueobject.Position{
+			Row:    safeUintToUint32ForFieldAccessTest(node.EndPoint().Row),
+			Column: safeUintToUint32ForFieldAccessTest(node.EndPoint().Column),
+		},
+		make([]*valueobject.ParseNode, 0),
+		node, // Store tree-sitter node reference for field access
+	)
+	if err != nil {
+		return nil, 0, depth
+	}
+
+	nodeCount := 1
+	maxDepth := depth
+
+	// Convert children recursively
+	childCount := node.ChildCount()
+	for i := range childCount {
+		childNode := node.Child(i)
+		if childNode.IsNull() {
+			continue
+		}
+
+		childParseNode, childNodeCount, childMaxDepth := convertTreeSitterNodeForFieldAccessTest(childNode, depth+1)
+		if childParseNode != nil {
+			parseNode.Children = append(parseNode.Children, childParseNode)
+			nodeCount += childNodeCount
+			if childMaxDepth > maxDepth {
+				maxDepth = childMaxDepth
+			}
+		}
+	}
+
+	return parseNode, nodeCount, maxDepth
+}
+
+// safeUintToUint32ForFieldAccessTest safely converts uint to uint32 with bounds checking.
+func safeUintToUint32ForFieldAccessTest(val uint) uint32 {
+	if val > uint(^uint32(0)) {
+		return ^uint32(0) // Return max uint32 if overflow would occur
+	}
+	return uint32(val)
 }

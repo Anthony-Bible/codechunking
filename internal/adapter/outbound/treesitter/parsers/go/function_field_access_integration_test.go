@@ -205,7 +205,7 @@ type Repository[K comparable, V any] struct{}
 		}
 
 		// Test generic functions
-		genericFunctionNode := findFunctionByName(functionNodes, "GenericFunction")
+		genericFunctionNode := findFunctionByNameWithTree(functionNodes, "GenericFunction", parseTree)
 		if genericFunctionNode != nil {
 			typeParametersField := getChildByFieldName(genericFunctionNode, "type_parameters")
 			require.NotNil(t, typeParametersField, "generic function.type_parameters field access required")
@@ -242,12 +242,15 @@ type Repository[K comparable, V any] struct{}
 		receiverTypeField := getChildByFieldName(receiverParam, "type")
 		require.NotNil(t, receiverTypeField, "receiver parameter.type field access required")
 
-		// Handle pointer receivers via field access
+		// Handle pointer receivers
+		// Note: pointer_type has NO fields in the grammar - only unnamed children
+		// Children are: [0] = "*", [1] = type_identifier
 		var baseReceiverType *valueobject.ParseNode
 		if receiverTypeField.Type == "pointer_type" {
-			baseTypeField := getChildByFieldName(receiverTypeField, "type")
-			require.NotNil(t, baseTypeField, "pointer_type.type field access required")
-			baseReceiverType = baseTypeField
+			// Find the type_identifier child (skip the "*")
+			typeChildren := findDirectChildren(receiverTypeField, "type_identifier")
+			require.NotEmpty(t, typeChildren, "pointer_type should have type_identifier child")
+			baseReceiverType = typeChildren[0]
 		} else {
 			baseReceiverType = receiverTypeField
 		}
@@ -449,6 +452,7 @@ func safeUintToUint32ForIntegrationTest(val uint) uint32 {
 }
 
 // findFunctionByName finds a function node by its name using field access.
+// Note: This is a simple implementation without parseTree access.
 func findFunctionByName(nodes []*valueobject.ParseNode, name string) *valueobject.ParseNode {
 	for _, node := range nodes {
 		if node == nil {
@@ -470,6 +474,32 @@ func findFunctionByName(nodes []*valueobject.ParseNode, name string) *valueobjec
 				// This is a placeholder - actual implementation needs parseTree.GetNodeText
 				return node
 			}
+		}
+	}
+	return nil
+}
+
+// findFunctionByNameWithTree finds a function node by its name using field access and parseTree.
+func findFunctionByNameWithTree(
+	nodes []*valueobject.ParseNode,
+	targetName string,
+	parseTree *valueobject.ParseTree,
+) *valueobject.ParseNode {
+	for _, node := range nodes {
+		if node == nil {
+			continue
+		}
+
+		// Use field access to get the function name
+		nameField := getChildByFieldName(node, "name")
+		if nameField == nil {
+			continue
+		}
+
+		// Get the actual text from parseTree
+		actualName := parseTree.GetNodeText(nameField)
+		if actualName == targetName {
+			return node
 		}
 	}
 	return nil

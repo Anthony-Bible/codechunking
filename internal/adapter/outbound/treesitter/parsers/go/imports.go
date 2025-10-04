@@ -30,6 +30,7 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
+	"errors"
 	"strings"
 	"time"
 )
@@ -60,6 +61,11 @@ func (p *GoParser) ExtractImports(
 			"error": err.Error(),
 		})
 		return nil, err
+	}
+
+	// Check for syntax errors in the parse tree
+	if containsErrorNodes(parseTree) {
+		return nil, errors.New("invalid syntax: syntax error detected by tree-sitter parser")
 	}
 
 	var imports []outbound.ImportDeclaration

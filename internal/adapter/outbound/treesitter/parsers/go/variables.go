@@ -93,6 +93,11 @@ func (p *GoParser) ExtractVariables(
 		return nil, fmt.Errorf("variable extraction failed validation: %w", err)
 	}
 
+	// Check for syntax errors in the parse tree
+	if containsErrorNodes(parseTree) {
+		return nil, errors.New("invalid syntax: syntax error detected by tree-sitter parser")
+	}
+
 	var variables []outbound.SemanticCodeChunk
 	packageName := p.extractPackageNameFromTree(parseTree)
 	now := time.Now()

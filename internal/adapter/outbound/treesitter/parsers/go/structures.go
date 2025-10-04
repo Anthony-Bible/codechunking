@@ -24,6 +24,11 @@ func (p *GoParser) ExtractClasses(
 		return nil, errors.New("parse tree cannot be nil")
 	}
 
+	// Check for syntax errors in the parse tree
+	if containsErrorNodes(parseTree) {
+		return nil, errors.New("invalid syntax: syntax error detected by tree-sitter parser")
+	}
+
 	results, err := extractTypeDeclarations(
 		ctx,
 		parseTree,
@@ -49,6 +54,11 @@ func (p *GoParser) ExtractInterfaces(
 ) ([]outbound.SemanticCodeChunk, error) {
 	if parseTree == nil {
 		return nil, errors.New("parse tree cannot be nil")
+	}
+
+	// Check for syntax errors in the parse tree
+	if containsErrorNodes(parseTree) {
+		return nil, errors.New("invalid syntax: syntax error detected by tree-sitter parser")
 	}
 
 	result, err := extractTypeDeclarations(

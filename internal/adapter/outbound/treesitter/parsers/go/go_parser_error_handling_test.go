@@ -745,14 +745,25 @@ func TestGoParser_ErrorHandling_ResourceCleanup(t *testing.T) {
 }
 
 // Helper function to create a mock Go parse tree for testing.
+// This function actually parses the source using tree-sitter to properly detect syntax errors.
+// It uses parseWithDirectTreeSitter to bypass validation and get raw tree-sitter parse trees
+// with ERROR nodes intact.
 func createMockGoParseTree(t *testing.T, source string) *valueobject.ParseTree {
-	ctx := context.Background()
+	// Use parseWithDirectTreeSitter from go_parser.go which bypasses validation
+	// and returns a parse tree even for invalid syntax (with ERROR nodes)
+	parseTree := parseWithDirectTreeSitter(source)
 
+	if parseTree != nil {
+		return parseTree
+	}
+
+	// Fallback: if parseWithDirectTreeSitter returns nil, create a minimal ERROR tree
+	ctx := context.Background()
 	goLang, err := valueobject.NewLanguage(valueobject.LanguageGo)
 	require.NoError(t, err)
 
 	rootNode := &valueobject.ParseNode{
-		Type:      "source_file",
+		Type:      "ERROR",
 		StartByte: 0,
 		EndByte:   uint32(len(source)),
 		Children:  []*valueobject.ParseNode{},
@@ -761,7 +772,7 @@ func createMockGoParseTree(t *testing.T, source string) *valueobject.ParseTree {
 	metadata, err := valueobject.NewParseMetadata(0, "0.0.0", "0.0.0")
 	require.NoError(t, err)
 
-	parseTree, err := valueobject.NewParseTree(ctx, goLang, rootNode, []byte(source), metadata)
+	parseTree, err = valueobject.NewParseTree(ctx, goLang, rootNode, []byte(source), metadata)
 	require.NoError(t, err)
 
 	return parseTree

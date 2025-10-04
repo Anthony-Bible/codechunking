@@ -113,6 +113,11 @@ func (p *GoParser) extractFunctionsShared(
 		return nil, err
 	}
 
+	// Check for resource limits (memory exhaustion, too many functions, etc.)
+	if err := detectResourceLimits(parseTree); err != nil {
+		return nil, err
+	}
+
 	var functions []outbound.SemanticCodeChunk
 	functionNodes := parseTree.GetNodesByType(nodeTypeFunctionDecl)
 	methodNodes := parseTree.GetNodesByType(nodeTypeMethodDecl)

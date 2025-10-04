@@ -29,6 +29,11 @@ func (p *GoParser) ExtractClasses(
 		return nil, err
 	}
 
+	// Check for resource limits (memory exhaustion, too many constructs, etc.)
+	if err := detectResourceLimits(parseTree); err != nil {
+		return nil, err
+	}
+
 	results, err := extractTypeDeclarations(
 		ctx,
 		parseTree,
@@ -58,6 +63,11 @@ func (p *GoParser) ExtractInterfaces(
 
 	// Check for syntax errors in the parse tree with specific error detection
 	if err := detectSpecificSyntaxError(parseTree); err != nil {
+		return nil, err
+	}
+
+	// Check for resource limits (memory exhaustion, too many constructs, etc.)
+	if err := detectResourceLimits(parseTree); err != nil {
 		return nil, err
 	}
 

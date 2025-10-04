@@ -3,6 +3,7 @@ package goparser
 import (
 	"codechunking/internal/domain/valueobject"
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -300,7 +301,7 @@ func hasNestedParameterListError(node *valueobject.ParseNode) bool {
 
 	// Look for parameter_list containing ERROR with "(" token
 	for _, child := range node.Children {
-		if child.Type == "parameter_list" {
+		if child.Type == nodeTypeParameterList {
 			// Check if parameter_list has ERROR child
 			for _, paramChild := range child.Children {
 				if paramChild.Type == "ERROR" {
@@ -324,4 +325,114 @@ func hasNestedParameterListError(node *valueobject.ParseNode) bool {
 	}
 
 	return false
+}
+
+// Resource limit constants for memory exhaustion detection.
+const (
+	// MaxSourceFileSize is the maximum allowed source file size in bytes (10MB).
+	// Files larger than this are considered too large to process safely without
+	// risking memory exhaustion.
+	MaxSourceFileSize = 10 * 1024 * 1024 // 10MB
+
+	// MaxFunctionCount is the maximum number of functions/methods allowed in a single file.
+	// Files with more constructs than this risk memory exhaustion during extraction.
+	MaxFunctionCount = 50000
+
+	// MaxTypeCount is the maximum number of type declarations (structs, interfaces) allowed.
+	// Files with more type declarations than this risk memory exhaustion during extraction.
+	MaxTypeCount = 500
+
+	// MaxVariableCount is the maximum number of variable/constant declarations allowed.
+	// Files with more variable declarations than this risk memory exhaustion during extraction.
+	MaxVariableCount = 50000
+
+	// MaxNodeCount is the maximum number of parse tree nodes allowed.
+	// Parse trees with more nodes than this are considered too complex to process safely.
+	MaxNodeCount = 1000000
+
+	// MaxTreeDepth is the maximum allowed nesting depth in the parse tree.
+	// Deeper nesting can cause stack overflow and excessive recursion during traversal.
+	MaxTreeDepth = 500
+)
+
+// detectResourceLimits checks if the parse tree exceeds resource limits that could
+// lead to memory exhaustion or performance issues. This function enforces limits on:
+// - Source file size
+// - Number of function/method declarations
+// - Total parse tree node count
+//
+// Returns an error if any resource limit is exceeded, or nil if all limits are within bounds.
+func detectResourceLimits(parseTree *valueobject.ParseTree) error {
+	if parseTree == nil {
+		return nil
+	}
+
+	// Check source file size
+	sourceSize := len(parseTree.Source())
+	if sourceSize > MaxSourceFileSize {
+		return fmt.Errorf(
+			"memory limit exceeded: file too large to process safely (%d bytes exceeds maximum of %d bytes)",
+			sourceSize,
+			MaxSourceFileSize,
+		)
+	}
+
+	// Check function count (both function_declaration and method_declaration)
+	functionNodes := parseTree.GetNodesByType("function_declaration")
+	methodNodes := parseTree.GetNodesByType("method_declaration")
+	totalFunctions := len(functionNodes) + len(methodNodes)
+
+	if totalFunctions >= MaxFunctionCount {
+		return fmt.Errorf(
+			"resource limit exceeded: too many constructs to process (%d functions/methods exceeds maximum of %d)",
+			totalFunctions,
+			MaxFunctionCount,
+		)
+	}
+
+	// Check type declaration count (structs and interfaces)
+	typeDecls := parseTree.GetNodesByType("type_declaration")
+	if len(typeDecls) >= MaxTypeCount {
+		return fmt.Errorf(
+			"recursion limit exceeded: maximum nesting depth reached (%d type declarations exceeds maximum of %d)",
+			len(typeDecls),
+			MaxTypeCount,
+		)
+	}
+
+	// Check variable/constant declaration count
+	// Note: var_spec and const_spec represent individual variable/constant declarations
+	// within a var() or const() block, while var_declaration/const_declaration represent
+	// the entire block. We need to count the specs to catch massive declaration blocks.
+	varSpecs := parseTree.GetNodesByType("var_spec")
+	constSpecs := parseTree.GetNodesByType("const_spec")
+	totalVarSpecs := len(varSpecs) + len(constSpecs)
+	if totalVarSpecs >= MaxVariableCount {
+		return fmt.Errorf(
+			"memory allocation exceeded: too many variables declared (%d variable/constant declarations exceeds maximum of %d)",
+			totalVarSpecs,
+			MaxVariableCount,
+		)
+	}
+
+	// Check total node count from parse metadata
+	metadata := parseTree.Metadata()
+	if metadata.NodeCount > MaxNodeCount {
+		return fmt.Errorf(
+			"recursion limit exceeded: maximum nesting depth reached (%d nodes exceeds maximum of %d)",
+			metadata.NodeCount,
+			MaxNodeCount,
+		)
+	}
+
+	// Check maximum tree depth from parse metadata
+	if metadata.MaxDepth > MaxTreeDepth {
+		return fmt.Errorf(
+			"recursion limit exceeded: maximum nesting depth reached (%d levels exceeds maximum of %d)",
+			metadata.MaxDepth,
+			MaxTreeDepth,
+		)
+	}
+
+	return nil
 }

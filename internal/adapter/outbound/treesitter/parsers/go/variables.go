@@ -98,6 +98,11 @@ func (p *GoParser) ExtractVariables(
 		return nil, err
 	}
 
+	// Check for resource limits (memory exhaustion, too many constructs, etc.)
+	if err := detectResourceLimits(parseTree); err != nil {
+		return nil, err
+	}
+
 	var variables []outbound.SemanticCodeChunk
 	packageName := p.extractPackageNameFromTree(parseTree)
 	now := time.Now()

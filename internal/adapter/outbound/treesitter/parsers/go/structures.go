@@ -652,13 +652,14 @@ func (o *ObservableGoParser) ExtractClasses(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	slogger.Info(ctx, "ObservableGoParser.ExtractClasses called", slogger.Fields{
-		"language": parseTree.Language().String(),
-	})
-
+	// Validate input first before accessing parseTree fields
 	if err := o.parser.validateInput(parseTree); err != nil {
 		return nil, err
 	}
+
+	slogger.Info(ctx, "ObservableGoParser.ExtractClasses called", slogger.Fields{
+		"language": parseTree.Language().String(),
+	})
 
 	// Delegate to the inner parser's proper tree-sitter implementation
 	return o.parser.ExtractClasses(ctx, parseTree, options)
@@ -671,13 +672,14 @@ func (o *ObservableGoParser) ExtractInterfaces(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	slogger.Info(ctx, "ObservableGoParser.ExtractInterfaces called", slogger.Fields{
-		"language": parseTree.Language().String(),
-	})
-
+	// Validate input first before accessing parseTree fields
 	if err := o.parser.validateInput(parseTree); err != nil {
 		return nil, err
 	}
+
+	slogger.Info(ctx, "ObservableGoParser.ExtractInterfaces called", slogger.Fields{
+		"language": parseTree.Language().String(),
+	})
 
 	// Delegate to the inner parser's proper tree-sitter implementation
 	return o.parser.ExtractInterfaces(ctx, parseTree, options)

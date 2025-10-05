@@ -70,6 +70,11 @@ func (o *ObservableGoParser) ExtractFunctions(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
+	// Validate input parse tree
+	if err := o.parser.validateInput(parseTree); err != nil {
+		return nil, err
+	}
+
 	slogger.Info(ctx, "ObservableGoParser.ExtractFunctions called", slogger.Fields{
 		"root_node_type": parseTree.RootNode().Type,
 	})
@@ -850,7 +855,7 @@ func extractTypeNameFromTypeNode(typeNode *valueobject.ParseNode, parseTree *val
 		// For simple type identifiers, return the text directly
 		return parseTree.GetNodeText(typeNode)
 
-	case "map_type", "slice_type", "channel_type", "function_type", "interface_type", "array_type":
+	case "map_type", "slice_type", "channel_type", "function_type", nodeTypeInterfaceType, "array_type":
 		// For complex types, return the full type text
 		return parseTree.GetNodeText(typeNode)
 
@@ -928,7 +933,7 @@ func (p *GoParser) parseGoGenericParameter(
 	var constraints []string
 	for _, child := range node.Children {
 		switch child.Type {
-		case "type_constraint", nodeTypeTypeIdentifier, "interface_type", "union_type":
+		case "type_constraint", nodeTypeTypeIdentifier, nodeTypeInterfaceType, "union_type":
 			constraintText := parseTree.GetNodeText(child)
 			// Clean up constraint text (remove extra spaces/formatting)
 			constraintText = strings.TrimSpace(constraintText)

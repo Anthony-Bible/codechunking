@@ -11,19 +11,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestGoParserVariableExtractionRedPhase contains comprehensive failing tests that define
+// TestGoParserVariableExtractionComprehensive contains comprehensive tests that validate
 // the expected behavior for Go variable and constant extraction.
 //
-// This test is designed to FAIL initially and capture all the requirements based on
-// tree-sitter grammar analysis. These tests serve as the Red phase of TDD and will
-// guide the implementation fixes in the Green phase.
+// This test suite validates the complete implementation based on tree-sitter grammar analysis.
+// Originally designed as a Red phase TDD test, it now serves as a comprehensive regression
+// test to ensure quality and correctness of the Go parser's variable/constant extraction.
 //
-// Key issues these tests address:
-// 1. Position calculation errors (byte offsets off by 1)
-// 2. Field access not correctly handling multiple variable names
-// 3. Incorrect handling of grouped vs single declarations
-// 4. Grammar-specific field access patterns for var_spec vs const_spec.
-func TestGoParserVariableExtractionRedPhase(t *testing.T) {
+// Key behaviors these tests validate:
+// 1. Position calculation accuracy (exact byte offsets from tree-sitter)
+// 2. Field access correctly handling multiple variable names
+// 3. Correct handling of grouped vs single declarations
+// 4. Grammar-specific field access patterns for var_spec vs const_spec
+// 5. Extraction order preserving source document order.
+func TestGoParserVariableExtractionComprehensive(t *testing.T) {
 	ctx := context.Background()
 	factory, err := treesitter.NewTreeSitterParserFactory(ctx)
 	require.NoError(t, err)

@@ -1,6 +1,7 @@
 package goparser
 
 import (
+	"bytes"
 	"codechunking/internal/adapter/outbound/treesitter"
 	parsererrors "codechunking/internal/adapter/outbound/treesitter/errors"
 	"codechunking/internal/application/common/slogger"
@@ -12,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	forest "github.com/alexaandru/go-sitter-forest"
 	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
@@ -162,6 +164,56 @@ func (p *GoParser) validateInput(tree *valueobject.ParseTree) error {
 	if tree == nil {
 		return errors.New("parse tree cannot be nil")
 	}
+	if tree.RootNode() == nil {
+		return errors.New("parse tree has nil root node")
+	}
+
+	// Perform edge case validation on the source
+	if err := p.validateEdgeCases(tree.Source()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateEdgeCases performs semantic validation on source code to detect edge cases
+// that may not be caught by tree-sitter parsing but violate Go language rules.
+func (p *GoParser) validateEdgeCases(source []byte) error {
+	// Check for empty source
+	if len(source) == 0 || (len(source) == 1 && source[0] == ' ') {
+		return errors.New("empty source: no content to parse")
+	}
+
+	// Check for whitespace-only content
+	if len(strings.TrimSpace(string(source))) == 0 {
+		return errors.New("empty source: only whitespace content")
+	}
+
+	// Check for valid UTF-8 encoding BEFORE checking null bytes
+	// This catches malformed UTF-8 sequences like \xff\xfe
+	if !utf8.Valid(source) {
+		return errors.New("invalid encoding: source contains non-UTF8 characters")
+	}
+
+	// Check for null bytes (after UTF-8 check)
+	if bytes.Contains(source, []byte{0x00}) {
+		return errors.New("invalid source: contains null bytes")
+	}
+
+	// Check for extremely long lines (over 100KB per line)
+	lines := strings.Split(string(source), "\n")
+	for _, line := range lines {
+		if len(line) > 100000 {
+			return errors.New("line too long: exceeds maximum line length limit")
+		}
+	}
+
+	// Check for BOM marker (handle gracefully - just log, don't error)
+	if len(source) >= 3 && source[0] == 0xEF && source[1] == 0xBB && source[2] == 0xBF {
+		// BOM detected - could log here but not an error
+		// Tree-sitter handles this correctly
+	}
+
 	return nil
 }
 
@@ -513,6 +565,14 @@ func tryParseWithContext(line string) (bool, bool) {
 func parseWithDirectTreeSitter(source string) *valueobject.ParseTree {
 	ctx := context.Background()
 
+	// Handle empty source: tree-sitter accepts it and creates valid source_file node,
+	// but domain NewParseTree requires non-empty source. Use minimal valid source for testing.
+	sourceBytes := []byte(source)
+	if len(sourceBytes) == 0 {
+		// Use single space as minimal valid source to satisfy domain constraints
+		sourceBytes = []byte(" ")
+	}
+
 	// Get Go grammar directly
 	grammar := forest.GetLanguage("go")
 	if grammar == nil {
@@ -530,7 +590,7 @@ func parseWithDirectTreeSitter(source string) *valueobject.ParseTree {
 	}
 
 	// Parse directly without validation
-	tree, err := parser.ParseString(ctx, nil, []byte(source))
+	tree, err := parser.ParseString(ctx, nil, sourceBytes)
 	if err != nil || tree == nil {
 		return nil
 	}
@@ -562,8 +622,8 @@ func parseWithDirectTreeSitter(source string) *valueobject.ParseTree {
 		MaxDepth:  calculateMaxDepth(domainRoot),
 	}
 
-	// Create domain parse tree using constructor
-	domainTree, err := valueobject.NewParseTree(ctx, goLang, domainRoot, []byte(source), metadata)
+	// Create domain parse tree using constructor with the actual source bytes
+	domainTree, err := valueobject.NewParseTree(ctx, goLang, domainRoot, sourceBytes, metadata)
 	if err != nil {
 		tree.Close()
 		return nil
@@ -1499,17 +1559,32 @@ func extractPackageDocumentation(
 	packageComments := findPackageDocumentationComments(parseTree, packageClause, sortedComments)
 	processedComments := processCommentNodes(parseTree, packageComments)
 	documentation := joinCommentsWithGoDocFormatting(processedComments)
-	if documentation == "" {
-		fallbackNodes := collectCommentLikeNodesBeforePackage(parseTree, packageClause)
-		if len(fallbackNodes) > 0 {
-			processedFallback := processCommentLikeNodes(parseTree, fallbackNodes)
-			if fallbackDoc := joinCommentsWithGoDocFormatting(processedFallback); fallbackDoc != "" {
-				return fallbackDoc
-			}
-		}
+	if documentation != "" {
+		return documentation
 	}
 
-	return documentation
+	// Try fallback: extract from ERROR nodes or malformed comments
+	fallbackDoc := extractFallbackPackageDocumentation(parseTree, packageClause)
+	return fallbackDoc
+}
+
+// extractFallbackPackageDocumentation attempts to extract package documentation from ERROR nodes
+// or malformed comments when the main extraction path fails. This fallback accepts all comments
+// that appear immediately before the package declaration.
+func extractFallbackPackageDocumentation(
+	parseTree *valueobject.ParseTree,
+	packageClause *valueobject.ParseNode,
+) string {
+	fallbackNodes := collectCommentLikeNodesBeforePackage(parseTree, packageClause)
+	if len(fallbackNodes) == 0 {
+		return ""
+	}
+
+	// Accept all fallback comments, not just those starting with "Package "
+	// This is more lenient and captures useful documentation even when it doesn't
+	// strictly follow Go's "Package packagename..." convention
+	processedFallback := processCommentLikeNodes(parseTree, fallbackNodes)
+	return joinCommentsWithGoDocFormatting(processedFallback)
 }
 
 // findCommentsInErrorNodes looks for comment-like content in ERROR nodes or other fallback locations
@@ -1583,9 +1658,10 @@ func findLastValidCommentIndex(comments []*valueobject.ParseNode, packageStart u
 	for i := len(comments) - 1; i >= 0; i-- {
 		comment := comments[i]
 		if comment.EndByte <= packageStart {
-			// Check if this comment connects to the package (no non-empty lines between)
+			// Check if this comment connects to the package (no blank lines between)
+			// Go convention: package docs have NO blank lines between comment and package
 			betweenText := sourceText[comment.EndByte:packageStart]
-			if hasOnlyWhitespaceAndNewlines(betweenText) {
+			if hasOnlyWhitespaceAndNewlines(betweenText) && !hasBlankLine(betweenText) {
 				return i
 			}
 		}
@@ -1877,21 +1953,10 @@ func determineFinalStartIndex(
 		return packageDocIndex
 	}
 
-	// Use conservative approach - include only immediate comments (limit scope)
-	finalStartIndex := endIndex
-	for finalStartIndex > 0 && (endIndex-finalStartIndex) < 2 {
-		currentComment := comments[finalStartIndex]
-		prevComment := comments[finalStartIndex-1]
-
-		betweenComments := sourceText[prevComment.EndByte:currentComment.StartByte]
-		if hasOnlyWhitespaceAndNewlines(betweenComments) && !hasBlankLine(betweenComments) {
-			finalStartIndex--
-		} else {
-			break
-		}
-	}
-
-	return finalStartIndex
+	// Accept all comments immediately preceding the package declaration,
+	// even if they don't start with "Package " prefix.
+	// This is more lenient than strict Go conventions but captures useful documentation.
+	return startIndex
 }
 
 // extractCommentRange extracts comments from startIndex to endIndex (inclusive).

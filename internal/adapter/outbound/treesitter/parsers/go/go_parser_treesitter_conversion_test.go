@@ -445,13 +445,15 @@ const debugMode bool = false`
 
 	parseTree := createMockParseTreeFromSource(t, language, source)
 
-	variables, err := parser.ExtractVariables(ctx, parseTree, outbound.SemanticExtractionOptions{})
+	variables, err := parser.ExtractVariables(ctx, parseTree, outbound.SemanticExtractionOptions{
+		IncludePrivate: true, // Include private variables for this test
+	})
 	require.NoError(t, err)
 
-	// This test will FAIL because the current implementation:
-	// 1. Uses simple string parsing instead of looking for var_declaration nodes
-	// 2. Doesn't leverage tree-sitter's AST structure for variable extraction
-	// 3. Should distinguish between var_declaration and const_declaration nodes
+	// This test verifies that the implementation:
+	// 1. Correctly uses var_declaration nodes from the AST (not string parsing)
+	// 2. Leverages tree-sitter's AST structure for variable extraction
+	// 3. Properly distinguishes between var_declaration and const_declaration nodes
 
 	assert.GreaterOrEqual(
 		t,

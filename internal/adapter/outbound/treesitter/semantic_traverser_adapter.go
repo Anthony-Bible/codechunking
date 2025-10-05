@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -666,12 +667,38 @@ func (s *SemanticTraverserAdapter) determineContentForVariable(
 	isGrouped := s.isGroupedDeclaration(varDecl)
 
 	if isGrouped {
-		// Grouped declaration, use just the spec content
-		return parseTree.GetNodeText(varSpec)
+		// Grouped declaration, use just the spec content with inline comment if present
+		return s.getContentWithInlineComment(parseTree, varSpec)
 	} else {
 		// Single variable declaration, use the full declaration including keyword
 		return parseTree.GetNodeText(varDecl)
 	}
+}
+
+// getContentWithInlineComment gets the text of a node including any inline comment on the same line.
+func (s *SemanticTraverserAdapter) getContentWithInlineComment(
+	parseTree *valueobject.ParseTree,
+	node *valueobject.ParseNode,
+) string {
+	if parseTree == nil || node == nil {
+		return ""
+	}
+
+	source := parseTree.Source()
+	startByte := int(node.StartByte)
+	endByte := int(node.EndByte)
+
+	// Find the end of the line after this node
+	lineEnd := endByte
+	for lineEnd < len(source) && source[lineEnd] != '\n' {
+		lineEnd++
+	}
+
+	// Get the text from node start to end of line
+	fullLineText := string(source[startByte:lineEnd])
+
+	// Trim any trailing whitespace but preserve inline comments
+	return strings.TrimRight(fullLineText, " \t\r")
 }
 
 // createSemanticCodeChunk creates a SemanticCodeChunk for a variable.
@@ -2013,25 +2040,45 @@ func (s *SemanticTraverserAdapter) extractGoVariablesFallback(
 	var variables []outbound.SemanticCodeChunk
 	packageName := s.extractGoPackageName(parseTree)
 
-	// Use local implementation for consistent AST querying without import cycles
-	// Process variable declarations using direct node traversal
-	varNodes := parseTree.GetNodesByType("var_declaration")
-	for _, node := range varNodes {
-		if node == nil {
-			continue
-		}
-		vars := s.parseGoVariableDeclaration(parseTree, node, packageName, outbound.ConstructVariable, options, now)
-		variables = append(variables, vars...)
+	// Combine and sort declarations by source position to maintain source order
+	type declarationInfo struct {
+		node          *valueobject.ParseNode
+		constructType outbound.SemanticConstructType
 	}
 
-	// Process constant declarations
+	var allDeclarations []declarationInfo
+
+	// Collect variable declarations
+	varNodes := parseTree.GetNodesByType("var_declaration")
+	for _, node := range varNodes {
+		if node != nil {
+			allDeclarations = append(allDeclarations, declarationInfo{
+				node:          node,
+				constructType: outbound.ConstructVariable,
+			})
+		}
+	}
+
+	// Collect constant declarations
 	constNodes := parseTree.GetNodesByType("const_declaration")
 	for _, node := range constNodes {
-		if node == nil {
-			continue
+		if node != nil {
+			allDeclarations = append(allDeclarations, declarationInfo{
+				node:          node,
+				constructType: outbound.ConstructConstant,
+			})
 		}
-		consts := s.parseGoVariableDeclaration(parseTree, node, packageName, outbound.ConstructConstant, options, now)
-		variables = append(variables, consts...)
+	}
+
+	// Sort by start position to maintain source order
+	sort.Slice(allDeclarations, func(i, j int) bool {
+		return allDeclarations[i].node.StartByte < allDeclarations[j].node.StartByte
+	})
+
+	// Process declarations in source order
+	for _, decl := range allDeclarations {
+		declVars := s.parseGoVariableDeclaration(parseTree, decl.node, packageName, decl.constructType, options, now)
+		variables = append(variables, declVars...)
 	}
 
 	// Process type declarations (type aliases and type definitions)

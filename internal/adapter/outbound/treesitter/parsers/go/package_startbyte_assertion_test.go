@@ -28,11 +28,9 @@ func TestPackageStartByteAssertionConsistency(t *testing.T) {
 	require.NotNil(t, parser)
 
 	testCases := []struct {
-		name                  string
-		sourceCode            string
-		expectedChunk         outbound.SemanticCodeChunk
-		shouldFailWithNotZero bool
-		assertionDescription  string
+		name          string
+		sourceCode    string
+		expectedChunk outbound.SemanticCodeChunk
 	}{
 		{
 			name: "Package at file start - StartByte=0 should be valid",
@@ -46,12 +44,10 @@ func main() {}`,
 				QualifiedName: "main",
 				Documentation: "",
 				Content:       "package main",
-				StartByte:     0, // This SHOULD be accepted as valid
+				StartByte:     0, // Valid for packages at file start
 				EndByte:       12,
 				Language:      valueobject.Go,
 			},
-			shouldFailWithNotZero: true,
-			assertionDescription:  "assert.NotZero(StartByte) incorrectly rejects valid StartByte=0",
 		},
 		{
 			name: "Package after whitespace - StartByte>0 should be valid",
@@ -67,12 +63,10 @@ func test() {}`,
 				QualifiedName: "spaced",
 				Documentation: "",
 				Content:       "package spaced",
-				StartByte:     2, // This should be accepted
+				StartByte:     2,
 				EndByte:       16,
 				Language:      valueobject.Go,
 			},
-			shouldFailWithNotZero: false,
-			assertionDescription:  "assert.NotZero(StartByte) correctly accepts StartByte>0",
 		},
 		{
 			name: "Package after comment - StartByte>0 should be valid",
@@ -85,14 +79,12 @@ func test() {}`,
 				Type:          outbound.ConstructPackage,
 				Name:          "commented",
 				QualifiedName: "commented",
-				Documentation: "",
+				Documentation: "File comment",
 				Content:       "package commented",
-				StartByte:     16, // This should be accepted
+				StartByte:     16,
 				EndByte:       34,
 				Language:      valueobject.Go,
 			},
-			shouldFailWithNotZero: false,
-			assertionDescription:  "assert.NotZero(StartByte) correctly accepts StartByte>0",
 		},
 	}
 
@@ -136,19 +128,9 @@ func test() {}`,
 			assert.Equal(t, tt.expectedChunk.StartByte, actual.StartByte,
 				"StartByte should match expected value from test data")
 
-			// This assertion demonstrates the logical inconsistency:
-			// When StartByte=0 (valid for file-start packages), assert.NotZero fails
-			// This test will FAIL for packages at file start, exposing the bug
-			if tt.shouldFailWithNotZero {
-				// This assertion will FAIL, demonstrating the inconsistency
-				// We expect this to fail for StartByte=0 cases
-				t.Logf("WARNING: This assert.NotZero will FAIL for valid StartByte=0: %s", tt.assertionDescription)
-				// Run the broken assertion to demonstrate the bug
-				assert.NotZero(t, actual.StartByte, tt.assertionDescription)
-			} else {
-				// This assertion should pass for non-zero StartByte
-				assert.NotZero(t, actual.StartByte, tt.assertionDescription)
-			}
+			// Correct assertion: StartByte should be >= 0 (0 is valid for file-start packages)
+			assert.GreaterOrEqual(t, actual.StartByte, uint32(0),
+				"StartByte should be non-negative (0 is valid for file-start packages)")
 
 			// These assertions should always pass
 			assert.NotZero(t, actual.EndByte, "EndByte should not be zero")

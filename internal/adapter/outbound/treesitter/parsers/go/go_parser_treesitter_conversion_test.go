@@ -4,8 +4,10 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
+	"reflect"
 	"testing"
 	"time"
+	"unsafe"
 
 	forest "github.com/alexaandru/go-sitter-forest"
 	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
@@ -630,9 +632,6 @@ func ProcessData(data string) {
 
 	parseTree := createMockParseTreeFromSource(t, language, source)
 
-	// This test will FAIL because the current implementation falls back to string parsing
-	// when tree-sitter nodes are empty, instead of ensuring proper AST parsing first
-
 	// Extract all construct types
 	functions, err := parser.ExtractFunctions(ctx, parseTree, outbound.SemanticExtractionOptions{})
 	require.NoError(t, err)
@@ -643,7 +642,9 @@ func ProcessData(data string) {
 	interfaces, err := parser.ExtractInterfaces(ctx, parseTree, outbound.SemanticExtractionOptions{})
 	require.NoError(t, err)
 
-	variables, err := parser.ExtractVariables(ctx, parseTree, outbound.SemanticExtractionOptions{})
+	variables, err := parser.ExtractVariables(ctx, parseTree, outbound.SemanticExtractionOptions{
+		IncludePrivate: true, // Include private variables since "globalVar" starts with lowercase
+	})
 	require.NoError(t, err)
 
 	imports, err := parser.ExtractImports(ctx, parseTree, outbound.SemanticExtractionOptions{})
@@ -780,7 +781,8 @@ func createRealParseTreeFromSource(
 	tree, err := parser.ParseString(context.Background(), nil, []byte(sourceCode))
 	require.NoError(t, err, "Failed to parse Go source")
 	require.NotNil(t, tree, "Parse tree should not be nil")
-	defer tree.Close()
+	// DON'T close the tree yet - we need it to stay alive for field access
+	// The ParseTree will manage its lifecycle
 
 	// Convert tree-sitter tree to domain ParseNode
 	rootTSNode := tree.RootNode()
@@ -808,6 +810,9 @@ func createRealParseTreeFromSource(
 	)
 	require.NoError(t, err, "Failed to create ParseTree")
 
+	// Set the tree-sitter tree reference so it stays alive and field access works
+	parseTree.SetTreeSitterTree(tree)
+
 	return parseTree
 }
 
@@ -832,6 +837,10 @@ func convertTreeSitterNode(node tree_sitter.Node, depth int) (*valueobject.Parse
 		Children: make([]*valueobject.ParseNode, 0),
 	}
 
+	// Use reflection to set the private tsNode field for field-based access
+	// Store the node value (not pointer) since tree_sitter.Node is a struct
+	setTSNodeValue(parseNode, node)
+
 	nodeCount := 1
 	maxDepth := depth
 
@@ -854,6 +863,21 @@ func convertTreeSitterNode(node tree_sitter.Node, depth int) (*valueobject.Parse
 	}
 
 	return parseNode, nodeCount, maxDepth
+}
+
+// setTSNodeValue uses reflection to set the private tsNode field on ParseNode.
+// This is needed for field-based access like ChildByFieldName to work.
+func setTSNodeValue(parseNode *valueobject.ParseNode, tsNode tree_sitter.Node) {
+	v := reflect.ValueOf(parseNode).Elem()
+	tsNodeField := v.FieldByName("tsNode")
+	if tsNodeField.IsValid() {
+		// Create a pointer to the node value that will persist
+		nodePtr := &tsNode
+		// Get pointer to the field
+		ptr := unsafe.Pointer(tsNodeField.UnsafeAddr())
+		// Cast to correct type and set value
+		*(**tree_sitter.Node)(ptr) = nodePtr
+	}
 }
 
 // safeUintToUint32 safely converts uint to uint32 with bounds checking.

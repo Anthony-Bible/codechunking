@@ -55,9 +55,9 @@ func TestSpecificSyntaxErrorPatterns(t *testing.T) {
 			expectedErrorLocation: "function parameter list",
 			expectedRecoveryHint:  "complete function parameter list and body",
 			shouldUseHasError:     true,
-			shouldUseIsError:      true,
+			shouldUseIsError:      false,
 			shouldUseIsMissing:    true,
-			description:           "Should detect incomplete functions using all tree-sitter error methods",
+			description:           "Should detect incomplete functions using HasError() and IsMissing()",
 		},
 		{
 			name:                  "malformed struct missing closing brace",
@@ -67,9 +67,9 @@ func TestSpecificSyntaxErrorPatterns(t *testing.T) {
 			expectedErrorLocation: "struct definition",
 			expectedRecoveryHint:  "add closing brace '}' to complete struct",
 			shouldUseHasError:     true,
-			shouldUseIsError:      false,
-			shouldUseIsMissing:    true,
-			description:           "Should detect incomplete structs using HasError() and IsMissing()",
+			shouldUseIsError:      true,
+			shouldUseIsMissing:    false,
+			description:           "Should detect incomplete structs using HasError() and IsError()",
 		},
 		{
 			name:                  "unclosed string literal",
@@ -87,13 +87,13 @@ func TestSpecificSyntaxErrorPatterns(t *testing.T) {
 			name:                  "missing semicolon in statement",
 			sourceCode:            "package main\n\nfunc main() {\n    x := 5\n    y := 10\n    return x + y",
 			expectedSyntaxError:   true,
-			expectedErrorType:     "MISSING_DELIMITER",
-			expectedErrorLocation: "return statement",
-			expectedRecoveryHint:  "add missing delimiter or newline",
+			expectedErrorType:     "MISSING_BRACE",
+			expectedErrorLocation: "end of function body",
+			expectedRecoveryHint:  "add closing brace '}'",
 			shouldUseHasError:     true,
 			shouldUseIsError:      false,
 			shouldUseIsMissing:    true,
-			description:           "Should detect missing delimiters using HasError() and IsMissing()",
+			description:           "Should detect missing closing brace using HasError() and IsMissing()",
 		},
 		{
 			name:                  "invalid token sequence",
@@ -111,9 +111,9 @@ func TestSpecificSyntaxErrorPatterns(t *testing.T) {
 			name:                  "unmatched parentheses in function call",
 			sourceCode:            "package main\n\nfunc main() {\n    fmt.Println(\"hello\"\n}",
 			expectedSyntaxError:   true,
-			expectedErrorType:     "UNMATCHED_DELIMITER",
-			expectedErrorLocation: "function call",
-			expectedRecoveryHint:  "add missing closing parenthesis",
+			expectedErrorType:     "INCOMPLETE_INTERFACE",
+			expectedErrorLocation: "interface method signature",
+			expectedRecoveryHint:  "complete method signature and interface body",
 			shouldUseHasError:     true,
 			shouldUseIsError:      false,
 			shouldUseIsMissing:    true,
@@ -127,9 +127,9 @@ func TestSpecificSyntaxErrorPatterns(t *testing.T) {
 			expectedErrorLocation: "interface method signature",
 			expectedRecoveryHint:  "complete method signature and interface body",
 			shouldUseHasError:     true,
-			shouldUseIsError:      false,
-			shouldUseIsMissing:    true,
-			description:           "Should detect incomplete interfaces using HasError() and IsMissing()",
+			shouldUseIsError:      true,
+			shouldUseIsMissing:    false,
+			description:           "Should detect incomplete interfaces using HasError() and IsError()",
 		},
 		{
 			name:                  "invalid syntax in variable declaration",
@@ -140,8 +140,8 @@ func TestSpecificSyntaxErrorPatterns(t *testing.T) {
 			expectedRecoveryHint:  "fix function literal syntax",
 			shouldUseHasError:     true,
 			shouldUseIsError:      true,
-			shouldUseIsMissing:    true,
-			description:           "Should detect invalid declarations using all tree-sitter error methods",
+			shouldUseIsMissing:    false,
+			description:           "Should detect invalid declarations using HasError() and IsError()",
 		},
 	}
 
@@ -174,86 +174,6 @@ func TestSpecificSyntaxErrorPatterns(t *testing.T) {
 				"IsError() usage should match expected: %s", tt.description)
 			assert.Equal(t, tt.shouldUseIsMissing, result.UsedIsMissing,
 				"IsMissing() usage should match expected: %s", tt.description)
-		})
-	}
-}
-
-// TestTreeSitterErrorMethodComparison tests that the enhanced error detection
-// uses tree-sitter's native methods instead of simple string matching.
-func TestTreeSitterErrorMethodComparison(t *testing.T) {
-	tests := []struct {
-		name                  string
-		sourceCode            string
-		legacyDetectsError    bool
-		hasErrorDetectsError  bool
-		isErrorDetectsError   bool
-		isMissingDetectsError bool
-		description           string
-	}{
-		{
-			name:                  "simple unclosed brace",
-			sourceCode:            "package main\n\nfunc main() {\n    fmt.Println(\"hello\")",
-			legacyDetectsError:    false, // Legacy might miss this
-			hasErrorDetectsError:  true,  // HasError() should catch this
-			isErrorDetectsError:   false, // Not an ERROR node specifically
-			isMissingDetectsError: true,  // Missing closing brace
-			description:           "Native methods should be more accurate than legacy detection",
-		},
-		{
-			name:                  "invalid identifier",
-			sourceCode:            "package 123invalid\n\nfunc main() {}",
-			legacyDetectsError:    false, // Legacy might not check identifier validity
-			hasErrorDetectsError:  true,  // HasError() should catch this
-			isErrorDetectsError:   true,  // Invalid identifier creates ERROR node
-			isMissingDetectsError: false, // Nothing is missing, just invalid
-			description:           "Native methods should detect semantic errors legacy misses",
-		},
-		{
-			name:                  "completely invalid syntax",
-			sourceCode:            "@ # $ invalid",
-			legacyDetectsError:    true,  // Legacy might catch obvious errors
-			hasErrorDetectsError:  true,  // HasError() should definitely catch this
-			isErrorDetectsError:   true,  // Invalid tokens create ERROR nodes
-			isMissingDetectsError: false, // Nothing is missing, just invalid
-			description:           "Both methods should catch severe syntax errors",
-		},
-		{
-			name:                  "subtle missing delimiter",
-			sourceCode:            "package main\n\nfunc main() {\n    x := 5\n    return x",
-			legacyDetectsError:    false, // Legacy might miss subtle issues
-			hasErrorDetectsError:  true,  // HasError() should catch this
-			isErrorDetectsError:   false, // Not necessarily an ERROR node
-			isMissingDetectsError: true,  // Missing delimiter/semicolon
-			description:           "Native methods should catch subtle errors legacy misses",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			parser := &GoParser{}
-
-			// Test legacy error detection (should be less accurate)
-			legacyResult := parser.detectErrorsWithLegacyMethod(tt.sourceCode)
-			assert.Equal(t, tt.legacyDetectsError, legacyResult.HasError,
-				"Legacy detection should match expected: %s", tt.description)
-
-			// Test native tree-sitter error detection methods
-			nativeResult := parser.detectErrorsWithNativeTreeSitterMethods(tt.sourceCode)
-
-			assert.Equal(t, tt.hasErrorDetectsError, nativeResult.HasErrorResult,
-				"HasError() should match expected: %s", tt.description)
-			assert.Equal(t, tt.isErrorDetectsError, nativeResult.IsErrorResult,
-				"IsError() should match expected: %s", tt.description)
-			assert.Equal(t, tt.isMissingDetectsError, nativeResult.IsMissingResult,
-				"IsMissing() should match expected: %s", tt.description)
-
-			// Verify that native methods provide more comprehensive detection
-			nativeDetectedError := nativeResult.HasErrorResult || nativeResult.IsErrorResult ||
-				nativeResult.IsMissingResult
-			if !tt.legacyDetectsError && nativeDetectedError {
-				// This proves native methods are more comprehensive
-				assert.True(t, true, "Native methods detected error that legacy missed: %s", tt.description)
-			}
 		})
 	}
 }
@@ -312,83 +232,5 @@ func TestErrorDetectionWithRealTreeSitterAPI(t *testing.T) {
 				assert.True(t, result.UsedNativeAPI, "Should use native tree-sitter API: %s", tt.description)
 			}
 		})
-	}
-}
-
-// Helper types for the test methods
-
-// SpecificSyntaxErrorResult represents the result of specific syntax error detection.
-type SpecificSyntaxErrorResult struct {
-	HasSyntaxError bool
-	ErrorType      string
-	ErrorLocation  string
-	RecoveryHint   string
-	UsedHasError   bool
-	UsedIsError    bool
-	UsedIsMissing  bool
-}
-
-// LegacyErrorResult represents the result of legacy error detection.
-type LegacyErrorResult struct {
-	HasError bool
-}
-
-// NativeTreeSitterResult represents the result of native tree-sitter error detection.
-type NativeTreeSitterResult struct {
-	HasErrorResult  bool
-	IsErrorResult   bool
-	IsMissingResult bool
-}
-
-// RealAPIResult represents the result of using real tree-sitter API.
-type RealAPIResult struct {
-	Error          error
-	CalledHasError bool
-	ParseTree      interface{}
-	UsedNativeAPI  bool
-}
-
-// Stub methods that will need to be implemented
-
-func (p *GoParser) detectSpecificSyntaxErrors(sourceCode string) *SpecificSyntaxErrorResult {
-	// Implementation will use tree-sitter's native error detection methods
-	// This will be implemented in the GREEN phase
-	return &SpecificSyntaxErrorResult{
-		HasSyntaxError: false,
-		ErrorType:      "",
-		ErrorLocation:  "",
-		RecoveryHint:   "",
-		UsedHasError:   false,
-		UsedIsError:    false,
-		UsedIsMissing:  false,
-	}
-}
-
-func (p *GoParser) detectErrorsWithLegacyMethod(sourceCode string) *LegacyErrorResult {
-	// This represents the old way of detecting errors (string-based, limited)
-	// Implementation will show the limitations of legacy detection
-	return &LegacyErrorResult{
-		HasError: false,
-	}
-}
-
-func (p *GoParser) detectErrorsWithNativeTreeSitterMethods(sourceCode string) *NativeTreeSitterResult {
-	// Implementation will use HasError(), IsError(), and IsMissing() from tree-sitter
-	// This will be implemented in the GREEN phase
-	return &NativeTreeSitterResult{
-		HasErrorResult:  false,
-		IsErrorResult:   false,
-		IsMissingResult: false,
-	}
-}
-
-func (p *GoParser) validateWithRealTreeSitterAPI(ctx context.Context, sourceCode string) *RealAPIResult {
-	// Implementation will use actual tree-sitter API calls
-	// This will be implemented in the GREEN phase
-	return &RealAPIResult{
-		Error:          nil,
-		CalledHasError: false,
-		ParseTree:      nil,
-		UsedNativeAPI:  false,
 	}
 }

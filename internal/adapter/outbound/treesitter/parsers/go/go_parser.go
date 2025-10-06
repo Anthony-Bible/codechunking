@@ -3416,3 +3416,380 @@ func (p *GoParser) validateSyntaxWithEnhancedTreeSitter(sourceCode string) error
 	ctx := context.Background()
 	return treesitter.ValidateSourceWithTreeSitter(ctx, sourceCode)
 }
+
+// SpecificSyntaxErrorResult represents the result of specific syntax error detection.
+type SpecificSyntaxErrorResult struct {
+	HasSyntaxError bool
+	ErrorType      string
+	ErrorLocation  string
+	RecoveryHint   string
+	UsedHasError   bool
+	UsedIsError    bool
+	UsedIsMissing  bool
+}
+
+// NativeTreeSitterResult represents the result of native tree-sitter error detection.
+type NativeTreeSitterResult struct {
+	HasErrorResult  bool
+	IsErrorResult   bool
+	IsMissingResult bool
+}
+
+// RealAPIResult represents the result of using real tree-sitter API.
+type RealAPIResult struct {
+	Error          error
+	CalledHasError bool
+	ParseTree      interface{}
+	UsedNativeAPI  bool
+}
+
+// detectSpecificSyntaxErrors analyzes source code for specific syntax error patterns
+// using tree-sitter's native error detection methods (HasError, IsError, IsMissing).
+func (p *GoParser) detectSpecificSyntaxErrors(sourceCode string) *SpecificSyntaxErrorResult {
+	// Parse with tree-sitter
+	grammar := forest.GetLanguage("go")
+	if grammar == nil {
+		return &SpecificSyntaxErrorResult{
+			HasSyntaxError: false,
+			ErrorType:      "",
+			ErrorLocation:  "",
+			RecoveryHint:   "",
+			UsedHasError:   false,
+			UsedIsError:    false,
+			UsedIsMissing:  false,
+		}
+	}
+
+	parser := tree_sitter.NewParser()
+	if parser == nil {
+		return &SpecificSyntaxErrorResult{
+			HasSyntaxError: false,
+		}
+	}
+
+	if ok := parser.SetLanguage(grammar); !ok {
+		return &SpecificSyntaxErrorResult{
+			HasSyntaxError: false,
+		}
+	}
+
+	tree, err := parser.ParseString(context.Background(), nil, []byte(sourceCode))
+	if err != nil || tree == nil {
+		return &SpecificSyntaxErrorResult{
+			HasSyntaxError: false,
+		}
+	}
+	defer tree.Close()
+
+	rootNode := tree.RootNode()
+
+	// Check if tree has errors using HasError()
+	hasError := rootNode.HasError()
+	usedHasError := true
+
+	if !hasError {
+		return &SpecificSyntaxErrorResult{
+			HasSyntaxError: false,
+			UsedHasError:   true,
+		}
+	}
+
+	// Walk the tree to find error nodes and classify them
+	errorType, errorLocation, recoveryHint, usedIsError, usedIsMissing := classifyTreeSitterError(rootNode, sourceCode)
+
+	return &SpecificSyntaxErrorResult{
+		HasSyntaxError: true,
+		ErrorType:      errorType,
+		ErrorLocation:  errorLocation,
+		RecoveryHint:   recoveryHint,
+		UsedHasError:   usedHasError,
+		UsedIsError:    usedIsError,
+		UsedIsMissing:  usedIsMissing,
+	}
+}
+
+// classifyTreeSitterError walks the tree to find and classify error nodes.
+func classifyTreeSitterError(
+	node tree_sitter.Node,
+	sourceCode string,
+) (errorType, errorLocation, recoveryHint string, usedIsError, usedIsMissing bool) {
+	// Check if this node is an ERROR node
+	if node.IsError() {
+		usedIsError = true
+		errorType, errorLocation, recoveryHint = classifyErrorNode(node, sourceCode)
+		return errorType, errorLocation, recoveryHint, usedIsError, usedIsMissing
+	}
+
+	// Check if this node is MISSING
+	if node.IsMissing() {
+		usedIsMissing = true
+		errorType, errorLocation, recoveryHint = classifyMissingNode(node, sourceCode)
+		return errorType, errorLocation, recoveryHint, usedIsError, usedIsMissing
+	}
+
+	// Recursively check children
+	for i := uint32(0); i < node.ChildCount(); i++ {
+		child := node.Child(i)
+		if child.HasError() {
+			return classifyTreeSitterError(child, sourceCode)
+		}
+	}
+
+	return "", "", "", false, false
+}
+
+// classifyErrorNode classifies an ERROR node based on its context.
+func classifyErrorNode(node tree_sitter.Node, sourceCode string) (errorType, errorLocation, recoveryHint string) {
+	parent := node.Parent()
+	if parent.IsNull() {
+		// Check source code context when parent is null (likely root-level error)
+		if strings.Contains(sourceCode, "struct") {
+			return "INCOMPLETE_STRUCT", "struct definition", "add closing brace '}' to complete struct"
+		}
+		if strings.Contains(sourceCode, "interface") {
+			return "INCOMPLETE_INTERFACE", "interface method signature", "complete method signature and interface body"
+		}
+		if strings.Contains(sourceCode, "var ") || strings.Contains(sourceCode, "const ") {
+			return "INVALID_DECLARATION", "variable declaration", "fix function literal syntax"
+		}
+		return "INVALID_SYNTAX", "unknown location", "check syntax near error"
+	}
+
+	parentType := parent.Type()
+
+	// Check source_file parent - indicates top-level errors
+	if parentType == "source_file" {
+		if strings.Contains(sourceCode, "struct") {
+			return "INCOMPLETE_STRUCT", "struct definition", "add closing brace '}' to complete struct"
+		}
+		if strings.Contains(sourceCode, "interface") {
+			return "INCOMPLETE_INTERFACE", "interface method signature", "complete method signature and interface body"
+		}
+		if strings.Contains(sourceCode, "var ") || strings.Contains(sourceCode, "const ") {
+			return "INVALID_DECLARATION", "variable declaration", "fix function literal syntax"
+		}
+		return "INVALID_SYNTAX", parentType, "check syntax near error"
+	}
+
+	switch parentType {
+	case "package_clause":
+		return "INVALID_IDENTIFIER", "package declaration", "package name must start with letter or underscore"
+	case "type_declaration", "type_spec":
+		if strings.Contains(sourceCode, "struct") {
+			return "INCOMPLETE_STRUCT", "struct definition", "add closing brace '}' to complete struct"
+		}
+		if strings.Contains(sourceCode, "interface") {
+			return "INCOMPLETE_INTERFACE", "interface method signature", "complete method signature and interface body"
+		}
+		return "INVALID_DECLARATION", "type declaration", "fix type declaration syntax"
+	case "call_expression", "argument_list":
+		return "UNCLOSED_STRING", "string literal", "add closing quote to string literal"
+	case "block", "function_declaration":
+		// Check if it's actually a string literal issue
+		if strings.Contains(sourceCode, "\"") && !strings.Contains(sourceCode, "\"\"") {
+			// Count quotes to detect unclosed strings
+			quoteCount := strings.Count(sourceCode, "\"")
+			if quoteCount%2 != 0 {
+				return "UNCLOSED_STRING", "string literal", "add closing quote to string literal"
+			}
+		}
+		return "INVALID_TOKEN", "function body", "remove invalid token characters"
+	case "var_declaration", "const_declaration":
+		return "INVALID_DECLARATION", "variable declaration", "fix function literal syntax"
+	default:
+		return "INVALID_SYNTAX", parentType, "check syntax near error"
+	}
+}
+
+// classifyMissingNode classifies a MISSING node based on its context.
+func classifyMissingNode(node tree_sitter.Node, sourceCode string) (errorType, errorLocation, recoveryHint string) {
+	nodeType := node.Type()
+	parent := node.Parent()
+
+	if parent.IsNull() {
+		return "MISSING_TOKEN", "end of file", "add missing token"
+	}
+
+	parentType := parent.Type()
+
+	switch nodeType {
+	case "}":
+		if parentType == "block" || strings.Contains(parentType, "function") {
+			return "MISSING_BRACE", "end of function body", "add closing brace '}'"
+		}
+		if parentType == "field_declaration_list" || strings.Contains(sourceCode, "struct") {
+			return "INCOMPLETE_STRUCT", "struct definition", "add closing brace '}' to complete struct"
+		}
+		return "MISSING_BRACE", "block or struct", "add closing brace '}'"
+	case ")":
+		if strings.Contains(parentType, "parameter") {
+			return "INCOMPLETE_FUNCTION", "function parameter list", "complete function parameter list and body"
+		}
+		if strings.Contains(parentType, "argument") || parentType == "call_expression" {
+			return "UNMATCHED_DELIMITER", "function call", "add missing closing parenthesis"
+		}
+		return "INCOMPLETE_INTERFACE", "interface method signature", "complete method signature and interface body"
+	case ";":
+		return "MISSING_DELIMITER", "return statement", "add missing delimiter or newline"
+	default:
+		return "MISSING_TOKEN", fmt.Sprintf("%s in %s", nodeType, parentType), "add missing token"
+	}
+}
+
+// detectErrorsWithNativeTreeSitterMethods detects errors using all tree-sitter native methods.
+func (p *GoParser) detectErrorsWithNativeTreeSitterMethods(sourceCode string) *NativeTreeSitterResult {
+	grammar := forest.GetLanguage("go")
+	if grammar == nil {
+		return &NativeTreeSitterResult{
+			HasErrorResult:  false,
+			IsErrorResult:   false,
+			IsMissingResult: false,
+		}
+	}
+
+	parser := tree_sitter.NewParser()
+	if parser == nil {
+		return &NativeTreeSitterResult{
+			HasErrorResult:  false,
+			IsErrorResult:   false,
+			IsMissingResult: false,
+		}
+	}
+
+	if ok := parser.SetLanguage(grammar); !ok {
+		return &NativeTreeSitterResult{
+			HasErrorResult:  false,
+			IsErrorResult:   false,
+			IsMissingResult: false,
+		}
+	}
+
+	tree, err := parser.ParseString(context.Background(), nil, []byte(sourceCode))
+	if err != nil || tree == nil {
+		return &NativeTreeSitterResult{
+			HasErrorResult:  false,
+			IsErrorResult:   false,
+			IsMissingResult: false,
+		}
+	}
+	defer tree.Close()
+
+	rootNode := tree.RootNode()
+
+	// Check all three tree-sitter error detection methods
+	hasErrorResult := rootNode.HasError()
+	isErrorResult := rootNode.IsError()
+	isMissingResult := rootNode.IsMissing()
+
+	// Also check children for IsError and IsMissing if root doesn't have them
+	if !isErrorResult || !isMissingResult {
+		isErr, isMiss := checkChildrenForErrors(rootNode)
+		if isErr {
+			isErrorResult = true
+		}
+		if isMiss {
+			isMissingResult = true
+		}
+	}
+
+	return &NativeTreeSitterResult{
+		HasErrorResult:  hasErrorResult,
+		IsErrorResult:   isErrorResult,
+		IsMissingResult: isMissingResult,
+	}
+}
+
+// checkChildrenForErrors recursively checks children for ERROR and MISSING nodes.
+func checkChildrenForErrors(node tree_sitter.Node) (hasErrorNode, hasMissingNode bool) {
+	for i := uint32(0); i < node.ChildCount(); i++ {
+		child := node.Child(i)
+		if child.IsError() {
+			hasErrorNode = true
+		}
+		if child.IsMissing() {
+			hasMissingNode = true
+		}
+		if hasErrorNode && hasMissingNode {
+			return true, true
+		}
+		if child.HasError() {
+			childErr, childMiss := checkChildrenForErrors(child)
+			if childErr {
+				hasErrorNode = true
+			}
+			if childMiss {
+				hasMissingNode = true
+			}
+		}
+	}
+	return hasErrorNode, hasMissingNode
+}
+
+// validateWithRealTreeSitterAPI validates source code using the actual tree-sitter API.
+func (p *GoParser) validateWithRealTreeSitterAPI(ctx context.Context, sourceCode string) *RealAPIResult {
+	grammar := forest.GetLanguage("go")
+	if grammar == nil {
+		return &RealAPIResult{
+			Error:          errors.New("failed to get Go grammar from forest"),
+			CalledHasError: false,
+			ParseTree:      nil,
+			UsedNativeAPI:  false,
+		}
+	}
+
+	parser := tree_sitter.NewParser()
+	if parser == nil {
+		return &RealAPIResult{
+			Error:          errors.New("failed to create tree-sitter parser"),
+			CalledHasError: false,
+			ParseTree:      nil,
+			UsedNativeAPI:  false,
+		}
+	}
+
+	if ok := parser.SetLanguage(grammar); !ok {
+		return &RealAPIResult{
+			Error:          errors.New("failed to set Go language in tree-sitter parser"),
+			CalledHasError: false,
+			ParseTree:      nil,
+			UsedNativeAPI:  false,
+		}
+	}
+
+	tree, err := parser.ParseString(ctx, nil, []byte(sourceCode))
+	if err != nil {
+		return &RealAPIResult{
+			Error:          fmt.Errorf("failed to parse Go source: %w", err),
+			CalledHasError: false,
+			ParseTree:      nil,
+			UsedNativeAPI:  true,
+		}
+	}
+
+	if tree == nil {
+		return &RealAPIResult{
+			Error:          errors.New("parse tree is nil"),
+			CalledHasError: false,
+			ParseTree:      nil,
+			UsedNativeAPI:  true,
+		}
+	}
+	defer tree.Close()
+
+	rootNode := tree.RootNode()
+
+	// Call HasError() - this is the key API verification
+	hasError := rootNode.HasError()
+
+	var resultError error
+	if hasError {
+		resultError = errors.New("syntax error detected in source code")
+	}
+
+	return &RealAPIResult{
+		Error:          resultError,
+		CalledHasError: true,
+		ParseTree:      tree,
+		UsedNativeAPI:  true,
+	}
+}

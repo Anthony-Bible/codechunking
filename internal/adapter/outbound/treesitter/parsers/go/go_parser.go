@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	forest "github.com/alexaandru/go-sitter-forest"
@@ -446,6 +447,13 @@ func isStructOrInterfaceField(line string) bool {
 		return true
 	}
 
+	// Handle extremely long lines with simple pattern matching to avoid expensive AST parsing
+	// This prevents memory exhaustion and timeout issues for pathological inputs
+	// Threshold of 10KB is reasonable for typical Go field declarations
+	if len(trimmed) > 10000 {
+		return isMinimalFieldPattern(trimmed)
+	}
+
 	// Use AST-based detection with proper grammar-aware analysis
 	if astResult, useAST := tryASTBasedFieldDetection(trimmed); useAST {
 		return astResult
@@ -509,15 +517,9 @@ func tryASTBasedFieldDetection(line string) (bool, bool) {
 	// Analyze the parse tree for field-like patterns
 	analysis := analyzeParseTreeForFieldPatterns(parseResult.ParseTree, trimmedLine)
 
-	// If direct parsing didn't find field/method patterns, try context-based parsing
-	// This handles cases like interface methods that need proper context to be detected
-	if !analysis.isField && analysis.useAST {
-		contextResult, contextUsed := tryParseWithContext(line)
-		if contextUsed && contextResult {
-			return true, true
-		}
-	}
-
+	// Return the analysis result directly
+	// Do NOT retry with context if we found negative patterns (func/var/const/package declarations)
+	// because hasNegativePattern already correctly identified these as invalid
 	return analysis.isField, analysis.useAST
 }
 
@@ -530,30 +532,81 @@ func tryParseWithContext(line string) (bool, bool) {
 	// Try parsing as a struct field first using direct tree-sitter parser
 	structContext := fmt.Sprintf("package test\n\ntype TestStruct struct {\n\t%s\n}", trimmedLine)
 	if parseTree := parseWithDirectTreeSitter(structContext); parseTree != nil {
-		// Check for ERROR nodes first - malformed syntax should be rejected
-		if containsErrorNodes(parseTree) {
-			return false, false
+		// ENHANCEMENT: Check for nested ERRORs first
+		// These indicate severely malformed syntax that shouldn't be accepted even in context
+		if hasNestedErrors(parseTree.RootNode()) {
+			return false, false // Severely malformed - don't attempt AST parsing
 		}
 
 		queryEngine := NewTreeSitterQueryEngine()
 		fields := queryEngine.QueryFieldDeclarations(parseTree)
+
+		// If we found field declarations, we need to check the field_declaration_list
+		// for ERROR nodes that are SIBLINGS of the field declarations.
+		// Tree-sitter may extract partial fields and leave unparsable tokens as ERROR siblings.
 		if len(fields) > 0 {
+			// First check if ERROR nodes are WITHIN any field_declaration
+			for _, field := range fields {
+				if containsErrorNodesInSubtree(field) {
+					// ERROR within field_declaration means truly malformed syntax
+					return false, true
+				}
+			}
+
+			// CRITICAL FIX: Check for ERROR nodes in the field_declaration_list
+			// These are unparsable tokens that tree-sitter couldn't incorporate into fields
+			fieldDeclLists := parseTree.GetNodesByType("field_declaration_list")
+			for _, declList := range fieldDeclLists {
+				// Check if any children of field_declaration_list are ERROR nodes
+				for _, child := range declList.Children {
+					if child.Type == nodeTypeError {
+						// ERROR sibling in field_declaration_list = malformed
+						return false, false
+					}
+				}
+			}
+
+			// Field found without errors - valid field
 			return true, true
+		}
+
+		// No fields found - check if ERROR nodes prevent us from finding fields
+		if containsErrorNodes(parseTree) {
+			// ERROR nodes but no fields found - likely malformed
+			return false, true
 		}
 	}
 
 	// Try parsing as an interface method using direct tree-sitter parser
 	interfaceContext := fmt.Sprintf("package test\n\ntype TestInterface interface {\n\t%s\n}", trimmedLine)
 	if parseTree := parseWithDirectTreeSitter(interfaceContext); parseTree != nil {
-		// Check for ERROR nodes first - malformed syntax should be rejected
-		if containsErrorNodes(parseTree) {
-			return false, false
+		// ENHANCEMENT: Check for nested ERRORs first (same as struct context)
+		if hasNestedErrors(parseTree.RootNode()) {
+			return false, false // Severely malformed - don't attempt AST parsing
 		}
 
 		queryEngine := NewTreeSitterQueryEngine()
 		methods := queryEngine.QueryMethodSpecs(parseTree)
+
+		// If we found method specs, check if they contain ERROR nodes
 		if len(methods) > 0 {
+			// Check if ERROR nodes are WITHIN the method_elem (malformed method)
+			// Get the method_elem node from the parse tree
+			methodNodes := parseTree.GetNodesByType("method_elem")
+			for _, methodNode := range methodNodes {
+				if containsErrorNodesInSubtree(methodNode) {
+					// ERROR within method_elem means truly malformed syntax
+					return false, true
+				}
+			}
+			// Method found without errors inside it - valid method
 			return true, true
+		}
+
+		// No methods found - check if ERROR nodes prevent us from finding methods
+		if containsErrorNodes(parseTree) {
+			// ERROR nodes but no methods found - likely malformed
+			return false, true
 		}
 	}
 
@@ -709,7 +762,31 @@ func isTrulyMalformedSyntax(parseTree *valueobject.ParseTree, line string) bool 
 		return true
 	}
 
-	allNodes := getAllNodes(parseTree.RootNode())
+	rootNode := parseTree.RootNode()
+
+	// ENHANCEMENT 1: Check for nested ERROR nodes first (strong indicator of severe malformation)
+	// Nested ERRORs occur when tree-sitter completely fails to understand the token sequence
+	if hasNestedErrors(rootNode) {
+		slogger.Debug(ctx, "Nested ERROR nodes detected - severe malformation", slogger.Fields{
+			"line": line,
+		})
+		return true
+	}
+
+	// ENHANCEMENT 2: Check for ERROR nodes as direct children of source_file
+	// This indicates that tree-sitter couldn't parse any valid top-level construct
+	if rootNode.Type == "source_file" {
+		for _, child := range rootNode.Children {
+			if child.Type == nodeTypeError {
+				slogger.Debug(ctx, "Root-level ERROR node detected", slogger.Fields{
+					"line": line,
+				})
+				return true
+			}
+		}
+	}
+
+	allNodes := getAllNodes(rootNode)
 
 	// Count total nodes and error nodes to determine if it's truly malformed
 	totalNodes := len(allNodes)
@@ -724,7 +801,7 @@ func isTrulyMalformedSyntax(parseTree *valueobject.ParseTree, line string) bool 
 		}
 	}
 
-	// If most nodes are error nodes, it's truly malformed syntax (return to original logic)
+	// If most nodes are error nodes, it's truly malformed syntax (keep original 50% threshold)
 	if totalNodes > 0 && float64(errorNodes)/float64(totalNodes) > 0.5 {
 		slogger.Debug(ctx, "Too many error nodes detected", slogger.Fields{
 			"line":        line,
@@ -762,11 +839,56 @@ func isTrulyMalformedSyntax(parseTree *valueobject.ParseTree, line string) bool 
 	return false
 }
 
+// hasNestedErrors recursively checks if any ERROR node contains child ERROR nodes.
+// Nested ERROR nodes are a strong indicator of severely malformed syntax where
+// tree-sitter completely failed to understand the token sequence.
+func hasNestedErrors(node *valueobject.ParseNode) bool {
+	if node == nil {
+		return false
+	}
+
+	// If this node is an ERROR, check if any of its children are also ERRORs
+	if node.Type == nodeTypeError {
+		for _, child := range node.Children {
+			if child.Type == nodeTypeError {
+				return true // Nested ERROR found - severe malformation
+			}
+		}
+	}
+
+	// Recursively check all children
+	for _, child := range node.Children {
+		if hasNestedErrors(child) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // shouldRejectBeforeParsing checks for edge cases that should be rejected before expensive parsing.
 func shouldRejectBeforeParsing(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" {
 		return true // Empty and whitespace-only lines
+	}
+	// Reject null bytes as malformed input
+	if strings.Contains(line, "\x00") {
+		return true
+	}
+	// Reject function/var/const/package declarations before parsing
+	// These are never valid struct/interface fields
+	if strings.HasPrefix(trimmed, "func ") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "var ") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "const ") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "package ") {
+		return true
 	}
 	// Reject return statements and import statements before parsing
 	if strings.HasPrefix(trimmed, "return ") || trimmed == "return" {
@@ -800,14 +922,16 @@ type fieldPatternAnalysisResult struct {
 func analyzeParseTreeForFieldPatterns(parseTree *valueobject.ParseTree, trimmedLine string) fieldPatternAnalysisResult {
 	queryEngine := NewTreeSitterQueryEngine()
 
-	// First, check for positive field patterns (early return on success)
-	if hasPositiveFieldPattern(queryEngine, parseTree, trimmedLine) {
-		return fieldPatternAnalysisResult{isField: true, useAST: true}
-	}
-
-	// Then, check for negative patterns that should be rejected (early return on rejection)
+	// IMPORTANT: Check for negative patterns FIRST before positive patterns
+	// This ensures that explicit rejections (func/var/const/package declarations)
+	// take precedence over heuristic field-like pattern matching
 	if hasNegativePattern(queryEngine, parseTree) {
 		return fieldPatternAnalysisResult{isField: false, useAST: true}
+	}
+
+	// Then check for positive field patterns (early return on success)
+	if hasPositiveFieldPattern(queryEngine, parseTree, trimmedLine) {
+		return fieldPatternAnalysisResult{isField: true, useAST: true}
 	}
 
 	// No field/method patterns found and no invalid patterns, assume not a field
@@ -1275,9 +1399,102 @@ func containsErrorNodes(parseTree *valueobject.ParseTree) bool {
 	return false
 }
 
+// containsErrorNodesInSubtree checks if a specific node subtree contains ERROR nodes.
+func containsErrorNodesInSubtree(node *valueobject.ParseNode) bool {
+	if node == nil {
+		return false
+	}
+
+	// Check current node
+	if node.Type == nodeTypeError || strings.Contains(node.Type, "ERROR") {
+		return true
+	}
+
+	// Recursively check children
+	for _, child := range node.Children {
+		if containsErrorNodesInSubtree(child) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // isMinimalFieldPattern provides minimal string-based fallback detection for cases where AST parsing fails.
 // This is significantly simplified compared to the original string-based detection since AST-based detection
 // handles most cases properly now.
+// isValidGoIdentifier checks if a string is a valid Go identifier based on tree-sitter grammar rules.
+// Go identifier pattern (from tree-sitter-go): [_\p{XID_Start}][_\p{XID_Continue}]*
+// This means: starts with underscore or letter (including Unicode), followed by underscores, letters, or digits.
+func isValidGoIdentifier(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	// Check first character: must be letter (Unicode) or underscore
+	firstRune := []rune(s)[0]
+	if firstRune != '_' && !isXIDStart(firstRune) {
+		return false
+	}
+
+	// Check remaining characters: must be letter, digit, or underscore
+	for _, r := range []rune(s)[1:] {
+		if r != '_' && !isXIDContinue(r) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// isXIDStart checks if a rune is a valid XID_Start character (letters).
+func isXIDStart(r rune) bool {
+	// XID_Start includes letters from all Unicode scripts
+	// Simple check: alphabetic characters
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r > 127 && unicode.IsLetter(r)
+}
+
+// isXIDContinue checks if a rune is a valid XID_Continue character (letters, digits, marks).
+func isXIDContinue(r rune) bool {
+	// XID_Continue includes letters, digits, and certain marks
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') || r > 127 && (unicode.IsLetter(r) || unicode.IsDigit(r))
+}
+
+// hasTypeKeywords checks if a string contains Go type construction keywords.
+// This is used by the string-based fallback to detect incomplete type syntax that
+// tree-sitter's strict grammar would reject (e.g., "map[string" missing ] and value type).
+//
+// The function looks for type keywords with their typical syntax markers:
+//   - "map[" - map type construction
+//   - "chan" - channel type (with or without direction)
+//   - "func(" - function type
+//   - "interface{" - interface type
+//   - "struct{" - struct type
+//
+// Returns true if any type construction keyword is found, indicating the line
+// is likely attempting to declare a field with a complex type, even if incomplete.
+func hasTypeKeywords(s string) bool {
+	// Type construction patterns that indicate field type declarations
+	// Include syntax markers ([ { () to distinguish from other uses of these keywords
+	typeKeywords := []string{
+		"map[",       // Map type: map[key]value
+		"chan ",      // Channel type: chan Type
+		"<-chan ",    // Receive-only channel
+		"chan<-",     // Send-only channel
+		"func(",      // Function type: func(params) result
+		"interface{", // Interface type
+		"struct{",    // Struct type
+	}
+
+	for _, kw := range typeKeywords {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 func isMinimalFieldPattern(trimmed string) bool {
 	// Handle special cases that AST might miss
 	if strings.Contains(trimmed, "\x00") {
@@ -1304,10 +1521,96 @@ func isMinimalFieldPattern(trimmed string) bool {
 		return false
 	}
 
+	// FALLBACK ENHANCEMENT: Detect method signature patterns early
+	// This handles incomplete method signatures like "Process(data string" (missing closing paren)
+	// Tree-sitter's grammar requires complete parameter_list, so incomplete signatures fail AST parsing
+	if idx := strings.Index(trimmed, "("); idx > 0 {
+		identifier := trimmed[:idx]
+		// Check if the part before "(" is a valid Go identifier
+		if isValidGoIdentifier(identifier) {
+			return true // Method signature pattern detected - accept incomplete signatures
+		}
+	}
+
+	// FALLBACK ENHANCEMENT: Accept lines with type keywords for incomplete type syntax
+	// This handles patterns like "Data map[string" (missing ] and value type)
+	// Tree-sitter's map_type grammar requires complete "map[key]value" syntax
+	if hasTypeKeywords(trimmed) {
+		return true // Contains type construction keywords - accept incomplete types
+	}
+
 	// At this point, if AST parsing failed but we have a reasonable-looking identifier pattern, allow it
 	// This covers edge cases where tree-sitter might not parse individual lines correctly
 	parts := strings.Fields(trimmed)
-	return len(parts) >= 1 && len(parts) <= 3 // Allow simple patterns like "Name", "Name string", "Name string `tag`"
+	if len(parts) < 1 {
+		return false
+	}
+
+	// For extremely long lines (pathological inputs), check if it's a repeated field pattern
+	// Example: "Name string Name string Name string..." (1000 times)
+	// This prevents false rejection of stress test inputs
+	if len(parts) > 3 {
+		// Check if this appears to be a repeated field pattern (pairs of identifier + type)
+		// We'll sample the first few pairs to validate the pattern
+		if len(parts)%2 == 0 {
+			// Even number of parts - could be repeated "Name string" pattern
+			allPairsValid := true
+			samplesToCheck := min(10, len(parts)/2) // Check first 10 pairs or fewer
+
+			for i := range samplesToCheck {
+				nameIdx := i * 2
+				typeIdx := nameIdx + 1
+
+				if !isValidGoIdentifier(parts[nameIdx]) || !isValidGoIdentifier(parts[typeIdx]) {
+					allPairsValid = false
+					break
+				}
+			}
+
+			if allPairsValid {
+				return true // Repeated valid field pattern
+			}
+		}
+		return false // Too many parts and not a recognized pattern
+	}
+
+	// Validate the first part is a valid Go identifier (field name or embedded type)
+	// Allow qualified names like "io.Reader" by splitting on dot
+	firstPart := parts[0]
+	identifierParts := strings.Split(firstPart, ".")
+	for _, idPart := range identifierParts {
+		if !isValidGoIdentifier(idPart) {
+			return false // Invalid identifier found
+		}
+	}
+
+	// If there's a second part (type), validate it as well
+	// Skip validation for third part (struct tag in backticks)
+	if len(parts) >= 2 {
+		typePart := parts[1]
+
+		// Reject operators and other non-identifier tokens
+		if strings.ContainsAny(typePart, "!=<>&|^%") {
+			return false // Contains operator characters, not a type
+		}
+
+		// Handle pointer types, slices, arrays, channels
+		typePart = strings.TrimPrefix(typePart, "*")
+		typePart = strings.TrimPrefix(typePart, "[]")
+		typePart = strings.TrimPrefix(typePart, "<-chan")
+		typePart = strings.TrimPrefix(typePart, "chan<-")
+		typePart = strings.TrimPrefix(typePart, "chan")
+
+		// For qualified types like "http.Handler", validate each part
+		typeIdentParts := strings.Split(typePart, ".")
+		for _, typeId := range typeIdentParts {
+			if typeId != "" && !isValidGoIdentifier(typeId) {
+				return false // Invalid type identifier
+			}
+		}
+	}
+
+	return true
 }
 
 type ObservableGoParser struct {

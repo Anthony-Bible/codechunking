@@ -418,8 +418,13 @@ func isValidGoSyntax(line string) bool {
 	testCode := "package test\n\ntype Test struct {\n" + line + "\n}"
 	result := treesitter.CreateTreeSitterParseTree(ctx, testCode)
 
+	// Check for parsing errors or nil ParseTree
+	if result.Error != nil || result.ParseTree == nil {
+		return false
+	}
+
 	hasErrors, err := result.ParseTree.HasSyntaxErrors()
-	return result.Error == nil && err == nil && !hasErrors
+	return err == nil && !hasErrors
 }
 
 // TestTreeSitterQueryEngineIntegrationForFieldDetection tests that the restructured function

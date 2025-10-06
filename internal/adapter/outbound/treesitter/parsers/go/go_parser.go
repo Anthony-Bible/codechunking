@@ -1319,6 +1319,13 @@ func recoverFromIncompleteBrackets(line string) (bool, bool) {
 func recoverFromMultipleFields(line string) (bool, bool) {
 	trimmedLine := strings.TrimSpace(line)
 
+	// Early check: reject lines with unclosed backticks (malformed struct tags)
+	// This prevents false positives where malformed tags get tokenized into multiple fields
+	backtickCount := strings.Count(trimmedLine, "`")
+	if backtickCount%2 != 0 {
+		return false, false // Malformed struct tag - don't attempt recovery
+	}
+
 	// Split into tokens
 	tokens := strings.Fields(trimmedLine)
 

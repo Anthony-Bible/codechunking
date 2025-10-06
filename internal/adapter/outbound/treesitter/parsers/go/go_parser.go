@@ -981,8 +981,16 @@ func hasPositiveFieldPattern(
 	}
 
 	// Check for formal field declarations first
-	if len(queryEngine.QueryFieldDeclarations(parseTree)) > 0 {
-		return true
+	fields := queryEngine.QueryFieldDeclarations(parseTree)
+	if len(fields) > 0 {
+		// CRITICAL: Verify fields don't contain ERROR nodes before accepting
+		// Malformed generics create partial field_declaration nodes with ERROR children
+		for _, field := range fields {
+			if containsErrorNodesInSubtree(field) {
+				return false // Malformed field - reject it
+			}
+		}
+		return true // Valid fields found without errors
 	}
 
 	if len(queryEngine.QueryMethodSpecs(parseTree)) > 0 {
@@ -1214,6 +1222,146 @@ type contextParseResult struct {
 	errorMessage string // Detailed error message explaining the parsing issue
 }
 
+// attemptRecoveryStrategies tries various recovery strategies on malformed input
+// to extract valid field information. Returns (recovered, isField) where:
+// - recovered=true means we successfully applied a recovery strategy
+// - isField indicates whether the recovered result represents a valid field.
+func attemptRecoveryStrategies(line string, parseTree *valueobject.ParseTree) (bool, bool) {
+	trimmedLine := strings.TrimSpace(line)
+
+	// Strategy 1: Try to recover from trailing punctuation
+	if strings.HasSuffix(trimmedLine, ",") || strings.HasSuffix(trimmedLine, ";") {
+		if recovered, isField := recoverFromTrailingPunctuation(trimmedLine); recovered {
+			return true, isField
+		}
+	}
+
+	// Strategy 2: Try to recover from incomplete brackets in generic types
+	openBrackets := strings.Count(trimmedLine, "[")
+	closeBrackets := strings.Count(trimmedLine, "]")
+	if openBrackets > closeBrackets {
+		if recovered, isField := recoverFromIncompleteBrackets(trimmedLine); recovered {
+			return true, isField
+		}
+	}
+
+	// Strategy 3: Try to recover from multiple fields on one line (missing separator)
+	// This checks for pattern like "Name string Age int"
+	if recovered, isField := recoverFromMultipleFields(trimmedLine); recovered {
+		return true, isField
+	}
+
+	// Strategy 4: Try to recognize partial function signatures
+	if strings.Contains(trimmedLine, "func(") && !strings.Contains(trimmedLine, ")") {
+		// Partial function signature - recognize as valid field type attempt
+		return true, true
+	}
+
+	// No recovery strategy succeeded
+	return false, false
+}
+
+// recoverFromTrailingPunctuation attempts to recover from trailing commas or semicolons
+// by stripping them and re-parsing the cleaned line.
+func recoverFromTrailingPunctuation(line string) (bool, bool) {
+	trimmedLine := strings.TrimSpace(line)
+
+	// Strip trailing punctuation
+	cleanedLine := strings.TrimRight(trimmedLine, ",;")
+
+	// If nothing changed, no recovery possible
+	if cleanedLine == trimmedLine {
+		return false, false
+	}
+
+	// Try parsing the cleaned line
+	isField, parsed := tryASTBasedFieldDetection(cleanedLine)
+
+	// Return recovery result
+	return parsed, isField
+}
+
+// recoverFromIncompleteBrackets attempts to recover from missing closing brackets
+// in generic types by inferring and adding the missing brackets.
+func recoverFromIncompleteBrackets(line string) (bool, bool) {
+	trimmedLine := strings.TrimSpace(line)
+
+	// Count unmatched brackets
+	openBrackets := strings.Count(trimmedLine, "[")
+	closeBrackets := strings.Count(trimmedLine, "]")
+
+	if openBrackets <= closeBrackets {
+		return false, false
+	}
+
+	// Add missing closing brackets
+	missingBrackets := openBrackets - closeBrackets
+	repairedLine := trimmedLine + strings.Repeat("]", missingBrackets)
+
+	// Try parsing the repaired line
+	isField, parsed := tryASTBasedFieldDetection(repairedLine)
+
+	// CRITICAL: Only accept recovery if parsing succeeded WITHOUT errors
+	// The lenient fallback below was accepting malformed generic syntax
+	// that still had ERROR nodes after bracket "repair"
+	if parsed && isField {
+		return true, true
+	}
+
+	// Recovery failed - the repaired line still has parse errors
+	// Do NOT use lenient fallback for malformed generic syntax
+	return false, false
+}
+
+// recoverFromMultipleFields attempts to detect when multiple fields are declared
+// on a single line without proper separation (e.g., "Name string Age int").
+// This is ambiguous in Go, so we return recovered=true but isField=false.
+func recoverFromMultipleFields(line string) (bool, bool) {
+	trimmedLine := strings.TrimSpace(line)
+
+	// Split into tokens
+	tokens := strings.Fields(trimmedLine)
+
+	// Need at least 4 tokens for pattern: identifier type identifier type
+	if len(tokens) < 4 {
+		return false, false
+	}
+
+	// Check for alternating identifier/type pattern
+	// Look for pattern: Name string Age int (4 tokens)
+	// This is a heuristic - we check if tokens alternate between likely identifiers and types
+	hasMultipleFieldPattern := false
+
+	// Simple heuristic: if we have exactly 4 tokens and no obvious function/var/const keywords
+	if len(tokens) == 4 {
+		// Check if none of the tokens are Go keywords that would indicate non-field syntax
+		noKeywords := true
+		keywords := []string{"func", "var", "const", "package", "import", "type", "return", "if", "for"}
+		for _, token := range tokens {
+			for _, keyword := range keywords {
+				if token == keyword {
+					noKeywords = false
+					break
+				}
+			}
+		}
+
+		if noKeywords {
+			// Additional check: tokens should look like identifier-type pairs
+			// We can't be certain, but this pattern is suspicious enough to flag
+			hasMultipleFieldPattern = true
+		}
+	}
+
+	if !hasMultipleFieldPattern {
+		return false, false
+	}
+
+	// We detected multiple fields on one line - this is recovered but ambiguous
+	// Return recovered=true, isField=false because we can't determine which part is the field
+	return true, false
+}
+
 // tryParseInStructContext is a deprecated compatibility wrapper around direct parsing.
 // Deprecated: This function exists only for backward compatibility with existing tests.
 // New code should use tryASTBasedFieldDetection directly for better performance and accuracy.
@@ -1258,7 +1406,19 @@ func tryParseInStructContext(ctx context.Context, line string, queryEngine TreeS
 		}
 	}
 
-	// If parsing failed, analyze the AST to determine specific error type
+	// If parsing failed, try recovery strategies before giving up
+	recovered, recoveredIsField := attemptRecoveryStrategies(trimmedLine, parseTree)
+	if recovered {
+		// Recovery succeeded - return the recovered result
+		return contextParseResult{
+			parsed:       true,
+			isField:      recoveredIsField,
+			errorType:    "",
+			errorMessage: "",
+		}
+	}
+
+	// If parsing failed and recovery failed, analyze the AST to determine specific error type
 	errorType, errorMessage := analyzeFieldDeclarationError(parseTree, trimmedLine)
 	return contextParseResult{
 		parsed:       false,

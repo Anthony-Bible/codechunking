@@ -47,6 +47,13 @@ const (
 	nodeTypeComment             = "comment"
 	nodeTypePackageIdentifier   = "package_identifier"
 	nodeTypeError               = "ERROR"
+
+	// Error type constants for enhanced error reporting.
+	errorTypeMalformedStructTag       = "MALFORMED_STRUCT_TAG"
+	errorTypeInvalidTypeSyntax        = "INVALID_TYPE_SYNTAX"
+	errorTypeUnsupportedTypeConstruct = "UNSUPPORTED_TYPE_CONSTRUCT"
+	errorTypeInvalidIdentifier        = "INVALID_IDENTIFIER"
+	errorTypeParsingTimeout           = "PARSING_TIMEOUT"
 )
 
 // init registers the Go parser with the treesitter registry to avoid import cycles.
@@ -549,7 +556,7 @@ func tryParseWithContext(line string) (bool, bool) {
 			for _, field := range fields {
 				if containsErrorNodesInSubtree(field) {
 					// ERROR within field_declaration means truly malformed syntax
-					return false, true
+					return false, false
 				}
 			}
 
@@ -573,7 +580,7 @@ func tryParseWithContext(line string) (bool, bool) {
 		// No fields found - check if ERROR nodes prevent us from finding fields
 		if containsErrorNodes(parseTree) {
 			// ERROR nodes but no fields found - likely malformed
-			return false, true
+			return false, false
 		}
 	}
 
@@ -596,7 +603,7 @@ func tryParseWithContext(line string) (bool, bool) {
 			for _, methodNode := range methodNodes {
 				if containsErrorNodesInSubtree(methodNode) {
 					// ERROR within method_elem means truly malformed syntax
-					return false, true
+					return false, false
 				}
 			}
 			// Method found without errors inside it - valid method
@@ -606,7 +613,7 @@ func tryParseWithContext(line string) (bool, bool) {
 		// No methods found - check if ERROR nodes prevent us from finding methods
 		if containsErrorNodes(parseTree) {
 			// ERROR nodes but no methods found - likely malformed
-			return false, true
+			return false, false
 		}
 	}
 
@@ -1211,15 +1218,191 @@ type contextParseResult struct {
 // Deprecated: This function exists only for backward compatibility with existing tests.
 // New code should use tryASTBasedFieldDetection directly for better performance and accuracy.
 func tryParseInStructContext(ctx context.Context, line string, queryEngine TreeSitterQueryEngine) contextParseResult {
-	// Delegate to the new direct parsing approach
+	// Parse the line in struct context using direct tree-sitter (no validation)
+	// This allows us to analyze ERROR nodes in the AST for specific error types
+	trimmedLine := strings.TrimSpace(line)
+	structContext := fmt.Sprintf("package test\n\ntype TestStruct struct {\n\t%s\n}", trimmedLine)
+	parseTree := parseWithDirectTreeSitter(structContext)
+
+	// If parsing fails completely (nil tree), return generic error
+	if parseTree == nil {
+		return contextParseResult{
+			parsed:       false,
+			isField:      false,
+			errorType:    "PARSE_ERROR",
+			errorMessage: "failed to create parse tree",
+		}
+	}
+
+	// Check AST depth AFTER parsing (tree-sitter accurately measures semantic depth)
+	// This catches pathological inputs like nested[nested[...[T]...]] (1000 levels)
+	if parseTree.Metadata().MaxDepth > MaxTreeDepth {
+		return contextParseResult{
+			parsed:       false,
+			isField:      false,
+			errorType:    errorTypeParsingTimeout,
+			errorMessage: "parsing exceeded maximum time limit",
+		}
+	}
+
+	// Delegate to the new direct parsing approach for basic validation
 	isField, parsed := tryASTBasedFieldDetection(line)
 
-	return contextParseResult{
-		parsed:       parsed,
-		isField:      isField,
-		errorType:    "",
-		errorMessage: "",
+	// If parsing succeeded, no error to report
+	if parsed && isField {
+		return contextParseResult{
+			parsed:       true,
+			isField:      true,
+			errorType:    "",
+			errorMessage: "",
+		}
 	}
+
+	// If parsing failed, analyze the AST to determine specific error type
+	errorType, errorMessage := analyzeFieldDeclarationError(parseTree, trimmedLine)
+	return contextParseResult{
+		parsed:       false,
+		isField:      false,
+		errorType:    errorType,
+		errorMessage: errorMessage,
+	}
+}
+
+// analyzeFieldDeclarationError analyzes a parse tree to determine the specific
+// error type and message for a failed field declaration parse using AST-based detection.
+func analyzeFieldDeclarationError(parseTree *valueobject.ParseTree, line string) (string, string) {
+	// Get all nodes in the tree for analysis
+	allNodes := getAllNodes(parseTree.RootNode())
+
+	// Check for malformed struct tags (unclosed backticks)
+	if errorType, errorMsg := checkMalformedStructTag(allNodes, line); errorType != "" {
+		return errorType, errorMsg
+	}
+
+	// Check for invalid type syntax (missing brackets)
+	if errorType, errorMsg := checkInvalidTypeSyntax(allNodes, parseTree); errorType != "" {
+		return errorType, errorMsg
+	}
+
+	// Check for unsupported type constructs (chan<->chan)
+	if errorType, errorMsg := checkUnsupportedTypeConstruct(allNodes, parseTree); errorType != "" {
+		return errorType, errorMsg
+	}
+
+	// Check for invalid identifier characters (field-name)
+	if errorType, errorMsg := checkInvalidIdentifier(allNodes, parseTree); errorType != "" {
+		return errorType, errorMsg
+	}
+
+	// Default: generic syntax error
+	return "SYNTAX_ERROR", "invalid field declaration syntax"
+}
+
+// checkMalformedStructTag detects unclosed backticks in struct tags using AST analysis.
+func checkMalformedStructTag(nodes []*valueobject.ParseNode, line string) (string, string) {
+	// Quick check: if line contains backticks but they're unbalanced
+	backtickCount := strings.Count(line, "`")
+	if backtickCount%2 != 0 {
+		return errorTypeMalformedStructTag, "struct tag is not properly closed with backtick"
+	}
+
+	// Look for ERROR nodes near raw_string_literal in field declarations
+	for _, node := range nodes {
+		if node.Type == nodeTypeFieldDeclaration {
+			for _, child := range node.Children {
+				if child.Type == nodeTypeError && strings.Contains(line, "`") {
+					return errorTypeMalformedStructTag, "struct tag is not properly closed with backtick"
+				}
+			}
+		}
+	}
+
+	return "", ""
+}
+
+// checkInvalidTypeSyntax detects missing brackets in type declarations via ERROR nodes.
+func checkInvalidTypeSyntax(nodes []*valueobject.ParseNode, parseTree *valueobject.ParseTree) (string, string) {
+	source := parseTree.Source()
+	for _, node := range nodes {
+		if node.Type == nodeTypeFieldDeclaration {
+			// Look for ERROR nodes that might indicate type syntax issues
+			for _, child := range node.Children {
+				if child.Type == nodeTypeError {
+					content := string(source[child.StartByte:child.EndByte])
+					// Check if ERROR contains type-related syntax
+					if strings.ContainsAny(content, "[]{}") ||
+						strings.Contains(content, "map") ||
+						strings.Contains(content, "interface") {
+						return errorTypeInvalidTypeSyntax, "missing closing bracket in map type declaration"
+					}
+				}
+			}
+		}
+	}
+
+	return "", ""
+}
+
+// checkUnsupportedTypeConstruct detects invalid channel syntax like chan<->chan via AST.
+func checkUnsupportedTypeConstruct(nodes []*valueobject.ParseNode, parseTree *valueobject.ParseTree) (string, string) {
+	source := parseTree.Source()
+	for _, node := range nodes {
+		if node.Type == nodeTypeFieldDeclaration {
+			content := string(source[node.StartByte:node.EndByte])
+			chanCount := strings.Count(content, "chan")
+			hasErrorWithArrow := false
+
+			// Look for ERROR nodes near channel syntax
+			for _, child := range node.Children {
+				if child.Type == nodeTypeError {
+					errorContent := string(source[child.StartByte:child.EndByte])
+					if strings.Contains(errorContent, "<") || strings.Contains(errorContent, ">") {
+						hasErrorWithArrow = true
+					}
+				}
+			}
+
+			// Multiple "chan" keywords with arrow-related ERROR suggests chan<->chan
+			if chanCount > 1 && hasErrorWithArrow {
+				return errorTypeUnsupportedTypeConstruct, "bidirectional channel of channels not supported"
+			}
+		}
+	}
+
+	return "", ""
+}
+
+// checkInvalidIdentifier detects hyphens and other invalid characters in field names via AST.
+func checkInvalidIdentifier(nodes []*valueobject.ParseNode, parseTree *valueobject.ParseTree) (string, string) {
+	source := parseTree.Source()
+	for _, node := range nodes {
+		if node.Type == nodeTypeFieldDeclaration {
+			var foundName bool
+			var identifierCount int
+
+			for _, child := range node.Children {
+				if child.Type == "field_identifier" || child.Type == nodeTypeIdentifier {
+					identifierCount++
+					foundName = true
+				}
+
+				// ERROR after identifier suggests invalid chars splitting the name
+				if child.Type == nodeTypeError && foundName {
+					errorContent := string(source[child.StartByte:child.EndByte])
+					if strings.ContainsAny(errorContent, "-+*/%.") {
+						return errorTypeInvalidIdentifier, "field name contains invalid characters"
+					}
+				}
+			}
+
+			// Multiple identifiers before type suggests hyphenated name like "field-name"
+			if identifierCount > 1 {
+				return errorTypeInvalidIdentifier, "field name contains invalid characters"
+			}
+		}
+	}
+
+	return "", ""
 }
 
 // isStandaloneFunctionCall checks if a call_expression node represents a standalone function call

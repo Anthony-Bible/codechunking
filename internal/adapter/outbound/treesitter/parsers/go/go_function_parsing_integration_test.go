@@ -4,9 +4,6 @@ import (
 	"codechunking/internal/adapter/outbound/treesitter"
 	"codechunking/internal/port/outbound"
 	"context"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -18,18 +15,37 @@ import (
 func TestGoParser_TreeSitter_FunctionContent(t *testing.T) {
 	t.Parallel()
 
-	// Load the function sample from repo root (test_function.txt)
-	_, thisFile, _, _ := runtime.Caller(0)
-	dir := filepath.Dir(thisFile)
-	for range 6 { // ascend to repo root
-		dir = filepath.Dir(dir)
+	// Embedded test fixture: realistic Go HTTP handler method
+	methodSource := `func (api *APIServer) handleRunSafeDemo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-	funcPath := filepath.Join(dir, "test_function.txt")
-	funcBytes, err := os.ReadFile(funcPath)
-	require.NoError(t, err, "failed to read test_function.txt")
 
-	// Build minimal compilable Go source: package + function
-	source := "package example\n\n" + string(funcBytes) + "\n"
+	var req struct {
+		Code string ` + "`json:\"code\"`" + `
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	result, err := api.executeCode(req.Code)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"result": result,
+		"status": "success",
+	})
+}`
+
+	// Build minimal compilable Go source: package + method
+	source := "package example\n\n" + methodSource + "\n"
 
 	// Create parser and parse source with real Tree-sitter
 	parserInterface, err := NewGoParser()
@@ -63,8 +79,8 @@ func TestGoParser_TreeSitter_FunctionContent(t *testing.T) {
 	}
 	require.NotNil(t, found, "handleRunSafeDemo should be extracted")
 
-	// Content should exactly match the function text from the file
-	expected := strings.TrimSpace(string(funcBytes))
+	// Content should exactly match the method source
+	expected := strings.TrimSpace(methodSource)
 	actual := strings.TrimSpace(found.Content)
 	assert.Equal(t, expected, actual, "extracted function content should match source")
 

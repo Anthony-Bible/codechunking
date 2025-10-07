@@ -691,19 +691,21 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 		assert.True(t, anotherPrivateChunk.Metadata["is_private"].(bool))
 	}
 
-	// Should find variables with complex initializers
+	// Should find constants with complex initializers
+	// Note: Even though they have complex initializers (method chaining),
+	// they're declared with 'const' so they're ConstructConstant (immutable binding)
 	complexArrayChunk := testhelpers.FindChunkByName(variables, "complexArray")
-	assert.NotNil(t, complexArrayChunk, "Should find complexArray variable")
+	assert.NotNil(t, complexArrayChunk, "Should find complexArray constant")
 	if complexArrayChunk != nil {
-		assert.Equal(t, outbound.ConstructVariable, complexArrayChunk.Type)
+		assert.Equal(t, outbound.ConstructConstant, complexArrayChunk.Type)
 		assert.Contains(t, complexArrayChunk.Metadata, "has_complex_initializer")
 		assert.True(t, complexArrayChunk.Metadata["has_complex_initializer"].(bool))
 	}
 
 	complexObjectChunk := testhelpers.FindChunkByName(variables, "complexObject")
-	assert.NotNil(t, complexObjectChunk, "Should find complexObject variable")
+	assert.NotNil(t, complexObjectChunk, "Should find complexObject constant")
 	if complexObjectChunk != nil {
-		assert.Equal(t, outbound.ConstructVariable, complexObjectChunk.Type)
+		assert.Equal(t, outbound.ConstructConstant, complexObjectChunk.Type)
 		assert.Contains(t, complexObjectChunk.Metadata, "has_complex_initializer")
 		assert.True(t, complexObjectChunk.Metadata["has_complex_initializer"].(bool))
 	}

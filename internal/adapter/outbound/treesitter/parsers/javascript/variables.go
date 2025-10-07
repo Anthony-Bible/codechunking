@@ -91,11 +91,6 @@ func extractJavaScriptVariables(
 			declarationType = declarationTypeConst
 		}
 
-		chunkType := outbound.ConstructVariable
-		if declarationType == declarationTypeConst {
-			chunkType = outbound.ConstructConstant
-		}
-
 		declarators := findChildrenByType(node, "variable_declarator")
 		for _, declarator := range declarators {
 			// Get the pattern (first child, which could be identifier or a destructuring pattern)
@@ -124,6 +119,16 @@ func extractJavaScriptVariables(
 				// Merge pattern-specific metadata
 				for k, v := range varInfo.metadata {
 					metadata[k] = v
+				}
+
+				// Determine chunk type:
+				// - const → always constant (immutable binding)
+				// - let → always variable
+				// Note: Even though const bindings can hold complex objects,
+				// the binding itself is immutable (can't reassign)
+				chunkType := outbound.ConstructVariable
+				if declarationType == declarationTypeConst {
+					chunkType = outbound.ConstructConstant
 				}
 
 				chunk := outbound.SemanticCodeChunk{
@@ -257,6 +262,113 @@ func extractJavaScriptVariables(
 		}
 	}
 
+	// Handle private class field definitions (ES2022 syntax with # prefix)
+	// These are represented as field_definition nodes in the parse tree
+	fieldDefinitions := parseTree.GetNodesByType("field_definition")
+	for _, fieldDef := range fieldDefinitions {
+		// Extract property name and value nodes
+		var propertyNode *valueobject.ParseNode
+		var valueNode *valueobject.ParseNode
+		isStatic := false
+
+		for _, child := range fieldDef.Children {
+			switch child.Type {
+			case "private_property_identifier", nodeTypePropertyID:
+				propertyNode = child
+			case "static":
+				isStatic = true
+			case "=":
+				// Skip the equals sign
+				continue
+			default:
+				// If we already have a property node and this isn't an operator/keyword,
+				// it's likely the value/initializer
+				if propertyNode != nil && child.Type != "static" {
+					valueNode = child
+				}
+			}
+		}
+
+		if propertyNode == nil {
+			continue
+		}
+
+		fieldName := parseTree.GetNodeText(propertyNode)
+
+		// Skip if already processed (avoid duplicates)
+		if processedVarNames[fieldName] {
+			continue
+		}
+
+		// Determine if it's private
+		isPrivate := strings.HasPrefix(fieldName, "#")
+
+		// Build metadata
+		metadata := map[string]interface{}{
+			"declaration_type": "field",
+			"scope":            "class",
+			"is_class_field":   true,
+		}
+
+		if isPrivate {
+			metadata["is_private"] = true
+		}
+
+		if isStatic {
+			metadata["is_static"] = true
+		}
+
+		// Analyze initializer if present
+		if valueNode != nil {
+			metadata["has_initializer"] = true
+
+			// Use existing analysis function to detect ES6 features
+			analyzeVariableValue(fieldDef, parseTree, metadata)
+		}
+
+		// Determine visibility
+		visibility := outbound.Public
+		if isPrivate {
+			visibility = outbound.Private
+		}
+
+		// Determine chunk type based on initializer complexity
+		// Private fields with simple function calls are constants
+		// Private fields with complex new expressions are properties
+		chunkType := outbound.ConstructConstant
+		if valueNode != nil && valueNode.Type == "new_expression" {
+			chunkType = outbound.ConstructProperty
+		}
+
+		chunk := outbound.SemanticCodeChunk{
+			ChunkID:       utils.GenerateID(string(chunkType), fieldName, nil),
+			Type:          chunkType,
+			Name:          fieldName,
+			QualifiedName: moduleName + "." + fieldName,
+			Language:      parseTree.Language(),
+			StartByte:     propertyNode.StartByte,
+			EndByte:       fieldDef.EndByte, // Use full field definition range
+			StartPosition: valueobject.Position{
+				Row:    propertyNode.StartPos.Row,
+				Column: propertyNode.StartPos.Column,
+			},
+			EndPosition: valueobject.Position{
+				Row:    fieldDef.EndPos.Row,
+				Column: fieldDef.EndPos.Column,
+			},
+			Content:     parseTree.GetNodeText(fieldDef),
+			Metadata:    metadata,
+			Visibility:  visibility,
+			ReturnType:  inferReturnType(fieldDef, parseTree),
+			Annotations: []outbound.Annotation{},
+			ExtractedAt: time.Now(),
+			Hash:        utils.GenerateHash(fieldName),
+		}
+
+		variables = append(variables, chunk)
+		processedVarNames[fieldName] = true
+	}
+
 	return variables, nil
 }
 
@@ -381,6 +493,11 @@ func analyzeVariableValue(
 	if hasNullishCoalescing(valueNode, parseTree) {
 		metadata["has_nullish_coalescing"] = true
 	}
+
+	// Check for complex initializers (function calls, object literals, array methods, etc.)
+	if isComplexInitializer(valueNode) {
+		metadata["has_complex_initializer"] = true
+	}
 }
 
 // inferReturnType infers the return type from a variable declarator.
@@ -426,6 +543,68 @@ func inferReturnType(declarator *valueobject.ParseNode, parseTree *valueobject.P
 	}
 
 	return ""
+}
+
+// isComplexInitializer checks if a value node represents a complex initializer
+// (anything beyond simple literals like numbers, strings, booleans, null, undefined).
+// Complex initializers include: function calls, method chains (array.map().filter()), etc.
+// NOT considered complex: optional chaining (?.), nullish coalescing (??), simple member access.
+func isComplexInitializer(valueNode *valueobject.ParseNode) bool {
+	if valueNode == nil {
+		return false
+	}
+
+	// Simple node types that are NOT complex
+	simpleTypes := map[string]bool{
+		"number":               true,
+		"string":               true,
+		"true":                 true,
+		"false":                true,
+		"null":                 true,
+		"undefined":            true,
+		"this":                 true,
+		"super":                true,
+		nodeTypeIdentifier:     true, // Simple variable reference
+		"member_expression":    true, // Simple property access like obj.prop or user?.profile
+		"subscript_expression": true, // Simple index access like arr[0]
+	}
+
+	// Check the top-level node type
+	if simpleTypes[valueNode.Type] {
+		return false
+	}
+
+	// Binary expressions with ?? (nullish coalescing) are NOT complex
+	if valueNode.Type == "binary_expression" {
+		// Check if it's using the ?? operator
+		for _, child := range valueNode.Children {
+			if child.Type == "??" {
+				return false
+			}
+		}
+		// Other binary operators (like arithmetic) could be simple too
+		// But for now, only ?? is explicitly marked as non-complex
+	}
+
+	// Call expressions are complex, EXCEPT for optional chaining calls like func?.(args)
+	// which are considered safe navigation syntax (similar to member access)
+	if valueNode.Type == nodeTypeCallExpr {
+		// Check if this has optional chaining (func?.(args))
+		hasOptionalChain := false
+		for _, child := range valueNode.Children {
+			if child.Type == "optional_chain" {
+				hasOptionalChain = true
+				break
+			}
+		}
+
+		// If it's an optional call, treat it as simple (not complex)
+		// Otherwise, it's a regular function call which is complex
+		return !hasOptionalChain
+	}
+
+	// All other types (new_expression, function_expression, arrow_function, etc.) are complex
+	return true
 }
 
 // hasDescendantOfType checks if a node has any descendant of the given type.

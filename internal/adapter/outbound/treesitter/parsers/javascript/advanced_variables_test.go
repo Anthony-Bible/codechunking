@@ -76,8 +76,8 @@ const bigIntConstructor = BigInt(456);
 	assert.NotNil(t, symbolVarChunk, "Should find symbol variable")
 	if symbolVarChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, symbolVarChunk.Type)
-		assert.Contains(t, templateVarChunk.Metadata, "is_symbol")
-		assert.True(t, templateVarChunk.Metadata["is_symbol"].(bool))
+		assert.Contains(t, symbolVarChunk.Metadata, "is_symbol")
+		assert.True(t, symbolVarChunk.Metadata["is_symbol"].(bool))
 	}
 
 	// Should find computed property object

@@ -126,11 +126,49 @@ func (v *JavaScriptValidator) validateVariableSyntax(source string) *ParserError
 			WithSuggestion("Provide an initial value for const variables")
 	}
 
-	// Check for unclosed string literals
-	unClosedStringPattern := regexp.MustCompile(`["'][^"']*$`)
+	// Check for unclosed string literals (but not template literals)
+	// Note: This is a basic check - tree-sitter will catch actual syntax errors
 	lines := strings.Split(source, "\n")
 	for i, line := range lines {
-		if unClosedStringPattern.MatchString(line) && !strings.Contains(line, `\"`) && !strings.Contains(line, `\'`) {
+		// Skip lines with template literals (backticks)
+		if strings.Contains(line, "`") {
+			continue
+		}
+
+		// Count unescaped quotes
+		doubleQuotes := 0
+		singleQuotes := 0
+		escaped := false
+
+		for _, ch := range line {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			switch ch {
+			case '"':
+				doubleQuotes++
+			case '\'':
+				singleQuotes++
+			}
+		}
+
+		// If we have an odd number of quotes, the string might be unclosed
+		// However, this could also be a valid multi-line string, so we only flag
+		// if there are no other indicators of valid syntax
+		if (doubleQuotes%2 != 0 || singleQuotes%2 != 0) && !strings.Contains(line, "//") {
+			// Check if this is actually an error by looking for common valid patterns
+			trimmed := strings.TrimSpace(line)
+			// Skip if it looks like a comment or has other valid continuation indicators
+			if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") ||
+				strings.HasSuffix(trimmed, "+") || strings.HasSuffix(trimmed, "\\") {
+				continue
+			}
+
 			return NewSyntaxError("invalid syntax: unclosed string literal").
 				WithLocation(i+1, 0).
 				WithSuggestion("Close the string literal with a matching quote")

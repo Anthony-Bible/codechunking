@@ -5,8 +5,6 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
-	"fmt"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -16,77 +14,8 @@ func extractJavaScriptVariables(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	fmt.Println("extractJavaScriptVariables called")
-
 	var variables []outbound.SemanticCodeChunk
-
-	// Fallback regex-based variable extraction
-	sourceText := string(parseTree.Source())
-	lines := strings.Split(sourceText, "\n")
-
-	// Regex patterns for variable declarations
-	varPatterns := map[string]*regexp.Regexp{
-		"var":   regexp.MustCompile(`^\s*var\s+([a-zA-Z_$][a-zA-Z0-9_$]*)`),
-		"let":   regexp.MustCompile(`^\s*let\s+([a-zA-Z_$][a-zA-Z0-9_$]*)`),
-		"const": regexp.MustCompile(`^\s*const\s+([a-zA-Z_$][a-zA-Z0-9_$]*)`),
-	}
-
-	lineNumber := 0
-	for _, line := range lines {
-		for declType, pattern := range varPatterns {
-			matches := pattern.FindStringSubmatch(line)
-			if len(matches) > 1 {
-				varName := matches[1]
-				startByte := 0
-				for i := range lineNumber {
-					startByte += len(lines[i]) + 1 // +1 for newline character
-				}
-				startByte += strings.Index(line, varName)
-				endByte := startByte + len(varName)
-
-				chunkType := outbound.ConstructVariable
-				if declType == "const" {
-					chunkType = outbound.ConstructConstant
-				}
-
-				chunk := outbound.SemanticCodeChunk{
-					ChunkID:       utils.GenerateID(string(chunkType), varName, nil),
-					Type:          chunkType,
-					Name:          varName,
-					QualifiedName: "main." + varName,
-					Language:      parseTree.Language(),
-					StartByte:     valueobject.ClampToUint32(startByte),
-					EndByte:       valueobject.ClampToUint32(endByte),
-					StartPosition: valueobject.Position{
-						Row:    valueobject.ClampToUint32(lineNumber),
-						Column: valueobject.ClampToUint32(strings.Index(line, varName)),
-					},
-					EndPosition: valueobject.Position{
-						Row:    valueobject.ClampToUint32(lineNumber),
-						Column: valueobject.ClampToUint32(strings.Index(line, varName) + len(varName)),
-					},
-					Content: line,
-					Metadata: map[string]interface{}{
-						"declaration_type": declType,
-						"scope":            getScopeForDeclaration(declType),
-					},
-					Annotations: []outbound.Annotation{},
-					ExtractedAt: time.Now(),
-					Hash:        utils.GenerateHash(varName),
-				}
-				variables = append(variables, chunk)
-			}
-		}
-		lineNumber++
-	}
-
 	moduleName := "main"
-
-	// Debug: Print available node types in the first few levels
-	fmt.Println("=== JavaScript AST Node Types Debug ===")
-	root := parseTree.RootNode()
-	debugNodeTypes(root, 0, 3)
-	fmt.Println("======================================")
 
 	// Find all variable declarations (var)
 	varDeclarations := parseTree.GetNodesByType("variable_declaration")
@@ -95,12 +24,6 @@ func extractJavaScriptVariables(
 		for _, declarator := range declarators {
 			nameNodes := findChildrenByType(declarator, "identifier")
 			if len(nameNodes) == 0 {
-				// Debug: Check what child nodes are available
-				fmt.Printf("No identifier found in variable_declarator. Available children: ")
-				for _, child := range declarator.Children {
-					fmt.Printf("%s ", child.Type)
-				}
-				fmt.Println()
 				continue
 			}
 			nameNode := nameNodes[0]
@@ -162,6 +85,17 @@ func extractJavaScriptVariables(
 				chunkType = outbound.ConstructConstant
 			}
 
+			// Build metadata with ES6 feature detection
+			metadata := map[string]interface{}{
+				"declaration_type": declarationType,
+				"scope":            "block",
+			}
+
+			// Analyze the declarator value to detect ES6 features
+			if len(declarator.Children) > 0 {
+				analyzeVariableValue(declarator, parseTree, metadata)
+			}
+
 			chunk := outbound.SemanticCodeChunk{
 				ChunkID:       utils.GenerateID(string(chunkType), varName, nil),
 				Type:          chunkType,
@@ -173,43 +107,17 @@ func extractJavaScriptVariables(
 				StartPosition: valueobject.Position{Row: startPos.Row, Column: startPos.Column},
 				EndPosition:   valueobject.Position{Row: endPos.Row, Column: endPos.Column},
 				Content:       parseTree.GetNodeText(declarator),
-				Metadata: map[string]interface{}{
-					"declaration_type": declarationType,
-					"scope":            "block",
-				},
-				Annotations: []outbound.Annotation{},
-				ExtractedAt: time.Now(),
-				Hash:        utils.GenerateHash(varName),
+				Metadata:      metadata,
+				ReturnType:    inferReturnType(declarator, parseTree),
+				Annotations:   []outbound.Annotation{},
+				ExtractedAt:   time.Now(),
+				Hash:          utils.GenerateHash(varName),
 			}
 			variables = append(variables, chunk)
 		}
 	}
 
 	return variables, nil
-}
-
-func getScopeForDeclaration(declType string) string {
-	if declType == "var" {
-		return "global"
-	}
-	return "block"
-}
-
-func debugNodeTypes(node *valueobject.ParseNode, currentLevel, maxLevel int) {
-	if currentLevel >= maxLevel {
-		return
-	}
-
-	indent := ""
-	for range currentLevel {
-		indent += "  "
-	}
-
-	fmt.Printf("%s%s (level %d)\n", indent, node.Type, currentLevel)
-
-	for _, child := range node.Children {
-		debugNodeTypes(child, currentLevel+1, maxLevel)
-	}
 }
 
 func extractJavaScriptInterfaces(
@@ -258,4 +166,141 @@ func extractJavaScriptInterfaces(
 	}
 
 	return interfaces, nil
+}
+
+// analyzeVariableValue analyzes the value of a variable declarator to detect ES6 features.
+func analyzeVariableValue(
+	declarator *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+	metadata map[string]interface{},
+) {
+	// Find the value node (it's typically after the '=' token)
+	var valueNode *valueobject.ParseNode
+	for _, child := range declarator.Children {
+		if child.Type != "identifier" && child.Type != "=" {
+			valueNode = child
+			break
+		}
+	}
+
+	if valueNode == nil {
+		return
+	}
+
+	// Check for template strings
+	if hasDescendantOfType(valueNode, "template_string") {
+		metadata["has_template_expressions"] = true
+	}
+
+	// Check for symbols (new_expression with Symbol identifier)
+	if hasSymbolExpression(valueNode, parseTree) {
+		metadata["is_symbol"] = true
+	}
+
+	// Check for computed properties in object expressions
+	if hasDescendantOfType(valueNode, "computed_property_name") {
+		metadata["has_computed_properties"] = true
+	}
+}
+
+// inferReturnType infers the return type from a variable declarator.
+func inferReturnType(declarator *valueobject.ParseNode, parseTree *valueobject.ParseTree) string {
+	// Find the value node
+	var valueNode *valueobject.ParseNode
+	for _, child := range declarator.Children {
+		if child.Type != "identifier" && child.Type != "=" {
+			valueNode = child
+			break
+		}
+	}
+
+	if valueNode == nil {
+		return ""
+	}
+
+	// Check for new_expression to determine constructor type
+	newExprs := findDescendantsByType(valueNode, "new_expression")
+	for _, newExpr := range newExprs {
+		// Get the constructor name (first identifier child)
+		for _, child := range newExpr.Children {
+			if child.Type == "identifier" {
+				constructorName := parseTree.GetNodeText(child)
+				// Return constructor names like Map, Set, Promise, etc.
+				if constructorName == "Map" || constructorName == "Set" ||
+					constructorName == "WeakMap" || constructorName == "WeakSet" ||
+					constructorName == "Promise" {
+					return constructorName
+				}
+				break
+			}
+		}
+	}
+
+	// Check for BigInt
+	numberNodes := findDescendantsByType(valueNode, "number")
+	for _, numNode := range numberNodes {
+		numText := parseTree.GetNodeText(numNode)
+		if strings.HasSuffix(numText, "n") {
+			return "bigint"
+		}
+	}
+
+	return ""
+}
+
+// hasDescendantOfType checks if a node has any descendant of the given type.
+func hasDescendantOfType(node *valueobject.ParseNode, nodeType string) bool {
+	if node.Type == nodeType {
+		return true
+	}
+
+	for _, child := range node.Children {
+		if hasDescendantOfType(child, nodeType) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// findDescendantsByType finds all descendants of the given type.
+func findDescendantsByType(node *valueobject.ParseNode, nodeType string) []*valueobject.ParseNode {
+	var result []*valueobject.ParseNode
+
+	if node.Type == nodeType {
+		result = append(result, node)
+	}
+
+	for _, child := range node.Children {
+		result = append(result, findDescendantsByType(child, nodeType)...)
+	}
+
+	return result
+}
+
+// hasSymbolExpression checks if a node contains a Symbol() expression.
+func hasSymbolExpression(node *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
+	// Look for call_expression with Symbol identifier
+	callExprs := findDescendantsByType(node, "call_expression")
+	for _, callExpr := range callExprs {
+		// Check if the function being called is "Symbol"
+		for _, child := range callExpr.Children {
+			if child.Type == "identifier" && parseTree.GetNodeText(child) == "Symbol" {
+				return true
+			}
+		}
+	}
+
+	// Also check for member_expression like Symbol.for or Symbol.iterator
+	memberExprs := findDescendantsByType(node, "member_expression")
+	for _, memberExpr := range memberExprs {
+		// Check if the object is "Symbol"
+		for _, child := range memberExpr.Children {
+			if child.Type == "identifier" && parseTree.GetNodeText(child) == "Symbol" {
+				return true
+			}
+		}
+	}
+
+	return false
 }

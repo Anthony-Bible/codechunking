@@ -23,6 +23,9 @@ func extractJavaScriptVariables(
 	var variables []outbound.SemanticCodeChunk
 	moduleName := "main"
 
+	// Build namespace import symbol table for detecting namespace import variable assignments
+	namespaceImports := collectNamespaceImports(ctx, parseTree)
+
 	// Find all variable declarations (var)
 	varDeclarations := parseTree.GetNodesByType("variable_declaration")
 	for _, node := range varDeclarations {
@@ -108,6 +111,11 @@ func extractJavaScriptVariables(
 
 				// Analyze the declarator value to detect ES6 features
 				analyzeVariableValue(declarator, parseTree, metadata)
+
+				// Check if this variable is assigned from a namespace import
+				if detectNamespaceImportAssignment(declarator, parseTree, namespaceImports) {
+					metadata["is_namespace_import"] = true
+				}
 
 				// Merge pattern-specific metadata
 				for k, v := range varInfo.metadata {
@@ -505,4 +513,101 @@ func extractVariablesFromPattern(
 	}
 
 	return variables
+}
+
+// collectNamespaceImports scans the parse tree for namespace import statements
+// and returns a map of imported namespace identifiers.
+// Example: "import * as utils from './utils.js'" → map["utils"] = true.
+func collectNamespaceImports(ctx context.Context, parseTree *valueobject.ParseTree) map[string]bool {
+	namespaceImports := make(map[string]bool)
+
+	// Find all import_statement nodes
+	importStatements := parseTree.GetNodesByType("import_statement")
+
+	for _, importStmt := range importStatements {
+		// Look for import_clause child
+		var importClause *valueobject.ParseNode
+		for _, child := range importStmt.Children {
+			if child.Type == "import_clause" {
+				importClause = child
+				break
+			}
+		}
+
+		if importClause == nil {
+			continue
+		}
+
+		// Look for namespace_import child within the import_clause
+		var namespaceImport *valueobject.ParseNode
+		for _, child := range importClause.Children {
+			if child.Type == "namespace_import" {
+				namespaceImport = child
+				break
+			}
+		}
+
+		if namespaceImport == nil {
+			continue
+		}
+
+		// Extract the identifier from namespace_import (the "utils" in "* as utils")
+		for _, child := range namespaceImport.Children {
+			if child.Type == nodeTypeIdentifier {
+				identifierName := parseTree.GetNodeText(child)
+				namespaceImports[identifierName] = true
+				break
+			}
+		}
+	}
+
+	return namespaceImports
+}
+
+// detectNamespaceImportAssignment checks if a variable declarator is assigned
+// from a namespace import identifier. Returns true if the initializer is a
+// simple identifier reference that matches a namespace import.
+// Example: const utilsNamespace = utils; (where utils is a namespace import).
+func detectNamespaceImportAssignment(
+	declarator *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+	namespaceImports map[string]bool,
+) bool {
+	// Grammar structure (from tree-sitter-javascript/grammar.js:344-351):
+	// variable_declarator: $ => seq(
+	//   field('name', choice($.identifier, alias('of', $.identifier), $._destructuring_pattern)),
+	//   optional($._initializer),  // _initializer: $ => seq('=', field('value', $.expression))
+	// )
+	//
+	// In the AST, this appears as children: [name_node, '=' token, value_node]
+	// We find the value node by looking for the first child after the '=' token.
+
+	var valueNode *valueobject.ParseNode
+	foundEquals := false
+
+	for _, child := range declarator.Children {
+		if foundEquals {
+			// This is the first node after "=", which is our value
+			valueNode = child
+			break
+		}
+		if child.Type == "=" {
+			foundEquals = true
+		}
+	}
+
+	if valueNode == nil {
+		// No value means no assignment (e.g., `let x;`)
+		return false
+	}
+
+	// Check if the value is a simple identifier (not a complex expression)
+	// We WANT it to be an identifier for a simple assignment like: const x = utils;
+	if valueNode.Type == nodeTypeIdentifier {
+		// Get the identifier text and check if it's a namespace import
+		identifierText := parseTree.GetNodeText(valueNode)
+		return namespaceImports[identifierText]
+	}
+
+	return false
 }

@@ -49,6 +49,12 @@ func traverseForFunctions(
 		functions = append(functions, *chunk)
 	}
 
+	// Special handling: If this was a variable_declarator, we already processed its function child
+	// So skip traversing its children to avoid duplicates
+	if node.Type == "variable_declarator" {
+		return functions
+	}
+
 	// Recursively process children
 	for _, child := range node.Children {
 		functions = append(functions, traverseForFunctions(parseTree, child, moduleName, now, includePrivate)...)
@@ -72,12 +78,21 @@ func processFunctionNode(
 		return processMethodDefinition(parseTree, node, moduleName, now, includePrivate)
 	case "generator_function_declaration":
 		return processGeneratorFunction(parseTree, node, moduleName, now, includePrivate)
+	case "generator_function":
+		// Generator expression: const gen = function* () {}
+		return processGeneratorExpression(parseTree, node, moduleName, now, includePrivate)
 	case "variable_declarator":
 		// Check if this declares a function variable (const foo = function() {} or const bar = () => {})
 		return processFunctionVariable(parseTree, node, moduleName, now, includePrivate)
+	case "function_expression":
+		// Standalone function expressions (e.g., nested in return statements or as callbacks)
+		// These are often anonymous and nested
+		return processFunctionExpression(parseTree, node, moduleName, now, includePrivate)
+	case "arrow_function":
+		// Standalone arrow functions (e.g., nested in return statements or as callbacks)
+		return processArrowFunction(parseTree, node, moduleName, now, includePrivate)
 	default:
-		// Skip processing standalone function expressions and arrow functions
-		// They will be caught by variable_declarator processing
+		// Skip "function" keyword tokens and other non-function nodes
 		return nil
 	}
 }
@@ -103,11 +118,9 @@ func processFunctionDeclaration(
 	// Check if it's async
 	isAsync := isAsyncFunction(parseTree, node)
 
-	// Determine function type
+	// All JavaScript functions use ConstructFunction type
+	// Special properties are indicated by boolean flags
 	funcType := outbound.ConstructFunction
-	if isAsync {
-		funcType = outbound.ConstructAsyncFunction
-	}
 
 	parameters := extractParameters(parseTree, node)
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
@@ -141,12 +154,10 @@ func processFunctionExpression(
 	now time.Time,
 	includePrivate bool,
 ) *outbound.SemanticCodeChunk {
-	// Look for name in parent variable declarator
+	// Extract the INTERNAL function name from function_expression node
+	// For "const foo = function bar() {}", this should return "bar"
+	// For "const foo = function() {}", this should return ""
 	name := extractFunctionName(parseTree, node)
-	if name == "" {
-		// Anonymous function
-		name = ""
-	}
 
 	visibility := getJavaScriptVisibility(name)
 	if !includePrivate && visibility == outbound.Private {
@@ -154,10 +165,9 @@ func processFunctionExpression(
 	}
 
 	isAsync := isAsyncFunction(parseTree, node)
+
+	// All JavaScript functions use ConstructFunction type
 	funcType := outbound.ConstructFunction
-	if isAsync {
-		funcType = outbound.ConstructAsyncFunction
-	}
 
 	parameters := extractParameters(parseTree, node)
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
@@ -207,15 +217,16 @@ func processArrowFunction(
 		qualifiedName = "(anonymous)"
 	}
 
+	// Arrow functions also use ConstructFunction type, not ConstructLambda
 	return &outbound.SemanticCodeChunk{
-		ChunkID:       utils.GenerateID(string(outbound.ConstructLambda), name, nil),
-		Type:          outbound.ConstructLambda,
+		ChunkID:       utils.GenerateID(string(outbound.ConstructFunction), name, nil),
+		Type:          outbound.ConstructFunction,
 		Name:          name,
 		QualifiedName: qualifiedName,
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
-		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructLambda),
+		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructFunction),
 		Parameters:    parameters,
 		ReturnType:    "any",
 		Visibility:    visibility,
@@ -298,19 +309,67 @@ func processGeneratorFunction(
 	parameters := extractParameters(parseTree, node)
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 
+	// Generators use ConstructFunction with IsGeneric flag
 	return &outbound.SemanticCodeChunk{
-		ChunkID:       utils.GenerateID(string(outbound.ConstructGenerator), name, nil),
-		Type:          outbound.ConstructGenerator,
+		ChunkID:       utils.GenerateID(string(outbound.ConstructFunction), name, nil),
+		Type:          outbound.ConstructFunction,
 		Name:          name,
 		QualifiedName: qualifiedName,
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
-		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructGenerator),
+		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructFunction),
 		Parameters:    parameters,
 		ReturnType:    "any",
 		Visibility:    visibility,
 		IsAsync:       isAsync,
+		IsGeneric:     true, // Generators are marked as generic
+		Metadata:      make(map[string]interface{}),
+		ExtractedAt:   now,
+		Hash:          utils.GenerateHash(qualifiedName),
+	}
+}
+
+// processGeneratorExpression processes a generator function expression.
+func processGeneratorExpression(
+	parseTree *valueobject.ParseTree,
+	node *valueobject.ParseNode,
+	moduleName string,
+	now time.Time,
+	includePrivate bool,
+) *outbound.SemanticCodeChunk {
+	// Extract the INTERNAL generator name from generator_function node
+	// For "const foo = function* bar() {}", this should return "bar"
+	// For "const foo = function*() {}", this should return ""
+	name := extractFunctionName(parseTree, node)
+
+	visibility := getJavaScriptVisibility(name)
+	if !includePrivate && visibility == outbound.Private {
+		return nil
+	}
+
+	isAsync := isAsyncFunction(parseTree, node)
+	parameters := extractParameters(parseTree, node)
+	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
+	if name == "" {
+		qualifiedName = "(anonymous)"
+	}
+
+	// Generator expressions use ConstructFunction with IsGeneric flag
+	return &outbound.SemanticCodeChunk{
+		ChunkID:       utils.GenerateID(string(outbound.ConstructFunction), name, nil),
+		Type:          outbound.ConstructFunction,
+		Name:          name,
+		QualifiedName: qualifiedName,
+		Language:      parseTree.Language(),
+		StartByte:     node.StartByte,
+		EndByte:       node.EndByte,
+		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructFunction),
+		Parameters:    parameters,
+		ReturnType:    "any",
+		Visibility:    visibility,
+		IsAsync:       isAsync,
+		IsGeneric:     true, // Generators are marked as generic
 		Metadata:      make(map[string]interface{}),
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(qualifiedName),
@@ -363,36 +422,28 @@ func processFunctionVariable(
 	includePrivate bool,
 ) *outbound.SemanticCodeChunk {
 	// Look for function assignments
-	nameChild := findChildByType(node, "identifier")
-	if nameChild == nil {
+	// Get the variable name for visibility check and metadata
+	varNameChild := findChildByType(node, "identifier")
+	if varNameChild == nil {
 		return nil
 	}
 
-	name := parseTree.GetNodeText(nameChild)
+	varName := parseTree.GetNodeText(varNameChild)
 
-	visibility := getJavaScriptVisibility(name)
+	visibility := getJavaScriptVisibility(varName)
 	if !includePrivate && visibility == outbound.Private {
 		return nil
 	}
 
 	// Check what kind of function is being assigned
-	// Try both "function" and "function_expression" node types
-	if funcChild := findChildByType(node, "function"); funcChild != nil {
-		chunk := processFunctionExpression(parseTree, funcChild, moduleName, now, includePrivate)
-		if chunk != nil {
-			chunk.Name = name
-			chunk.QualifiedName = fmt.Sprintf("%s.%s", moduleName, name)
-			chunk.Hash = utils.GenerateHash(chunk.QualifiedName)
-		}
-		return chunk
-	}
-
 	if funcChild := findChildByType(node, "function_expression"); funcChild != nil {
 		chunk := processFunctionExpression(parseTree, funcChild, moduleName, now, includePrivate)
 		if chunk != nil {
-			chunk.Name = name
-			chunk.QualifiedName = fmt.Sprintf("%s.%s", moduleName, name)
-			chunk.Hash = utils.GenerateHash(chunk.QualifiedName)
+			// Only override the name if the function expression is anonymous
+			if chunk.Name == "" {
+				// Keep it anonymous - do NOT set to variable name
+				chunk.Metadata["assigned_to"] = varName
+			}
 		}
 		return chunk
 	}
@@ -400,9 +451,20 @@ func processFunctionVariable(
 	if arrowChild := findChildByType(node, "arrow_function"); arrowChild != nil {
 		chunk := processArrowFunction(parseTree, arrowChild, moduleName, now, includePrivate)
 		if chunk != nil {
-			chunk.Name = name
-			chunk.QualifiedName = fmt.Sprintf("%s.%s", moduleName, name)
-			chunk.Hash = utils.GenerateHash(chunk.QualifiedName)
+			// Arrow functions are always anonymous - do NOT set to variable name
+			chunk.Metadata["assigned_to"] = varName
+		}
+		return chunk
+	}
+
+	if generatorChild := findChildByType(node, "generator_function"); generatorChild != nil {
+		chunk := processGeneratorExpression(parseTree, generatorChild, moduleName, now, includePrivate)
+		if chunk != nil {
+			// Only override the name if the generator expression is anonymous
+			if chunk.Name == "" {
+				// Keep it anonymous - do NOT set to variable name
+				chunk.Metadata["assigned_to"] = varName
+			}
 		}
 		return chunk
 	}
@@ -444,28 +506,59 @@ func extractParameters(parseTree *valueobject.ParseTree, node *valueobject.Parse
 	// Find formal_parameters node
 	if paramsChild := findChildByType(node, "formal_parameters"); paramsChild != nil {
 		for _, child := range paramsChild.Children {
-			switch child.Type {
-			case "identifier":
-				paramName := parseTree.GetNodeText(child)
-				parameters = append(parameters, outbound.Parameter{
-					Name: paramName,
-					Type: "any", // JavaScript is dynamically typed
-				})
-			case "rest_pattern":
-				// Handle rest parameters (...args)
-				if identChild := findChildByType(child, "identifier"); identChild != nil {
-					paramName := parseTree.GetNodeText(identChild)
-					parameters = append(parameters, outbound.Parameter{
-						Name:       paramName,
-						Type:       "any",
-						IsVariadic: true,
-					})
-				}
+			param := extractSingleParameter(parseTree, child)
+			if param != nil {
+				parameters = append(parameters, *param)
 			}
 		}
 	}
 
 	return parameters
+}
+
+// extractSingleParameter extracts a single parameter, handling various patterns.
+func extractSingleParameter(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) *outbound.Parameter {
+	switch node.Type {
+	case "identifier":
+		// Simple parameter: a
+		paramName := parseTree.GetNodeText(node)
+		return &outbound.Parameter{
+			Name: paramName,
+			Type: "any", // JavaScript is dynamically typed
+		}
+
+	case "assignment_pattern":
+		// Parameter with default value: b = 10
+		// The left side is the parameter name
+		if leftChild := findChildByType(node, "identifier"); leftChild != nil {
+			paramName := parseTree.GetNodeText(leftChild)
+			return &outbound.Parameter{
+				Name: paramName,
+				Type: "any",
+			}
+		}
+
+	case "rest_pattern":
+		// Rest parameter: ...rest
+		if identChild := findChildByType(node, "identifier"); identChild != nil {
+			paramName := parseTree.GetNodeText(identChild)
+			return &outbound.Parameter{
+				Name:       paramName,
+				Type:       "any",
+				IsVariadic: true,
+			}
+		}
+
+	case "object_pattern", "array_pattern":
+		// Destructuring parameter: {prop1, prop2} or [a, b]
+		// For destructuring, we return a parameter with empty name
+		return &outbound.Parameter{
+			Name: "", // Destructuring patterns don't have a single name
+			Type: "any",
+		}
+	}
+
+	return nil
 }
 
 // extractArrowFunctionParameters extracts parameters from arrow function.

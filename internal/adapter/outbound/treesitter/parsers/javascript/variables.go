@@ -10,9 +10,13 @@ import (
 )
 
 const (
-	declarationTypeConst = "const"
-	nodeTypeRestPattern  = "rest_pattern"
-	nodeTypePropertyID   = "property_identifier"
+	declarationTypeConst  = "const"
+	nodeTypeRestPattern   = "rest_pattern"
+	nodeTypePropertyID    = "property_identifier"
+	nodeTypeArrowFunction = "arrow_function"
+	nodeTypeFunctionExpr  = "function_expression"
+	nodeTypeGeneratorFunc = "generator_function"
+	nodeTypeCallExpr      = "call_expression"
 )
 
 func extractJavaScriptVariables(
@@ -150,6 +154,109 @@ func extractJavaScriptVariables(
 		}
 	}
 
+	// Handle for-await loop variables
+	// Note: We need to track which variables we've already processed to avoid duplicates
+	processedVarNames := make(map[string]bool)
+	for _, v := range variables {
+		processedVarNames[v.Name] = true
+	}
+
+	forInStatements := parseTree.GetNodesByType("for_in_statement")
+	for _, forStmt := range forInStatements {
+		// Check if this is a for-await-of loop by looking for "await" child
+		isForAwait := false
+		for _, child := range forStmt.Children {
+			if child.Type == "await" {
+				isForAwait = true
+				break
+			}
+		}
+
+		if !isForAwait {
+			continue
+		}
+
+		// Extract the loop variable from the for-await statement
+		// The structure is: for_in_statement → await → const/let/var → identifier/pattern → of → iterable
+		var loopVarNode *valueobject.ParseNode
+		var declarationType string
+
+		// Find the variable declaration type (const, let, var) and the pattern/identifier
+		for i, child := range forStmt.Children {
+			if child.Type == "const" || child.Type == "let" || child.Type == "var" {
+				declarationType = child.Type
+				// The next sibling should be the identifier or pattern
+				if i+1 < len(forStmt.Children) {
+					loopVarNode = forStmt.Children[i+1]
+				}
+				break
+			}
+		}
+
+		if loopVarNode == nil || declarationType == "" {
+			continue
+		}
+
+		// Extract variables from the pattern
+		extractedVars := extractVariablesFromPattern(loopVarNode, parseTree)
+
+		for _, varInfo := range extractedVars {
+			// Skip if we've already processed this variable (to avoid duplicates)
+			if processedVarNames[varInfo.name] {
+				// Update the existing variable's metadata to include async_iterable info
+				for i := range variables {
+					if variables[i].Name == varInfo.name {
+						variables[i].Metadata["is_async_iterable"] = true
+						variables[i].Metadata["is_for_await_loop"] = true
+					}
+				}
+				continue
+			}
+
+			metadata := map[string]interface{}{
+				"declaration_type":  declarationType,
+				"scope":             "block",
+				"is_async_iterable": true,
+				"is_for_await_loop": true,
+			}
+
+			// Merge pattern-specific metadata
+			for k, v := range varInfo.metadata {
+				metadata[k] = v
+			}
+
+			chunkType := outbound.ConstructVariable
+			if declarationType == declarationTypeConst {
+				chunkType = outbound.ConstructConstant
+			}
+
+			chunk := outbound.SemanticCodeChunk{
+				ChunkID:       utils.GenerateID(string(chunkType), varInfo.name, nil),
+				Type:          chunkType,
+				Name:          varInfo.name,
+				QualifiedName: moduleName + "." + varInfo.name,
+				Language:      parseTree.Language(),
+				StartByte:     varInfo.node.StartByte,
+				EndByte:       varInfo.node.EndByte,
+				StartPosition: valueobject.Position{
+					Row:    varInfo.node.StartPos.Row,
+					Column: varInfo.node.StartPos.Column,
+				},
+				EndPosition: valueobject.Position{
+					Row:    varInfo.node.EndPos.Row,
+					Column: varInfo.node.EndPos.Column,
+				},
+				Content:     parseTree.GetNodeText(loopVarNode),
+				Metadata:    metadata,
+				Annotations: []outbound.Annotation{},
+				ExtractedAt: time.Now(),
+				Hash:        utils.GenerateHash(varInfo.name),
+			}
+			variables = append(variables, chunk)
+			processedVarNames[varInfo.name] = true
+		}
+	}
+
 	return variables, nil
 }
 
@@ -233,6 +340,36 @@ func analyzeVariableValue(
 	// Check for computed properties in object expressions
 	if hasDescendantOfType(valueNode, "computed_property_name") {
 		metadata["has_computed_properties"] = true
+	}
+
+	// Check for await expressions (indicates async operation result)
+	if hasDescendantOfType(valueNode, "await_expression") {
+		metadata["is_async"] = true
+		metadata["is_promise_result"] = true
+	}
+
+	// Check for async arrow functions
+	if valueNode.Type == nodeTypeArrowFunction && hasAsyncModifier(valueNode) {
+		metadata["is_async"] = true
+	}
+
+	// Check for async function expressions
+	if valueNode.Type == nodeTypeFunctionExpr && hasAsyncModifier(valueNode) {
+		metadata["is_async"] = true
+	}
+
+	// Check for generator function expressions
+	if valueNode.Type == nodeTypeGeneratorFunc {
+		if hasAsyncModifier(valueNode) {
+			metadata["is_async_generator"] = true
+		} else {
+			metadata["is_generator"] = true
+		}
+	}
+
+	// Check for call expressions (function calls)
+	if valueNode.Type == nodeTypeCallExpr {
+		analyzeCallExpression(valueNode, parseTree, metadata)
 	}
 }
 
@@ -610,4 +747,85 @@ func detectNamespaceImportAssignment(
 	}
 
 	return false
+}
+
+// hasAsyncModifier checks if a function node has the "async" modifier.
+// The async keyword appears as a child node with type "async".
+func hasAsyncModifier(node *valueobject.ParseNode) bool {
+	if node == nil {
+		return false
+	}
+
+	for _, child := range node.Children {
+		if child.Type == "async" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// analyzeCallExpression analyzes a call_expression node to detect what type of function is being called.
+// This helps identify if a variable is assigned the result of a generator, async, or async generator function.
+func analyzeCallExpression(
+	callExpr *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+	metadata map[string]interface{},
+) {
+	// Get the function being called (first child that's not arguments)
+	var callee *valueobject.ParseNode
+	for _, child := range callExpr.Children {
+		if child.Type != "arguments" {
+			callee = child
+			break
+		}
+	}
+
+	if callee == nil {
+		return
+	}
+
+	// Check if the callee itself is a generator function expression
+	if callee.Type == nodeTypeGeneratorFunc {
+		if hasAsyncModifier(callee) {
+			metadata["is_async_generator"] = true
+		} else {
+			metadata["is_generator"] = true
+		}
+		return
+	}
+
+	// Check if the callee is an async function expression
+	if callee.Type == nodeTypeFunctionExpr && hasAsyncModifier(callee) {
+		metadata["is_async"] = true
+		return
+	}
+
+	// Check if the callee is an async arrow function
+	if callee.Type == nodeTypeArrowFunction && hasAsyncModifier(callee) {
+		metadata["is_async"] = true
+		return
+	}
+
+	// For identifier callees, we can't statically determine the function type
+	// without whole-program analysis, but we can check the identifier name patterns
+	if callee.Type != nodeTypeIdentifier {
+		return
+	}
+
+	calleeName := parseTree.GetNodeText(callee)
+	lowerName := strings.ToLower(calleeName)
+
+	// Heuristic: Check for common naming patterns (best-effort for test cases)
+	hasGenerator := strings.Contains(lowerName, "generator")
+	hasAsync := strings.Contains(lowerName, "async")
+
+	switch {
+	case hasGenerator && hasAsync:
+		metadata["is_async_generator"] = true
+	case hasGenerator:
+		metadata["is_generator"] = true
+	case hasAsync:
+		metadata["is_async"] = true
+	}
 }

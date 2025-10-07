@@ -371,6 +371,16 @@ func analyzeVariableValue(
 	if valueNode.Type == nodeTypeCallExpr {
 		analyzeCallExpression(valueNode, parseTree, metadata)
 	}
+
+	// Check for optional chaining operator (?.)
+	if hasOptionalChaining(valueNode) {
+		metadata["has_optional_chaining"] = true
+	}
+
+	// Check for nullish coalescing operator (??)
+	if hasNullishCoalescing(valueNode, parseTree) {
+		metadata["has_nullish_coalescing"] = true
+	}
 }
 
 // inferReturnType infers the return type from a variable declarator.
@@ -828,4 +838,47 @@ func analyzeCallExpression(
 	case hasAsync:
 		metadata["is_async"] = true
 	}
+}
+
+// hasOptionalChaining checks if a node contains optional chaining operator (?.).
+// The optional chaining operator appears as a child node with type "optional_chain" in
+// member_expression, subscript_expression, and call_expression nodes.
+func hasOptionalChaining(node *valueobject.ParseNode) bool {
+	if node == nil {
+		return false
+	}
+
+	// Check current node's children for optional_chain type
+	for _, child := range node.Children {
+		if child.Type == "optional_chain" {
+			return true
+		}
+		// Recurse for nested expressions
+		if hasOptionalChaining(child) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasNullishCoalescing checks if a node contains nullish coalescing operator (??).
+// The nullish coalescing operator appears in binary_expression nodes with operator "??".
+func hasNullishCoalescing(node *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
+	if node == nil {
+		return false
+	}
+
+	// Check for binary_expression with ?? operator
+	binaryExprs := findDescendantsByType(node, "binary_expression")
+	for _, binExpr := range binaryExprs {
+		// Look for the operator child
+		for _, child := range binExpr.Children {
+			if parseTree.GetNodeText(child) == "??" {
+				return true
+			}
+		}
+	}
+
+	return false
 }

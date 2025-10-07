@@ -509,7 +509,7 @@ const Δ = 4;
 const π_value = 3.14;
 const 中文变量 = 'chinese';
 const $special = 'dollar';
-const \\u0041 = 'unicode A'; // This is 'A'
+const \u0041 = 'unicode A'; // This is 'A'
 
 // Optional chaining variables
 const user = data?.user;
@@ -601,8 +601,9 @@ const complexObject = Object.assign({}, base, { extra: 'value' });
 		assert.Equal(t, outbound.ConstructConstant, dollarSpecialChunk.Type)
 	}
 
-	unicodeAChunk := testhelpers.FindChunkByName(variables, "A")
-	assert.NotNil(t, unicodeAChunk, "Should find unicode escape sequence identifier A")
+	// Tree-sitter preserves unicode escape sequences in identifiers as-is
+	unicodeAChunk := testhelpers.FindChunkByName(variables, "\\u0041")
+	assert.NotNil(t, unicodeAChunk, "Should find unicode escape sequence identifier \\u0041")
 	if unicodeAChunk != nil {
 		assert.Equal(t, outbound.ConstructConstant, unicodeAChunk.Type)
 	}

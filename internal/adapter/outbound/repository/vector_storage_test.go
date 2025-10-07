@@ -88,10 +88,10 @@ func TestVectorStorageSchema(t *testing.T) {
 	t.Run("verify HNSW index parameters", func(t *testing.T) {
 		var indexDef string
 		err := pool.QueryRow(ctx, `
-			SELECT indexdef FROM pg_indexes 
-			WHERE schemaname = 'codechunking' 
+			SELECT indexdef FROM pg_indexes
+			WHERE schemaname = 'codechunking'
 			AND tablename = 'embeddings_partitioned_0'
-			AND indexname LIKE '%vector'
+			AND indexname LIKE '%embedding_idx'
 			LIMIT 1
 		`).Scan(&indexDef)
 		require.NoError(t, err)

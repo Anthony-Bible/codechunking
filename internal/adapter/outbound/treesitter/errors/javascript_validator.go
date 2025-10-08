@@ -234,22 +234,9 @@ func (v *JavaScriptValidator) validateJavaScriptRequirements(source string) *Par
 			WithSuggestion("Avoid using 'with' statements for better code clarity")
 	}
 
-	// Check for potential hoisting issues
-	if err := v.validateVariableHoisting(source); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// validateVariableHoisting checks for potential variable hoisting issues.
-func (v *JavaScriptValidator) validateVariableHoisting(source string) *ParserError {
-	// Check for var usage (preference for let/const)
-	if strings.Contains(source, "var ") && !strings.Contains(source, "let ") && !strings.Contains(source, "const ") {
-		return NewLanguageError("JavaScript", "code quality: prefer let/const over var").
-			WithSeverity(ErrorSeverityLow).
-			WithSuggestion("Use 'let' or 'const' instead of 'var' for better scoping")
-	}
+	// Note: We do NOT validate var vs let/const preferences here.
+	// Code quality checks belong in linters (like ESLint), not in semantic extraction.
+	// The parser must accept all valid JavaScript syntax, including legacy patterns.
 
 	return nil
 }

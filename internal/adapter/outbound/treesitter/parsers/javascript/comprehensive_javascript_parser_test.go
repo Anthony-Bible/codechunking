@@ -540,7 +540,9 @@ let variable4;
 
 		variables, err := adapter.ExtractVariables(ctx, domainTree, options)
 		require.NoError(t, err)
-		require.Len(t, variables, 3)
+		// Tree-sitter extracts all 4 variables, including uninitialized ones
+		// This is correct behavior according to the JavaScript grammar
+		require.Len(t, variables, 4)
 
 		var1 := variables[0]
 		assert.Equal(t, "variable1", var1.Name)
@@ -553,6 +555,10 @@ let variable4;
 		var3 := variables[2]
 		assert.Equal(t, "variable3", var3.Name)
 		assert.Equal(t, outbound.ConstructVariable, var3.Type)
+
+		var4 := variables[3]
+		assert.Equal(t, "variable4", var4.Name)
+		assert.Equal(t, outbound.ConstructVariable, var4.Type)
 	})
 
 	t.Run("const declarations", func(t *testing.T) {
@@ -572,7 +578,8 @@ const [item1, item2] = array;
 
 		variables, err := adapter.ExtractVariables(ctx, domainTree, options)
 		require.NoError(t, err)
-		require.Len(t, variables, 4)
+		// Destructuring extracts ALL identifiers: constant1, constant2, prop1, prop2, item1, item2 = 6 total
+		require.Len(t, variables, 6)
 
 		const1 := variables[0]
 		assert.Equal(t, "constant1", const1.Name)
@@ -584,11 +591,19 @@ const [item1, item2] = array;
 
 		const3 := variables[2]
 		assert.Equal(t, "prop1", const3.Name)
-		assert.Equal(t, outbound.ConstructVariable, const3.Type)
+		assert.Equal(t, outbound.ConstructConstant, const3.Type)
 
 		const4 := variables[3]
-		assert.Equal(t, "item1", const4.Name)
-		assert.Equal(t, outbound.ConstructVariable, const4.Type)
+		assert.Equal(t, "prop2", const4.Name)
+		assert.Equal(t, outbound.ConstructConstant, const4.Type)
+
+		const5 := variables[4]
+		assert.Equal(t, "item1", const5.Name)
+		assert.Equal(t, outbound.ConstructConstant, const5.Type)
+
+		const6 := variables[5]
+		assert.Equal(t, "item2", const6.Name)
+		assert.Equal(t, outbound.ConstructConstant, const6.Type)
 	})
 
 	t.Run("Destructuring assignments", func(t *testing.T) {
@@ -610,31 +625,48 @@ const [head, ...tail] = array;
 
 		variables, err := adapter.ExtractVariables(ctx, domainTree, options)
 		require.NoError(t, err)
-		require.Len(t, variables, 7)
+		// All variables: obj, a, renamedB, c, array, first, second, third, head, tail = 10 total
+		require.Len(t, variables, 10)
+
+		var0 := variables[0]
+		assert.Equal(t, "obj", var0.Name)
+		assert.Equal(t, outbound.ConstructConstant, var0.Type)
 
 		var1 := variables[1]
 		assert.Equal(t, "a", var1.Name)
-		assert.Equal(t, outbound.ConstructVariable, var1.Type)
+		assert.Equal(t, outbound.ConstructConstant, var1.Type)
 
 		var2 := variables[2]
 		assert.Equal(t, "renamedB", var2.Name)
-		assert.Equal(t, outbound.ConstructVariable, var2.Type)
+		assert.Equal(t, outbound.ConstructConstant, var2.Type)
 
 		var3 := variables[3]
 		assert.Equal(t, "c", var3.Name)
-		assert.Equal(t, outbound.ConstructVariable, var3.Type)
+		assert.Equal(t, outbound.ConstructConstant, var3.Type)
 
 		var4 := variables[4]
-		assert.Equal(t, "first", var4.Name)
-		assert.Equal(t, outbound.ConstructVariable, var4.Type)
+		assert.Equal(t, "array", var4.Name)
+		assert.Equal(t, outbound.ConstructConstant, var4.Type)
 
 		var5 := variables[5]
-		assert.Equal(t, "second", var5.Name)
-		assert.Equal(t, outbound.ConstructVariable, var5.Type)
+		assert.Equal(t, "first", var5.Name)
+		assert.Equal(t, outbound.ConstructConstant, var5.Type)
 
 		var6 := variables[6]
-		assert.Equal(t, "head", var6.Name)
-		assert.Equal(t, outbound.ConstructVariable, var6.Type)
+		assert.Equal(t, "second", var6.Name)
+		assert.Equal(t, outbound.ConstructConstant, var6.Type)
+
+		var7 := variables[7]
+		assert.Equal(t, "third", var7.Name)
+		assert.Equal(t, outbound.ConstructConstant, var7.Type)
+
+		var8 := variables[8]
+		assert.Equal(t, "head", var8.Name)
+		assert.Equal(t, outbound.ConstructConstant, var8.Type)
+
+		var9 := variables[9]
+		assert.Equal(t, "tail", var9.Name)
+		assert.Equal(t, outbound.ConstructConstant, var9.Type)
 	})
 
 	t.Run("Multiple variable declarations", func(t *testing.T) {
@@ -653,13 +685,14 @@ const p = "p", q = "q";
 
 		variables, err := adapter.ExtractVariables(ctx, domainTree, options)
 		require.NoError(t, err)
-		require.Len(t, variables, 7)
+		// 3 var + 3 let + 2 const = 8 total variables
+		require.Len(t, variables, 8)
 
 		varNames := []string{}
 		for _, v := range variables {
 			varNames = append(varNames, v.Name)
 		}
-		expectedNames := []string{"a", "b", "c", "x", "y", "z", "p"}
+		expectedNames := []string{"a", "b", "c", "x", "y", "z", "p", "q"}
 		assert.ElementsMatch(t, expectedNames, varNames)
 	})
 

@@ -21,7 +21,9 @@ import (
 const (
 	nodeFunctionDeclaration  = "function_declaration"
 	nodeMethodDeclaration    = "method_declaration"
+	nodeMethodDefinition     = "method_definition"
 	nodeIdentifier           = "identifier"
+	nodePropertyIdentifier   = "property_identifier"
 	nodeFieldIdentifier      = "field_identifier"
 	nodeFunctionExpression   = "function_expression"
 	nodeArrowFunction        = "arrow_function"
@@ -1270,7 +1272,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 		case "function_declaration",
 			nodeFunctionExpression,
 			nodeArrowFunction,
-			"method_definition",
+			nodeMethodDefinition,
 			"generator_function_declaration":
 			// Extract function name
 			name := s.extractJavaScriptFunctionName(node, parseTree)
@@ -1282,7 +1284,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 					name = "(anonymous function)"
 				case nodeArrowFunction:
 					name = "(arrow function)"
-				case "method_definition":
+				case nodeMethodDefinition:
 					name = "(method)"
 				default:
 					name = "(unnamed)"
@@ -1295,7 +1297,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 
 			// Determine chunk type
 			chunkType := outbound.ConstructFunction
-			if node.Type == "method_definition" {
+			if node.Type == nodeMethodDefinition {
 				chunkType = outbound.ConstructMethod
 			}
 
@@ -1381,18 +1383,52 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctionName(
 	node *valueobject.ParseNode,
 	parseTree *valueobject.ParseTree,
 ) string {
-	// Look for the function name in the children
+	// For method_definition nodes, use field-based access to get the "name" field
+	// This properly handles all property name types including computed properties
+	if node.Type == nodeMethodDefinition {
+		nameField := node.ChildByFieldName("name")
+		if nameField != nil {
+			// Handle different types of property names
+			switch nameField.Type {
+			case nodePropertyIdentifier, nodeIdentifier:
+				// Regular method names
+				return parseTree.GetNodeText(nameField)
+			case "private_property_identifier":
+				// Private method names (e.g., #privateMethod)
+				return parseTree.GetNodeText(nameField)
+			case "computed_property_name":
+				// Computed property names (e.g., [methodName], [Symbol.iterator])
+				// Return the full expression including brackets
+				return parseTree.GetNodeText(nameField)
+			case "string":
+				// String literal method names (e.g., "method name")
+				return parseTree.GetNodeText(nameField)
+			case "number":
+				// Numeric method names (e.g., 42)
+				return parseTree.GetNodeText(nameField)
+			default:
+				// Fallback: try to get text from any name field
+				return parseTree.GetNodeText(nameField)
+			}
+		}
+	}
+
+	// For other function types, look for the function name in the children
 	for _, child := range node.Children {
 		if child != nil {
 			// Regular functions use identifier
-			if child.Type == "identifier" {
+			if child.Type == nodeIdentifier {
 				name := parseTree.GetNodeText(child)
 				return name
 			}
 			// Methods use property_identifier
-			if child.Type == "property_identifier" {
+			if child.Type == nodePropertyIdentifier {
 				name := parseTree.GetNodeText(child)
 				return name
+			}
+			// Also check for computed_property_name in case it appears as a child
+			if child.Type == "computed_property_name" {
+				return parseTree.GetNodeText(child)
 			}
 		}
 	}

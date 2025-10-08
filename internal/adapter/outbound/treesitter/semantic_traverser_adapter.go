@@ -138,20 +138,14 @@ func (s *SemanticTraverserAdapter) extractImports(
 		return nil, err
 	}
 
-	// Try to use language dispatcher if available
-	// if s.languageDispatcher != nil {
-	// 	parser, err := s.languageDispatcher.CreateParser(parseTree.Language())
-	// 	if err == nil {
-	// 		return langParserExtractor(parser)
-	// 	}
-	// 	slogger.Warn(
-	// 		ctx,
-	// 		"Tree-sitter language dispatcher unavailable for import extraction, falling back to legacy implementation",
-	// 		slogger.Fields{
-	// 			"error": err.Error(),
-	// 		},
-	// 	)
-	// }
+	// Try to use parser factory directly if available
+	if result, err := s.tryParserFactoryForImports(ctx, parseTree, langParserExtractor); result != nil {
+		return result, err
+	} else if err != nil {
+		slogger.Warn(ctx, "Parser factory failed for imports, falling back to legacy implementation", slogger.Fields{
+			"error": err.Error(),
+		})
+	}
 
 	// Fallback to existing legacy implementation for backward compatibility
 	return legacyExtractor(), nil
@@ -2009,6 +2003,66 @@ func (s *SemanticTraverserAdapter) tryParserFactory(
 		slogger.Warn(ctx, "LanguageParser extractor failed, falling back to legacy implementation", slogger.Fields{
 			"error": err.Error(),
 		})
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// tryParserFactoryForImports attempts to use the parser factory for import extraction.
+// This is similar to tryParserFactory but for the ImportDeclaration return type.
+func (s *SemanticTraverserAdapter) tryParserFactoryForImports(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	langParserExtractor func(LanguageParser) ([]outbound.ImportDeclaration, error),
+) ([]outbound.ImportDeclaration, error) {
+	if s.parserFactory == nil {
+		return nil, nil
+	}
+
+	slogger.Info(ctx, "Attempting to create parser from factory for imports", slogger.Fields{
+		"language": parseTree.Language().Name(),
+	})
+
+	parser, err := s.parserFactory.CreateParser(ctx, parseTree.Language())
+	if err != nil {
+		slogger.Warn(
+			ctx,
+			"Failed to create parser from factory for imports, falling back to legacy implementation",
+			slogger.Fields{
+				"error": err.Error(),
+			},
+		)
+		return nil, err
+	}
+
+	slogger.Info(ctx, "Parser created successfully for imports", slogger.Fields{
+		"parser_type": fmt.Sprintf("%T", parser),
+	})
+
+	// Cast to LanguageParser interface if possible
+	langParser, ok := parser.(LanguageParser)
+	if !ok {
+		slogger.Warn(
+			ctx,
+			"Parser does not implement LanguageParser interface for imports, falling back to legacy implementation",
+			slogger.Fields{
+				"parser_type": fmt.Sprintf("%T", parser),
+			},
+		)
+		return nil, nil
+	}
+
+	slogger.Info(ctx, "Parser cast to LanguageParser successful for imports, calling extractor", slogger.Fields{})
+	result, err := langParserExtractor(langParser)
+	if err != nil {
+		slogger.Warn(
+			ctx,
+			"LanguageParser import extractor failed, falling back to legacy implementation",
+			slogger.Fields{
+				"error": err.Error(),
+			},
+		)
 		return nil, err
 	}
 

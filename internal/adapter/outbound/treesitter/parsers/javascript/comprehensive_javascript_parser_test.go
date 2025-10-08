@@ -882,19 +882,23 @@ export const exportedConst = "value";
 
 		exports, err := adapter.ExtractModules(ctx, domainTree, options)
 		require.NoError(t, err)
-		require.Len(t, exports, 3)
+		require.Len(t, exports, 4) // 2 from clause + 1 default + 1 declaration
 
 		export1 := exports[0]
 		assert.Equal(t, "name1", export1.Name)
 		assert.Equal(t, outbound.ConstructModule, export1.Type)
 
 		export2 := exports[1]
-		assert.Equal(t, "name2", export2.Name)
+		assert.Equal(t, "alias2", export2.Name) // Aliased export uses the alias name
 		assert.Equal(t, outbound.ConstructModule, export2.Type)
 
 		export3 := exports[2]
 		assert.Equal(t, "defaultFunction", export3.Name)
 		assert.Equal(t, outbound.ConstructModule, export3.Type)
+
+		export4 := exports[3]
+		assert.Equal(t, "exportedConst", export4.Name)
+		assert.Equal(t, outbound.ConstructModule, export4.Type)
 	})
 
 	t.Run("CommonJS require", func(t *testing.T) {

@@ -193,3 +193,4 @@ slogger.Error(ctx, "Database error", slogger.Fields{"error": err})
 - **Wiki**: Add important information to the wiki (git submodule at `./wiki/`)
   - Configuration guides, architecture decisions, troubleshooting tips
   - Wiki serves as primary documentation for developers and users
+- Always usee tree sitter queries and syntax.

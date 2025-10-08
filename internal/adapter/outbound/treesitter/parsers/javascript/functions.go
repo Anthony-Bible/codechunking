@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+// Constants for function extraction.
+const (
+	nodeTypeVariableDeclarator = "variable_declarator"
+	anonymousFunctionName      = "(anonymous)"
+)
+
 // extractJavaScriptFunctions extracts JavaScript functions from the parse tree using real AST analysis.
 func extractJavaScriptFunctions(
 	_ context.Context,
@@ -49,9 +55,9 @@ func traverseForFunctions(
 		functions = append(functions, *chunk)
 	}
 
-	// Special handling: If this was a variable_declarator, we already processed its function child
+	// Special handling: If this was a variable_declarator or pair, we already processed its function child
 	// So skip traversing its children to avoid duplicates
-	if node.Type == "variable_declarator" {
+	if node.Type == nodeTypeVariableDeclarator || node.Type == "pair" {
 		return functions
 	}
 
@@ -91,6 +97,9 @@ func processFunctionNode(
 	case "arrow_function":
 		// Standalone arrow functions (e.g., nested in return statements or as callbacks)
 		return processArrowFunction(parseTree, node, moduleName, now, includePrivate)
+	case "pair":
+		// Object literal method: method: function() {} or method: () => {}
+		return processObjectLiteralPair(parseTree, node, moduleName, now, includePrivate)
 	default:
 		// Skip "function" keyword tokens and other non-function nodes
 		return nil
@@ -172,7 +181,7 @@ func processFunctionExpression(
 	parameters := extractParameters(parseTree, node)
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 	if name == "" {
-		qualifiedName = "(anonymous)"
+		qualifiedName = anonymousFunctionName
 	}
 
 	return &outbound.SemanticCodeChunk{
@@ -214,7 +223,7 @@ func processArrowFunction(
 	parameters := extractArrowFunctionParameters(parseTree, node)
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 	if name == "" {
-		qualifiedName = "(anonymous)"
+		qualifiedName = anonymousFunctionName
 	}
 
 	// Arrow functions also use ConstructFunction type, not ConstructLambda
@@ -268,6 +277,9 @@ func processMethodDefinition(
 		metadata["returns_this"] = true
 	}
 
+	// Extract decorators from the method definition
+	annotations := extractJavaScriptDecorators(parseTree, node)
+
 	return &outbound.SemanticCodeChunk{
 		ChunkID:       utils.GenerateID(string(funcType), name, nil),
 		Type:          funcType,
@@ -281,6 +293,7 @@ func processMethodDefinition(
 		ReturnType:    "any",
 		Visibility:    visibility,
 		IsAsync:       isAsync,
+		Annotations:   annotations,
 		Metadata:      metadata,
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(qualifiedName),
@@ -352,7 +365,7 @@ func processGeneratorExpression(
 	parameters := extractParameters(parseTree, node)
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 	if name == "" {
-		qualifiedName = "(anonymous)"
+		qualifiedName = anonymousFunctionName
 	}
 
 	// Generator expressions use ConstructFunction with IsGeneric flag
@@ -393,17 +406,17 @@ func processExpressionStatement(
 					chunk := processFunctionExpression(parseTree, funcChild, moduleName, now, includePrivate)
 					if chunk != nil {
 						chunk.Name = "" // IIFEs are anonymous
-						chunk.QualifiedName = "(anonymous)"
+						chunk.QualifiedName = anonymousFunctionName
 						chunk.Type = outbound.ConstructFunction
 					}
 					return chunk
 				}
-				if arrowChild := findChildByType(calleeChild, "arrow_function"); arrowChild != nil {
+				if arrowChild := findChildByType(calleeChild, nodeTypeArrowFunction); arrowChild != nil {
 					// This is an arrow IIFE
 					chunk := processArrowFunction(parseTree, arrowChild, moduleName, now, includePrivate)
 					if chunk != nil {
 						chunk.Name = ""
-						chunk.QualifiedName = "(anonymous)"
+						chunk.QualifiedName = anonymousFunctionName
 					}
 					return chunk
 				}
@@ -470,6 +483,104 @@ func processFunctionVariable(
 	}
 
 	return nil
+}
+
+// processObjectLiteralPair processes object literal method syntax (e.g., method: function() {} or method: () => {}).
+func processObjectLiteralPair(
+	parseTree *valueobject.ParseTree,
+	node *valueobject.ParseNode,
+	moduleName string,
+	now time.Time,
+	includePrivate bool,
+) *outbound.SemanticCodeChunk {
+	// Extract the key (method name) from the pair
+	keyChild := findChildByType(node, "property_identifier")
+	if keyChild == nil {
+		// Try identifier as fallback
+		keyChild = findChildByType(node, "identifier")
+	}
+	if keyChild == nil {
+		// Try computed_property_name
+		if computedChild := findChildByType(node, "computed_property_name"); computedChild != nil {
+			// Extract the computed property name (e.g., [methodName] or [Symbol.iterator])
+			methodName := parseTree.GetNodeText(computedChild)
+			return processObjectLiteralPairWithName(parseTree, node, methodName, moduleName, now, includePrivate)
+		}
+		// Try string literal key
+		if stringChild := findChildByType(node, "string"); stringChild != nil {
+			methodName := parseTree.GetNodeText(stringChild)
+			return processObjectLiteralPairWithName(parseTree, node, methodName, moduleName, now, includePrivate)
+		}
+		// Try number literal key
+		if numberChild := findChildByType(node, "number"); numberChild != nil {
+			methodName := parseTree.GetNodeText(numberChild)
+			return processObjectLiteralPairWithName(parseTree, node, methodName, moduleName, now, includePrivate)
+		}
+		return nil
+	}
+
+	methodName := parseTree.GetNodeText(keyChild)
+	return processObjectLiteralPairWithName(parseTree, node, methodName, moduleName, now, includePrivate)
+}
+
+// processObjectLiteralPairWithName processes an object literal pair with the extracted name.
+func processObjectLiteralPairWithName(
+	parseTree *valueobject.ParseTree,
+	node *valueobject.ParseNode,
+	methodName string,
+	moduleName string,
+	now time.Time,
+	includePrivate bool,
+) *outbound.SemanticCodeChunk {
+	visibility := getJavaScriptVisibility(methodName)
+	if !includePrivate && visibility == outbound.Private {
+		return nil
+	}
+
+	// Check if the value is a function expression or arrow function
+	funcChild := findChildByType(node, "function_expression")
+	arrowChild := findChildByType(node, "arrow_function")
+
+	if funcChild == nil && arrowChild == nil {
+		// Not a method - just a regular property
+		return nil
+	}
+
+	// Extract function characteristics
+	var isAsync bool
+	var parameters []outbound.Parameter
+	var functionNode *valueobject.ParseNode
+
+	if funcChild != nil {
+		functionNode = funcChild
+		isAsync = isAsyncFunction(parseTree, funcChild)
+		parameters = extractParameters(parseTree, funcChild)
+	} else if arrowChild != nil {
+		functionNode = arrowChild
+		isAsync = isAsyncArrowFunction(parseTree, arrowChild)
+		parameters = extractArrowFunctionParameters(parseTree, arrowChild)
+	}
+
+	qualifiedName := fmt.Sprintf("%s.%s", moduleName, methodName)
+
+	// Object literal methods use ConstructMethod type
+	return &outbound.SemanticCodeChunk{
+		ChunkID:       utils.GenerateID(string(outbound.ConstructMethod), methodName, nil),
+		Type:          outbound.ConstructMethod,
+		Name:          methodName,
+		QualifiedName: qualifiedName,
+		Language:      parseTree.Language(),
+		StartByte:     node.StartByte,
+		EndByte:       node.EndByte,
+		Content:       generateFunctionContentFromNode(parseTree, functionNode, methodName, outbound.ConstructMethod),
+		Parameters:    parameters,
+		ReturnType:    "any",
+		Visibility:    visibility,
+		IsAsync:       isAsync,
+		Metadata:      make(map[string]interface{}),
+		ExtractedAt:   now,
+		Hash:          utils.GenerateHash(qualifiedName),
+	}
 }
 
 // Helper functions for function extraction
@@ -650,6 +761,45 @@ func generateFunctionContentFromNode(
 	}
 
 	return strings.TrimSpace(content)
+}
+
+// extractJavaScriptDecorators extracts decorator annotations from a method or class node.
+func extractJavaScriptDecorators(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) []outbound.Annotation {
+	var annotations []outbound.Annotation
+
+	// In JavaScript, decorators are direct children of method_definition nodes
+	for _, child := range node.Children {
+		if child.Type == "decorator" {
+			// Extract decorator name from the decorator node's children
+			decoratorName := extractDecoratorName(parseTree, child)
+			if decoratorName != "" {
+				annotations = append(annotations, outbound.Annotation{
+					Name: decoratorName,
+				})
+			}
+		}
+	}
+
+	return annotations
+}
+
+// extractDecoratorName extracts the name from a decorator node.
+func extractDecoratorName(parseTree *valueobject.ParseTree, decoratorNode *valueobject.ParseNode) string {
+	// Decorator structure: decorator -> identifier/member_expression/call_expression
+	for _, child := range decoratorNode.Children {
+		switch child.Type {
+		case "identifier":
+			return parseTree.GetNodeText(child)
+		case "member_expression":
+			// For @foo.bar style decorators
+			return parseTree.GetNodeText(child)
+		case "call_expression":
+			// For @foo() style decorators, extract just the function name
+			// For simplicity, return the full text for now
+			return parseTree.GetNodeText(child)
+		}
+	}
+	return ""
 }
 
 // extractModuleName extracts module name from the parse tree source.

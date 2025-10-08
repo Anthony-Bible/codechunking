@@ -1212,8 +1212,61 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 	})
 
 	// Traverse the AST for JavaScript function nodes
-	s.traverseJavaScriptAST(parseTree.RootNode(), func(node *valueobject.ParseNode) {
+	s.traverseJavaScriptAST(parseTree.RootNode(), func(node *valueobject.ParseNode) bool {
 		switch node.Type {
+		case "pair": // Object literal methods like method: function() {} or method: () => {}
+			// Check if this pair has a function value
+			var funcChild *valueobject.ParseNode
+			for _, child := range node.Children {
+				if child != nil && (child.Type == nodeFunctionExpression || child.Type == nodeArrowFunction) {
+					funcChild = child
+					break
+				}
+			}
+
+			if funcChild == nil {
+				// Not a method - just a regular property
+				return false // Continue traversing children
+			}
+
+			// Extract the key (method name) from the pair
+			var keyChild *valueobject.ParseNode
+			for _, child := range node.Children {
+				if child != nil && (child.Type == "property_identifier" || child.Type == "identifier") {
+					keyChild = child
+					break
+				}
+			}
+
+			if keyChild == nil {
+				return false // Continue traversing children
+			}
+
+			name := parseTree.GetNodeText(keyChild)
+			content := parseTree.GetNodeText(node)
+			hash := s.simpleHash(content)
+
+			chunk := outbound.SemanticCodeChunk{
+				ChunkID:       fmt.Sprintf("func_%s_%d", name, hash),
+				Name:          name,
+				QualifiedName: name,
+				Language:      parseTree.Language(),
+				Type:          outbound.ConstructMethod,
+				Content:       content,
+				StartByte:     node.StartByte,
+				EndByte:       node.EndByte,
+				StartPosition: node.StartPos,
+				EndPosition:   node.EndPos,
+				ExtractedAt:   time.Now(),
+				Hash:          strconv.FormatUint(uint64(hash), 10),
+			}
+			chunks = append(chunks, chunk)
+			slogger.Info(context.Background(), "Successfully extracted object literal method chunk", slogger.Fields{
+				"method_name": name,
+				"node_type":   node.Type,
+			})
+			return true // Skip children to avoid duplicates
+
 		case "function_declaration",
 			nodeFunctionExpression,
 			nodeArrowFunction,
@@ -1240,12 +1293,18 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 			content := parseTree.GetNodeText(node)
 			hash := s.simpleHash(content)
 
+			// Determine chunk type
+			chunkType := outbound.ConstructFunction
+			if node.Type == "method_definition" {
+				chunkType = outbound.ConstructMethod
+			}
+
 			chunk := outbound.SemanticCodeChunk{
 				ChunkID:       fmt.Sprintf("func_%s_%d", name, hash),
 				Name:          name,
 				QualifiedName: name,
 				Language:      parseTree.Language(),
-				Type:          outbound.ConstructFunction,
+				Type:          chunkType,
 				Content:       content,
 				StartByte:     node.StartByte,
 				EndByte:       node.EndByte,
@@ -1290,6 +1349,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 				chunks = append(chunks, chunk)
 			}
 		}
+		return false // Continue traversing children by default
 	})
 
 	slogger.Info(context.Background(), "JavaScript function extraction completed", slogger.Fields{
@@ -1302,13 +1362,16 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 // traverseJavaScriptAST recursively traverses the JavaScript AST.
 func (s *SemanticTraverserAdapter) traverseJavaScriptAST(
 	node *valueobject.ParseNode,
-	visitFunc func(*valueobject.ParseNode),
+	visitFunc func(*valueobject.ParseNode) bool,
 ) {
-	visitFunc(node)
+	// Call the visitor function - if it returns true, skip children
+	skipChildren := visitFunc(node)
 
-	for _, child := range node.Children {
-		if child != nil {
-			s.traverseJavaScriptAST(child, visitFunc)
+	if !skipChildren {
+		for _, child := range node.Children {
+			if child != nil {
+				s.traverseJavaScriptAST(child, visitFunc)
+			}
 		}
 	}
 }
@@ -1320,9 +1383,17 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctionName(
 ) string {
 	// Look for the function name in the children
 	for _, child := range node.Children {
-		if child != nil && child.Type == "identifier" {
-			name := parseTree.GetNodeText(child)
-			return name
+		if child != nil {
+			// Regular functions use identifier
+			if child.Type == "identifier" {
+				name := parseTree.GetNodeText(child)
+				return name
+			}
+			// Methods use property_identifier
+			if child.Type == "property_identifier" {
+				name := parseTree.GetNodeText(child)
+				return name
+			}
 		}
 	}
 	return ""

@@ -1611,7 +1611,7 @@ const manualIterator = {
 
 		functions, err := adapter.ExtractFunctions(ctx, domainTree, options)
 		require.NoError(t, err)
-		require.Len(t, functions, 3)
+		require.Len(t, functions, 4)
 
 		iterableClassMethod := functions[0]
 		assert.Equal(t, "[Symbol.iterator]", iterableClassMethod.Name)
@@ -1623,7 +1623,12 @@ const manualIterator = {
 		assert.Equal(t, outbound.ConstructFunction, generatorFn.Type)
 		assert.True(t, generatorFn.IsGeneric)
 
-		manualIteratorMethod := functions[2]
+		nextMethod := functions[2]
+		assert.Equal(t, "next", nextMethod.Name)
+		assert.Equal(t, outbound.ConstructMethod, nextMethod.Type)
+		assert.False(t, nextMethod.IsGeneric)
+
+		manualIteratorMethod := functions[3]
 		assert.Equal(t, "[Symbol.iterator]", manualIteratorMethod.Name)
 		assert.Equal(t, outbound.ConstructMethod, manualIteratorMethod.Type)
 	})

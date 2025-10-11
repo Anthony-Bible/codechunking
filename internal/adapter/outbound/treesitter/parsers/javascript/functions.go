@@ -13,6 +13,7 @@ import (
 // Constants for function extraction.
 const (
 	nodeTypeVariableDeclarator = "variable_declarator"
+	nodeTypeAssignmentExpr     = "assignment_expression"
 	anonymousFunctionName      = "(anonymous)"
 )
 
@@ -51,13 +52,16 @@ func traverseForFunctions(
 	var functions []outbound.SemanticCodeChunk
 
 	// Process current node if it's a function-like construct
-	if chunk := processFunctionNode(parseTree, node, moduleName, now, includePrivate); chunk != nil {
+	chunk := processFunctionNode(parseTree, node, moduleName, now, includePrivate)
+	if chunk != nil {
 		functions = append(functions, *chunk)
 	}
 
-	// Special handling: If this was a variable_declarator or pair, we already processed its function child
-	// So skip traversing its children to avoid duplicates
-	if node.Type == nodeTypeVariableDeclarator || node.Type == "pair" {
+	// Special handling: If we successfully extracted a function from a variable_declarator, pair, or assignment_expression,
+	// skip traversing its children to avoid duplicates (the child function was already processed)
+	// However, if no function was found (e.g., const arr = [...] or pair with array value), continue traversing
+	if (node.Type == nodeTypeVariableDeclarator || node.Type == "pair" || node.Type == nodeTypeAssignmentExpr) &&
+		chunk != nil {
 		return functions
 	}
 
@@ -94,12 +98,15 @@ func processFunctionNode(
 		// Standalone function expressions (e.g., nested in return statements or as callbacks)
 		// These are often anonymous and nested
 		return processFunctionExpression(parseTree, node, moduleName, now, includePrivate)
-	case "arrow_function":
+	case nodeTypeArrowFunction:
 		// Standalone arrow functions (e.g., nested in return statements or as callbacks)
 		return processArrowFunction(parseTree, node, moduleName, now, includePrivate)
 	case "pair":
 		// Object literal method: method: function() {} or method: () => {}
 		return processObjectLiteralPair(parseTree, node, moduleName, now, includePrivate)
+	case nodeTypeAssignmentExpr:
+		// Prototype assignments: Constructor.prototype.method = function() {}
+		return processPrototypeAssignment(parseTree, node, moduleName, now, includePrivate)
 	default:
 		// Skip "function" keyword tokens and other non-function nodes
 		return nil
@@ -265,6 +272,7 @@ func processMethodDefinition(
 	}
 
 	isAsync := isAsyncMethod(parseTree, node)
+	isGenerator := isGeneratorMethod(parseTree, node)
 	parameters := extractParameters(parseTree, node)
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 
@@ -293,6 +301,7 @@ func processMethodDefinition(
 		ReturnType:    "any",
 		Visibility:    visibility,
 		IsAsync:       isAsync,
+		IsGeneric:     isGenerator,
 		Annotations:   annotations,
 		Metadata:      metadata,
 		ExtractedAt:   now,
@@ -387,43 +396,6 @@ func processGeneratorExpression(
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(qualifiedName),
 	}
-}
-
-// processExpressionStatement processes expression statements that might contain IIFEs.
-func processExpressionStatement(
-	parseTree *valueobject.ParseTree,
-	node *valueobject.ParseNode,
-	moduleName string,
-	now time.Time,
-	includePrivate bool,
-) *outbound.SemanticCodeChunk {
-	// Look for call expressions that might be IIFEs
-	for _, child := range node.Children {
-		if child.Type == "call_expression" {
-			if calleeChild := findChildByType(child, "parenthesized_expression"); calleeChild != nil {
-				if funcChild := findChildByType(calleeChild, "function"); funcChild != nil {
-					// This is an IIFE
-					chunk := processFunctionExpression(parseTree, funcChild, moduleName, now, includePrivate)
-					if chunk != nil {
-						chunk.Name = "" // IIFEs are anonymous
-						chunk.QualifiedName = anonymousFunctionName
-						chunk.Type = outbound.ConstructFunction
-					}
-					return chunk
-				}
-				if arrowChild := findChildByType(calleeChild, nodeTypeArrowFunction); arrowChild != nil {
-					// This is an arrow IIFE
-					chunk := processArrowFunction(parseTree, arrowChild, moduleName, now, includePrivate)
-					if chunk != nil {
-						chunk.Name = ""
-						chunk.QualifiedName = anonymousFunctionName
-					}
-					return chunk
-				}
-			}
-		}
-	}
-	return nil
 }
 
 // processFunctionVariable processes variable declarations that assign functions.
@@ -563,7 +535,90 @@ func processObjectLiteralPairWithName(
 
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, methodName)
 
-	// Object literal methods use ConstructMethod type
+	// Create metadata with assigned_to field
+	metadata := make(map[string]interface{})
+	metadata["assigned_to"] = methodName
+
+	// Object literal pairs with function values use ConstructFunction type (per tree-sitter grammar)
+	return &outbound.SemanticCodeChunk{
+		ChunkID:       utils.GenerateID(string(outbound.ConstructFunction), methodName, nil),
+		Type:          outbound.ConstructFunction,
+		Name:          methodName,
+		QualifiedName: qualifiedName,
+		Language:      parseTree.Language(),
+		StartByte:     node.StartByte,
+		EndByte:       node.EndByte,
+		Content:       generateFunctionContentFromNode(parseTree, functionNode, methodName, outbound.ConstructFunction),
+		Parameters:    parameters,
+		ReturnType:    "any",
+		Visibility:    visibility,
+		IsAsync:       isAsync,
+		Metadata:      metadata,
+		ExtractedAt:   now,
+		Hash:          utils.GenerateHash(qualifiedName),
+	}
+}
+
+// processPrototypeAssignment processes prototype method assignments like Constructor.prototype.method = function() {}.
+func processPrototypeAssignment(
+	parseTree *valueobject.ParseTree,
+	node *valueobject.ParseNode,
+	moduleName string,
+	now time.Time,
+	includePrivate bool,
+) *outbound.SemanticCodeChunk {
+	// Check if the left side is a member_expression
+	leftChild := findChildByType(node, "member_expression")
+	if leftChild == nil {
+		return nil
+	}
+
+	// Check if the right side is a function-like expression
+	funcChild := findChildByType(node, "function_expression")
+	genChild := findChildByType(node, "generator_function")
+	arrowChild := findChildByType(node, "arrow_function")
+
+	if funcChild == nil && genChild == nil && arrowChild == nil {
+		return nil
+	}
+
+	// Extract the method name from the member_expression's property field
+	propertyChild := findChildByType(leftChild, "property_identifier")
+	if propertyChild == nil {
+		return nil
+	}
+
+	methodName := parseTree.GetNodeText(propertyChild)
+	visibility := getJavaScriptVisibility(methodName)
+	if !includePrivate && visibility == outbound.Private {
+		return nil
+	}
+
+	// Extract function characteristics based on which type we found
+	var isAsync bool
+	var isGenerator bool
+	var parameters []outbound.Parameter
+	var functionNode *valueobject.ParseNode
+
+	switch {
+	case funcChild != nil:
+		functionNode = funcChild
+		isAsync = isAsyncFunction(parseTree, funcChild)
+		parameters = extractParameters(parseTree, funcChild)
+	case genChild != nil:
+		functionNode = genChild
+		isAsync = isAsyncFunction(parseTree, genChild)
+		isGenerator = true
+		parameters = extractParameters(parseTree, genChild)
+	case arrowChild != nil:
+		functionNode = arrowChild
+		isAsync = isAsyncArrowFunction(parseTree, arrowChild)
+		parameters = extractArrowFunctionParameters(parseTree, arrowChild)
+	}
+
+	qualifiedName := fmt.Sprintf("%s.%s", moduleName, methodName)
+
+	// Prototype assignments are methods
 	return &outbound.SemanticCodeChunk{
 		ChunkID:       utils.GenerateID(string(outbound.ConstructMethod), methodName, nil),
 		Type:          outbound.ConstructMethod,
@@ -577,6 +632,7 @@ func processObjectLiteralPairWithName(
 		ReturnType:    "any",
 		Visibility:    visibility,
 		IsAsync:       isAsync,
+		IsGeneric:     isGenerator,
 		Metadata:      make(map[string]interface{}),
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(qualifiedName),
@@ -602,10 +658,20 @@ func extractArrowFunctionName(parseTree *valueobject.ParseTree, node *valueobjec
 // extractMethodName extracts the method name from a method definition.
 func extractMethodName(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) string {
 	if nameChild := findChildByType(node, "property_identifier"); nameChild != nil {
-		return parseTree.GetNodeText(nameChild)
+		methodName := parseTree.GetNodeText(nameChild)
+		// Strip * prefix for generator methods
+		methodName = strings.TrimPrefix(methodName, "*")
+		return methodName
 	}
 	if nameChild := findChildByType(node, "identifier"); nameChild != nil {
-		return parseTree.GetNodeText(nameChild)
+		methodName := parseTree.GetNodeText(nameChild)
+		// Strip * prefix for generator methods
+		methodName = strings.TrimPrefix(methodName, "*")
+		return methodName
+	}
+	// Handle computed property names like [Symbol.iterator] or [computedMethod]
+	if computedChild := findChildByType(node, "computed_property_name"); computedChild != nil {
+		return parseTree.GetNodeText(computedChild)
 	}
 	return ""
 }
@@ -630,7 +696,7 @@ func extractParameters(parseTree *valueobject.ParseTree, node *valueobject.Parse
 // extractSingleParameter extracts a single parameter, handling various patterns.
 func extractSingleParameter(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) *outbound.Parameter {
 	switch node.Type {
-	case "identifier":
+	case nodeTypeIdentifier:
 		// Simple parameter: a
 		paramName := parseTree.GetNodeText(node)
 		return &outbound.Parameter{
@@ -641,7 +707,7 @@ func extractSingleParameter(parseTree *valueobject.ParseTree, node *valueobject.
 	case "assignment_pattern":
 		// Parameter with default value: b = 10
 		// The left side is the parameter name
-		if leftChild := findChildByType(node, "identifier"); leftChild != nil {
+		if leftChild := findChildByType(node, nodeTypeIdentifier); leftChild != nil {
 			paramName := parseTree.GetNodeText(leftChild)
 			return &outbound.Parameter{
 				Name: paramName,
@@ -651,7 +717,7 @@ func extractSingleParameter(parseTree *valueobject.ParseTree, node *valueobject.
 
 	case "rest_pattern":
 		// Rest parameter: ...rest
-		if identChild := findChildByType(node, "identifier"); identChild != nil {
+		if identChild := findChildByType(node, nodeTypeIdentifier); identChild != nil {
 			paramName := parseTree.GetNodeText(identChild)
 			return &outbound.Parameter{
 				Name:       paramName,
@@ -682,7 +748,7 @@ func extractArrowFunctionParameters(
 	// Arrow functions can have parameters in different forms
 	for _, child := range node.Children {
 		switch child.Type {
-		case "identifier":
+		case nodeTypeIdentifier:
 			// Single parameter without parentheses: x => x * 2
 			paramName := parseTree.GetNodeText(child)
 			parameters = append(parameters, outbound.Parameter{
@@ -700,19 +766,51 @@ func extractArrowFunctionParameters(
 
 // isAsyncFunction checks if a function is async.
 func isAsyncFunction(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) bool {
-	// Check if parent or node itself contains async keyword
+	// For function_declaration, function_expression, generator_function_declaration, generator_function:
+	// Check if there's an "async" child node
+	for _, child := range node.Children {
+		if child.Type == "async" {
+			return true
+		}
+	}
+
+	// Fallback to string matching for edge cases
 	content := parseTree.GetNodeText(node)
 	return strings.Contains(content, "async")
 }
 
 // isAsyncArrowFunction checks if an arrow function is async.
 func isAsyncArrowFunction(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) bool {
-	return isAsyncFunction(parseTree, node)
+	// For arrow_function nodes, check if there's an "async" child
+	for _, child := range node.Children {
+		if child.Type == "async" {
+			return true
+		}
+	}
+	return false
 }
 
 // isAsyncMethod checks if a method is async.
 func isAsyncMethod(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) bool {
-	return isAsyncFunction(parseTree, node)
+	// For method_definition nodes, check if there's an "async" child
+	for _, child := range node.Children {
+		if child.Type == "async" {
+			return true
+		}
+	}
+	return false
+}
+
+// isGeneratorMethod checks if a method is a generator (has * modifier).
+func isGeneratorMethod(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) bool {
+	// Check if the method_definition node has a child node of type "*"
+	// This is more reliable than string matching
+	for _, child := range node.Children {
+		if child.Type == "*" {
+			return true
+		}
+	}
+	return false
 }
 
 // isChainableMethod checks if a method returns 'this' for chaining.

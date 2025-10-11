@@ -1242,17 +1242,21 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 			content := parseTree.GetNodeText(node)
 			hash := s.simpleHash(content)
 
+			// Extract parameters from the function child
+			parameters := s.extractJavaScriptParameters(funcChild, parseTree)
+
 			chunk := outbound.SemanticCodeChunk{
 				ChunkID:       fmt.Sprintf("func_%s_%d", name, hash),
 				Name:          name,
 				QualifiedName: name,
 				Language:      parseTree.Language(),
-				Type:          outbound.ConstructMethod,
+				Type:          outbound.ConstructFunction, // Pairs use ConstructFunction per tree-sitter grammar
 				Content:       content,
 				StartByte:     node.StartByte,
 				EndByte:       node.EndByte,
 				StartPosition: node.StartPos,
 				EndPosition:   node.EndPos,
+				Parameters:    parameters,
 				ExtractedAt:   time.Now(),
 				Hash:          strconv.FormatUint(uint64(hash), 10),
 			}
@@ -1271,21 +1275,9 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 			// Extract function name
 			name := s.extractJavaScriptFunctionName(node, parseTree)
 
-			// Generate name for anonymous functions
-			if name == "" {
-				switch node.Type {
-				case nodeFunctionExpression:
-					name = "(anonymous function)"
-				case nodeArrowFunction:
-					name = "(arrow function)"
-				case nodeMethodDefinition:
-					name = "(method)"
-				default:
-					name = "(unnamed)"
-				}
-			}
+			// Keep empty name for anonymous functions - do not generate placeholder names
 
-			// Always extract if we have a name (including generated ones)
+			// Always extract even if name is empty
 			content := parseTree.GetNodeText(node)
 			hash := s.simpleHash(content)
 
@@ -1294,6 +1286,13 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 			if node.Type == nodeMethodDefinition {
 				chunkType = outbound.ConstructMethod
 			}
+
+			// Check for async and generator flags
+			isAsync := s.hasChildNodeOfType(node, "async")
+			isGenerator := s.hasChildNodeOfType(node, "*")
+
+			// Extract parameters
+			parameters := s.extractJavaScriptParameters(node, parseTree)
 
 			chunk := outbound.SemanticCodeChunk{
 				ChunkID:       fmt.Sprintf("func_%s_%d", name, hash),
@@ -1306,6 +1305,9 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 				EndByte:       node.EndByte,
 				StartPosition: node.StartPos,
 				EndPosition:   node.EndPos,
+				IsAsync:       isAsync,
+				IsGeneric:     isGenerator,
+				Parameters:    parameters,
 				ExtractedAt:   time.Now(),
 				Hash:          strconv.FormatUint(uint64(hash), 10),
 			}
@@ -1319,14 +1321,20 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 			if s.isJavaScriptFunctionExpression(node) {
 				name := s.extractJavaScriptVariableName(node, parseTree)
 
-				// Generate name for anonymous functions
-				if name == "" {
-					name = "(anonymous variable function)"
-				}
+				// Keep empty name for anonymous functions - do not generate placeholder names
 
-				// Always extract if we have a name (including generated ones)
+				// Always extract even if name is empty
 				content := parseTree.GetNodeText(node)
 				hash := s.simpleHash(content)
+
+				// Extract parameters from the function child
+				var parameters []outbound.Parameter
+				for _, child := range node.Children {
+					if child != nil && (child.Type == "function_expression" || child.Type == "arrow_function") {
+						parameters = s.extractJavaScriptParameters(child, parseTree)
+						break
+					}
+				}
 
 				chunk := outbound.SemanticCodeChunk{
 					ChunkID:       fmt.Sprintf("var_%s_%d", name, hash),
@@ -1339,6 +1347,7 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 					EndByte:       node.EndByte,
 					StartPosition: node.StartPos,
 					EndPosition:   node.EndPos,
+					Parameters:    parameters,
 					ExtractedAt:   time.Now(),
 					Hash:          strconv.FormatUint(uint64(hash), 10),
 				}
@@ -1353,6 +1362,19 @@ func (s *SemanticTraverserAdapter) extractJavaScriptFunctions(
 	})
 
 	return chunks
+}
+
+// hasChildNodeOfType checks if a node has a direct child of the given type.
+func (s *SemanticTraverserAdapter) hasChildNodeOfType(node *valueobject.ParseNode, nodeType string) bool {
+	if node == nil {
+		return false
+	}
+	for _, child := range node.Children {
+		if child != nil && child.Type == nodeType {
+			return true
+		}
+	}
+	return false
 }
 
 // traverseJavaScriptAST recursively traverses the JavaScript AST.
@@ -1461,6 +1483,79 @@ func (s *SemanticTraverserAdapter) isJavaScriptFunctionExpression(node *valueobj
 	}
 
 	return false
+}
+
+// extractJavaScriptParameters extracts function parameters from a JavaScript function node.
+func (s *SemanticTraverserAdapter) extractJavaScriptParameters(
+	node *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+) []outbound.Parameter {
+	var parameters []outbound.Parameter
+
+	// Find formal_parameters node
+	var paramsNode *valueobject.ParseNode
+	for _, child := range node.Children {
+		if child != nil && child.Type == "formal_parameters" {
+			paramsNode = child
+			break
+		}
+	}
+
+	if paramsNode == nil {
+		return parameters
+	}
+
+	// Extract each parameter from the formal_parameters children
+	for _, child := range paramsNode.Children {
+		if child == nil {
+			continue
+		}
+
+		switch child.Type {
+		case nodeIdentifier:
+			// Simple parameter: a
+			paramName := parseTree.GetNodeText(child)
+			parameters = append(parameters, outbound.Parameter{
+				Name: paramName,
+				Type: "any", // JavaScript is dynamically typed
+			})
+
+		case "assignment_pattern":
+			// Parameter with default value: b = 10
+			// The left side is the parameter name
+			if len(child.Children) > 0 && child.Children[0].Type == nodeIdentifier {
+				paramName := parseTree.GetNodeText(child.Children[0])
+				parameters = append(parameters, outbound.Parameter{
+					Name: paramName,
+					Type: "any",
+				})
+			}
+
+		case "rest_pattern":
+			// Rest parameter: ...rest
+			for _, restChild := range child.Children {
+				if restChild != nil && restChild.Type == nodeIdentifier {
+					paramName := parseTree.GetNodeText(restChild)
+					parameters = append(parameters, outbound.Parameter{
+						Name:       paramName,
+						Type:       "any",
+						IsVariadic: true,
+					})
+					break
+				}
+			}
+
+		case "object_pattern", "array_pattern":
+			// Destructuring parameter: {prop1, prop2} or [a, b]
+			// For destructuring, we return a parameter with empty name
+			parameters = append(parameters, outbound.Parameter{
+				Name: "", // Destructuring patterns don't have a single name
+				Type: "any",
+			})
+		}
+	}
+
+	return parameters
 }
 
 // simpleHash generates a simple hash for content.

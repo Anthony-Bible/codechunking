@@ -31,6 +31,10 @@ func extractJavaScriptModules(
 	amdExports := extractAMDExports(parseTree, now)
 	chunks = append(chunks, amdExports...)
 
+	// Extract IIFE module patterns
+	iifeModules := extractIIFEModulePatterns(parseTree, now)
+	chunks = append(chunks, iifeModules...)
+
 	return chunks, nil
 }
 
@@ -396,4 +400,164 @@ func extractAMDExports(parseTree *valueobject.ParseTree, now time.Time) []outbou
 	}
 
 	return chunks
+}
+
+// extractIIFEModulePatterns extracts IIFE (Immediately Invoked Function Expression) module patterns.
+// Pattern: const ModuleName = (function() { return { ... }; })();.
+func extractIIFEModulePatterns(parseTree *valueobject.ParseTree, now time.Time) []outbound.SemanticCodeChunk {
+	var chunks []outbound.SemanticCodeChunk
+
+	// Build a set of function nodes to identify nested declarators
+	functionNodes := make(map[*valueobject.ParseNode]bool)
+	allFunctions := parseTree.GetNodesByType("function_expression")
+	for _, fn := range allFunctions {
+		functionNodes[fn] = true
+	}
+	allArrowFunctions := parseTree.GetNodesByType("arrow_function")
+	for _, fn := range allArrowFunctions {
+		functionNodes[fn] = true
+	}
+
+	// Find all variable_declarator nodes
+	declarators := parseTree.GetNodesByType("variable_declarator")
+	for _, declarator := range declarators {
+		// Skip if this declarator is nested inside a function (not top-level)
+		if isNestedInFunctionHelper(declarator, functionNodes) {
+			continue
+		}
+
+		// Check if value is a call_expression
+		callExpr := findChildByType(declarator, "call_expression")
+		if callExpr == nil {
+			continue
+		}
+
+		// Check if the function being called is wrapped (parenthesized_expression)
+		// or is directly a function_expression/arrow_function
+		var funcNode *valueobject.ParseNode
+
+		// Look for parenthesized_expression first
+		parenExpr := findChildByType(callExpr, "parenthesized_expression")
+		if parenExpr != nil {
+			// Look for function inside parentheses
+			funcNode = findChildByType(parenExpr, "function_expression")
+			if funcNode == nil {
+				funcNode = findChildByType(parenExpr, "arrow_function")
+			}
+		} else {
+			// Check if it's directly a function_expression or arrow_function
+			funcNode = findChildByType(callExpr, "function_expression")
+			if funcNode == nil {
+				funcNode = findChildByType(callExpr, "arrow_function")
+			}
+		}
+
+		if funcNode == nil {
+			continue
+		}
+
+		// Check if the function returns an object
+		if !hasObjectReturn(funcNode) {
+			continue
+		}
+
+		// Extract module name from variable declarator
+		nameNode := findChildByType(declarator, "identifier")
+		if nameNode == nil {
+			continue
+		}
+		moduleName := parseTree.GetNodeText(nameNode)
+
+		// Get the parent variable_declaration to get the full statement
+		// For simplicity, use the declarator node itself
+		content := parseTree.GetNodeText(declarator)
+
+		chunk := outbound.SemanticCodeChunk{
+			ChunkID:       utils.GenerateID(string(outbound.ConstructModule), moduleName, nil),
+			Type:          outbound.ConstructModule,
+			Name:          moduleName,
+			QualifiedName: moduleName,
+			Language:      parseTree.Language(),
+			StartByte:     declarator.StartByte,
+			EndByte:       declarator.EndByte,
+			StartPosition: valueobject.Position{Row: declarator.StartPos.Row, Column: declarator.StartPos.Column},
+			EndPosition:   valueobject.Position{Row: declarator.EndPos.Row, Column: declarator.EndPos.Column},
+			Content:       content,
+			Visibility:    outbound.Public,
+			Metadata: map[string]interface{}{
+				"module_type": "iife",
+				"pattern":     "revealing_module",
+			},
+			ExtractedAt: now,
+			Hash:        utils.GenerateHash(content),
+		}
+
+		chunks = append(chunks, chunk)
+	}
+
+	return chunks
+}
+
+// hasObjectReturn checks if a function returns an object literal.
+// Returns true if any return statement in the function returns an object.
+func hasObjectReturn(funcNode *valueobject.ParseNode) bool {
+	// Find all return_statement nodes recursively
+	returnStmts := findNodesRecursive(funcNode, "return_statement")
+
+	for _, returnStmt := range returnStmts {
+		// Check if return statement has an object child
+		objNode := findChildByType(returnStmt, "object")
+		if objNode != nil {
+			return true
+		}
+
+		// Check for new_expression (e.g., return new MyClass())
+		newExpr := findChildByType(returnStmt, "new_expression")
+		if newExpr != nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+// findNodesRecursive finds all nodes of a given type recursively in the tree.
+func findNodesRecursive(node *valueobject.ParseNode, nodeType string) []*valueobject.ParseNode {
+	if node == nil {
+		return nil
+	}
+
+	var matches []*valueobject.ParseNode
+
+	// Check current node
+	if node.Type == nodeType {
+		matches = append(matches, node)
+	}
+
+	// Recursively check children
+	for _, child := range node.Children {
+		childMatches := findNodesRecursive(child, nodeType)
+		matches = append(matches, childMatches...)
+	}
+
+	return matches
+}
+
+// isNestedInFunctionHelper checks if a declarator node is nested inside any function.
+// It checks if the declarator's byte range is contained within any function's byte range.
+func isNestedInFunctionHelper(declarator *valueobject.ParseNode, functionNodes map[*valueobject.ParseNode]bool) bool {
+	declStart := declarator.StartByte
+	declEnd := declarator.EndByte
+
+	for funcNode := range functionNodes {
+		funcStart := funcNode.StartByte
+		funcEnd := funcNode.EndByte
+
+		// Check if declarator is contained within this function
+		if declStart > funcStart && declEnd < funcEnd {
+			return true
+		}
+	}
+
+	return false
 }

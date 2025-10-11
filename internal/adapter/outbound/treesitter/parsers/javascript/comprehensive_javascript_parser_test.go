@@ -1112,15 +1112,18 @@ export function exportedFunction() {}
 
 		exports, err := adapter.ExtractModules(ctx, domainTree, options)
 		require.NoError(t, err)
-		require.Len(t, exports, 5)
+		require.Len(t, exports, 6)
 
 		export1 := exports[0]
 		assert.Equal(t, "name1", export1.Name)
 		assert.Equal(t, outbound.ConstructModule, export1.Type)
 
 		export2 := exports[1]
-		assert.Equal(t, "name2", export2.Name)
+		assert.Equal(t, "alias", export2.Name)
 		assert.Equal(t, outbound.ConstructModule, export2.Type)
+		// Verify it's an aliased export with original name in metadata
+		assert.Equal(t, true, export2.Metadata["is_alias"])
+		assert.Equal(t, "name2", export2.Metadata["original_name"])
 
 		export3 := exports[2]
 		assert.Equal(t, "defaultFn", export3.Name)
@@ -1133,6 +1136,10 @@ export function exportedFunction() {}
 		export5 := exports[4]
 		assert.Equal(t, "exportedConst", export5.Name)
 		assert.Equal(t, outbound.ConstructModule, export5.Type)
+
+		export6 := exports[5]
+		assert.Equal(t, "exportedFunction", export6.Name)
+		assert.Equal(t, outbound.ConstructModule, export6.Type)
 	})
 }
 

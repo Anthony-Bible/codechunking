@@ -99,6 +99,13 @@ func extractJavaScriptVariables(
 			}
 
 			pattern := declarator.Children[0]
+
+			// Skip if the declarator assigns a function value
+			// Functions should be extracted by extractJavaScriptFunctions, not as variables
+			if isFunctionAssignment(declarator) {
+				continue
+			}
+
 			extractedVars := extractVariablesFromPattern(pattern, parseTree)
 
 			for _, varInfo := range extractedVars {
@@ -1060,4 +1067,38 @@ func hasNullishCoalescing(node *valueobject.ParseNode, parseTree *valueobject.Pa
 	}
 
 	return false
+}
+
+// isFunctionAssignment checks if a variable_declarator assigns a function value.
+// Functions should be extracted by extractJavaScriptFunctions, not as variables.
+// Examples: const foo = () => {}, const bar = function() {}, const gen = function*() {}.
+func isFunctionAssignment(declarator *valueobject.ParseNode) bool {
+	if declarator == nil || declarator.Type != "variable_declarator" {
+		return false
+	}
+
+	// Find the value node (after the '=' token)
+	var valueNode *valueobject.ParseNode
+	foundEquals := false
+	for _, child := range declarator.Children {
+		if foundEquals && child.Type != "=" {
+			valueNode = child
+			break
+		}
+		if child.Type == "=" {
+			foundEquals = true
+		}
+	}
+
+	if valueNode == nil {
+		return false
+	}
+
+	// Check if the value is a function type
+	switch valueNode.Type {
+	case nodeTypeArrowFunction, nodeTypeFunctionExpr, nodeTypeGeneratorFunc:
+		return true
+	default:
+		return false
+	}
 }

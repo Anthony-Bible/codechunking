@@ -305,8 +305,9 @@ func processMethodDefinition(
 	now time.Time,
 	includePrivate bool,
 ) *outbound.SemanticCodeChunk {
-	// Skip getters and setters - they will be extracted as merged properties in extractPropertyAccessors
-	if isGetterOrSetter(node) {
+	// Skip getters and setters ONLY if inside a class - they will be extracted as merged properties in extractPropertyAccessors
+	// In object literals, getters/setters should be extracted as individual Method chunks
+	if isGetterOrSetter(node) && isMethodInsideClass(parseTree, node) {
 		return nil
 	}
 
@@ -504,11 +505,10 @@ func processFunctionVariable(
 	if funcChild := findChildByType(node, "function_expression"); funcChild != nil {
 		chunk := processFunctionExpression(parseTree, funcChild, moduleName, now, includePrivate)
 		if chunk != nil {
-			// Only override the name if the function expression is anonymous
-			if chunk.Name == "" {
-				// Keep it anonymous - do NOT set to variable name
-				chunk.Metadata["assigned_to"] = varName
-			}
+			// Keep anonymous function expressions anonymous to preserve semantic meaning
+			// Only named function expressions (e.g., const foo = function bar() {}) keep their internal name
+			// This maintains the distinction between function declarations and function expressions
+			chunk.Metadata["assigned_to"] = varName
 		}
 		return chunk
 	}
@@ -516,9 +516,12 @@ func processFunctionVariable(
 	if arrowChild := findChildByType(node, "arrow_function"); arrowChild != nil {
 		chunk := processArrowFunction(parseTree, arrowChild, moduleName, now, includePrivate)
 		if chunk != nil {
-			// Arrow functions are always anonymous - preserve that semantic truth
-			// Track the variable assignment in metadata for discoverability
-			chunk.Metadata["assigned_to"] = varName
+			// Following tree-sitter convention: use variable name as function name
+			// This matches developer intent and improves discoverability
+			chunk.Name = varName
+			chunk.QualifiedName = fmt.Sprintf("%s.%s", moduleName, varName)
+			chunk.ChunkID = utils.GenerateID(string(outbound.ConstructFunction), varName, nil)
+			chunk.Hash = utils.GenerateHash(chunk.QualifiedName)
 		}
 		return chunk
 	}
@@ -526,10 +529,13 @@ func processFunctionVariable(
 	if generatorChild := findChildByType(node, "generator_function"); generatorChild != nil {
 		chunk := processGeneratorExpression(parseTree, generatorChild, moduleName, now, includePrivate)
 		if chunk != nil {
-			// Only override the name if the generator expression is anonymous
+			// If generator expression is anonymous, use variable name (tree-sitter convention)
+			// If it has an internal name, preserve that
 			if chunk.Name == "" {
-				// Keep it anonymous - do NOT set to variable name
-				chunk.Metadata["assigned_to"] = varName
+				chunk.Name = varName
+				chunk.QualifiedName = fmt.Sprintf("%s.%s", moduleName, varName)
+				chunk.ChunkID = utils.GenerateID(string(outbound.ConstructFunction), varName, nil)
+				chunk.Hash = utils.GenerateHash(chunk.QualifiedName)
 			}
 		}
 		return chunk
@@ -1146,6 +1152,45 @@ func getJavaScriptVisibility(identifier string) outbound.VisibilityModifier {
 }
 
 // Helper functions findChildByType and findParentByType are defined in imports.go
+
+// isMethodInsideClass checks if a method_definition node is within a class context.
+// This is used to differentiate between class methods (which should have getters/setters merged)
+// and object literal methods (which should have getters/setters extracted individually).
+func isMethodInsideClass(parseTree *valueobject.ParseTree, methodNode *valueobject.ParseNode) bool {
+	if parseTree == nil || methodNode == nil {
+		return false
+	}
+
+	// Search from root for a class_body that contains this method
+	return findAncestorClassBody(parseTree.RootNode(), methodNode) != nil
+}
+
+// findAncestorClassBody recursively searches for a class_body ancestor of the given node.
+func findAncestorClassBody(
+	current *valueobject.ParseNode,
+	targetMethod *valueobject.ParseNode,
+) *valueobject.ParseNode {
+	if current == nil {
+		return nil
+	}
+
+	// Check if current node is a class_body that contains the target method
+	if current.Type == "class_body" {
+		// Check if the target method is within this class_body's byte range
+		if targetMethod.StartByte >= current.StartByte && targetMethod.EndByte <= current.EndByte {
+			return current
+		}
+	}
+
+	// Recursively search children
+	for _, child := range current.Children {
+		if result := findAncestorClassBody(child, targetMethod); result != nil {
+			return result
+		}
+	}
+
+	return nil
+}
 
 // PropertyAccessor holds information about a getter/setter pair for a single property.
 type PropertyAccessor struct {

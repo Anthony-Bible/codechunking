@@ -1,8 +1,15 @@
 package parsererrors
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
+
+	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
+)
+
+const (
+	errorNodeType = "ERROR"
 )
 
 // JavaScriptValidator implements language-specific validation for JavaScript.
@@ -19,29 +26,14 @@ func (v *JavaScriptValidator) GetLanguageName() string {
 }
 
 // ValidateSyntax performs JavaScript-specific syntax validation.
+// NOTE: This method uses regex-based validation which can have false positives.
+// Prefer using ValidateSyntaxWithTree() when a tree-sitter parse tree is available.
 func (v *JavaScriptValidator) ValidateSyntax(source string) *ParserError {
-	// Check for malformed function declarations
-	if err := v.validateFunctionSyntax(source); err != nil {
-		return err
-	}
+	// Only keep high-confidence checks that tree-sitter might not catch
+	// Removed unreliable checks like quote counting and delimiter balance
 
-	// Check for malformed class definitions
-	if err := v.validateClassSyntax(source); err != nil {
-		return err
-	}
-
-	// Check for malformed variable declarations
-	if err := v.validateVariableSyntax(source); err != nil {
-		return err
-	}
-
-	// Check for malformed import statements
+	// Check for malformed import statements (specific pattern checks)
 	if err := v.validateImportSyntax(source); err != nil {
-		return err
-	}
-
-	// Check for unmatched delimiters
-	if err := v.validateDelimiterBalance(source); err != nil {
 		return err
 	}
 
@@ -63,119 +55,63 @@ func (v *JavaScriptValidator) ValidateLanguageFeatures(source string) *ParserErr
 	return nil
 }
 
-// validateFunctionSyntax validates JavaScript function syntax.
-func (v *JavaScriptValidator) validateFunctionSyntax(source string) *ParserError {
-	// Check for malformed function declarations
-	malformedFuncPattern := regexp.MustCompile(`function\s+[^(]*\(\s*[^)]*$`)
-	if malformedFuncPattern.MatchString(source) {
-		return NewSyntaxError("invalid function declaration: malformed parameter list").
-			WithSuggestion("Ensure function parameters are properly closed with ')'")
+// ValidateSyntaxWithTree performs JavaScript syntax validation using tree-sitter AST.
+// This is more accurate than regex-based validation as it uses the actual parser.
+func (v *JavaScriptValidator) ValidateSyntaxWithTree(source string, tree *tree_sitter.Tree) *ParserError {
+	if tree == nil {
+		// Fallback to regex-based validation if no tree provided
+		return v.ValidateSyntax(source)
 	}
 
-	// Check for arrow function syntax errors
-	malformedArrowPattern := regexp.MustCompile(`=>\s*{[^}]*$`)
-	if malformedArrowPattern.MatchString(source) {
-		return NewSyntaxError("invalid arrow function: missing closing brace").
-			WithSuggestion("Ensure arrow function body is properly closed with '}'")
+	rootNode := tree.RootNode()
+
+	// Check if tree has any ERROR nodes
+	if rootNode.HasError() {
+		// Find first error node and extract details
+		errorNode := v.findFirstErrorNode(rootNode)
+		if !errorNode.IsNull() {
+			//nolint:gosec // Row and Column are always small positive values from tree-sitter
+			row := int(errorNode.StartPoint().Row) + 1
+			//nolint:gosec // Row and Column are always small positive values from tree-sitter
+			col := int(errorNode.StartPoint().Column)
+			return NewSyntaxError(fmt.Sprintf("invalid syntax: %s",
+				v.extractErrorMessage(errorNode, []byte(source)))).
+				WithLocation(row, col)
+		}
+		return NewSyntaxError("invalid syntax detected by parser")
 	}
 
-	// Check for async/await syntax errors
-	if strings.Contains(source, "async function") && !strings.Contains(source, "await") {
-		// This is just a warning, not an error
-		return NewSyntaxError("async function without await usage").
-			WithSeverity(ErrorSeverityLow).
-			WithSuggestion("Consider using await or remove async keyword")
-	}
-
+	// Tree is clean - no syntax errors
 	return nil
 }
 
-// validateClassSyntax validates JavaScript class syntax.
-func (v *JavaScriptValidator) validateClassSyntax(source string) *ParserError {
-	// Check for incomplete class definitions
-	incompleteClassPattern := regexp.MustCompile(`class\s+\w+\s*{[^}]*$`)
-	if incompleteClassPattern.MatchString(source) {
-		return NewSyntaxError("invalid class definition: missing closing brace").
-			WithSuggestion("Ensure class definition is properly closed with '}'")
+// findFirstErrorNode recursively finds the first ERROR node in the tree.
+func (v *JavaScriptValidator) findFirstErrorNode(node tree_sitter.Node) tree_sitter.Node {
+	if node.Type() == errorNodeType || node.IsMissing() {
+		return node
 	}
 
-	// Check for malformed extends syntax
-	if strings.Contains(source, "class") && strings.Contains(source, "extends") {
-		malformedExtendsPattern := regexp.MustCompile(`class\s+\w+\s+extends\s*{`)
-		if malformedExtendsPattern.MatchString(source) {
-			return NewSyntaxError("invalid class extends: missing parent class name").
-				WithSuggestion("Provide the parent class name after 'extends'")
+	for i := range node.ChildCount() {
+		child := node.Child(i)
+		if errorNode := v.findFirstErrorNode(child); !errorNode.IsNull() {
+			return errorNode
 		}
 	}
 
-	return nil
+	return tree_sitter.Node{} // null node
 }
 
-// validateVariableSyntax validates JavaScript variable declarations.
-func (v *JavaScriptValidator) validateVariableSyntax(source string) *ParserError {
-	// Check for invalid let/const declarations
-	if strings.Contains(source, "let x = // missing value") {
-		return NewSyntaxError("invalid variable declaration: missing value after assignment").
-			WithSuggestion("Provide a value after the assignment operator")
+// extractErrorMessage extracts a meaningful error message from an ERROR node.
+func (v *JavaScriptValidator) extractErrorMessage(errorNode tree_sitter.Node, source []byte) string {
+	// Get the text of the error node using tree-sitter's Content method
+	snippet := errorNode.Content(source)
+	if len(snippet) > 50 {
+		snippet = snippet[:50] + "..."
 	}
-
-	// Check for const without initializer
-	constNoInitPattern := regexp.MustCompile(`const\s+\w+\s*;`)
-	if constNoInitPattern.MatchString(source) {
-		return NewSyntaxError("invalid const declaration: const must be initialized").
-			WithSuggestion("Provide an initial value for const variables")
+	if snippet != "" {
+		return fmt.Sprintf("unexpected token '%s'", snippet)
 	}
-
-	// Check for unclosed string literals (but not template literals)
-	// Note: This is a basic check - tree-sitter will catch actual syntax errors
-	lines := strings.Split(source, "\n")
-	for i, line := range lines {
-		// Skip lines with template literals (backticks)
-		if strings.Contains(line, "`") {
-			continue
-		}
-
-		// Count unescaped quotes
-		doubleQuotes := 0
-		singleQuotes := 0
-		escaped := false
-
-		for _, ch := range line {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if ch == '\\' {
-				escaped = true
-				continue
-			}
-			switch ch {
-			case '"':
-				doubleQuotes++
-			case '\'':
-				singleQuotes++
-			}
-		}
-
-		// If we have an odd number of quotes, the string might be unclosed
-		// However, this could also be a valid multi-line string, so we only flag
-		// if there are no other indicators of valid syntax
-		if (doubleQuotes%2 != 0 || singleQuotes%2 != 0) && !strings.Contains(line, "//") {
-			// Check if this is actually an error by looking for common valid patterns
-			trimmed := strings.TrimSpace(line)
-			// Skip if it looks like a comment or has other valid continuation indicators
-			if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") ||
-				strings.HasSuffix(trimmed, "+") || strings.HasSuffix(trimmed, "\\") {
-				continue
-			}
-
-			return NewSyntaxError("invalid syntax: unclosed string literal").
-				WithLocation(i+1, 0).
-				WithSuggestion("Close the string literal with a matching quote")
-		}
-	}
-
-	return nil
+	return "parse error"
 }
 
 // validateImportSyntax validates JavaScript import statements.
@@ -194,11 +130,6 @@ func (v *JavaScriptValidator) validateImportSyntax(source string) *ParserError {
 	}
 
 	return nil
-}
-
-// validateDelimiterBalance validates balanced delimiters.
-func (v *JavaScriptValidator) validateDelimiterBalance(source string) *ParserError {
-	return ValidateDelimiterBalance(source)
 }
 
 // validateMixedLanguage checks for non-JavaScript language constructs.

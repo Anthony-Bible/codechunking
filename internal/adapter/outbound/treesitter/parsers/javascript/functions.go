@@ -138,7 +138,21 @@ func processFunctionDeclaration(
 	// Special properties are indicated by boolean flags
 	funcType := outbound.ConstructFunction
 
+	// Extract JSDoc information if present
+	jsdocInfo := extractJSDocFromFunction(parseTree, node)
+
+	// Extract parameters and apply JSDoc types
 	parameters := extractParameters(parseTree, node)
+	if jsdocInfo != nil {
+		parameters = applyJSDocTypes(parameters, jsdocInfo)
+	}
+
+	// Determine return type from JSDoc or default to "any"
+	returnType := "any"
+	if jsdocInfo != nil && jsdocInfo.ReturnType != "" {
+		returnType = jsdocInfo.ReturnType
+	}
+
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 
 	return &outbound.SemanticCodeChunk{
@@ -152,7 +166,7 @@ func processFunctionDeclaration(
 		Content:       generateFunctionContentFromNode(parseTree, node, name, funcType),
 		Documentation: extractDocumentation(parseTree, node),
 		Parameters:    parameters,
-		ReturnType:    "any", // JavaScript is dynamically typed
+		ReturnType:    returnType,
 		Visibility:    visibility,
 		IsAsync:       isAsync,
 		IsGeneric:     false,
@@ -273,7 +287,22 @@ func processMethodDefinition(
 
 	isAsync := isAsyncMethod(parseTree, node)
 	isGenerator := isGeneratorMethod(parseTree, node)
+
+	// Extract JSDoc information if present
+	jsdocInfo := extractJSDocFromFunction(parseTree, node)
+
+	// Extract parameters and apply JSDoc types
 	parameters := extractParameters(parseTree, node)
+	if jsdocInfo != nil {
+		parameters = applyJSDocTypes(parameters, jsdocInfo)
+	}
+
+	// Determine return type from JSDoc or default to "any"
+	returnType := "any"
+	if jsdocInfo != nil && jsdocInfo.ReturnType != "" {
+		returnType = jsdocInfo.ReturnType
+	}
+
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 
 	// Check if it's a constructor or regular method
@@ -288,6 +317,21 @@ func processMethodDefinition(
 	// Extract decorators from the method definition
 	annotations := extractJavaScriptDecorators(parseTree, node)
 
+	// Find parent class if this method is inside a class
+	var parentChunk *outbound.SemanticCodeChunk
+	if classNode, className := findParentClass(parseTree, node); classNode != nil {
+		// Create a minimal parent chunk reference for the class
+		parentChunk = &outbound.SemanticCodeChunk{
+			ChunkID:       utils.GenerateID(string(outbound.ConstructClass), className, nil),
+			Type:          outbound.ConstructClass,
+			Name:          className,
+			QualifiedName: fmt.Sprintf("%s.%s", moduleName, className),
+			Language:      parseTree.Language(),
+			StartByte:     classNode.StartByte,
+			EndByte:       classNode.EndByte,
+		}
+	}
+
 	return &outbound.SemanticCodeChunk{
 		ChunkID:       utils.GenerateID(string(funcType), name, nil),
 		Type:          funcType,
@@ -298,12 +342,13 @@ func processMethodDefinition(
 		EndByte:       node.EndByte,
 		Content:       generateFunctionContentFromNode(parseTree, node, name, funcType),
 		Parameters:    parameters,
-		ReturnType:    "any",
+		ReturnType:    returnType,
 		Visibility:    visibility,
 		IsAsync:       isAsync,
 		IsGeneric:     isGenerator,
 		Annotations:   annotations,
 		Metadata:      metadata,
+		ParentChunk:   parentChunk,
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(qualifiedName),
 	}
@@ -859,6 +904,48 @@ func generateFunctionContentFromNode(
 	}
 
 	return strings.TrimSpace(content)
+}
+
+// findParentClass recursively searches for a class node that contains the given method node.
+// Returns the class node and its name if found, otherwise returns nil and empty string.
+func findParentClass(
+	parseTree *valueobject.ParseTree,
+	methodNode *valueobject.ParseNode,
+) (*valueobject.ParseNode, string) {
+	// Start from the root and search for a class that contains this method
+	return findParentClassRecursive(parseTree, parseTree.RootNode(), methodNode)
+}
+
+// findParentClassRecursive is the recursive helper for findParentClass.
+func findParentClassRecursive(
+	parseTree *valueobject.ParseTree,
+	current *valueobject.ParseNode,
+	targetMethod *valueobject.ParseNode,
+) (*valueobject.ParseNode, string) {
+	if current == nil {
+		return nil, ""
+	}
+
+	// Check if this is a class node
+	if current.Type == "class_declaration" || current.Type == "class_expression" {
+		// Check if the target method is within this class's byte range
+		if targetMethod.StartByte >= current.StartByte && targetMethod.EndByte <= current.EndByte {
+			// Extract class name using the existing function from classes.go
+			className := extractClassName(parseTree, current)
+			if className != "" {
+				return current, className
+			}
+		}
+	}
+
+	// Recursively search children
+	for _, child := range current.Children {
+		if classNode, className := findParentClassRecursive(parseTree, child, targetMethod); classNode != nil {
+			return classNode, className
+		}
+	}
+
+	return nil, ""
 }
 
 // extractJavaScriptDecorators extracts decorator annotations from a method or class node.

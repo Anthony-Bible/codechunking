@@ -208,17 +208,37 @@ func (o *ObservableJavaScriptParser) Close() error {
 // Error Validation Methods - GREEN PHASE Implementation
 // ============================================================================
 
-// validateJavaScriptSource performs comprehensive validation of JavaScript source code using the new error handling system.
+// validateJavaScriptSource performs comprehensive validation of JavaScript source code using tree-sitter.
 func (p *JavaScriptParser) validateJavaScriptSource(ctx context.Context, source []byte) error {
-	// Use the shared validation system with JavaScript-specific limits
-	limits := parsererrors.DefaultValidationLimits()
+	// Parse with tree-sitter first to get the AST
+	grammar := forest.GetLanguage("javascript")
+	if grammar == nil {
+		return errors.New("failed to get JavaScript grammar")
+	}
 
-	// Create a validator registry with JavaScript validator
-	registry := parsererrors.DefaultValidatorRegistry()
-	registry.RegisterValidator("JavaScript", parsererrors.NewJavaScriptValidator())
+	parser := tree_sitter.NewParser()
+	if parser == nil {
+		return errors.New("failed to create tree-sitter parser")
+	}
 
-	// Perform comprehensive validation
-	if err := parsererrors.ValidateSourceWithLanguage(ctx, source, "JavaScript", limits, registry); err != nil {
+	if !parser.SetLanguage(grammar) {
+		return errors.New("failed to set JavaScript language")
+	}
+
+	tree, err := parser.ParseString(ctx, nil, source)
+	if err != nil {
+		return fmt.Errorf("failed to parse JavaScript: %w", err)
+	}
+	defer tree.Close()
+
+	// Use tree-based validation (more accurate than regex)
+	validator := parsererrors.NewJavaScriptValidator()
+	if err := validator.ValidateSyntaxWithTree(string(source), tree); err != nil {
+		return err
+	}
+
+	// Perform language feature validation (doesn't need tree)
+	if err := validator.ValidateLanguageFeatures(string(source)); err != nil {
 		return err
 	}
 

@@ -14,6 +14,7 @@ import (
 const (
 	nodeTypeVariableDeclarator = "variable_declarator"
 	nodeTypeAssignmentExpr     = "assignment_expression"
+	nodeTypeAsync              = "async"
 	anonymousFunctionName      = "(anonymous)"
 )
 
@@ -33,6 +34,35 @@ func extractJavaScriptFunctions(
 	functions = append(
 		functions,
 		traverseForFunctions(parseTree, parseTree.RootNode(), moduleName, now, options.IncludePrivate)...)
+
+	// Extract property accessors (getters/setters) from classes and merge them
+	classDeclarations := parseTree.GetNodesByType("class_declaration")
+	for _, classNode := range classDeclarations {
+		className := extractClassName(parseTree, classNode)
+		if className == "" {
+			continue
+		}
+
+		properties := extractPropertyAccessors(parseTree, classNode, className, moduleName, now, options.IncludePrivate)
+		functions = append(functions, properties...)
+	}
+
+	// Also check class expressions
+	classExpressions := parseTree.GetNodesByType("class")
+	for _, classNode := range classExpressions {
+		// Skip if this class is part of a class_declaration (already processed)
+		if isPartOfClassDeclaration(parseTree, classNode) {
+			continue
+		}
+
+		className := extractClassName(parseTree, classNode)
+		if className == "" {
+			continue
+		}
+
+		properties := extractPropertyAccessors(parseTree, classNode, className, moduleName, now, options.IncludePrivate)
+		functions = append(functions, properties...)
+	}
 
 	return functions, nil
 }
@@ -275,6 +305,11 @@ func processMethodDefinition(
 	now time.Time,
 	includePrivate bool,
 ) *outbound.SemanticCodeChunk {
+	// Skip getters and setters - they will be extracted as merged properties in extractPropertyAccessors
+	if isGetterOrSetter(node) {
+		return nil
+	}
+
 	name := extractMethodName(parseTree, node)
 	if name == "" {
 		return nil
@@ -481,7 +516,8 @@ func processFunctionVariable(
 	if arrowChild := findChildByType(node, "arrow_function"); arrowChild != nil {
 		chunk := processArrowFunction(parseTree, arrowChild, moduleName, now, includePrivate)
 		if chunk != nil {
-			// Arrow functions are always anonymous - do NOT set to variable name
+			// Arrow functions are always anonymous - preserve that semantic truth
+			// Track the variable assignment in metadata for discoverability
 			chunk.Metadata["assigned_to"] = varName
 		}
 		return chunk
@@ -604,7 +640,8 @@ func processObjectLiteralPairWithName(
 	}
 }
 
-// processPrototypeAssignment processes prototype method assignments like Constructor.prototype.method = function() {}.
+// processPrototypeAssignment processes property assignments like window.onload = function() {}
+// or Constructor.prototype.method = function() {}.
 func processPrototypeAssignment(
 	parseTree *valueobject.ParseTree,
 	node *valueobject.ParseNode,
@@ -627,14 +664,30 @@ func processPrototypeAssignment(
 		return nil
 	}
 
-	// Extract the method name from the member_expression's property field
-	propertyChild := findChildByType(leftChild, "property_identifier")
-	if propertyChild == nil {
-		return nil
+	// Determine if this is a prototype method assignment or a regular property assignment
+	// Prototype pattern: Foo.prototype.method = function()
+	// Property pattern: window.onload = function() or obj.prop = function()
+	isPrototypeMethod := isPrototypeMethodAssignment(parseTree, leftChild)
+
+	// Extract the full member expression as the name (e.g., "window.onload" or "Foo.prototype.method")
+	fullName := parseTree.GetNodeText(leftChild)
+
+	// For non-prototype assignments, use the full member expression
+	// For prototype assignments, extract just the method name
+	var functionName string
+	if isPrototypeMethod {
+		// Extract just the property/method name for prototype assignments
+		propertyChild := findChildByType(leftChild, "property_identifier")
+		if propertyChild == nil {
+			return nil
+		}
+		functionName = parseTree.GetNodeText(propertyChild)
+	} else {
+		// Use the full member expression for property assignments
+		functionName = fullName
 	}
 
-	methodName := parseTree.GetNodeText(propertyChild)
-	visibility := getJavaScriptVisibility(methodName)
+	visibility := getJavaScriptVisibility(functionName)
 	if !includePrivate && visibility == outbound.Private {
 		return nil
 	}
@@ -661,18 +714,27 @@ func processPrototypeAssignment(
 		parameters = extractArrowFunctionParameters(parseTree, arrowChild)
 	}
 
-	qualifiedName := fmt.Sprintf("%s.%s", moduleName, methodName)
+	qualifiedName := fmt.Sprintf("%s.%s", moduleName, functionName)
 
-	// Prototype assignments are methods
+	// Determine the construct type:
+	// - Prototype assignments (Foo.prototype.method) are methods
+	// - Property assignments (window.onload, obj.handler) are functions
+	var constructType outbound.SemanticConstructType
+	if isPrototypeMethod {
+		constructType = outbound.ConstructMethod
+	} else {
+		constructType = outbound.ConstructFunction
+	}
+
 	return &outbound.SemanticCodeChunk{
-		ChunkID:       utils.GenerateID(string(outbound.ConstructMethod), methodName, nil),
-		Type:          outbound.ConstructMethod,
-		Name:          methodName,
+		ChunkID:       utils.GenerateID(string(constructType), functionName, nil),
+		Type:          constructType,
+		Name:          functionName,
 		QualifiedName: qualifiedName,
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
-		Content:       generateFunctionContentFromNode(parseTree, functionNode, methodName, outbound.ConstructMethod),
+		Content:       generateFunctionContentFromNode(parseTree, functionNode, functionName, constructType),
 		Parameters:    parameters,
 		ReturnType:    "any",
 		Visibility:    visibility,
@@ -814,21 +876,21 @@ func isAsyncFunction(parseTree *valueobject.ParseTree, node *valueobject.ParseNo
 	// For function_declaration, function_expression, generator_function_declaration, generator_function:
 	// Check if there's an "async" child node
 	for _, child := range node.Children {
-		if child.Type == "async" {
+		if child.Type == nodeTypeAsync {
 			return true
 		}
 	}
 
 	// Fallback to string matching for edge cases
 	content := parseTree.GetNodeText(node)
-	return strings.Contains(content, "async")
+	return strings.Contains(content, nodeTypeAsync)
 }
 
 // isAsyncArrowFunction checks if an arrow function is async.
 func isAsyncArrowFunction(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) bool {
 	// For arrow_function nodes, check if there's an "async" child
 	for _, child := range node.Children {
-		if child.Type == "async" {
+		if child.Type == nodeTypeAsync {
 			return true
 		}
 	}
@@ -839,7 +901,7 @@ func isAsyncArrowFunction(parseTree *valueobject.ParseTree, node *valueobject.Pa
 func isAsyncMethod(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) bool {
 	// For method_definition nodes, check if there's an "async" child
 	for _, child := range node.Children {
-		if child.Type == "async" {
+		if child.Type == nodeTypeAsync {
 			return true
 		}
 	}
@@ -855,6 +917,48 @@ func isGeneratorMethod(parseTree *valueobject.ParseTree, node *valueobject.Parse
 			return true
 		}
 	}
+	return false
+}
+
+// isGetterOrSetter checks if a method_definition is a getter or setter.
+// According to tree-sitter JavaScript grammar, getters and setters have anonymous "get" or "set" child nodes.
+func isGetterOrSetter(node *valueobject.ParseNode) bool {
+	if node == nil || node.Type != "method_definition" {
+		return false
+	}
+
+	// Check for "get" or "set" anonymous child nodes
+	for _, child := range node.Children {
+		if child.Type == "get" || child.Type == "set" {
+			return true
+		}
+	}
+	return false
+}
+
+// isPrototypeMethodAssignment checks if a member_expression represents a prototype method assignment.
+// Pattern: Constructor.prototype.method.
+func isPrototypeMethodAssignment(parseTree *valueobject.ParseTree, memberExprNode *valueobject.ParseNode) bool {
+	if parseTree == nil || memberExprNode == nil || memberExprNode.Type != "member_expression" {
+		return false
+	}
+
+	// Check if the member expression contains "prototype"
+	// Look for nested member_expression -> property_identifier == "prototype"
+	for _, child := range memberExprNode.Children {
+		if child.Type == "member_expression" {
+			// Check if this nested member_expression has "prototype" as its property
+			for _, nestedChild := range child.Children {
+				if nestedChild.Type == "property_identifier" {
+					propText := parseTree.GetNodeText(nestedChild)
+					if propText == "prototype" {
+						return true
+					}
+				}
+			}
+		}
+	}
+
 	return false
 }
 
@@ -1042,3 +1146,222 @@ func getJavaScriptVisibility(identifier string) outbound.VisibilityModifier {
 }
 
 // Helper functions findChildByType and findParentByType are defined in imports.go
+
+// PropertyAccessor holds information about a getter/setter pair for a single property.
+type PropertyAccessor struct {
+	Name          string
+	GetterNode    *valueobject.ParseNode
+	SetterNode    *valueobject.ParseNode
+	Documentation string
+}
+
+// extractPropertyAccessors extracts and merges getter/setter pairs from a class into Property chunks.
+func extractPropertyAccessors(
+	parseTree *valueobject.ParseTree,
+	classNode *valueobject.ParseNode,
+	className string,
+	moduleName string,
+	now time.Time,
+	includePrivate bool,
+) []outbound.SemanticCodeChunk {
+	// Map to collect getters/setters by property name
+	properties := make(map[string]*PropertyAccessor)
+
+	// Find class_body
+	classBody := findClassBody(classNode)
+	if classBody == nil {
+		return nil
+	}
+
+	// Collect all getters and setters
+	for _, child := range classBody.Children {
+		if child != nil && child.Type == "method_definition" && isGetterOrSetter(child) {
+			propName := extractMethodName(parseTree, child)
+			if propName == "" {
+				continue
+			}
+
+			if properties[propName] == nil {
+				properties[propName] = &PropertyAccessor{Name: propName}
+			}
+
+			if isGetter(child) {
+				properties[propName].GetterNode = child
+				// Prefer getter documentation
+				if doc := extractDocumentation(parseTree, child); doc != "" {
+					properties[propName].Documentation = doc
+				}
+			} else if isSetter(child) {
+				properties[propName].SetterNode = child
+				// Use setter documentation if no getter doc
+				if properties[propName].Documentation == "" {
+					properties[propName].Documentation = extractDocumentation(parseTree, child)
+				}
+			}
+		}
+	}
+
+	// Create merged property chunks
+	var chunks []outbound.SemanticCodeChunk
+	for _, accessor := range properties {
+		chunk := createPropertyChunk(parseTree, accessor, className, moduleName, now, includePrivate)
+		if chunk != nil {
+			chunks = append(chunks, *chunk)
+		}
+	}
+
+	return chunks
+}
+
+// createPropertyChunk creates a single Property chunk from a getter/setter pair.
+func createPropertyChunk(
+	parseTree *valueobject.ParseTree,
+	accessor *PropertyAccessor,
+	className string,
+	moduleName string,
+	now time.Time,
+	includePrivate bool,
+) *outbound.SemanticCodeChunk {
+	visibility := getJavaScriptVisibility(accessor.Name)
+	if !includePrivate && visibility == outbound.Private {
+		return nil
+	}
+
+	// Calculate span - use min start and max end of getter/setter
+	var startByte, endByte uint32
+	if accessor.GetterNode != nil {
+		startByte = accessor.GetterNode.StartByte
+		endByte = accessor.GetterNode.EndByte
+	}
+	if accessor.SetterNode != nil {
+		if accessor.GetterNode == nil {
+			startByte = accessor.SetterNode.StartByte
+			endByte = accessor.SetterNode.EndByte
+		} else {
+			if accessor.SetterNode.StartByte < startByte {
+				startByte = accessor.SetterNode.StartByte
+			}
+			if accessor.SetterNode.EndByte > endByte {
+				endByte = accessor.SetterNode.EndByte
+			}
+		}
+	}
+
+	// Extract return type from getter (default to "any")
+	returnType := "any"
+	if accessor.GetterNode != nil {
+		// Could extract JSDoc type here if needed
+		if jsdocInfo := extractJSDocFromFunction(parseTree, accessor.GetterNode); jsdocInfo != nil &&
+			jsdocInfo.ReturnType != "" {
+			returnType = jsdocInfo.ReturnType
+		}
+	}
+
+	// Extract parameters from setter
+	var parameters []outbound.Parameter
+	if accessor.SetterNode != nil {
+		parameters = extractParameters(parseTree, accessor.SetterNode)
+		// Apply JSDoc types if available
+		if jsdocInfo := extractJSDocFromFunction(parseTree, accessor.SetterNode); jsdocInfo != nil {
+			parameters = applyJSDocTypes(parameters, jsdocInfo)
+		}
+	}
+
+	// Build metadata
+	metadata := map[string]interface{}{
+		"has_getter":  accessor.GetterNode != nil,
+		"has_setter":  accessor.SetterNode != nil,
+		"is_readonly": accessor.SetterNode == nil,
+	}
+
+	qualifiedName := fmt.Sprintf("%s.%s", moduleName, accessor.Name)
+
+	// Create parent chunk reference
+	parentChunk := &outbound.SemanticCodeChunk{
+		ChunkID:       utils.GenerateID(string(outbound.ConstructClass), className, nil),
+		Type:          outbound.ConstructClass,
+		Name:          className,
+		QualifiedName: fmt.Sprintf("%s.%s", moduleName, className),
+		Language:      parseTree.Language(),
+	}
+
+	// Generate content showing both getter and setter
+	content := generatePropertyContent(parseTree, accessor)
+
+	return &outbound.SemanticCodeChunk{
+		ChunkID:       utils.GenerateID(string(outbound.ConstructProperty), accessor.Name, nil),
+		Type:          outbound.ConstructProperty,
+		Name:          accessor.Name,
+		QualifiedName: qualifiedName,
+		Language:      parseTree.Language(),
+		StartByte:     startByte,
+		EndByte:       endByte,
+		Content:       content,
+		Documentation: accessor.Documentation,
+		Parameters:    parameters,
+		ReturnType:    returnType,
+		Visibility:    visibility,
+		Metadata:      metadata,
+		ParentChunk:   parentChunk,
+		ExtractedAt:   now,
+		Hash:          utils.GenerateHash(qualifiedName),
+	}
+}
+
+// generatePropertyContent generates content for a property showing both getter and setter.
+func generatePropertyContent(parseTree *valueobject.ParseTree, accessor *PropertyAccessor) string {
+	var parts []string
+
+	if accessor.GetterNode != nil {
+		getterText := parseTree.GetNodeText(accessor.GetterNode)
+		parts = append(parts, strings.TrimSpace(getterText))
+	}
+
+	if accessor.SetterNode != nil {
+		setterText := parseTree.GetNodeText(accessor.SetterNode)
+		parts = append(parts, strings.TrimSpace(setterText))
+	}
+
+	content := strings.Join(parts, " ")
+
+	// Truncate if too long
+	const maxContentLength = 200
+	if len(content) > maxContentLength {
+		content = content[:maxContentLength] + " ..."
+	}
+
+	// Clean up whitespace
+	content = strings.ReplaceAll(content, "\n", " ")
+	content = strings.ReplaceAll(content, "\t", " ")
+	for strings.Contains(content, "  ") {
+		content = strings.ReplaceAll(content, "  ", " ")
+	}
+
+	return strings.TrimSpace(content)
+}
+
+// isGetter checks if a method_definition node is a getter.
+func isGetter(node *valueobject.ParseNode) bool {
+	if node == nil || node.Type != "method_definition" {
+		return false
+	}
+	for _, child := range node.Children {
+		if child.Type == "get" {
+			return true
+		}
+	}
+	return false
+}
+
+// isSetter checks if a method_definition node is a setter.
+func isSetter(node *valueobject.ParseNode) bool {
+	if node == nil || node.Type != "method_definition" {
+		return false
+	}
+	for _, child := range node.Children {
+		if child.Type == "set" {
+			return true
+		}
+	}
+	return false
+}

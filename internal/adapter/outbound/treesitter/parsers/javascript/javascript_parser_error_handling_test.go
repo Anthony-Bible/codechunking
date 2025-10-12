@@ -12,117 +12,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestJavaScriptParser_ErrorHandling_TreeSitterErrors tests parser behavior with tree-sitter specific errors.
-// This RED PHASE test defines expected error handling for tree-sitter failures.
-func TestJavaScriptParser_ErrorHandling_TreeSitterErrors(t *testing.T) {
-	tests := []struct {
-		name          string
-		source        string
-		expectedError string
-		shouldFail    bool
-		operation     string
-	}{
-		{
-			name:          "grammar_loading_failure",
-			source:        "function test() { return 42; }",
-			expectedError: "grammar loading failed: unable to load JavaScript grammar",
-			shouldFail:    true,
-			operation:     "Parse",
-		},
-		{
-			name:          "parser_creation_failure",
-			source:        "const x = 10;",
-			expectedError: "tree-sitter parser creation failed",
-			shouldFail:    true,
-			operation:     "Parse",
-		},
-		{
-			name:          "language_setting_failure",
-			source:        "let arr = [1, 2, 3];",
-			expectedError: "failed to set language: tree-sitter language configuration error",
-			shouldFail:    true,
-			operation:     "Parse",
-		},
-		{
-			name:          "parse_tree_null",
-			source:        "class MyClass { }",
-			expectedError: "parse tree is null: tree-sitter returned null tree",
-			shouldFail:    true,
-			operation:     "Parse",
-		},
-		{
-			name:          "node_conversion_error",
-			source:        "async function* generator() { yield 1; }",
-			expectedError: "node conversion failed: unable to convert tree-sitter node to domain node",
-			shouldFail:    true,
-			operation:     "ExtractFunctions",
-		},
-		{
-			name:          "corrupted_tree_structure",
-			source:        "{ let x = { y: { z: function() { return this.x.y.z(); } } }; }",
-			expectedError: "corrupted tree structure: invalid node hierarchy detected",
-			shouldFail:    true,
-			operation:     "ExtractFunctions",
-		},
-		{
-			name:          "metadata_creation_failure",
-			source:        "export default class Component extends React.Component {}",
-			expectedError: "metadata creation failed: unable to create parse metadata",
-			shouldFail:    true,
-			operation:     "Parse",
-		},
-		{
-			name:          "domain_tree_creation_failure",
-			source:        "import { useState } from 'react';",
-			expectedError: "domain tree creation failed: unable to create domain parse tree",
-			shouldFail:    true,
-			operation:     "Parse",
-		},
-		{
-			name:          "port_tree_conversion_failure",
-			source:        "const useEffect = require('react').useEffect;",
-			expectedError: "port conversion failed: unable to convert domain tree to port tree",
-			shouldFail:    true,
-			operation:     "Parse",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-
-			// Create parser
-			parser, err := NewJavaScriptParser()
-			require.NoError(t, err)
-
-			options := outbound.SemanticExtractionOptions{
-				IncludePrivate: true,
-				MaxDepth:       10,
-			}
-
-			// Test the specific operation
-			switch tt.operation {
-			case "Parse":
-				// Test the raw parsing operation
-				_, err = parser.Parse(ctx, []byte(tt.source))
-			case "ExtractFunctions":
-				// First parse, then extract if parsing succeeds
-				parseTree := createMockJavaScriptParseTree(t, tt.source)
-				_, err = parser.ExtractFunctions(ctx, parseTree, options)
-			}
-
-			if tt.shouldFail {
-				assert.Error(t, err, "Expected tree-sitter error for: %s", tt.name)
-				if err != nil {
-					assert.Contains(t, err.Error(), strings.Split(tt.expectedError, ":")[0],
-						"Error should contain expected error type")
-				}
-			} else {
-				assert.NoError(t, err, "Valid operation should not cause errors")
-			}
-		})
-	}
-}
+// NOTE: TestJavaScriptParser_ErrorHandling_TreeSitterErrors was removed because it tested
+// scenarios that cannot be triggered through JavaScript source code alone. Tree-sitter
+// infrastructure failures (grammar loading, parser creation, language setting) require
+// system-level failures (corrupted files, memory exhaustion, library loading errors) that
+// are outside the scope of application-level testing. Tree-sitter's design guarantees that
+// Parse() always produces a tree, even for invalid syntax - errors appear as ERROR/MISSING
+// nodes within the tree structure, not as parse failures.
+//
+// Coverage for realistic error scenarios remains comprehensive through:
+// - TestJavaScriptParser_ErrorHandling_InvalidSyntax (syntax errors via ERROR nodes)
+// - TestJavaScriptParser_ErrorHandling_MemoryExhaustion (resource limits)
+// - TestJavaScriptParser_ErrorHandling_TimeoutScenarios (operation timeouts)
+// - TestJavaScriptParser_ErrorHandling_EdgeCases (encoding, empty input, etc.)
+// - TestJavaScriptParser_ErrorHandling_ConcurrentAccess (concurrent usage)
+// - TestJavaScriptParser_ErrorHandling_ResourceCleanup (cleanup behavior)
 
 // TestJavaScriptParser_ErrorHandling_InvalidSyntax tests parser behavior with invalid JavaScript syntax.
 // This RED PHASE test defines expected error handling for malformed JavaScript code.

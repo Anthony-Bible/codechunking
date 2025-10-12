@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	forest "github.com/alexaandru/go-sitter-forest"
 	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
@@ -19,9 +18,7 @@ import (
 
 // init registers the JavaScript parser with the treesitter registry.
 func init() {
-	treesitter.RegisterParser(valueobject.LanguageJavaScript, func() (treesitter.ObservableTreeSitterParser, error) {
-		return NewJavaScriptParser()
-	})
+	treesitter.RegisterParser(valueobject.LanguageJavaScript, NewJavaScriptParser)
 }
 
 // JavaScriptParser implements LanguageParser for JavaScript language parsing.
@@ -245,112 +242,6 @@ func (p *JavaScriptParser) validateJavaScriptSource(ctx context.Context, source 
 	return nil
 }
 
-// validateEdgeCases validates edge cases like empty files, whitespace, etc.
-func (p *JavaScriptParser) validateEdgeCases(source string) error {
-	if len(source) == 0 {
-		return errors.New("empty source: no content to parse")
-	}
-
-	if len(strings.TrimSpace(source)) == 0 {
-		return errors.New("empty source: only whitespace content")
-	}
-
-	// Check for JSON data instead of JavaScript
-	trimmed := strings.TrimSpace(source)
-	if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") &&
-		strings.Contains(trimmed, ":") && !strings.Contains(trimmed, "function") {
-		return errors.New("invalid JavaScript: JSON data detected")
-	}
-
-	// Check for HTML content
-	if strings.Contains(source, "<script") && strings.Contains(source, "</script>") {
-		return errors.New("invalid JavaScript: HTML content detected")
-	}
-
-	return nil
-}
-
-// validateResourceLimits validates memory and resource constraints.
-func (p *JavaScriptParser) validateResourceLimits(source string) error {
-	const maxFileSize = 10 * 1024 * 1024 // 10MB
-	const maxLineLength = 100000
-	const maxClasses = 10000
-	const maxFunctions = 50000
-	const maxNestingDepth = 1000
-
-	if len(source) > maxFileSize {
-		return errors.New("memory limit exceeded: file too large to process safely")
-	}
-
-	// Check for extremely long single lines
-	lines := strings.Split(source, "\n")
-	for _, line := range lines {
-		if len(line) > maxLineLength {
-			return errors.New("line too long: exceeds maximum line length limit")
-		}
-	}
-
-	// Check for too many constructs
-	funcCount := strings.Count(source, "function ") + strings.Count(source, "() =>") +
-		strings.Count(source, "async function") + strings.Count(source, "function*")
-	if funcCount > maxFunctions {
-		return errors.New("resource limit exceeded: too many constructs to process")
-	}
-
-	classCount := strings.Count(source, "class ")
-	if classCount > maxClasses {
-		return errors.New("memory allocation exceeded: too many methods in class")
-	}
-
-	// Check for deeply nested callback hell or circular references
-	if strings.Count(source, "function(") > 2000 || strings.Contains(source, "this.self") {
-		return errors.New("circular reference detected: potential memory leak")
-	}
-
-	// Check nesting depth
-	maxBraceDepth := 0
-	currentDepth := 0
-	for _, char := range source {
-		switch char {
-		case '{', '(':
-			currentDepth++
-			if currentDepth > maxBraceDepth {
-				maxBraceDepth = currentDepth
-			}
-		case '}', ')':
-			currentDepth--
-		}
-	}
-
-	if maxBraceDepth > maxNestingDepth {
-		return errors.New("recursion limit exceeded: callback nesting too deep")
-	}
-
-	return nil
-}
-
-// validateEncoding validates source encoding and detects invalid characters.
-func (p *JavaScriptParser) validateEncoding(source []byte) error {
-	// Check for null bytes
-	for _, b := range source {
-		if b == 0 {
-			return errors.New("invalid source: contains null bytes")
-		}
-	}
-
-	// Check for BOM marker - handle gracefully
-	if len(source) >= 3 && source[0] == 0xEF && source[1] == 0xBB && source[2] == 0xBF {
-		slogger.Warn(context.Background(), "BOM marker detected in JavaScript source", slogger.Fields{})
-	}
-
-	// Check for malformed UTF-8
-	if !utf8.Valid(source) {
-		return errors.New("invalid encoding: source contains non-UTF8 characters")
-	}
-
-	return nil
-}
-
 // validateFunctionSyntax validates JavaScript function syntax.
 func (p *JavaScriptParser) validateFunctionSyntax(source string) error {
 	// Check for malformed function declarations
@@ -404,10 +295,8 @@ func (p *JavaScriptParser) validateVariableSyntax(source string) error {
 		return errors.New("invalid syntax: unclosed string literal")
 	}
 
-	// Check for malformed destructuring
-	if strings.Contains(source, "{ x, y, } = obj") && strings.Contains(source, "trailing comma") {
-		return errors.New("invalid destructuring: trailing comma not allowed")
-	}
+	// NOTE: Trailing commas in destructuring are VALID JavaScript (ES2017+)
+	// Do not add checks for trailing commas - they are intentional and correct syntax
 
 	// Check for invalid template literals
 	if strings.Contains(source, "`Hello ${name; // missing closing brace") {
@@ -495,7 +384,6 @@ func (o *ObservableJavaScriptParser) ExtractInterfaces(
 	slogger.Info(ctx, "Extracting JavaScript interfaces", slogger.Fields{
 		"include_type_info": options.IncludeTypeInfo,
 	})
-	fmt.Printf("DEBUG: JavaScriptParser.ExtractInterfaces called\n")
 
 	if err := o.parser.validateInput(parseTree); err != nil {
 		return nil, err

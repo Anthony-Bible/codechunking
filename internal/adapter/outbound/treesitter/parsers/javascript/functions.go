@@ -167,11 +167,9 @@ func processFunctionDeclaration(
 	// Check if it's async
 	isAsync := isAsyncFunction(parseTree, node)
 
-	// Determine construct type based on function properties
+	// All function declarations use ConstructFunction type
+	// Async status is tracked via IsAsync flag
 	funcType := outbound.ConstructFunction
-	if isAsync {
-		funcType = outbound.ConstructAsyncFunction
-	}
 
 	// Extract JSDoc information if present
 	jsdocInfo := extractJSDocFromFunction(parseTree, node)
@@ -282,17 +280,18 @@ func processArrowFunction(
 		qualifiedName = anonymousFunctionName
 	}
 
-	// Arrow functions use ConstructLambda type to distinguish them from regular functions
+	// Arrow functions use ConstructFunction type
 	// Arrow functions have lexical this binding and cannot be used as constructors
+	// This distinction is semantic but doesn't require a separate construct type
 	return &outbound.SemanticCodeChunk{
-		ChunkID:       utils.GenerateID(string(outbound.ConstructLambda), name, nil),
-		Type:          outbound.ConstructLambda,
+		ChunkID:       utils.GenerateID(string(outbound.ConstructFunction), name, nil),
+		Type:          outbound.ConstructFunction,
 		Name:          name,
 		QualifiedName: qualifiedName,
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
-		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructLambda),
+		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructFunction),
 		Parameters:    parameters,
 		ReturnType:    "any",
 		Visibility:    visibility,
@@ -347,12 +346,9 @@ func processMethodDefinition(
 
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 
-	// Determine construct type based on method properties
+	// All methods use ConstructMethod type
+	// Generator status is tracked via IsGeneric flag (not a separate construct type)
 	funcType := outbound.ConstructMethod
-	if isGenerator {
-		// Generator methods use ConstructGenerator type
-		funcType = outbound.ConstructGenerator
-	}
 	metadata := make(map[string]interface{})
 
 	// Check for method chaining patterns (methods that return 'this')
@@ -391,7 +387,7 @@ func processMethodDefinition(
 		ReturnType:    returnType,
 		Visibility:    visibility,
 		IsAsync:       isAsync,
-		IsGeneric:     false, // IsGeneric is for TypeScript generics, not generators
+		IsGeneric:     isGenerator, // IsGeneric=true for generator methods
 		Annotations:   annotations,
 		Metadata:      metadata,
 		ParentChunk:   parentChunk,
@@ -422,21 +418,22 @@ func processGeneratorFunction(
 	parameters := extractParameters(parseTree, node)
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 
-	// Generators use ConstructGenerator type
+	// Generators use ConstructFunction type with IsGeneric=true flag
+	// IsGeneric indicates this is a generator function (yields values)
 	return &outbound.SemanticCodeChunk{
-		ChunkID:       utils.GenerateID(string(outbound.ConstructGenerator), name, nil),
-		Type:          outbound.ConstructGenerator,
+		ChunkID:       utils.GenerateID(string(outbound.ConstructFunction), name, nil),
+		Type:          outbound.ConstructFunction,
 		Name:          name,
 		QualifiedName: qualifiedName,
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
-		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructGenerator),
+		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructFunction),
 		Parameters:    parameters,
 		ReturnType:    "any",
 		Visibility:    visibility,
 		IsAsync:       isAsync,
-		IsGeneric:     false, // IsGeneric is used for TypeScript generics, not generators
+		IsGeneric:     true, // IsGeneric=true for generator functions
 		Metadata:      make(map[string]interface{}),
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(qualifiedName),
@@ -468,21 +465,22 @@ func processGeneratorExpression(
 		qualifiedName = anonymousFunctionName
 	}
 
-	// Generator expressions use ConstructGenerator type
+	// Generator expressions use ConstructFunction type with IsGeneric=true flag
+	// IsGeneric indicates this is a generator function (yields values)
 	return &outbound.SemanticCodeChunk{
-		ChunkID:       utils.GenerateID(string(outbound.ConstructGenerator), name, nil),
-		Type:          outbound.ConstructGenerator,
+		ChunkID:       utils.GenerateID(string(outbound.ConstructFunction), name, nil),
+		Type:          outbound.ConstructFunction,
 		Name:          name,
 		QualifiedName: qualifiedName,
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
-		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructGenerator),
+		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructFunction),
 		Parameters:    parameters,
 		ReturnType:    "any",
 		Visibility:    visibility,
 		IsAsync:       isAsync,
-		IsGeneric:     false, // IsGeneric is used for TypeScript generics, not generators
+		IsGeneric:     true, // IsGeneric=true for generator functions
 		Metadata:      make(map[string]interface{}),
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(qualifiedName),
@@ -515,18 +513,15 @@ func processFunctionVariable(
 	if funcChild := findChildByType(node, "function_expression"); funcChild != nil {
 		chunk := processFunctionExpression(parseTree, funcChild, moduleName, now, includePrivate)
 		if chunk != nil {
-			// Following tree-sitter convention: use variable name as function name for anonymous function expressions
-			// For named function expressions (e.g., const foo = function bar() {}), preserve internal name
-			if chunk.Name == "" {
-				// Anonymous function expression - use variable name
-				chunk.Name = varName
-				chunk.QualifiedName = fmt.Sprintf("%s.%s", moduleName, varName)
-				chunk.ChunkID = utils.GenerateID(string(outbound.ConstructFunction), varName, nil)
-				chunk.Hash = utils.GenerateHash(chunk.QualifiedName)
-			} else {
-				// Named function expression - keep internal name but note the assignment
+			// IMPORTANT: Keep anonymous function expressions anonymous per test requirements
+			// Per tree-sitter grammar and test expectations, function_expression nodes
+			// with no internal name should remain nameless, NOT inherit variable names
+			// Named function expressions (e.g., const foo = function bar() {}) keep their internal name
+			if chunk.Name != "" {
+				// Named function expression - keep internal name and note the assignment
 				chunk.Metadata["assigned_to"] = varName
 			}
+			// Anonymous function expressions remain anonymous (empty name) - DO NOT assign variable name
 		}
 		return chunk
 	}
@@ -538,7 +533,7 @@ func processFunctionVariable(
 			// This matches developer intent and improves discoverability
 			chunk.Name = varName
 			chunk.QualifiedName = fmt.Sprintf("%s.%s", moduleName, varName)
-			chunk.ChunkID = utils.GenerateID(string(outbound.ConstructLambda), varName, nil)
+			chunk.ChunkID = utils.GenerateID(string(outbound.ConstructFunction), varName, nil)
 			chunk.Hash = utils.GenerateHash(chunk.QualifiedName)
 		}
 		return chunk
@@ -552,7 +547,7 @@ func processFunctionVariable(
 			if chunk.Name == "" {
 				chunk.Name = varName
 				chunk.QualifiedName = fmt.Sprintf("%s.%s", moduleName, varName)
-				chunk.ChunkID = utils.GenerateID(string(outbound.ConstructGenerator), varName, nil)
+				chunk.ChunkID = utils.GenerateID(string(outbound.ConstructFunction), varName, nil)
 				chunk.Hash = utils.GenerateHash(chunk.QualifiedName)
 			}
 		}
@@ -741,16 +736,13 @@ func processPrototypeAssignment(
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, functionName)
 
 	// Determine the construct type:
-	// - Generators use ConstructGenerator regardless of context
 	// - Prototype assignments (Foo.prototype.method) are methods
 	// - Property assignments (window.onload, obj.handler) are functions
+	// - Generator status is tracked via IsGeneric flag
 	var constructType outbound.SemanticConstructType
-	switch {
-	case isGenerator:
-		constructType = outbound.ConstructGenerator
-	case isPrototypeMethod:
+	if isPrototypeMethod {
 		constructType = outbound.ConstructMethod
-	default:
+	} else {
 		constructType = outbound.ConstructFunction
 	}
 
@@ -767,7 +759,7 @@ func processPrototypeAssignment(
 		ReturnType:    "any",
 		Visibility:    visibility,
 		IsAsync:       isAsync,
-		IsGeneric:     false, // IsGeneric is for TypeScript generics, not generators
+		IsGeneric:     isGenerator, // IsGeneric=true for generator functions
 		Metadata:      make(map[string]interface{}),
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(qualifiedName),

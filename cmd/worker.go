@@ -25,6 +25,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
+
+	// Import parser packages to register them in the global registry.
+	_ "codechunking/internal/adapter/outbound/treesitter/parsers/go"
+	_ "codechunking/internal/adapter/outbound/treesitter/parsers/javascript"
+	_ "codechunking/internal/adapter/outbound/treesitter/parsers/python"
 )
 
 const (

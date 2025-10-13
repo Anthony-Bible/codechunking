@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -298,8 +299,13 @@ func (c *Client) GenerateEmbedding(
 	}
 
 	embedding := result.Embeddings[0]
+
+	// Convert to float64 and normalize
+	vector := c.convertToFloat64Slice(embedding.Values)
+	normalizedVector := repository.NormalizeVector(vector)
+
 	embeddingResult := &outbound.EmbeddingResult{
-		Vector:      c.convertToFloat64Slice(embedding.Values),
+		Vector:      normalizedVector,
 		Dimensions:  len(embedding.Values),
 		Model:       model,
 		TaskType:    options.TaskType,

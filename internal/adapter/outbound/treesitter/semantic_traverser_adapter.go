@@ -107,10 +107,16 @@ func (s *SemanticTraverserAdapter) extractSemanticChunks(
 	}
 
 	// Try to use parser factory directly if available
-	if result, err := s.tryParserFactory(ctx, parseTree, langParserExtractor); result != nil {
-		return result, err
-	} else {
-		slogger.Warn(ctx, "Parser factory is nil, falling back to legacy implementation", slogger.Fields{})
+	if s.parserFactory != nil {
+		result, err := s.tryParserFactory(ctx, parseTree, langParserExtractor)
+		if err == nil {
+			// Factory worked successfully, return the result (even if empty)
+			return result, nil
+		}
+		// Factory failed with error, log warning and fall back to legacy
+		slogger.Warn(ctx, "Parser factory failed, falling back to legacy implementation", slogger.Fields{
+			"error": err.Error(),
+		})
 	}
 
 	// Fallback to existing legacy implementation for backward compatibility
@@ -2059,41 +2065,12 @@ func (s *SemanticTraverserAdapter) tryParserFactory(
 	parseTree *valueobject.ParseTree,
 	langParserExtractor func(LanguageParser) ([]outbound.SemanticCodeChunk, error),
 ) ([]outbound.SemanticCodeChunk, error) {
-	if s.parserFactory == nil {
-		return nil, nil
-	}
-
-	slogger.Info(ctx, "Attempting to create parser from factory", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
-
-	parser, err := s.parserFactory.CreateParser(ctx, parseTree.Language())
-	if err != nil {
-		slogger.Warn(ctx, "Failed to create parser from factory, falling back to legacy implementation", slogger.Fields{
-			"error": err.Error(),
-		})
+	parser, err := s.createParserFromFactory(ctx, parseTree, "")
+	if err != nil || parser == nil {
 		return nil, err
 	}
 
-	slogger.Info(ctx, "Parser created successfully", slogger.Fields{
-		"parser_type": fmt.Sprintf("%T", parser),
-	})
-
-	// Cast to LanguageParser interface if possible
-	langParser, ok := parser.(LanguageParser)
-	if !ok {
-		slogger.Warn(
-			ctx,
-			"Parser does not implement LanguageParser interface, falling back to legacy implementation",
-			slogger.Fields{
-				"parser_type": fmt.Sprintf("%T", parser),
-			},
-		)
-		return nil, nil
-	}
-
-	slogger.Info(ctx, "Parser cast to LanguageParser successful, calling extractor", slogger.Fields{})
-	result, err := langParserExtractor(langParser)
+	result, err := langParserExtractor(parser)
 	if err != nil {
 		slogger.Warn(ctx, "LanguageParser extractor failed, falling back to legacy implementation", slogger.Fields{
 			"error": err.Error(),
@@ -2111,45 +2088,12 @@ func (s *SemanticTraverserAdapter) tryParserFactoryForImports(
 	parseTree *valueobject.ParseTree,
 	langParserExtractor func(LanguageParser) ([]outbound.ImportDeclaration, error),
 ) ([]outbound.ImportDeclaration, error) {
-	if s.parserFactory == nil {
-		return nil, nil
-	}
-
-	slogger.Info(ctx, "Attempting to create parser from factory for imports", slogger.Fields{
-		"language": parseTree.Language().Name(),
-	})
-
-	parser, err := s.parserFactory.CreateParser(ctx, parseTree.Language())
-	if err != nil {
-		slogger.Warn(
-			ctx,
-			"Failed to create parser from factory for imports, falling back to legacy implementation",
-			slogger.Fields{
-				"error": err.Error(),
-			},
-		)
+	parser, err := s.createParserFromFactory(ctx, parseTree, "imports")
+	if err != nil || parser == nil {
 		return nil, err
 	}
 
-	slogger.Info(ctx, "Parser created successfully for imports", slogger.Fields{
-		"parser_type": fmt.Sprintf("%T", parser),
-	})
-
-	// Cast to LanguageParser interface if possible
-	langParser, ok := parser.(LanguageParser)
-	if !ok {
-		slogger.Warn(
-			ctx,
-			"Parser does not implement LanguageParser interface for imports, falling back to legacy implementation",
-			slogger.Fields{
-				"parser_type": fmt.Sprintf("%T", parser),
-			},
-		)
-		return nil, nil
-	}
-
-	slogger.Info(ctx, "Parser cast to LanguageParser successful for imports, calling extractor", slogger.Fields{})
-	result, err := langParserExtractor(langParser)
+	result, err := langParserExtractor(parser)
 	if err != nil {
 		slogger.Warn(
 			ctx,
@@ -2162,6 +2106,65 @@ func (s *SemanticTraverserAdapter) tryParserFactoryForImports(
 	}
 
 	return result, nil
+}
+
+// ErrParserFactoryNotAvailable indicates that the parser factory is not available.
+var ErrParserFactoryNotAvailable = errors.New("parser factory not available")
+
+// ErrParserNotLanguageParser indicates that the parser doesn't implement LanguageParser interface.
+var ErrParserNotLanguageParser = errors.New("parser does not implement LanguageParser interface")
+
+// createParserFromFactory creates a parser from the factory and handles common logic.
+// Returns error if factory is unavailable, parser creation fails, or cast fails.
+func (s *SemanticTraverserAdapter) createParserFromFactory(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	context string,
+) (LanguageParser, error) {
+	if s.parserFactory == nil {
+		return nil, ErrParserFactoryNotAvailable
+	}
+
+	logContext := ""
+	if context != "" {
+		logContext = " for " + context
+	}
+
+	slogger.Info(ctx, "Attempting to create parser from factory"+logContext, slogger.Fields{
+		"language": parseTree.Language().Name(),
+	})
+
+	parser, err := s.parserFactory.CreateParser(ctx, parseTree.Language())
+	if err != nil {
+		slogger.Warn(
+			ctx,
+			"Failed to create parser from factory"+logContext+", falling back to legacy implementation",
+			slogger.Fields{
+				"error": err.Error(),
+			},
+		)
+		return nil, err
+	}
+
+	slogger.Info(ctx, "Parser created successfully"+logContext, slogger.Fields{
+		"parser_type": fmt.Sprintf("%T", parser),
+	})
+
+	// Cast to LanguageParser interface if possible
+	langParser, ok := parser.(LanguageParser)
+	if !ok {
+		slogger.Warn(
+			ctx,
+			"Parser does not implement LanguageParser interface"+logContext+", falling back to legacy implementation",
+			slogger.Fields{
+				"parser_type": fmt.Sprintf("%T", parser),
+			},
+		)
+		return nil, ErrParserNotLanguageParser
+	}
+
+	slogger.Info(ctx, "Parser cast to LanguageParser successful"+logContext+", calling extractor", slogger.Fields{})
+	return langParser, nil
 }
 
 // Helper methods to replace goparser functions and avoid import cycles

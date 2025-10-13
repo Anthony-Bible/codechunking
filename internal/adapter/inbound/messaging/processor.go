@@ -127,33 +127,69 @@ func (n *NATSConsumer) updateStats(success bool, processTime time.Duration) {
 
 // processMessage handles a single NATS message.
 func (n *NATSConsumer) processMessage(msg *nats.Msg) {
+	slogger.InfoNoCtx("Processing message", slogger.Fields{
+		"subject": msg.Subject,
+		"size":    len(msg.Data),
+	})
+
 	// Call the existing handleMessage method
 	err := n.handleMessage(msg)
 
 	if err != nil {
 		// Don't acknowledge failed messages - they will be redelivered
+		slogger.ErrorNoCtx("Message processing failed, sending Nak", slogger.Fields{
+			"error": err.Error(),
+		})
 		_ = msg.Nak()
 	} else {
 		// Acknowledge successful processing
+		slogger.InfoNoCtx("Message processing succeeded, sending Ack", nil)
 		_ = msg.Ack()
 	}
 }
 
 // messageProcessingLoop continuously processes messages from the subscription.
 func (n *NATSConsumer) messageProcessingLoop() {
+	slogger.InfoNoCtx("Message processing loop started", slogger.Fields{
+		"subject":      n.config.Subject,
+		"durable_name": n.config.DurableName,
+	})
+
+	iterationCount := 0
 	for {
+		iterationCount++
 		n.mu.RLock()
 		draining := n.draining
 		subscription := n.subscription
+		running := n.running
 		n.mu.RUnlock()
+
+		// Log periodic status
+		if iterationCount%10 == 0 {
+			slogger.InfoNoCtx("Message processing loop status", slogger.Fields{
+				"iteration":    iterationCount,
+				"draining":     draining,
+				"running":      running,
+				"subscription": subscription != nil,
+			})
+		}
 
 		// Only stop processing if we're explicitly draining or subscription is nil
 		// Continue processing even if running is false during normal operation
 		if draining || subscription == nil {
+			slogger.InfoNoCtx("Message processing loop stopping", slogger.Fields{
+				"draining":     draining,
+				"subscription": subscription != nil,
+			})
 			break
 		}
 
 		// Fetch messages in batches - use the underlying subscription
+		slogger.DebugNoCtx("Fetching messages from NATS", slogger.Fields{
+			"batch_size": MessagesFetchBatch,
+			"max_wait":   MessageFetchMaxWaitSeconds,
+		})
+
 		msgs, err := subscription.Subscription.Fetch(
 			MessagesFetchBatch,
 			nats.MaxWait(MessageFetchMaxWaitSeconds*time.Second),
@@ -161,15 +197,25 @@ func (n *NATSConsumer) messageProcessingLoop() {
 		if err != nil {
 			if errors.Is(err, nats.ErrTimeout) {
 				// Normal timeout, continue
+				slogger.DebugNoCtx("Fetch timeout (normal), continuing", nil)
 				continue
 			}
 			// Log error but continue
+			slogger.ErrorNoCtx("Error fetching messages from NATS", slogger.Fields{
+				"error": err.Error(),
+			})
 			continue
 		}
+
+		slogger.InfoNoCtx("Fetched messages from NATS", slogger.Fields{
+			"count": len(msgs),
+		})
 
 		// Process each message
 		for _, msg := range msgs {
 			n.processMessage(msg)
 		}
 	}
+
+	slogger.InfoNoCtx("Message processing loop exited", nil)
 }

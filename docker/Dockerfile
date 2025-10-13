@@ -1,8 +1,10 @@
-# Build stage
-FROM golang:1.24-alpine AS builder
+# Build stage - use Debian-based image to avoid musl libc issues
+FROM golang:1.24-bookworm AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git make gcc musl-dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git make gcc g++ && \
+    rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -19,15 +21,17 @@ COPY . .
 # Build the binary
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o codechunking main.go
 
-# Final stage
-FROM alpine:latest
+# Final stage - use Debian slim for glibc compatibility
+FROM debian:bookworm-slim
 
 # Install runtime dependencies
-RUN apk --no-cache add ca-certificates tzdata
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates tzdata libstdc++6 git && \
+    rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN addgroup -g 1000 -S codechunking && \
-    adduser -u 1000 -S codechunking -G codechunking
+RUN groupadd -g 1000 codechunking && \
+    useradd -u 1000 -g codechunking -m -s /bin/bash codechunking
 
 # Set working directory
 WORKDIR /app

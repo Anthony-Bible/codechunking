@@ -11,7 +11,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      #- ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dev -d codechunking"]
@@ -67,14 +67,32 @@ services:
       - CODECHUNK_DATABASE_USER=dev
       - CODECHUNK_DATABASE_PASSWORD=dev
       - CODECHUNK_NATS_URL=nats://nats:4222
-      # Set if you plan to enable embeddings/search now; otherwise omit
-      # - CODECHUNK_GEMINI_API_KEY=your-api-key
+      # Gemini API key for search functionality
     ports:
       - "8080:8080"
     command: ["api", "--config", "configs/config.dev.yaml"]
     restart: unless-stopped
     networks:
       - codechunking-network
+    develop:
+      watch:
+        # Rebuild on Go source changes
+        - action: rebuild
+          path: .
+          target: /app
+          ignore:
+            - "**/*.md"
+            - "**/*_test.go"
+            - ".git/"
+            - "wiki/"
+        # Sync config changes without rebuild
+        - action: sync+restart
+          path: ./configs
+          target: /app/configs
+        # Sync migrations without rebuild
+        - action: sync+restart
+          path: ./migrations
+          target: /app/migrations
 
   worker:
     build:
@@ -94,6 +112,25 @@ services:
     restart: unless-stopped
     networks:
       - codechunking-network
+    develop:
+      watch:
+        # Rebuild on Go source changes
+        - action: rebuild
+          path: .
+          target: /app
+          ignore:
+            - "**/*.md"
+            - "**/*_test.go"
+            - ".git/"
+            - "wiki/"
+        # Sync config changes without rebuild
+        - action: sync+restart
+          path: ./configs
+          target: /app/configs
+        # Sync migrations without rebuild
+        - action: sync+restart
+          path: ./migrations
+          target: /app/migrations
 
 volumes:
   postgres_data:

@@ -8,7 +8,12 @@ import (
 
 const (
 	// DefaultJobProcessingTimeout is the default timeout for job processing operations.
-	DefaultJobProcessingTimeout = 30 * time.Second
+	// This timeout must be large enough to accommodate:
+	// - Git cloning (can take minutes for large repos)
+	// - Code parsing (depends on repo size)
+	// - Embedding generation (120s per chunk × number of chunks)
+	// Set to 35 minutes to allow processing of repositories with many chunks.
+	DefaultJobProcessingTimeout = 35 * time.Minute
 	// IndexingStreamName is the name of the JetStream stream for indexing jobs.
 	IndexingStreamName = "INDEXING"
 	// StreamRetentionHours is the default retention period for stream messages in hours.

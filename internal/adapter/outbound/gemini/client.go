@@ -311,8 +311,20 @@ func (c *Client) GenerateEmbedding(
 		config.OutputDimensionality = &dims
 	}
 
-	// Generate embedding using the SDK
-	result, err := genaiClient.Models.EmbedContent(ctx, model, []*genai.Content{content}, config)
+	// Apply timeout for this specific embedding request
+	// Use timeout from options if provided, otherwise fall back to client config
+	timeout := options.Timeout
+	if timeout == 0 {
+		timeout = c.config.Timeout
+	}
+
+	// Create a new context with the embedding-specific timeout
+	// This ensures the timeout is enforced regardless of parent context deadline
+	embedCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Generate embedding using the SDK with the timeout context
+	result, err := genaiClient.Models.EmbedContent(embedCtx, model, []*genai.Content{content}, config)
 	if err != nil {
 		embeddingErr := c.convertSDKError(err)
 		c.LogEmbeddingError(ctx, requestID, embeddingErr, time.Since(startTime))

@@ -9,3 +9,8 @@ log:
 
 # Gemini API key should be set via environment variable:
 # export CODECHUNK_GEMINI_API_KEY=your-api-key
+
+# Note: Timeout configuration is inherited from config.yaml
+# - gemini.timeout: 120s (per-embedding API call timeout)
+# - worker.job_timeout: 30m (overall job processing timeout)
+# These values allow sufficient time for embedding generation even with network slowdowns

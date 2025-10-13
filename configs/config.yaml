@@ -8,7 +8,9 @@ api:
 worker:
   concurrency: 5
   queue_group: workers
-  job_timeout: 30m
+  job_timeout: 30m  # Overall timeout for complete job processing
+                    # Must be larger than (gemini.timeout × max_chunks_per_repo)
+                    # to allow all embeddings to complete
 
 database:
   host: localhost
@@ -26,7 +28,9 @@ nats:
 gemini:
   model: gemini-embedding-001
   max_retries: 3
-  timeout: 120s
+  timeout: 120s  # Per-request timeout for embedding generation
+                 # Applied to each individual embedding API call
+                 # Should be less than worker job_timeout
 
 log:
   level: info

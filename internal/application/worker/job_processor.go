@@ -383,16 +383,13 @@ func (p *DefaultJobProcessor) generateSingleEmbedding(
 		"chunk_size": len(chunk.Content),
 	})
 
-	embeddingCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
 	options := outbound.EmbeddingOptions{
 		Model:    "gemini-embedding-001",
 		TaskType: outbound.TaskTypeRetrievalDocument,
-		Timeout:  30 * time.Second,
+		Timeout:  120 * time.Second,
 	}
 
-	result, err := p.embeddingService.GenerateEmbedding(embeddingCtx, chunk.Content, options)
+	result, err := p.embeddingService.GenerateEmbedding(ctx, chunk.Content, options)
 	if err != nil {
 		slogger.Error(ctx, "Failed to generate embedding", slogger.Fields{
 			"job_id":    jobID,

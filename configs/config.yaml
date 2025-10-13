@@ -26,7 +26,7 @@ nats:
 gemini:
   model: gemini-embedding-001
   max_retries: 3
-  timeout: 30s
+  timeout: 120s
 
 log:
   level: info

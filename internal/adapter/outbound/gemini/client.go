@@ -124,6 +124,9 @@ func validateTaskTypeValue(taskType string) error {
 }
 
 // Client represents the Gemini API client.
+// TODO: Consider caching the genai.Client instance instead of creating it per-request
+// for better performance. The current implementation creates a new client for each
+// embedding request, which works but is suboptimal.
 type Client struct {
 	config *ClientConfig
 }
@@ -174,7 +177,7 @@ func applyConfigDefaults(config *ClientConfig) *ClientConfig {
 		finalConfig.TaskType = DefaultTaskType
 	}
 	if finalConfig.Timeout == 0 {
-		finalConfig.Timeout = 30 * time.Second
+		finalConfig.Timeout = 120 * time.Second
 	}
 	if finalConfig.Dimensions == 0 {
 		finalConfig.Dimensions = 768
@@ -243,8 +246,9 @@ func (c *Client) GenerateEmbedding(
 		model = c.config.Model
 	}
 
-	// Create GenAI client
-	genaiClient, err := c.createGenaiClient(ctx)
+	// Create GenAI client with a fresh context to avoid inheriting short deadlines
+	// The request context (ctx) will be used for the actual API call, not client creation
+	genaiClient, err := c.createGenaiClient(context.Background())
 	if err != nil {
 		c.LogEmbeddingError(ctx, requestID, func() *outbound.EmbeddingError {
 			target := &outbound.EmbeddingError{}

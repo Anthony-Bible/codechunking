@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -123,15 +124,34 @@ func validateTaskTypeValue(taskType string) error {
 	return errors.New("unsupported task type")
 }
 
-// Client represents the Gemini API client.
-// TODO: Consider caching the genai.Client instance instead of creating it per-request
-// for better performance. The current implementation creates a new client for each
-// embedding request, which works but is suboptimal.
+// Client represents the Gemini API client with a cached genai.Client instance.
+// The genai.Client is created once during initialization and reused across all requests
+// to avoid the overhead of repeated client creation.
+//
+// Thread-safety: The cached genai.Client is protected by a RWMutex to ensure safe
+// concurrent access. While genai.Client itself is thread-safe, we use RWMutex to
+// prevent race conditions during initialization and to provide clear ownership semantics.
 type Client struct {
-	config *ClientConfig
+	config      *ClientConfig // Client configuration
+	genaiClient *genai.Client // Cached Gemini API client (created once, reused for all requests)
+	genaiMu     sync.RWMutex  // Protects concurrent access to genaiClient field
 }
 
 // NewClient creates a new Gemini API client with the provided configuration.
+//
+// This function creates and caches a genai.Client instance during initialization.
+// The cached client is reused across all subsequent embedding requests, improving
+// performance by avoiding repeated client creation overhead.
+//
+// The genai.Client creation happens at initialization time (not lazily) to:
+// 1. Fail fast if the API key is invalid
+// 2. Ensure predictable initialization behavior
+// 3. Avoid synchronization complexity of lazy initialization
+//
+// Returns an error if:
+// - config is nil
+// - config validation fails (invalid API key, model, task type, etc.)
+// - genai.Client creation fails (typically due to invalid API key).
 func NewClient(config *ClientConfig) (*Client, error) {
 	if config == nil {
 		return nil, errors.New("config cannot be nil")
@@ -145,9 +165,27 @@ func NewClient(config *ClientConfig) (*Client, error) {
 	// Apply defaults
 	finalConfig := applyConfigDefaults(config)
 
-	// Create client
+	// Create genai client during initialization and cache it for reuse.
+	// We use context.Background() here because client creation should not be
+	// tied to any specific request context.
+	clientConfig := &genai.ClientConfig{
+		APIKey: finalConfig.APIKey,
+	}
+	genaiClient, err := genai.NewClient(context.Background(), clientConfig)
+	if err != nil {
+		return nil, &outbound.EmbeddingError{
+			Code:      "client_creation_failed",
+			Type:      "auth",
+			Message:   fmt.Sprintf("failed to create genai client: %v", err),
+			Retryable: false,
+			Cause:     err,
+		}
+	}
+
+	// Create client with cached genai.Client
 	client := &Client{
-		config: finalConfig,
+		config:      finalConfig,
+		genaiClient: genaiClient,
 	}
 
 	return client, nil
@@ -246,17 +284,8 @@ func (c *Client) GenerateEmbedding(
 		model = c.config.Model
 	}
 
-	// Create GenAI client with a fresh context to avoid inheriting short deadlines
-	// The request context (ctx) will be used for the actual API call, not client creation
-	genaiClient, err := c.createGenaiClient(context.Background())
-	if err != nil {
-		c.LogEmbeddingError(ctx, requestID, func() *outbound.EmbeddingError {
-			target := &outbound.EmbeddingError{}
-			_ = errors.As(err, &target)
-			return target
-		}(), time.Since(startTime))
-		return nil, err
-	}
+	// Get the cached GenAI client
+	genaiClient := c.getGenaiClient()
 
 	// Create content for embedding
 	content := genai.NewContentFromText(text, genai.RoleUser)
@@ -418,19 +447,18 @@ func (c *Client) ValidateApiKey(ctx context.Context) error {
 		}
 	}
 
-	// Test API key by attempting to create a client
-	client, err := c.createGenaiClient(ctx)
-	if err != nil {
+	// Get the cached client - if it exists, the API key was valid at initialization
+	client := c.getGenaiClient()
+	if client == nil {
 		return &outbound.EmbeddingError{
 			Code:      "api_key_test_failed",
 			Type:      "auth",
-			Message:   "API key test failed - unable to create client",
+			Message:   "API key test failed - client not initialized",
 			Retryable: false,
-			Cause:     err,
 		}
 	}
 
-	// For now, if client creation succeeds, we assume the API key is valid
+	// For now, if client exists, we assume the API key is valid
 	// TODO: Add actual API test call when SDK API is confirmed
 	_ = client // Prevent unused variable warning
 
@@ -598,22 +626,17 @@ func max(a, b int) int {
 	return b
 }
 
-// createGenaiClient creates a new genai client for the request.
-func (c *Client) createGenaiClient(ctx context.Context) (*genai.Client, error) {
-	clientConfig := &genai.ClientConfig{
-		APIKey: c.config.APIKey,
-	}
-	client, err := genai.NewClient(ctx, clientConfig)
-	if err != nil {
-		return nil, &outbound.EmbeddingError{
-			Code:      "client_creation_failed",
-			Type:      "auth",
-			Message:   fmt.Sprintf("failed to create genai cl ient: %v", err),
-			Retryable: false,
-			Cause:     err,
-		}
-	}
-	return client, nil
+// getGenaiClient returns the cached genai.Client instance for making API requests.
+//
+// This method uses a read lock (RLock) to allow concurrent access from multiple
+// goroutines while preventing data races. The genai.Client itself is thread-safe,
+// so once retrieved, it can be used safely for concurrent API calls.
+//
+// Returns the cached genai.Client that was created during NewClient initialization.
+func (c *Client) getGenaiClient() *genai.Client {
+	c.genaiMu.RLock()
+	defer c.genaiMu.RUnlock()
+	return c.genaiClient
 }
 
 // convertTaskType converts from outbound.EmbeddingTaskType to string for genai SDK.

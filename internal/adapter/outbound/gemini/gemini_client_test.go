@@ -562,7 +562,7 @@ func TestGeminiClient_BasicClientInitializationAndConfiguration(t *testing.T) {
 		expectedDefaults := map[string]interface{}{
 			"Model":      "gemini-embedding-001",
 			"TaskType":   "RETRIEVAL_DOCUMENT",
-			"Timeout":    30 * time.Second,
+			"Timeout":    120 * time.Second, // Default timeout is 120s as per applyConfigDefaults
 			"Dimensions": 768,
 		}
 

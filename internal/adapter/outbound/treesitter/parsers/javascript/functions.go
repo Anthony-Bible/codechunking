@@ -15,7 +15,10 @@ const (
 	nodeTypeVariableDeclarator = "variable_declarator"
 	nodeTypeAssignmentExpr     = "assignment_expression"
 	nodeTypeAsync              = "async"
+	nodeTypeMemberExpr         = "member_expression"
+	nodeTypeMethodDef          = "method_definition"
 	anonymousFunctionName      = "(anonymous)"
+	defaultTypeAny             = "any"
 )
 
 // extractJavaScriptFunctions extracts JavaScript functions from the parse tree using real AST analysis.
@@ -114,14 +117,14 @@ func processFunctionNode(
 	switch node.Type {
 	case "function_declaration":
 		return processFunctionDeclaration(parseTree, node, moduleName, now, includePrivate)
-	case "method_definition":
+	case nodeTypeMethodDef:
 		return processMethodDefinition(parseTree, node, moduleName, now, includePrivate)
 	case "generator_function_declaration":
 		return processGeneratorFunction(parseTree, node, moduleName, now, includePrivate)
 	case "generator_function":
 		// Generator expression: const gen = function* () {}
 		return processGeneratorExpression(parseTree, node, moduleName, now, includePrivate)
-	case "variable_declarator":
+	case nodeTypeVariableDeclarator:
 		// Check if this declares a function variable (const foo = function() {} or const bar = () => {})
 		return processFunctionVariable(parseTree, node, moduleName, now, includePrivate)
 	case "function_expression":
@@ -164,9 +167,11 @@ func processFunctionDeclaration(
 	// Check if it's async
 	isAsync := isAsyncFunction(parseTree, node)
 
-	// All JavaScript functions use ConstructFunction type
-	// Special properties are indicated by boolean flags
+	// Determine construct type based on function properties
 	funcType := outbound.ConstructFunction
+	if isAsync {
+		funcType = outbound.ConstructAsyncFunction
+	}
 
 	// Extract JSDoc information if present
 	jsdocInfo := extractJSDocFromFunction(parseTree, node)
@@ -178,7 +183,7 @@ func processFunctionDeclaration(
 	}
 
 	// Determine return type from JSDoc or default to "any"
-	returnType := "any"
+	returnType := defaultTypeAny
 	if jsdocInfo != nil && jsdocInfo.ReturnType != "" {
 		returnType = jsdocInfo.ReturnType
 	}
@@ -277,16 +282,17 @@ func processArrowFunction(
 		qualifiedName = anonymousFunctionName
 	}
 
-	// Arrow functions also use ConstructFunction type, not ConstructLambda
+	// Arrow functions use ConstructLambda type to distinguish them from regular functions
+	// Arrow functions have lexical this binding and cannot be used as constructors
 	return &outbound.SemanticCodeChunk{
-		ChunkID:       utils.GenerateID(string(outbound.ConstructFunction), name, nil),
-		Type:          outbound.ConstructFunction,
+		ChunkID:       utils.GenerateID(string(outbound.ConstructLambda), name, nil),
+		Type:          outbound.ConstructLambda,
 		Name:          name,
 		QualifiedName: qualifiedName,
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
-		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructFunction),
+		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructLambda),
 		Parameters:    parameters,
 		ReturnType:    "any",
 		Visibility:    visibility,
@@ -334,15 +340,19 @@ func processMethodDefinition(
 	}
 
 	// Determine return type from JSDoc or default to "any"
-	returnType := "any"
+	returnType := defaultTypeAny
 	if jsdocInfo != nil && jsdocInfo.ReturnType != "" {
 		returnType = jsdocInfo.ReturnType
 	}
 
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 
-	// Check if it's a constructor or regular method
+	// Determine construct type based on method properties
 	funcType := outbound.ConstructMethod
+	if isGenerator {
+		// Generator methods use ConstructGenerator type
+		funcType = outbound.ConstructGenerator
+	}
 	metadata := make(map[string]interface{})
 
 	// Check for method chaining patterns (methods that return 'this')
@@ -381,7 +391,7 @@ func processMethodDefinition(
 		ReturnType:    returnType,
 		Visibility:    visibility,
 		IsAsync:       isAsync,
-		IsGeneric:     isGenerator,
+		IsGeneric:     false, // IsGeneric is for TypeScript generics, not generators
 		Annotations:   annotations,
 		Metadata:      metadata,
 		ParentChunk:   parentChunk,
@@ -412,21 +422,21 @@ func processGeneratorFunction(
 	parameters := extractParameters(parseTree, node)
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, name)
 
-	// Generators use ConstructFunction with IsGeneric flag
+	// Generators use ConstructGenerator type
 	return &outbound.SemanticCodeChunk{
-		ChunkID:       utils.GenerateID(string(outbound.ConstructFunction), name, nil),
-		Type:          outbound.ConstructFunction,
+		ChunkID:       utils.GenerateID(string(outbound.ConstructGenerator), name, nil),
+		Type:          outbound.ConstructGenerator,
 		Name:          name,
 		QualifiedName: qualifiedName,
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
-		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructFunction),
+		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructGenerator),
 		Parameters:    parameters,
 		ReturnType:    "any",
 		Visibility:    visibility,
 		IsAsync:       isAsync,
-		IsGeneric:     true, // Generators are marked as generic
+		IsGeneric:     false, // IsGeneric is used for TypeScript generics, not generators
 		Metadata:      make(map[string]interface{}),
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(qualifiedName),
@@ -458,21 +468,21 @@ func processGeneratorExpression(
 		qualifiedName = anonymousFunctionName
 	}
 
-	// Generator expressions use ConstructFunction with IsGeneric flag
+	// Generator expressions use ConstructGenerator type
 	return &outbound.SemanticCodeChunk{
-		ChunkID:       utils.GenerateID(string(outbound.ConstructFunction), name, nil),
-		Type:          outbound.ConstructFunction,
+		ChunkID:       utils.GenerateID(string(outbound.ConstructGenerator), name, nil),
+		Type:          outbound.ConstructGenerator,
 		Name:          name,
 		QualifiedName: qualifiedName,
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
-		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructFunction),
+		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructGenerator),
 		Parameters:    parameters,
 		ReturnType:    "any",
 		Visibility:    visibility,
 		IsAsync:       isAsync,
-		IsGeneric:     true, // Generators are marked as generic
+		IsGeneric:     false, // IsGeneric is used for TypeScript generics, not generators
 		Metadata:      make(map[string]interface{}),
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(qualifiedName),
@@ -505,10 +515,18 @@ func processFunctionVariable(
 	if funcChild := findChildByType(node, "function_expression"); funcChild != nil {
 		chunk := processFunctionExpression(parseTree, funcChild, moduleName, now, includePrivate)
 		if chunk != nil {
-			// Keep anonymous function expressions anonymous to preserve semantic meaning
-			// Only named function expressions (e.g., const foo = function bar() {}) keep their internal name
-			// This maintains the distinction between function declarations and function expressions
-			chunk.Metadata["assigned_to"] = varName
+			// Following tree-sitter convention: use variable name as function name for anonymous function expressions
+			// For named function expressions (e.g., const foo = function bar() {}), preserve internal name
+			if chunk.Name == "" {
+				// Anonymous function expression - use variable name
+				chunk.Name = varName
+				chunk.QualifiedName = fmt.Sprintf("%s.%s", moduleName, varName)
+				chunk.ChunkID = utils.GenerateID(string(outbound.ConstructFunction), varName, nil)
+				chunk.Hash = utils.GenerateHash(chunk.QualifiedName)
+			} else {
+				// Named function expression - keep internal name but note the assignment
+				chunk.Metadata["assigned_to"] = varName
+			}
 		}
 		return chunk
 	}
@@ -520,7 +538,7 @@ func processFunctionVariable(
 			// This matches developer intent and improves discoverability
 			chunk.Name = varName
 			chunk.QualifiedName = fmt.Sprintf("%s.%s", moduleName, varName)
-			chunk.ChunkID = utils.GenerateID(string(outbound.ConstructFunction), varName, nil)
+			chunk.ChunkID = utils.GenerateID(string(outbound.ConstructLambda), varName, nil)
 			chunk.Hash = utils.GenerateHash(chunk.QualifiedName)
 		}
 		return chunk
@@ -534,7 +552,7 @@ func processFunctionVariable(
 			if chunk.Name == "" {
 				chunk.Name = varName
 				chunk.QualifiedName = fmt.Sprintf("%s.%s", moduleName, varName)
-				chunk.ChunkID = utils.GenerateID(string(outbound.ConstructFunction), varName, nil)
+				chunk.ChunkID = utils.GenerateID(string(outbound.ConstructGenerator), varName, nil)
 				chunk.Hash = utils.GenerateHash(chunk.QualifiedName)
 			}
 		}
@@ -723,12 +741,16 @@ func processPrototypeAssignment(
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, functionName)
 
 	// Determine the construct type:
+	// - Generators use ConstructGenerator regardless of context
 	// - Prototype assignments (Foo.prototype.method) are methods
 	// - Property assignments (window.onload, obj.handler) are functions
 	var constructType outbound.SemanticConstructType
-	if isPrototypeMethod {
+	switch {
+	case isGenerator:
+		constructType = outbound.ConstructGenerator
+	case isPrototypeMethod:
 		constructType = outbound.ConstructMethod
-	} else {
+	default:
 		constructType = outbound.ConstructFunction
 	}
 
@@ -745,7 +767,7 @@ func processPrototypeAssignment(
 		ReturnType:    "any",
 		Visibility:    visibility,
 		IsAsync:       isAsync,
-		IsGeneric:     isGenerator,
+		IsGeneric:     false, // IsGeneric is for TypeScript generics, not generators
 		Metadata:      make(map[string]interface{}),
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(qualifiedName),
@@ -945,17 +967,17 @@ func isGetterOrSetter(node *valueobject.ParseNode) bool {
 // isPrototypeMethodAssignment checks if a member_expression represents a prototype method assignment.
 // Pattern: Constructor.prototype.method.
 func isPrototypeMethodAssignment(parseTree *valueobject.ParseTree, memberExprNode *valueobject.ParseNode) bool {
-	if parseTree == nil || memberExprNode == nil || memberExprNode.Type != "member_expression" {
+	if parseTree == nil || memberExprNode == nil || memberExprNode.Type != nodeTypeMemberExpr {
 		return false
 	}
 
 	// Check if the member expression contains "prototype"
 	// Look for nested member_expression -> property_identifier == "prototype"
 	for _, child := range memberExprNode.Children {
-		if child.Type == "member_expression" {
+		if child.Type == nodeTypeMemberExpr {
 			// Check if this nested member_expression has "prototype" as its property
 			for _, nestedChild := range child.Children {
-				if nestedChild.Type == "property_identifier" {
+				if nestedChild.Type == nodeTypePropertyID {
 					propText := parseTree.GetNodeText(nestedChild)
 					if propText == "prototype" {
 						return true
@@ -1083,12 +1105,12 @@ func extractDecoratorName(parseTree *valueobject.ParseTree, decoratorNode *value
 	// Decorator structure: decorator -> identifier/member_expression/call_expression
 	for _, child := range decoratorNode.Children {
 		switch child.Type {
-		case "identifier":
+		case nodeTypeIdentifier:
 			return parseTree.GetNodeText(child)
-		case "member_expression":
+		case nodeTypeMemberExpr:
 			// For @foo.bar style decorators
 			return parseTree.GetNodeText(child)
-		case "call_expression":
+		case nodeTypeCallExpr:
 			// For @foo() style decorators, extract just the function name
 			// For simplicity, return the full text for now
 			return parseTree.GetNodeText(child)
@@ -1220,30 +1242,20 @@ func extractPropertyAccessors(
 
 	// Collect all getters and setters
 	for _, child := range classBody.Children {
-		if child != nil && child.Type == "method_definition" && isGetterOrSetter(child) {
-			propName := extractMethodName(parseTree, child)
-			if propName == "" {
-				continue
-			}
-
-			if properties[propName] == nil {
-				properties[propName] = &PropertyAccessor{Name: propName}
-			}
-
-			if isGetter(child) {
-				properties[propName].GetterNode = child
-				// Prefer getter documentation
-				if doc := extractDocumentation(parseTree, child); doc != "" {
-					properties[propName].Documentation = doc
-				}
-			} else if isSetter(child) {
-				properties[propName].SetterNode = child
-				// Use setter documentation if no getter doc
-				if properties[propName].Documentation == "" {
-					properties[propName].Documentation = extractDocumentation(parseTree, child)
-				}
-			}
+		if !isMethodDefinitionAccessor(child) {
+			continue
 		}
+
+		propName := extractMethodName(parseTree, child)
+		if propName == "" {
+			continue
+		}
+
+		if properties[propName] == nil {
+			properties[propName] = &PropertyAccessor{Name: propName}
+		}
+
+		processAccessorNode(parseTree, child, properties[propName])
 	}
 
 	// Create merged property chunks
@@ -1273,27 +1285,10 @@ func createPropertyChunk(
 	}
 
 	// Calculate span - use min start and max end of getter/setter
-	var startByte, endByte uint32
-	if accessor.GetterNode != nil {
-		startByte = accessor.GetterNode.StartByte
-		endByte = accessor.GetterNode.EndByte
-	}
-	if accessor.SetterNode != nil {
-		if accessor.GetterNode == nil {
-			startByte = accessor.SetterNode.StartByte
-			endByte = accessor.SetterNode.EndByte
-		} else {
-			if accessor.SetterNode.StartByte < startByte {
-				startByte = accessor.SetterNode.StartByte
-			}
-			if accessor.SetterNode.EndByte > endByte {
-				endByte = accessor.SetterNode.EndByte
-			}
-		}
-	}
+	startByte, endByte := calculateAccessorSpan(accessor)
 
 	// Extract return type from getter (default to "any")
-	returnType := "any"
+	returnType := defaultTypeAny
 	if accessor.GetterNode != nil {
 		// Could extract JSDoc type here if needed
 		if jsdocInfo := extractJSDocFromFunction(parseTree, accessor.GetterNode); jsdocInfo != nil &&
@@ -1409,4 +1404,58 @@ func isSetter(node *valueobject.ParseNode) bool {
 		}
 	}
 	return false
+}
+
+// isMethodDefinitionAccessor checks if a node is a method_definition that's also a getter or setter.
+func isMethodDefinitionAccessor(node *valueobject.ParseNode) bool {
+	return node != nil && node.Type == nodeTypeMethodDef && isGetterOrSetter(node)
+}
+
+// processAccessorNode processes a getter or setter node and adds it to the PropertyAccessor.
+func processAccessorNode(parseTree *valueobject.ParseTree, node *valueobject.ParseNode, accessor *PropertyAccessor) {
+	if isGetter(node) {
+		accessor.GetterNode = node
+		// Prefer getter documentation
+		if doc := extractDocumentation(parseTree, node); doc != "" {
+			accessor.Documentation = doc
+		}
+		return
+	}
+
+	if isSetter(node) {
+		accessor.SetterNode = node
+		// Use setter documentation if no getter doc
+		if accessor.Documentation == "" {
+			accessor.Documentation = extractDocumentation(parseTree, node)
+		}
+	}
+}
+
+// calculateAccessorSpan calculates the byte span for a property accessor (getter/setter pair).
+func calculateAccessorSpan(accessor *PropertyAccessor) (uint32, uint32) {
+	var startByte, endByte uint32
+
+	if accessor.GetterNode != nil {
+		startByte = accessor.GetterNode.StartByte
+		endByte = accessor.GetterNode.EndByte
+	}
+
+	if accessor.SetterNode == nil {
+		return startByte, endByte
+	}
+
+	// SetterNode exists
+	if accessor.GetterNode == nil {
+		return accessor.SetterNode.StartByte, accessor.SetterNode.EndByte
+	}
+
+	// Both exist - calculate min/max
+	if accessor.SetterNode.StartByte < startByte {
+		startByte = accessor.SetterNode.StartByte
+	}
+	if accessor.SetterNode.EndByte > endByte {
+		endByte = accessor.SetterNode.EndByte
+	}
+
+	return startByte, endByte
 }

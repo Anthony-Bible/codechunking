@@ -6,7 +6,6 @@ package cmd
 
 import (
 	"codechunking/internal/adapter/inbound/messaging"
-	"codechunking/internal/adapter/outbound/embeddings/simple"
 	"codechunking/internal/adapter/outbound/gemini"
 	"codechunking/internal/adapter/outbound/gitclient"
 	"codechunking/internal/adapter/outbound/repository"
@@ -222,7 +221,8 @@ func waitForShutdownAndStop(workerService inbound.WorkerService) {
 	}
 }
 
-// createEmbeddingService creates an embedding service, preferring Gemini but falling back to simple generator.
+// createEmbeddingService creates an embedding service using Gemini API.
+// The worker service requires a valid Gemini API key to function properly.
 func createEmbeddingService(cfg *config.Config) outbound.EmbeddingService {
 	// Try to create Gemini client first using Viper configuration
 	geminiAPIKey := cfg.Gemini.APIKey
@@ -235,33 +235,32 @@ func createEmbeddingService(cfg *config.Config) outbound.EmbeddingService {
 		}
 	}
 
-	if geminiAPIKey != "" {
-		config := &gemini.ClientConfig{
-			APIKey:     geminiAPIKey,
-			Model:      cfg.Gemini.Model,
-			TaskType:   "RETRIEVAL_DOCUMENT",
-			Timeout:    cfg.Gemini.Timeout,
-			Dimensions: 768, // Default dimensions for gemini-embedding-001
-		}
-
-		client, err := gemini.NewClient(config)
-		if err != nil {
-			slogger.ErrorNoCtx("Failed to create Gemini client, falling back to simple generator", slogger.Fields{
-				"error": err.Error(),
-			})
-		} else {
-			slogger.InfoNoCtx("Using Gemini embedding service", slogger.Fields{
-				"model": config.Model,
-			})
-			return client
-		}
-	} else {
-		slogger.WarnNoCtx("No Gemini API key found in configuration or environment (CODECHUNK_GEMINI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY), falling back to simple generator", nil)
+	// Exit if no API key is configured - this is a critical dependency
+	if geminiAPIKey == "" {
+		slogger.ErrorNoCtx("Gemini API key not configured - set CODECHUNK_GEMINI_API_KEY environment variable", nil)
+		os.Exit(1)
 	}
 
-	// Fall back to simple generator
-	slogger.InfoNoCtx("Using simple embedding generator (fallback)", nil)
-	return simple.New()
+	config := &gemini.ClientConfig{
+		APIKey:     geminiAPIKey,
+		Model:      cfg.Gemini.Model,
+		TaskType:   "RETRIEVAL_DOCUMENT",
+		Timeout:    cfg.Gemini.Timeout,
+		Dimensions: 768, // Default dimensions for gemini-embedding-001
+	}
+
+	client, err := gemini.NewClient(config)
+	if err != nil {
+		slogger.ErrorNoCtx("Failed to create Gemini client", slogger.Fields{
+			"error": err.Error(),
+		})
+		os.Exit(1)
+	}
+
+	slogger.InfoNoCtx("Using Gemini embedding service", slogger.Fields{
+		"model": config.Model,
+	})
+	return client
 }
 
 func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for command registration

@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"codechunking/internal/adapter/outbound/chunking"
-	"codechunking/internal/adapter/outbound/embeddings/simple"
+	"codechunking/internal/adapter/outbound/gemini"
 	ts "codechunking/internal/adapter/outbound/treesitter"
 	_ "codechunking/internal/adapter/outbound/treesitter/parsers/go" // Import to register Go parser
 	"codechunking/internal/application/common/slogger"
@@ -153,9 +153,14 @@ func parseAndChunkSource(
 	return enhanced, lang, nil
 }
 
-// generateEmbeddings creates embeddings for all enhanced code chunks.
+// generateEmbeddings creates embeddings for all enhanced code chunks using Gemini API.
 func generateEmbeddings(ctx context.Context, enhanced []outbound.EnhancedCodeChunk) ([]chunkOut, error) {
-	embedder := simple.New()
+	// Create Gemini embedding client
+	embedder, err := createGeminiEmbedder()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Gemini embedder: %w", err)
+	}
+
 	outList := make([]chunkOut, 0, len(enhanced))
 
 	for i := range enhanced {
@@ -183,6 +188,42 @@ func generateEmbeddings(ctx context.Context, enhanced []outbound.EnhancedCodeChu
 	}
 
 	return outList, nil
+}
+
+// createGeminiEmbedder creates a Gemini embedding client for the chunk command.
+func createGeminiEmbedder() (outbound.EmbeddingService, error) {
+	cfg := GetConfig()
+
+	// Get API key from config or environment variables
+	geminiAPIKey := cfg.Gemini.APIKey
+	if geminiAPIKey == "" {
+		geminiAPIKey = os.Getenv("GEMINI_API_KEY")
+		if geminiAPIKey == "" {
+			geminiAPIKey = os.Getenv("GOOGLE_API_KEY")
+		}
+	}
+
+	// Exit if no API key is configured
+	if geminiAPIKey == "" {
+		return nil, errors.New("gemini API key not configured - set CODECHUNK_GEMINI_API_KEY environment variable")
+	}
+
+	// Create Gemini client config
+	geminiConfig := &gemini.ClientConfig{
+		APIKey:     geminiAPIKey,
+		Model:      cfg.Gemini.Model,
+		TaskType:   "RETRIEVAL_DOCUMENT",
+		Timeout:    cfg.Gemini.Timeout,
+		Dimensions: 768, // Default dimensions for gemini-embedding-001
+	}
+
+	// Create and return Gemini client
+	client, err := gemini.NewClient(geminiConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
+	}
+
+	return client, nil
 }
 
 // outputResults formats and writes the results to output.

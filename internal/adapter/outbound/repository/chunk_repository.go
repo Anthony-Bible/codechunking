@@ -80,6 +80,8 @@ func (r *PostgreSQLChunkRepository) FindChunksByIDs(
 		return []service.ChunkInfo{}, nil
 	}
 
+	slogger.Debug(ctx, "Finding chunks by IDs", slogger.Field("chunk_ids_count", len(chunkIDs)))
+
 	query := `
 		SELECT
 			c.id,
@@ -109,6 +111,8 @@ func (r *PostgreSQLChunkRepository) FindChunksByIDs(
 	defer rows.Close()
 
 	var chunks []service.ChunkInfo
+	foundChunkIDs := make(map[uuid.UUID]bool)
+
 	for rows.Next() {
 		var chunk service.ChunkInfo
 
@@ -134,10 +138,32 @@ func (r *PostgreSQLChunkRepository) FindChunksByIDs(
 		}
 
 		chunks = append(chunks, chunk)
+		foundChunkIDs[chunk.ChunkID] = true
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating chunk rows: %w", err)
+	}
+
+	// Log warning if requested chunk IDs were not found (indicates orphaned embeddings)
+	missingCount := len(chunkIDs) - len(chunks)
+	if missingCount > 0 {
+		// Find which specific chunk IDs are missing
+		missingIDs := make([]string, 0, missingCount)
+		for _, id := range chunkIDs {
+			if !foundChunkIDs[id] {
+				missingIDs = append(missingIDs, id.String())
+			}
+		}
+
+		slogger.Warn(ctx, "Some chunk IDs were not found - possible orphaned embeddings", slogger.Fields{
+			"requested_count": len(chunkIDs),
+			"found_count":     len(chunks),
+			"missing_count":   missingCount,
+			"missing_ids":     missingIDs,
+		})
+	} else {
+		slogger.Debug(ctx, "All requested chunks found successfully", slogger.Field("chunks_count", len(chunks)))
 	}
 
 	return chunks, nil
@@ -1127,6 +1153,65 @@ func (r *PostgreSQLChunkRepository) executeSimilaritySearch(
 // ChunkStorageRepository Interface Implementation (Transactional Methods)
 // ============================================================================
 
+// chunkFieldsWithDefaults holds chunk fields with defaults applied.
+type chunkFieldsWithDefaults struct {
+	EntityName    string
+	ParentEntity  string
+	ChunkType     string
+	QualifiedName string
+	Signature     string
+	Visibility    string
+	RepositoryID  uuid.UUID
+}
+
+// prepareChunkFields applies default values to chunk fields.
+func prepareChunkFields(chunk *outbound.CodeChunk, embedding *outbound.Embedding) (chunkFieldsWithDefaults, error) {
+	fields := chunkFieldsWithDefaults{
+		EntityName:    chunk.EntityName,
+		ParentEntity:  chunk.ParentEntity,
+		ChunkType:     chunk.Type,
+		QualifiedName: chunk.QualifiedName,
+		Signature:     chunk.Signature,
+		Visibility:    chunk.Visibility,
+	}
+
+	// Apply defaults
+	if fields.EntityName == "" {
+		fields.EntityName = defaultEntityName
+	}
+	if fields.ParentEntity == "" {
+		fields.ParentEntity = defaultParentEntity
+	}
+	if fields.ChunkType == "" {
+		fields.ChunkType = defaultChunkType
+	}
+	if fields.QualifiedName == "" {
+		fields.QualifiedName = defaultQualifiedName
+	}
+	if fields.Signature == "" {
+		fields.Signature = defaultSignature
+	}
+	if fields.Visibility == "" {
+		fields.Visibility = defaultVisibility
+	}
+
+	// Determine repository ID
+	fields.RepositoryID = chunk.RepositoryID
+	if fields.RepositoryID == uuid.Nil {
+		fields.RepositoryID = embedding.RepositoryID
+	}
+	if fields.RepositoryID == uuid.Nil {
+		return fields, errors.New("repository_id is required")
+	}
+
+	// Ensure embedding has repository ID for partitioned table
+	if embedding.RepositoryID == uuid.Nil {
+		embedding.RepositoryID = fields.RepositoryID
+	}
+
+	return fields, nil
+}
+
 // SaveChunkWithEmbedding stores both chunk and embedding in a single transaction.
 func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 	ctx context.Context,
@@ -1144,9 +1229,6 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 		}
 	}()
 
-	// Save chunk first
-	chunkQuery := insertChunkQuery
-
 	chunkID, err := uuid.Parse(chunk.ID)
 	if err != nil {
 		slogger.Error(ctx, "Invalid chunk ID in transactional save", slogger.Fields2(
@@ -1156,114 +1238,45 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 		return fmt.Errorf("invalid chunk ID format: %w", err)
 	}
 
-	// Use chunk type information or defaults
-	entityName := chunk.EntityName
-	if entityName == "" {
-		entityName = defaultEntityName
-	}
-
-	parentEntity := chunk.ParentEntity
-	if parentEntity == "" {
-		parentEntity = defaultParentEntity
-	}
-
-	chunkType := chunk.Type
-	if chunkType == "" {
-		chunkType = defaultChunkType
-	}
-
-	qualifiedName := chunk.QualifiedName
-	if qualifiedName == "" {
-		qualifiedName = defaultQualifiedName
-	}
-
-	signature := chunk.Signature
-	if signature == "" {
-		signature = defaultSignature
-	}
-
-	visibility := chunk.Visibility
-	if visibility == "" {
-		visibility = defaultVisibility
-	}
-
-	// Prefer repository ID from chunk; fallback to embedding.RepositoryID
-	repositoryID := chunk.RepositoryID
-	if repositoryID == uuid.Nil {
-		repositoryID = embedding.RepositoryID
-	}
-	if repositoryID == uuid.Nil {
+	fields, err := prepareChunkFields(chunk, embedding)
+	if err != nil {
 		slogger.Error(ctx, "Missing repository_id for transactional chunk save", slogger.Fields{
 			"chunk_id":     chunk.ID,
 			"embedding_id": embedding.ID.String(),
 		})
-		return errors.New("repository_id is required to save chunk with embedding")
-	}
-	// Ensure embedding.RepositoryID matches for partitioned table
-	if embedding.RepositoryID == uuid.Nil {
-		embedding.RepositoryID = repositoryID
+		return fmt.Errorf("failed to prepare chunk fields: %w", err)
 	}
 
-	_, err = tx.Exec(ctx, chunkQuery,
+	// Save chunk
+	_, err = tx.Exec(ctx, insertChunkQuery,
 		chunkID,
-		repositoryID,
+		fields.RepositoryID,
 		chunk.FilePath,
-		chunkType,
+		fields.ChunkType,
 		chunk.Content,
 		chunk.Language,
 		chunk.StartLine,
 		chunk.EndLine,
-		entityName,
-		parentEntity,
+		fields.EntityName,
+		fields.ParentEntity,
 		chunk.Hash,
 		nil, // metadata
-		qualifiedName,
-		signature,
-		visibility,
+		fields.QualifiedName,
+		fields.Signature,
+		fields.Visibility,
 	)
 	if err != nil {
 		slogger.Error(ctx, "Failed to save chunk in transaction", slogger.Fields{
 			"chunk_id":      chunk.ID,
-			"repository_id": repositoryID.String(),
+			"repository_id": fields.RepositoryID.String(),
 			"error":         err.Error(),
 		})
 		return fmt.Errorf("failed to save chunk in transaction: %w", err)
 	}
 
-	// Try to save embedding to partitioned table
-	embeddingQuery := insertPartitionedEmbeddingQuery
-
-	_, err = tx.Exec(ctx, embeddingQuery,
-		embedding.ID,
-		embedding.ChunkID,
-		embedding.RepositoryID,
-		VectorToString(embedding.Vector),
-		embedding.ModelVersion,
-	)
-	if err != nil {
-		// Fallback to regular table
-		slogger.Warn(
-			ctx,
-			"Failed to save embedding to partitioned table in transaction, trying regular table",
-			slogger.Field("error", err.Error()),
-		)
-
-		regularEmbeddingQuery := insertRegularEmbeddingQuery
-
-		_, err = tx.Exec(ctx, regularEmbeddingQuery,
-			embedding.ID,
-			embedding.ChunkID,
-			VectorToString(embedding.Vector),
-			embedding.ModelVersion,
-		)
-		if err != nil {
-			slogger.Error(ctx, "Failed to save embedding to regular table in transaction", slogger.Fields{
-				"chunk_id":      chunk.ID,
-				"repository_id": repositoryID.String(),
-				"error":         err.Error(),
-			})
-			return fmt.Errorf("failed to save embedding in transaction: %w", err)
-		}
+	// Save embedding (try partitioned, fallback to regular)
+	if err := r.saveEmbeddingInTx(ctx, tx, embedding, chunk.ID, fields.RepositoryID); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -1276,8 +1289,53 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 
 	slogger.Debug(ctx, "Chunk with embedding saved successfully", slogger.Fields{
 		"chunk_id":      chunk.ID,
-		"repository_id": repositoryID.String(),
+		"repository_id": fields.RepositoryID.String(),
 	})
+	return nil
+}
+
+// saveEmbeddingInTx saves embedding in a transaction, trying partitioned table first.
+func (r *PostgreSQLChunkRepository) saveEmbeddingInTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	embedding *outbound.Embedding,
+	chunkID string,
+	repositoryID uuid.UUID,
+) error {
+	// Try partitioned table
+	_, err := tx.Exec(ctx, insertPartitionedEmbeddingQuery,
+		embedding.ID,
+		embedding.ChunkID,
+		embedding.RepositoryID,
+		VectorToString(embedding.Vector),
+		embedding.ModelVersion,
+	)
+	if err == nil {
+		return nil
+	}
+
+	// Fallback to regular table
+	slogger.Warn(
+		ctx,
+		"Failed to save embedding to partitioned table in transaction, trying regular table",
+		slogger.Field("error", err.Error()),
+	)
+
+	_, err = tx.Exec(ctx, insertRegularEmbeddingQuery,
+		embedding.ID,
+		embedding.ChunkID,
+		VectorToString(embedding.Vector),
+		embedding.ModelVersion,
+	)
+	if err != nil {
+		slogger.Error(ctx, "Failed to save embedding to regular table in transaction", slogger.Fields{
+			"chunk_id":      chunkID,
+			"repository_id": repositoryID.String(),
+			"error":         err.Error(),
+		})
+		return fmt.Errorf("failed to save embedding in transaction: %w", err)
+	}
+
 	return nil
 }
 

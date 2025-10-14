@@ -417,15 +417,14 @@ func (sf *ServiceFactory) CreateServer() (*api.Server, error) {
 	repositoryService := sf.CreateRepositoryService()
 	errorHandler := sf.CreateErrorHandler()
 
-	// Create search service
+	// Create search service - fail fast if creation fails (e.g., missing Gemini API key)
 	searchService, err := sf.CreateSearchService()
 	if err != nil {
 		slogger.ErrorNoCtx(
-			"Failed to create search service, continuing without search functionality",
+			"Failed to create search service - this is a critical dependency",
 			slogger.Field("error", err.Error()),
 		)
-		// Continue without search service - the API will work but search endpoint will return 404
-		searchService = nil
+		os.Exit(1)
 	}
 
 	// Use the new server builder for more flexible configuration

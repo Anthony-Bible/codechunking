@@ -1453,12 +1453,12 @@ func setupTestRepositoryAndChunks(t *testing.T, pool *pgxpool.Pool, chunkCount i
 
 	// Create repository
 	_, err := pool.Exec(ctx, `
-		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status) 
+		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (url) DO NOTHING
 	`, repositoryID, "https://github.com/test/vector-repo-"+repositoryID.String()[:8],
 		"https://github.com/test/vector-repo-"+repositoryID.String()[:8],
-		"vector-test-repo", "Test repository for vector operations", "indexed")
+		"vector-test-repo", "Test repository for vector operations", "completed")
 	if err != nil {
 		t.Fatalf("Failed to create test repository: %v", err)
 	}

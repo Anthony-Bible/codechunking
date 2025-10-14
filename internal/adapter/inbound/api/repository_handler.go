@@ -2,6 +2,7 @@ package api
 
 import (
 	"codechunking/internal/application/common"
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/port/inbound"
 	"encoding/json"
@@ -72,18 +73,51 @@ func (h *RepositoryHandler) GetRepository(w http.ResponseWriter, r *http.Request
 
 // ListRepositories handles GET /repositories.
 func (h *RepositoryHandler) ListRepositories(w http.ResponseWriter, r *http.Request) {
+	slogger.Info(r.Context(), "ListRepositories endpoint called", slogger.Fields{
+		"method": r.Method,
+		"path":   r.URL.Path,
+	})
+
 	query := h.parseRepositoryListQuery(r)
+	slogger.Info(r.Context(), "Repository list query parsed", slogger.Fields{
+		"status": query.Status,
+		"limit":  query.Limit,
+		"offset": query.Offset,
+		"sort":   query.Sort,
+		"name":   query.Name,
+		"url":    query.URL,
+	})
 
 	if err := h.validateRepositoryListQuery(query); err != nil {
+		slogger.Error(r.Context(), "Repository list query validation failed", slogger.Fields{
+			"error": err.Error(),
+			"query": query,
+		})
 		h.errorHandler.HandleValidationError(w, r, err)
 		return
 	}
 
+	slogger.Info(r.Context(), "Calling repository service to list repositories", slogger.Fields{
+		"limit":  query.Limit,
+		"offset": query.Offset,
+	})
+
 	response, err := h.repositoryService.ListRepositories(r.Context(), query)
 	if err != nil {
+		slogger.Error(r.Context(), "Repository service returned error", slogger.Fields{
+			"error": err.Error(),
+			"query": query,
+		})
 		h.errorHandler.HandleServiceError(w, r, err)
 		return
 	}
+
+	slogger.Info(r.Context(), "Repository list retrieved successfully", slogger.Fields{
+		"repository_count": len(response.Repositories),
+		"total":            response.Pagination.Total,
+		"limit":            response.Pagination.Limit,
+		"offset":           response.Pagination.Offset,
+	})
 
 	h.writeJSONResponse(w, http.StatusOK, response)
 }

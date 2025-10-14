@@ -75,111 +75,130 @@ func (s *CreateRepositoryService) CreateRepository(
 	request dto.CreateRepositoryRequest,
 ) (*dto.RepositoryResponse, error) {
 	slogger.Info(ctx, "DEBUG: CreateRepository called", slogger.Fields{
-		"url":         request.URL,
-		"name":        request.Name,
-		"description": request.Description,
+		"url": request.URL, "name": request.Name, "description": request.Description,
 	})
 
 	// Validate and create repository URL
-	repositoryURL, err := valueobject.NewRepositoryURL(request.URL)
+	repositoryURL, err := s.validateRepositoryURL(ctx, request.URL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if repository already exists
+	if err := s.checkRepositoryExists(ctx, repositoryURL); err != nil {
+		return nil, err
+	}
+
+	// Create and save repository
+	repository, err := s.createAndSaveRepository(ctx, request, repositoryURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Publish indexing job
+	if err := s.publishIndexingJob(ctx, repository, request.URL); err != nil {
+		return nil, err
+	}
+
+	response := common.EntityToRepositoryResponse(repository)
+	slogger.Info(ctx, "DEBUG: Repository creation completed successfully", slogger.Fields{
+		"repository_id": repository.ID().String(), "name": repository.Name(),
+	})
+	return response, nil
+}
+
+// validateRepositoryURL validates and creates a repository URL value object.
+func (s *CreateRepositoryService) validateRepositoryURL(
+	ctx context.Context,
+	url string,
+) (valueobject.RepositoryURL, error) {
+	repositoryURL, err := valueobject.NewRepositoryURL(url)
 	if err != nil {
 		slogger.Error(ctx, "DEBUG: Failed to create repository URL", slogger.Fields{
-			"url":   request.URL,
-			"error": err.Error(),
+			"url": url, "error": err.Error(),
 		})
-		return nil, fmt.Errorf("invalid repository URL: %w", err)
+		return valueobject.RepositoryURL{}, fmt.Errorf("invalid repository URL: %w", err)
 	}
 	slogger.Info(ctx, "DEBUG: Repository URL created", slogger.Fields{
 		"normalized_url": repositoryURL.String(),
 	})
+	return repositoryURL, nil
+}
 
-	// Check if repository already exists
+// checkRepositoryExists verifies that a repository doesn't already exist.
+func (s *CreateRepositoryService) checkRepositoryExists(ctx context.Context, url valueobject.RepositoryURL) error {
 	slogger.Info(ctx, "DEBUG: Checking if repository exists", slogger.Fields{
-		"normalized_url": repositoryURL.String(),
+		"normalized_url": url.String(),
 	})
-	exists, err := s.repositoryRepo.Exists(ctx, repositoryURL)
+	exists, err := s.repositoryRepo.Exists(ctx, url)
 	if err != nil {
 		slogger.Error(ctx, "DEBUG: Failed to check repository existence", slogger.Fields{
-			"normalized_url": repositoryURL.String(),
-			"error":          err.Error(),
+			"normalized_url": url.String(), "error": err.Error(),
 		})
-		return nil, common.WrapServiceError(common.OpCheckRepositoryExists, err)
+		return common.WrapServiceError(common.OpCheckRepositoryExists, err)
 	}
 	slogger.Info(ctx, "DEBUG: Repository existence check completed", slogger.Fields{
-		"normalized_url": repositoryURL.String(),
-		"exists":         exists,
+		"normalized_url": url.String(), "exists": exists,
 	})
 	if exists {
 		slogger.Info(ctx, "DEBUG: Repository already exists, returning conflict", slogger.Fields{
-			"normalized_url": repositoryURL.String(),
+			"normalized_url": url.String(),
 		})
-		return nil, domainerrors.ErrRepositoryAlreadyExists
+		return domainerrors.ErrRepositoryAlreadyExists
 	}
+	return nil
+}
 
-	// Auto-generate name from URL if not provided
+// createAndSaveRepository creates a repository entity and saves it to the database.
+func (s *CreateRepositoryService) createAndSaveRepository(
+	ctx context.Context,
+	request dto.CreateRepositoryRequest,
+	repositoryURL valueobject.RepositoryURL,
+) (*entity.Repository, error) {
 	name := request.Name
 	if name == "" {
 		name = common.ExtractRepositoryNameFromURL(request.URL)
 	}
 	slogger.Info(ctx, "DEBUG: Repository name determined", slogger.Fields{
-		"name":               name,
-		"was_auto_generated": request.Name == "",
+		"name": name, "was_auto_generated": request.Name == "",
 	})
 
-	// Create repository entity
-	slogger.Info(ctx, "DEBUG: Creating repository entity", slogger.Fields{
-		"name":           name,
-		"normalized_url": repositoryURL.String(),
-	})
 	repository := entity.NewRepository(repositoryURL, name, request.Description, request.DefaultBranch)
 	slogger.Info(ctx, "DEBUG: Repository entity created", slogger.Fields{
-		"id":   repository.ID().String(),
-		"name": repository.Name(),
+		"id": repository.ID().String(), "name": repository.Name(),
 	})
 
-	// Save repository
-	slogger.Info(ctx, "DEBUG: Saving repository to database", slogger.Fields{
-		"id":   repository.ID().String(),
-		"name": repository.Name(),
-	})
-	if err = s.repositoryRepo.Save(ctx, repository); err != nil {
+	if err := s.repositoryRepo.Save(ctx, repository); err != nil {
 		slogger.Error(ctx, "DEBUG: Failed to save repository", slogger.Fields{
-			"id":    repository.ID().String(),
-			"error": err.Error(),
+			"id": repository.ID().String(), "error": err.Error(),
 		})
 		return nil, common.WrapServiceError(common.OpSaveRepository, err)
 	}
 	slogger.Info(ctx, "DEBUG: Repository saved successfully", slogger.Fields{
 		"id": repository.ID().String(),
 	})
+	return repository, nil
+}
 
-	// Publish indexing job
+// publishIndexingJob publishes an indexing job for the repository.
+func (s *CreateRepositoryService) publishIndexingJob(
+	ctx context.Context,
+	repository *entity.Repository,
+	originalURL string,
+) error {
 	slogger.Info(ctx, "DEBUG: Publishing indexing job", slogger.Fields{
-		"repository_id":  repository.ID().String(),
-		"original_url":   request.URL,
-		"normalized_url": repository.URL().String(),
+		"repository_id": repository.ID().String(), "original_url": originalURL,
 	})
-	if err = s.messagePublisher.PublishIndexingJob(ctx, repository.ID(), request.URL); err != nil {
+	if err := s.messagePublisher.PublishIndexingJob(ctx, repository.ID(), originalURL); err != nil {
 		slogger.Error(ctx, "DEBUG: Failed to publish indexing job", slogger.Fields{
-			"repository_id": repository.ID().String(),
-			"error":         err.Error(),
+			"repository_id": repository.ID().String(), "error": err.Error(),
 		})
-		return nil, common.WrapServiceError(common.OpPublishJob, err)
+		return common.WrapServiceError(common.OpPublishJob, err)
 	}
 	slogger.Info(ctx, "DEBUG: Indexing job published successfully", slogger.Fields{
 		"repository_id": repository.ID().String(),
 	})
-
-	// Return response
-	slogger.Info(ctx, "DEBUG: Creating response", slogger.Fields{
-		"repository_id": repository.ID().String(),
-	})
-	response := common.EntityToRepositoryResponse(repository)
-	slogger.Info(ctx, "DEBUG: Repository creation completed successfully", slogger.Fields{
-		"repository_id": repository.ID().String(),
-		"name":          repository.Name(),
-	})
-	return response, nil
+	return nil
 }
 
 // GetRepositoryService handles repository retrieval operations.
@@ -334,11 +353,27 @@ func (s *ListRepositoriesService) ListRepositories(
 	ctx context.Context,
 	query dto.RepositoryListQuery,
 ) (*dto.RepositoryListResponse, error) {
+	slogger.Info(ctx, "ListRepositories service called", slogger.Fields{
+		"status": query.Status,
+		"name":   query.Name,
+		"url":    query.URL,
+		"limit":  query.Limit,
+		"offset": query.Offset,
+		"sort":   query.Sort,
+	})
+
 	// Apply defaults
 	defaults.ApplyRepositoryListDefaults(&query)
+	slogger.Info(ctx, "Applied default values to query", slogger.Fields{
+		"limit":  query.Limit,
+		"offset": query.Offset,
+		"sort":   query.Sort,
+	})
 
 	// Convert query to filters
 	filters := outbound.RepositoryFilters{
+		Name:   query.Name,
+		URL:    query.URL,
 		Limit:  query.Limit,
 		Offset: query.Offset,
 		Sort:   query.Sort,
@@ -346,27 +381,64 @@ func (s *ListRepositoriesService) ListRepositories(
 
 	// Parse status filter if provided
 	if query.Status != "" {
+		slogger.Info(ctx, "Parsing status filter", slogger.Fields{
+			"status": query.Status,
+		})
 		status, err := valueobject.NewRepositoryStatus(query.Status)
 		if err != nil {
+			slogger.Error(ctx, "Invalid repository status", slogger.Fields{
+				"status": query.Status,
+				"error":  err.Error(),
+			})
 			return nil, fmt.Errorf("invalid repository status: %w", err)
 		}
 		filters.Status = &status
+		slogger.Info(ctx, "Status filter parsed successfully", slogger.Fields{
+			"status": status.String(),
+		})
 	}
 
 	// Retrieve repositories
+	slogger.Info(ctx, "Calling repository to find all with filters", slogger.Fields{
+		"filters": filters,
+	})
 	repositories, total, err := s.repositoryRepo.FindAll(ctx, filters)
 	if err != nil {
+		slogger.Error(ctx, "Failed to retrieve repositories from database", slogger.Fields{
+			"error":   err.Error(),
+			"filters": filters,
+		})
 		return nil, common.WrapServiceError(common.OpListRepositories, err)
 	}
+	slogger.Info(ctx, "Retrieved repositories from database", slogger.Fields{
+		"count": len(repositories),
+		"total": total,
+	})
 
 	// Convert to response DTOs
+	slogger.Info(ctx, "Converting entities to DTOs", slogger.Fields{
+		"entity_count": len(repositories),
+	})
 	repositoryDTOs := make([]dto.RepositoryResponse, len(repositories))
 	for i, repo := range repositories {
 		repositoryDTOs[i] = *common.EntityToRepositoryResponse(repo)
 	}
+	slogger.Info(ctx, "Entities converted to DTOs", slogger.Fields{
+		"dto_count": len(repositoryDTOs),
+	})
 
 	// Create pagination response
 	pagination := common.CreatePaginationResponse(query.Limit, query.Offset, total)
+	slogger.Info(ctx, "Created pagination response", slogger.Fields{
+		"limit":  pagination.Limit,
+		"offset": pagination.Offset,
+		"total":  pagination.Total,
+	})
+
+	slogger.Info(ctx, "ListRepositories service completed successfully", slogger.Fields{
+		"repository_count": len(repositoryDTOs),
+		"total":            total,
+	})
 
 	return &dto.RepositoryListResponse{
 		Repositories: repositoryDTOs,

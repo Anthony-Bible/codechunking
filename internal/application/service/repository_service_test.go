@@ -796,6 +796,661 @@ func TestListRepositoriesService_ListRepositories_DatabaseError(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
+// TestListRepositoriesService_ListRepositories_FilterByName tests name filtering functionality.
+func TestListRepositoriesService_ListRepositories_FilterByName(t *testing.T) {
+	tests := []struct {
+		name           string
+		nameFilter     string
+		expectedFilter string
+		setupRepos     func() []*entity.Repository
+		expectedCount  int
+	}{
+		{
+			name:           "Filter_By_Exact_Name_Match",
+			nameFilter:     "golang/go",
+			expectedFilter: "golang/go",
+			setupRepos: func() []*entity.Repository {
+				testURL, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
+				return []*entity.Repository{
+					entity.RestoreRepository(
+						uuid.New(),
+						testURL,
+						"golang/go",
+						nil,
+						nil,
+						nil,
+						nil,
+						0,
+						0,
+						valueobject.RepositoryStatusCompleted,
+						time.Now().Add(-24*time.Hour),
+						time.Now().Add(-time.Hour),
+						nil,
+					),
+				}
+			},
+			expectedCount: 1,
+		},
+		{
+			name:           "Filter_By_Partial_Name_Match",
+			nameFilter:     "golang",
+			expectedFilter: "golang",
+			setupRepos: func() []*entity.Repository {
+				testURL1, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
+				testURL2, _ := valueobject.NewRepositoryURL("https://github.com/golang/tools")
+				return []*entity.Repository{
+					entity.RestoreRepository(uuid.New(), testURL1, "golang/go", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+					entity.RestoreRepository(uuid.New(), testURL2, "golang/tools", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				}
+			},
+			expectedCount: 2,
+		},
+		{
+			name:           "Filter_By_Name_Case_Insensitive",
+			nameFilter:     "KUBERNETES",
+			expectedFilter: "KUBERNETES",
+			setupRepos: func() []*entity.Repository {
+				testURL, _ := valueobject.NewRepositoryURL("https://github.com/kubernetes/kubernetes")
+				return []*entity.Repository{
+					entity.RestoreRepository(uuid.New(), testURL, "kubernetes/kubernetes", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				}
+			},
+			expectedCount: 1,
+		},
+		{
+			name:           "Filter_By_Name_No_Matches",
+			nameFilter:     "nonexistent",
+			expectedFilter: "nonexistent",
+			setupRepos: func() []*entity.Repository {
+				return []*entity.Repository{}
+			},
+			expectedCount: 0,
+		},
+		{
+			name:           "Filter_By_Name_With_Special_Characters",
+			nameFilter:     "repo-name_v2",
+			expectedFilter: "repo-name_v2",
+			setupRepos: func() []*entity.Repository {
+				testURL, _ := valueobject.NewRepositoryURL("https://github.com/org/repo-name_v2")
+				return []*entity.Repository{
+					entity.RestoreRepository(uuid.New(), testURL, "org/repo-name_v2", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				}
+			},
+			expectedCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			mockRepo := new(MockRepositoryRepository)
+			service := NewListRepositoriesService(mockRepo)
+
+			query := dto.RepositoryListQuery{
+				Name:   tt.nameFilter,
+				Limit:  20,
+				Offset: 0,
+				Sort:   "created_at:desc",
+			}
+
+			repos := tt.setupRepos()
+			expectedFilters := outbound.RepositoryFilters{
+				Name:   tt.expectedFilter,
+				Limit:  20,
+				Offset: 0,
+				Sort:   "created_at:desc",
+			}
+
+			mockRepo.On("FindAll", mock.Anything, expectedFilters).Return(repos, len(repos), nil)
+
+			ctx := context.Background()
+
+			// Act
+			response, err := service.ListRepositories(ctx, query)
+
+			// Assert
+			require.NoError(t, err)
+			assert.NotNil(t, response)
+			assert.Len(t, response.Repositories, tt.expectedCount)
+
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+// TestListRepositoriesService_ListRepositories_FilterByURL tests URL filtering functionality.
+func TestListRepositoriesService_ListRepositories_FilterByURL(t *testing.T) {
+	tests := []struct {
+		name           string
+		urlFilter      string
+		expectedFilter string
+		setupRepos     func() []*entity.Repository
+		expectedCount  int
+	}{
+		{
+			name:           "Filter_By_Full_URL",
+			urlFilter:      "https://github.com/golang/go",
+			expectedFilter: "https://github.com/golang/go",
+			setupRepos: func() []*entity.Repository {
+				testURL, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
+				return []*entity.Repository{
+					entity.RestoreRepository(uuid.New(), testURL, "golang/go", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				}
+			},
+			expectedCount: 1,
+		},
+		{
+			name:           "Filter_By_Partial_URL_Domain",
+			urlFilter:      "github.com",
+			expectedFilter: "github.com",
+			setupRepos: func() []*entity.Repository {
+				testURL1, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
+				testURL2, _ := valueobject.NewRepositoryURL("https://github.com/kubernetes/kubernetes")
+				return []*entity.Repository{
+					entity.RestoreRepository(uuid.New(), testURL1, "golang/go", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+					entity.RestoreRepository(uuid.New(), testURL2, "kubernetes/kubernetes", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				}
+			},
+			expectedCount: 2,
+		},
+		{
+			name:           "Filter_By_Partial_URL_Organization",
+			urlFilter:      "golang",
+			expectedFilter: "golang",
+			setupRepos: func() []*entity.Repository {
+				testURL1, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
+				testURL2, _ := valueobject.NewRepositoryURL("https://github.com/golang/tools")
+				return []*entity.Repository{
+					entity.RestoreRepository(uuid.New(), testURL1, "golang/go", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+					entity.RestoreRepository(uuid.New(), testURL2, "golang/tools", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				}
+			},
+			expectedCount: 2,
+		},
+		{
+			name:           "Filter_By_URL_Case_Insensitive",
+			urlFilter:      "GITHUB.COM/DOCKER",
+			expectedFilter: "GITHUB.COM/DOCKER",
+			setupRepos: func() []*entity.Repository {
+				testURL, _ := valueobject.NewRepositoryURL("https://github.com/docker/docker")
+				return []*entity.Repository{
+					entity.RestoreRepository(uuid.New(), testURL, "docker/docker", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				}
+			},
+			expectedCount: 1,
+		},
+		{
+			name:           "Filter_By_URL_No_Matches",
+			urlFilter:      "bitbucket.org",
+			expectedFilter: "bitbucket.org",
+			setupRepos: func() []*entity.Repository {
+				return []*entity.Repository{}
+			},
+			expectedCount: 0,
+		},
+		{
+			name:           "Filter_By_URL_With_Git_Extension",
+			urlFilter:      ".git",
+			expectedFilter: ".git",
+			setupRepos: func() []*entity.Repository {
+				testURL, _ := valueobject.NewRepositoryURL("https://github.com/example/repo.git")
+				return []*entity.Repository{
+					entity.RestoreRepository(uuid.New(), testURL, "example/repo", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				}
+			},
+			expectedCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			mockRepo := new(MockRepositoryRepository)
+			service := NewListRepositoriesService(mockRepo)
+
+			query := dto.RepositoryListQuery{
+				URL:    tt.urlFilter,
+				Limit:  20,
+				Offset: 0,
+				Sort:   "created_at:desc",
+			}
+
+			repos := tt.setupRepos()
+			expectedFilters := outbound.RepositoryFilters{
+				URL:    tt.expectedFilter,
+				Limit:  20,
+				Offset: 0,
+				Sort:   "created_at:desc",
+			}
+
+			mockRepo.On("FindAll", mock.Anything, expectedFilters).Return(repos, len(repos), nil)
+
+			ctx := context.Background()
+
+			// Act
+			response, err := service.ListRepositories(ctx, query)
+
+			// Assert
+			require.NoError(t, err)
+			assert.NotNil(t, response)
+			assert.Len(t, response.Repositories, tt.expectedCount)
+
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+// TestListRepositoriesService_ListRepositories_CombinedFilters tests combined filtering scenarios.
+func TestListRepositoriesService_ListRepositories_CombinedFilters(t *testing.T) {
+	tests := []struct {
+		name           string
+		query          dto.RepositoryListQuery
+		setupRepos     func() []*entity.Repository
+		expectedCount  int
+		expectedFilter outbound.RepositoryFilters
+	}{
+		{
+			name: "Filter_By_Name_And_URL",
+			query: dto.RepositoryListQuery{
+				Name:   "golang",
+				URL:    "github.com",
+				Limit:  20,
+				Offset: 0,
+				Sort:   "created_at:desc",
+			},
+			setupRepos: func() []*entity.Repository {
+				testURL, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
+				return []*entity.Repository{
+					entity.RestoreRepository(uuid.New(), testURL, "golang/go", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				}
+			},
+			expectedCount: 1,
+			expectedFilter: outbound.RepositoryFilters{
+				Name:   "golang",
+				URL:    "github.com",
+				Limit:  20,
+				Offset: 0,
+				Sort:   "created_at:desc",
+			},
+		},
+		{
+			name: "Filter_By_Name_URL_And_Status",
+			query: dto.RepositoryListQuery{
+				Status: "completed",
+				Name:   "kubernetes",
+				URL:    "github.com",
+				Limit:  20,
+				Offset: 0,
+				Sort:   "name:asc",
+			},
+			setupRepos: func() []*entity.Repository {
+				testURL, _ := valueobject.NewRepositoryURL("https://github.com/kubernetes/kubernetes")
+				return []*entity.Repository{
+					entity.RestoreRepository(uuid.New(), testURL, "kubernetes/kubernetes", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				}
+			},
+			expectedCount: 1,
+			expectedFilter: outbound.RepositoryFilters{
+				Status: func() *valueobject.RepositoryStatus {
+					s := valueobject.RepositoryStatusCompleted
+					return &s
+				}(),
+				Name:   "kubernetes",
+				URL:    "github.com",
+				Limit:  20,
+				Offset: 0,
+				Sort:   "name:asc",
+			},
+		},
+		{
+			name: "Filter_Returns_No_Results_When_Criteria_Dont_Match",
+			query: dto.RepositoryListQuery{
+				Name:   "golang",
+				URL:    "bitbucket.org",
+				Limit:  20,
+				Offset: 0,
+				Sort:   "created_at:desc",
+			},
+			setupRepos: func() []*entity.Repository {
+				return []*entity.Repository{}
+			},
+			expectedCount: 0,
+			expectedFilter: outbound.RepositoryFilters{
+				Name:   "golang",
+				URL:    "bitbucket.org",
+				Limit:  20,
+				Offset: 0,
+				Sort:   "created_at:desc",
+			},
+		},
+		{
+			name: "Filter_With_Pagination_And_Name_URL",
+			query: dto.RepositoryListQuery{
+				Name:   "prometheus",
+				URL:    "github.com",
+				Limit:  10,
+				Offset: 5,
+				Sort:   "updated_at:desc",
+			},
+			setupRepos: func() []*entity.Repository {
+				testURL, _ := valueobject.NewRepositoryURL("https://github.com/prometheus/prometheus")
+				return []*entity.Repository{
+					entity.RestoreRepository(uuid.New(), testURL, "prometheus/prometheus", nil, nil, nil, nil, 0, 0,
+						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				}
+			},
+			expectedCount: 1,
+			expectedFilter: outbound.RepositoryFilters{
+				Name:   "prometheus",
+				URL:    "github.com",
+				Limit:  10,
+				Offset: 5,
+				Sort:   "updated_at:desc",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Arrange
+			mockRepo := new(MockRepositoryRepository)
+			service := NewListRepositoriesService(mockRepo)
+
+			repos := tt.setupRepos()
+			mockRepo.On("FindAll", mock.Anything, tt.expectedFilter).Return(repos, len(repos), nil)
+
+			ctx := context.Background()
+
+			// Act
+			response, err := service.ListRepositories(ctx, tt.query)
+
+			// Assert
+			require.NoError(t, err)
+			assert.NotNil(t, response)
+			assert.Len(t, response.Repositories, tt.expectedCount)
+
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+// TestListRepositoriesService_ListRepositories_EdgeCases tests edge case scenarios for filtering.
+func TestListRepositoriesService_ListRepositories_EdgeCases(t *testing.T) {
+	t.Run("Empty_Name_Filter_Returns_All_Repositories", func(t *testing.T) {
+		// Arrange
+		mockRepo := new(MockRepositoryRepository)
+		service := NewListRepositoriesService(mockRepo)
+
+		testURL1, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
+		testURL2, _ := valueobject.NewRepositoryURL("https://github.com/kubernetes/kubernetes")
+
+		repositories := []*entity.Repository{
+			entity.RestoreRepository(uuid.New(), testURL1, "golang/go", nil, nil, nil, nil, 0, 0,
+				valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+			entity.RestoreRepository(uuid.New(), testURL2, "kubernetes/kubernetes", nil, nil, nil, nil, 0, 0,
+				valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+		}
+
+		query := dto.RepositoryListQuery{
+			Name:   "",
+			Limit:  20,
+			Offset: 0,
+			Sort:   "created_at:desc",
+		}
+
+		expectedFilters := outbound.RepositoryFilters{
+			Name:   "",
+			Limit:  20,
+			Offset: 0,
+			Sort:   "created_at:desc",
+		}
+
+		mockRepo.On("FindAll", mock.Anything, expectedFilters).Return(repositories, 2, nil)
+
+		ctx := context.Background()
+
+		// Act
+		response, err := service.ListRepositories(ctx, query)
+
+		// Assert
+		require.NoError(t, err)
+		assert.NotNil(t, response)
+		assert.Len(t, response.Repositories, 2)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("Empty_URL_Filter_Returns_All_Repositories", func(t *testing.T) {
+		// Arrange
+		mockRepo := new(MockRepositoryRepository)
+		service := NewListRepositoriesService(mockRepo)
+
+		testURL1, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
+		testURL2, _ := valueobject.NewRepositoryURL("https://bitbucket.org/example/repo")
+
+		repositories := []*entity.Repository{
+			entity.RestoreRepository(uuid.New(), testURL1, "golang/go", nil, nil, nil, nil, 0, 0,
+				valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+			entity.RestoreRepository(uuid.New(), testURL2, "example/repo", nil, nil, nil, nil, 0, 0,
+				valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+		}
+
+		query := dto.RepositoryListQuery{
+			URL:    "",
+			Limit:  20,
+			Offset: 0,
+			Sort:   "created_at:desc",
+		}
+
+		expectedFilters := outbound.RepositoryFilters{
+			URL:    "",
+			Limit:  20,
+			Offset: 0,
+			Sort:   "created_at:desc",
+		}
+
+		mockRepo.On("FindAll", mock.Anything, expectedFilters).Return(repositories, 2, nil)
+
+		ctx := context.Background()
+
+		// Act
+		response, err := service.ListRepositories(ctx, query)
+
+		// Assert
+		require.NoError(t, err)
+		assert.NotNil(t, response)
+		assert.Len(t, response.Repositories, 2)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("Whitespace_Only_Name_Filter_Treated_As_Search_Term", func(t *testing.T) {
+		// Arrange
+		mockRepo := new(MockRepositoryRepository)
+		service := NewListRepositoriesService(mockRepo)
+
+		query := dto.RepositoryListQuery{
+			Name:   "   ",
+			Limit:  20,
+			Offset: 0,
+			Sort:   "created_at:desc",
+		}
+
+		expectedFilters := outbound.RepositoryFilters{
+			Name:   "   ",
+			Limit:  20,
+			Offset: 0,
+			Sort:   "created_at:desc",
+		}
+
+		mockRepo.On("FindAll", mock.Anything, expectedFilters).Return([]*entity.Repository{}, 0, nil)
+
+		ctx := context.Background()
+
+		// Act
+		response, err := service.ListRepositories(ctx, query)
+
+		// Assert
+		require.NoError(t, err)
+		assert.NotNil(t, response)
+		assert.Empty(t, response.Repositories)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("Whitespace_Only_URL_Filter_Treated_As_Search_Term", func(t *testing.T) {
+		// Arrange
+		mockRepo := new(MockRepositoryRepository)
+		service := NewListRepositoriesService(mockRepo)
+
+		query := dto.RepositoryListQuery{
+			URL:    "   ",
+			Limit:  20,
+			Offset: 0,
+			Sort:   "created_at:desc",
+		}
+
+		expectedFilters := outbound.RepositoryFilters{
+			URL:    "   ",
+			Limit:  20,
+			Offset: 0,
+			Sort:   "created_at:desc",
+		}
+
+		mockRepo.On("FindAll", mock.Anything, expectedFilters).Return([]*entity.Repository{}, 0, nil)
+
+		ctx := context.Background()
+
+		// Act
+		response, err := service.ListRepositories(ctx, query)
+
+		// Assert
+		require.NoError(t, err)
+		assert.NotNil(t, response)
+		assert.Empty(t, response.Repositories)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("Special_Characters_In_Name_Filter", func(t *testing.T) {
+		// Arrange
+		mockRepo := new(MockRepositoryRepository)
+		service := NewListRepositoriesService(mockRepo)
+
+		testURL, _ := valueobject.NewRepositoryURL("https://github.com/org/repo-name_v2.0")
+
+		repository := entity.RestoreRepository(
+			uuid.New(),
+			testURL,
+			"org/repo-name_v2.0",
+			nil,
+			nil,
+			nil,
+			nil,
+			0,
+			0,
+			valueobject.RepositoryStatusCompleted,
+			time.Now(),
+			time.Now(),
+			nil,
+		)
+
+		query := dto.RepositoryListQuery{
+			Name:   "repo-name_v2.0",
+			Limit:  20,
+			Offset: 0,
+			Sort:   "created_at:desc",
+		}
+
+		expectedFilters := outbound.RepositoryFilters{
+			Name:   "repo-name_v2.0",
+			Limit:  20,
+			Offset: 0,
+			Sort:   "created_at:desc",
+		}
+
+		mockRepo.On("FindAll", mock.Anything, expectedFilters).Return([]*entity.Repository{repository}, 1, nil)
+
+		ctx := context.Background()
+
+		// Act
+		response, err := service.ListRepositories(ctx, query)
+
+		// Assert
+		require.NoError(t, err)
+		assert.NotNil(t, response)
+		assert.Len(t, response.Repositories, 1)
+		assert.Equal(t, "org/repo-name_v2.0", response.Repositories[0].Name)
+
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("Special_Characters_In_URL_Filter", func(t *testing.T) {
+		// Arrange
+		mockRepo := new(MockRepositoryRepository)
+		service := NewListRepositoriesService(mockRepo)
+
+		testURL, _ := valueobject.NewRepositoryURL("https://github.com/org/repo-name_v2.0.git")
+
+		repository := entity.RestoreRepository(
+			uuid.New(),
+			testURL,
+			"org/repo-name_v2.0",
+			nil,
+			nil,
+			nil,
+			nil,
+			0,
+			0,
+			valueobject.RepositoryStatusCompleted,
+			time.Now(),
+			time.Now(),
+			nil,
+		)
+
+		query := dto.RepositoryListQuery{
+			URL:    "repo-name_v2.0.git",
+			Limit:  20,
+			Offset: 0,
+			Sort:   "created_at:desc",
+		}
+
+		expectedFilters := outbound.RepositoryFilters{
+			URL:    "repo-name_v2.0.git",
+			Limit:  20,
+			Offset: 0,
+			Sort:   "created_at:desc",
+		}
+
+		mockRepo.On("FindAll", mock.Anything, expectedFilters).Return([]*entity.Repository{repository}, 1, nil)
+
+		ctx := context.Background()
+
+		// Act
+		response, err := service.ListRepositories(ctx, query)
+
+		// Assert
+		require.NoError(t, err)
+		assert.NotNil(t, response)
+		assert.Len(t, response.Repositories, 1)
+
+		mockRepo.AssertExpectations(t)
+	})
+}
+
 // Helper functions.
 func stringPtr(s string) *string {
 	return &s

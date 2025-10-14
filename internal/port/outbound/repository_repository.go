@@ -69,6 +69,8 @@ type MessagePublisherMetrics struct {
 // RepositoryFilters represents filters for repository queries.
 type RepositoryFilters struct {
 	Status *valueobject.RepositoryStatus
+	Name   string
+	URL    string
 	Limit  int
 	Offset int
 	Sort   string

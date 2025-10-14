@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
@@ -186,6 +187,20 @@ func (r *PostgreSQLRepositoryRepository) buildWhereClause(filters outbound.Repos
 	if filters.Status != nil {
 		whereConditions = append(whereConditions, fmt.Sprintf("status = $%d", argIndex))
 		args = append(args, filters.Status.String())
+		argIndex++
+	}
+
+	if filters.Name != "" {
+		condition, arg := buildLikeCondition("name", filters.Name, argIndex)
+		whereConditions = append(whereConditions, condition)
+		args = append(args, arg)
+		argIndex++
+	}
+
+	if filters.URL != "" {
+		condition, arg := buildLikeCondition("url", filters.URL, argIndex)
+		whereConditions = append(whereConditions, condition)
+		args = append(args, arg)
 	}
 
 	whereClause := ""
@@ -194,6 +209,13 @@ func (r *PostgreSQLRepositoryRepository) buildWhereClause(filters outbound.Repos
 	}
 
 	return whereClause, args
+}
+
+// buildLikeCondition creates a case-insensitive LIKE condition for the given column.
+func buildLikeCondition(column, value string, argIndex int) (string, string) {
+	condition := fmt.Sprintf("LOWER(%s) LIKE LOWER($%d)", column, argIndex)
+	arg := "%" + value + "%"
+	return condition, arg
 }
 
 func (r *PostgreSQLRepositoryRepository) buildOrderByClause(sort string) string {
@@ -253,79 +275,122 @@ func (r *PostgreSQLRepositoryRepository) FindAll(
 	ctx context.Context,
 	filters outbound.RepositoryFilters,
 ) ([]*entity.Repository, int, error) {
+	slogger.Info(ctx, "FindAll called", slogger.Fields{"limit": filters.Limit, "offset": filters.Offset})
+
 	if err := r.validateFilters(filters); err != nil {
+		slogger.Error(ctx, "Filter validation failed", slogger.Fields{"error": err.Error()})
 		return nil, 0, err
 	}
 
+	totalCount, rows, err := r.executeQuery(ctx, filters)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if rows == nil {
+		slogger.Info(ctx, "No rows returned", slogger.Fields{"total_count": totalCount})
+		return []*entity.Repository{}, totalCount, nil
+	}
+	defer rows.Close()
+
+	repositories, err := r.processRows(ctx, rows)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	slogger.Info(ctx, "FindAll completed", slogger.Fields{
+		"count": len(repositories), "total": totalCount,
+	})
+
+	return repositories, totalCount, nil
+}
+
+// executeQuery builds and executes the repository query.
+func (r *PostgreSQLRepositoryRepository) executeQuery(
+	ctx context.Context,
+	filters outbound.RepositoryFilters,
+) (int, pgx.Rows, error) {
 	baseQuery := `FROM codechunking.repositories WHERE deleted_at IS NULL`
 	whereClause, args := r.buildWhereClause(filters)
 	orderBy := r.buildOrderByClause(filters.Sort)
 	limit, offset := r.getPaginationParams(filters)
 
-	// Execute count and data queries using shared helper
 	qi := GetQueryInterface(ctx, r.pool)
-	selectColumns := `SELECT id, url, name, description, default_branch, last_indexed_at, 
-				  last_commit_hash, total_files, total_chunks, status, 
+	selectColumns := `SELECT id, url, name, description, default_branch, last_indexed_at,
+				  last_commit_hash, total_files, total_chunks, status,
 				  created_at, updated_at, deleted_at`
+
+	slogger.Info(ctx, "Executing query", slogger.Fields{
+		"limit": limit, "offset": offset, "where": whereClause, "order": orderBy,
+	})
 
 	totalCount, rows, err := executeCountAndDataQuery(
 		ctx, qi, baseQuery, selectColumns, whereClause, orderBy, args, limit, offset,
 	)
 	if err != nil {
-		return nil, 0, err
+		slogger.Error(ctx, "Query execution failed", slogger.Fields{"error": err.Error()})
+		return 0, nil, err
 	}
 
-	// If offset is beyond total count or no rows, return empty results
-	if rows == nil {
-		return []*entity.Repository{}, totalCount, nil
-	}
-	defer rows.Close()
+	return totalCount, rows, nil
+}
 
+// processRows scans rows and converts them to repository entities.
+func (r *PostgreSQLRepositoryRepository) processRows(
+	ctx context.Context,
+	rows pgx.Rows,
+) ([]*entity.Repository, error) {
 	var repositories []*entity.Repository
+
 	for rows.Next() {
-		var id uuid.UUID
-		var repoURL, name, statusStr string
-		var description, defaultBranch, lastCommitHash *string
-		var lastIndexedAt, deletedAt *time.Time
-		var totalFiles, totalChunks int
-		var createdAt, updatedAt time.Time
-
-		scanErr := rows.Scan(
-			&id, &repoURL, &name, &description, &defaultBranch, &lastIndexedAt,
-			&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
-			&createdAt, &updatedAt, &deletedAt,
-		)
-		if scanErr != nil {
-			return nil, 0, WrapError(scanErr, "scan repository row")
+		repo, err := r.scanRow(ctx, rows)
+		if err != nil {
+			return nil, err
 		}
-
-		repo, scanRepoErr := r.scanRepositoryFromTime(
-			id,
-			repoURL,
-			name,
-			description,
-			defaultBranch,
-			lastIndexedAt,
-			lastCommitHash,
-			totalFiles,
-			totalChunks,
-			statusStr,
-			createdAt,
-			updatedAt,
-			deletedAt,
-		)
-		if scanRepoErr != nil {
-			return nil, 0, scanRepoErr
-		}
-
 		repositories = append(repositories, repo)
 	}
 
-	if rowsErr := rows.Err(); rowsErr != nil {
-		return nil, 0, WrapError(rowsErr, "iterate repository rows")
+	if err := rows.Err(); err != nil {
+		slogger.Error(ctx, "Error iterating rows", slogger.Fields{"error": err.Error()})
+		return nil, WrapError(err, "iterate repository rows")
 	}
 
-	return repositories, totalCount, nil
+	return repositories, nil
+}
+
+// scanRow scans a single row into a repository entity.
+func (r *PostgreSQLRepositoryRepository) scanRow(
+	ctx context.Context,
+	rows pgx.Rows,
+) (*entity.Repository, error) {
+	var id uuid.UUID
+	var repoURL, name, statusStr string
+	var description, defaultBranch, lastCommitHash *string
+	var lastIndexedAt, deletedAt *time.Time
+	var totalFiles, totalChunks int
+	var createdAt, updatedAt time.Time
+
+	if err := rows.Scan(
+		&id, &repoURL, &name, &description, &defaultBranch, &lastIndexedAt,
+		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
+		&createdAt, &updatedAt, &deletedAt,
+	); err != nil {
+		slogger.Error(ctx, "Failed to scan row", slogger.Fields{"error": err.Error()})
+		return nil, WrapError(err, "scan repository row")
+	}
+
+	repo, err := r.scanRepositoryFromTime(
+		id, repoURL, name, description, defaultBranch, lastIndexedAt,
+		lastCommitHash, totalFiles, totalChunks, statusStr, createdAt, updatedAt, deletedAt,
+	)
+	if err != nil {
+		slogger.Error(ctx, "Failed to convert to entity", slogger.Fields{
+			"error": err.Error(), "id": id.String(),
+		})
+		return nil, err
+	}
+
+	return repo, nil
 }
 
 // Update updates a repository in the database.
@@ -614,24 +679,28 @@ func (r *PostgreSQLRepositoryRepository) validateSortParameter(sort string) erro
 
 	field, direction := parts[0], parts[1]
 
-	// Validate field
+	if !isValidSortField(field) {
+		return ErrInvalidArgument
+	}
+
+	if !isValidSortDirection(direction) {
+		return ErrInvalidArgument
+	}
+
+	return nil
+}
+
+// isValidSortField checks if the given field is valid for sorting.
+func isValidSortField(field string) bool {
 	validFields := map[string]bool{
 		"name":       true,
 		"created_at": true,
 		"updated_at": true,
 	}
-	if !validFields[field] {
-		return ErrInvalidArgument
-	}
+	return validFields[field]
+}
 
-	// Validate direction
-	validDirections := map[string]bool{
-		"asc":  true,
-		"desc": true,
-	}
-	if !validDirections[direction] {
-		return ErrInvalidArgument
-	}
-
-	return nil
+// isValidSortDirection checks if the given direction is valid for sorting.
+func isValidSortDirection(direction string) bool {
+	return direction == "asc" || direction == "desc"
 }

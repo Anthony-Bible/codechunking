@@ -2,6 +2,7 @@ package api
 
 import (
 	"codechunking/internal/application/common"
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/domain/errors/domain"
 	"errors"
@@ -23,7 +24,12 @@ func NewDefaultErrorHandler() ErrorHandler {
 }
 
 // HandleValidationError handles validation errors by returning 400 Bad Request.
-func (h *DefaultErrorHandler) HandleValidationError(w http.ResponseWriter, _ *http.Request, err error) {
+func (h *DefaultErrorHandler) HandleValidationError(w http.ResponseWriter, r *http.Request, err error) {
+	slogger.Error(r.Context(), "Validation error occurred", slogger.Fields{
+		"error": err.Error(),
+		"path":  r.URL.Path,
+	})
+
 	var validationErr common.ValidationError
 	if errors.As(err, &validationErr) {
 		response := dto.NewErrorResponse(
@@ -47,25 +53,26 @@ func (h *DefaultErrorHandler) HandleValidationError(w http.ResponseWriter, _ *ht
 }
 
 // HandleServiceError handles service errors by mapping them to appropriate HTTP status codes.
-func (h *DefaultErrorHandler) HandleServiceError(w http.ResponseWriter, _ *http.Request, err error) {
+func (h *DefaultErrorHandler) HandleServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, domain.ErrRepositoryNotFound):
-		response := dto.NewErrorResponse(
-			dto.ErrorCodeRepositoryNotFound,
-			"Repository not found",
-			nil,
-		)
+		slogger.Error(r.Context(), "Repository not found", slogger.Fields{
+			"error": err.Error(), "path": r.URL.Path,
+		})
+		response := dto.NewErrorResponse(dto.ErrorCodeRepositoryNotFound, "Repository not found", nil)
 		h.writeErrorResponse(w, http.StatusNotFound, response)
 
 	case errors.Is(err, domain.ErrRepositoryAlreadyExists):
-		response := dto.NewErrorResponse(
-			dto.ErrorCodeRepositoryExists,
-			"Repository already exists",
-			nil,
-		)
+		slogger.Error(r.Context(), "Repository already exists", slogger.Fields{
+			"error": err.Error(), "path": r.URL.Path,
+		})
+		response := dto.NewErrorResponse(dto.ErrorCodeRepositoryExists, "Repository already exists", nil)
 		h.writeErrorResponse(w, http.StatusConflict, response)
 
 	case errors.Is(err, domain.ErrRepositoryProcessing):
+		slogger.Error(r.Context(), "Repository currently processing", slogger.Fields{
+			"error": err.Error(), "path": r.URL.Path,
+		})
 		response := dto.NewErrorResponse(
 			dto.ErrorCodeRepositoryProcessing,
 			"Repository is currently being processed",
@@ -74,20 +81,17 @@ func (h *DefaultErrorHandler) HandleServiceError(w http.ResponseWriter, _ *http.
 		h.writeErrorResponse(w, http.StatusConflict, response)
 
 	case errors.Is(err, domain.ErrJobNotFound):
-		response := dto.NewErrorResponse(
-			dto.ErrorCodeJobNotFound,
-			"Indexing job not found",
-			nil,
-		)
+		slogger.Error(r.Context(), "Indexing job not found", slogger.Fields{
+			"error": err.Error(), "path": r.URL.Path,
+		})
+		response := dto.NewErrorResponse(dto.ErrorCodeJobNotFound, "Indexing job not found", nil)
 		h.writeErrorResponse(w, http.StatusNotFound, response)
 
 	default:
-		// Generic internal server error
-		response := dto.NewErrorResponse(
-			dto.ErrorCodeInternalError,
-			"An internal error occurred",
-			nil,
-		)
+		slogger.Error(r.Context(), "Internal server error", slogger.Fields{
+			"error": err.Error(), "path": r.URL.Path,
+		})
+		response := dto.NewErrorResponse(dto.ErrorCodeInternalError, "An internal error occurred", nil)
 		h.writeErrorResponse(w, http.StatusInternalServerError, response)
 	}
 }

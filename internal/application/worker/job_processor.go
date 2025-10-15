@@ -3,6 +3,7 @@ package worker
 import (
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/messaging"
+	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/inbound"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -153,13 +154,24 @@ func (p *DefaultJobProcessor) ProcessJob(ctx context.Context, message messaging.
 	workspacePath := filepath.Join(p.config.WorkspaceDir, message.MessageID)
 	defer p.cleanupWorkspace(workspacePath, message.MessageID)
 
+	// Update repository status to processing
+	if err := p.updateRepositoryStatus(jobCtx, message.RepositoryID, "processing"); err != nil {
+		slogger.Error(jobCtx, "Failed to update repository status to processing", slogger.Fields{
+			"repository_id": message.RepositoryID.String(),
+			"error":         err.Error(),
+		})
+		// Continue processing even if status update fails - don't block the job
+	}
+
 	if err := p.setupWorkspace(workspacePath); err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
+		p.markRepositoryFailed(jobCtx, message.RepositoryID)
 		return err
 	}
 
 	if err := p.cloneRepository(jobCtx, message, workspacePath); err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
+		p.markRepositoryFailed(jobCtx, message.RepositoryID)
 		return err
 	}
 
@@ -171,11 +183,13 @@ func (p *DefaultJobProcessor) ProcessJob(ctx context.Context, message messaging.
 	chunks, err := p.parseCode(jobCtx, workspacePath, config)
 	if err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
+		p.markRepositoryFailed(jobCtx, message.RepositoryID)
 		return err
 	}
 
 	if err := p.generateEmbeddings(jobCtx, message.MessageID, message.RepositoryID, chunks); err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
+		p.markRepositoryFailed(jobCtx, message.RepositoryID)
 		return err
 	}
 
@@ -183,6 +197,12 @@ func (p *DefaultJobProcessor) ProcessJob(ctx context.Context, message messaging.
 	if execution.Progress != nil {
 		execution.Progress.Stage = jobStatusCompleted
 	}
+
+	// Mark repository as completed with metadata
+	// TODO: Get actual commit hash from git client
+	commitHash := "unknown"
+	fileCount := len(chunks) // Approximate - each chunk represents a file or part of a file
+	p.markRepositoryCompleted(jobCtx, message.RepositoryID, commitHash, fileCount, len(chunks))
 
 	// Update metrics atomically
 	p.updateMetrics(int64(len(chunks)))
@@ -541,4 +561,102 @@ func (p *DefaultJobProcessor) isMemoryPressureHigh() bool {
 		currentMemoryMB = int(allocMB)
 	}
 	return currentMemoryMB > p.config.MaxMemoryMB
+}
+
+// updateRepositoryStatus updates the repository status in the database.
+func (p *DefaultJobProcessor) updateRepositoryStatus(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	statusStr string,
+) error {
+	// Import the valueobject package for status validation
+	status, err := valueobject.NewRepositoryStatus(statusStr)
+	if err != nil {
+		return fmt.Errorf("invalid repository status: %w", err)
+	}
+
+	// Fetch the repository
+	repo, err := p.repositoryRepo.FindByID(ctx, repositoryID)
+	if err != nil {
+		return fmt.Errorf("failed to find repository: %w", err)
+	}
+	if repo == nil {
+		return fmt.Errorf("repository not found: %s", repositoryID.String())
+	}
+
+	// Update the status
+	if err := repo.UpdateStatus(status); err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+
+	// Persist the change
+	if err := p.repositoryRepo.Update(ctx, repo); err != nil {
+		return fmt.Errorf("failed to persist repository: %w", err)
+	}
+
+	slogger.Info(ctx, "Repository status updated", slogger.Fields{
+		"repository_id": repositoryID.String(),
+		"status":        statusStr,
+	})
+
+	return nil
+}
+
+// markRepositoryFailed marks a repository as failed.
+func (p *DefaultJobProcessor) markRepositoryFailed(ctx context.Context, repositoryID uuid.UUID) {
+	if err := p.updateRepositoryStatus(ctx, repositoryID, "failed"); err != nil {
+		slogger.Error(ctx, "Failed to mark repository as failed", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"error":         err.Error(),
+		})
+	}
+}
+
+// markRepositoryCompleted marks a repository as successfully indexed.
+func (p *DefaultJobProcessor) markRepositoryCompleted(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	commitHash string,
+	fileCount, chunkCount int,
+) {
+	// Fetch the repository
+	repo, err := p.repositoryRepo.FindByID(ctx, repositoryID)
+	if err != nil {
+		slogger.Error(ctx, "Failed to find repository for completion", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"error":         err.Error(),
+		})
+		return
+	}
+	if repo == nil {
+		slogger.Error(ctx, "Repository not found for completion", slogger.Fields{
+			"repository_id": repositoryID.String(),
+		})
+		return
+	}
+
+	// Mark as completed with metadata
+	if err := repo.MarkIndexingCompleted(commitHash, fileCount, chunkCount); err != nil {
+		slogger.Error(ctx, "Failed to mark repository as completed", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"error":         err.Error(),
+		})
+		return
+	}
+
+	// Persist the change
+	if err := p.repositoryRepo.Update(ctx, repo); err != nil {
+		slogger.Error(ctx, "Failed to persist completed repository", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"error":         err.Error(),
+		})
+		return
+	}
+
+	slogger.Info(ctx, "Repository marked as completed", slogger.Fields{
+		"repository_id": repositoryID.String(),
+		"total_files":   fileCount,
+		"total_chunks":  chunkCount,
+		"commit_hash":   commitHash,
+	})
 }

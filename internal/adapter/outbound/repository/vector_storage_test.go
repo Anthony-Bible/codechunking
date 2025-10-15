@@ -127,10 +127,10 @@ func TestVectorOperations(t *testing.T) {
 
 	// Create test repository
 	_, err = pool.Exec(ctx, `
-		INSERT INTO repositories (id, url, normalized_url, name, description, status)
+		INSERT INTO repositories (id, url, normalized_url, name, description, status) 
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`, repositoryID, testURL, testURL,
-		"vector-test-repo", "Test repository for vector operations", "completed")
+		"vector-test-repo", "Test repository for vector operations", "indexed")
 	require.NoError(t, err)
 
 	// Create test code chunk
@@ -291,11 +291,11 @@ func TestPartitionManagement(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = pool.Exec(ctx, `
-			INSERT INTO repositories (id, url, normalized_url, name, description, status)
+			INSERT INTO repositories (id, url, normalized_url, name, description, status) 
 			VALUES ($1, $2, $3, $4, $5, $6)
 			ON CONFLICT (url) DO NOTHING
 		`, repositoryID, "https://github.com/test/constraint-repo", "https://github.com/test/constraint-repo",
-			"constraint-test-repo", "Test repository for constraint testing", "completed")
+			"constraint-test-repo", "Test repository for constraint testing", "indexed")
 		require.NoError(t, err)
 
 		_, err = pool.Exec(ctx, `

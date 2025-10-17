@@ -795,4 +795,1277 @@ func findImportByModule(imports []outbound.ImportDeclaration, moduleName string)
 	return nil
 }
 
+// RED PHASE: Edge case tests for docstring extraction with string manipulation bugs
+
+// TestPythonParser_ExtractFunctions_DocstringWithEmbeddedDoubleQuotes tests docstring with embedded double quotes.
+// EXPECTED TO FAIL: Current implementation uses strings.TrimPrefix/TrimSuffix which breaks on embedded quotes.
+func TestPythonParser_ExtractFunctions_DocstringWithEmbeddedDoubleQuotes(t *testing.T) {
+	sourceCode := `def greet():
+    """He said \"hello\" to me"""
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// Should extract: He said "hello" to me
+	// Current bug: TrimPrefix/TrimSuffix will fail on embedded quotes
+	assert.Equal(t, "He said \"hello\" to me", functions[0].Documentation,
+		"Docstring should preserve embedded double quotes")
+}
+
+// TestPythonParser_ExtractFunctions_DocstringWithEmbeddedSingleQuote tests docstring with embedded single quote.
+// EXPECTED TO FAIL: Current implementation uses strings.TrimPrefix/TrimSuffix which breaks on embedded quotes.
+func TestPythonParser_ExtractFunctions_DocstringWithEmbeddedSingleQuote(t *testing.T) {
+	sourceCode := `def analyze():
+    '''It's working correctly'''
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// Should extract: It's working correctly
+	// Current bug: TrimPrefix/TrimSuffix will fail on embedded single quote
+	assert.Equal(t, "It's working correctly", functions[0].Documentation,
+		"Docstring should preserve embedded single quote")
+}
+
+// TestPythonParser_ExtractFunctions_DocstringWithFString tests f-string docstring.
+// EXPECTED TO FAIL: Current implementation may not handle f-string prefix correctly.
+func TestPythonParser_ExtractFunctions_DocstringWithFString(t *testing.T) {
+	sourceCode := `def process():
+    f"""This is a docstring with f-string syntax"""
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// Should extract content without f prefix
+	assert.Equal(t, "This is a docstring with f-string syntax", functions[0].Documentation,
+		"Docstring should extract f-string content correctly")
+}
+
+// TestPythonParser_ExtractFunctions_DocstringWithRawString tests raw string docstring.
+// EXPECTED TO FAIL: Current implementation may not handle r-string prefix correctly.
+func TestPythonParser_ExtractFunctions_DocstringWithRawString(t *testing.T) {
+	sourceCode := `def path_handler():
+    r"""Raw string: C:\Users\path\to\file"""
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// Should extract: Raw string: C:\Users\path\to\file
+	assert.Equal(t, `Raw string: C:\Users\path\to\file`, functions[0].Documentation,
+		"Docstring should extract raw string content correctly")
+}
+
+// TestPythonParser_ExtractFunctions_DocstringWithMixedQuotes tests docstring with both quote types.
+// EXPECTED TO FAIL: String manipulation approach fails with complex quote combinations.
+func TestPythonParser_ExtractFunctions_DocstringWithMixedQuotes(t *testing.T) {
+	sourceCode := `def describe():
+    """She said 'hello' and he replied \"hi\" """
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// Should extract with both quote types preserved
+	assert.Equal(t, "She said 'hello' and he replied \"hi\" ", functions[0].Documentation,
+		"Docstring should preserve mixed quote types")
+}
+
+// TestPythonParser_ExtractFunctions_DocstringWithEscapedQuotes tests escaped quotes in docstring.
+// EXPECTED TO FAIL: String manipulation doesn't handle escape sequences properly.
+func TestPythonParser_ExtractFunctions_DocstringWithEscapedQuotes(t *testing.T) {
+	sourceCode := `def parse_json():
+    "Parses JSON: {\"key\": \"value\"}"
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// Should extract with escaped quotes
+	assert.Contains(t, functions[0].Documentation, `"key"`,
+		"Docstring should preserve escaped quotes correctly")
+}
+
+// TestPythonParser_ExtractFunctions_DocstringMultilineWithCode tests multiline docstring with code.
+// EXPECTED TO FAIL: May extract incorrectly if string manipulation affects internal structure.
+func TestPythonParser_ExtractFunctions_DocstringMultilineWithCode(t *testing.T) {
+	sourceCode := `def example():
+    """
+    Example function with code sample.
+
+    Usage:
+        result = example()
+        print(\"Result:\", result)
+
+    Returns:
+        str: The result string with \"quotes\"
+    """
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	doc := functions[0].Documentation
+	// Should preserve internal structure with quotes
+	assert.Contains(t, doc, "print(\"Result:\", result)",
+		"Docstring should preserve code examples with quotes")
+	assert.Contains(t, doc, "str: The result string with \"quotes\"",
+		"Docstring should preserve inline quotes")
+}
+
+// TestPythonParser_ExtractFunctions_DocstringWithTripleQuotesInside tests triple quotes inside docstring.
+// EXPECTED TO FAIL: TrimPrefix/TrimSuffix can't handle nested triple quotes correctly.
+func TestPythonParser_ExtractFunctions_DocstringWithTripleQuotesInside(t *testing.T) {
+	sourceCode := "def format_docstring():\n" +
+		"    \"\"\"\n" +
+		"    Formats docstrings that look like:\n" +
+		"    \\\"\\\"\\\"Example docstring\\\"\\\"\\\"\n" +
+		"    \"\"\"\n" +
+		"    pass\n"
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// Should preserve escaped triple quotes
+	assert.Contains(t, functions[0].Documentation, "\\\"\\\"\\\"Example docstring\\\"\\\"\\\"",
+		"Docstring should preserve escaped triple quotes")
+}
+
+// TestPythonParser_ExtractFunctions_DocstringWithUnicode tests Unicode in docstring.
+// EXPECTED TO FAIL: String manipulation may not handle Unicode correctly.
+func TestPythonParser_ExtractFunctions_DocstringWithUnicode(t *testing.T) {
+	sourceCode := "def greet_international():\n" +
+		"    \"\"\"Say 'hello' in different languages: 你好, مرحبا, Здравствуйте\"\"\"\n" +
+		"    pass\n"
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// Should preserve Unicode characters and quotes
+	assert.Contains(t, functions[0].Documentation, "你好",
+		"Docstring should preserve Unicode characters")
+	assert.Contains(t, functions[0].Documentation, "'hello'",
+		"Docstring should preserve quotes alongside Unicode")
+}
+
 // Note: RED PHASE stub implementations removed - now implemented in python_parser.go
+
+// =============================================================================
+// RED PHASE TESTS: Return Type Extraction Edge Cases
+// =============================================================================
+// These tests expose weaknesses in the current string-based return type extraction
+// implementation in extractReturnType() and extractReturnTypeFromArrowAnnotation().
+// The current implementation uses string splitting on "->" and basic string manipulation
+// which CANNOT correctly handle:
+// 1. Generic types with brackets: List[str], Dict[str, int]
+// 2. Union types: Union[str, int]
+// 3. Pipe unions: str | int
+// 4. Optional types: Optional[str]
+// 5. Callable types: Callable[[int], str]
+// 6. Nested generics: List[Dict[str, int]]
+// =============================================================================
+
+// TestPythonParser_ExtractFunctions_GenericReturnType tests extraction of generic return types like List[str].
+// RED PHASE: This test exposes that the current string splitting approach cannot handle brackets.
+func TestPythonParser_ExtractFunctions_GenericReturnType(t *testing.T) {
+	sourceCode := `
+from typing import List
+
+def get_items() -> List[str]:
+    """Returns a list of strings."""
+    pass
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludePrivate:       true,
+		IncludeDocumentation: true,
+		IncludeTypeInfo:      true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "List[str]"
+	// ACTUAL: Likely "List[str]" only if tree-sitter provides it correctly,
+	//         but string manipulation in extractReturnTypeFromArrowAnnotation may truncate at ':'
+	assert.Equal(t, "List[str]", functions[0].ReturnType,
+		"Should extract full generic type including brackets")
+}
+
+// TestPythonParser_ExtractFunctions_GenericDictReturnType tests Dict[str, int] return type.
+// RED PHASE: Exposes issues with comma-separated generic parameters.
+func TestPythonParser_ExtractFunctions_GenericDictReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Dict
+
+def get_mapping() -> Dict[str, int]:
+    """Returns a dictionary mapping strings to integers."""
+    pass
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Dict[str, int]"
+	// ACTUAL: May fail because string splitting on ":" in line 234 of functions.go
+	//         will truncate at the colon in "Dict[str, int]:"
+	assert.Equal(t, "Dict[str, int]", functions[0].ReturnType,
+		"Should extract full Dict generic type with both key and value types")
+}
+
+// TestPythonParser_ExtractFunctions_UnionReturnType tests Union[str, int] return type.
+// RED PHASE: Tests Union type handling with multiple alternatives.
+func TestPythonParser_ExtractFunctions_UnionReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Union
+
+def process_value(val) -> Union[str, int]:
+    """Can return either string or int."""
+    return val
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Union[str, int]"
+	// ACTUAL: String manipulation may only extract "Union[str"
+	assert.Equal(t, "Union[str, int]", functions[0].ReturnType,
+		"Should extract full Union type with all alternatives")
+}
+
+// TestPythonParser_ExtractFunctions_PipeUnionReturnType tests Python 3.10+ pipe union syntax.
+// RED PHASE: Tests modern union syntax with | operator.
+func TestPythonParser_ExtractFunctions_PipeUnionReturnType(t *testing.T) {
+	sourceCode := `
+def modern_union(val) -> str | int:
+    """Modern union syntax with pipe operator."""
+    return val
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "str | int"
+	// ACTUAL: String splitting on " " in line 238 may truncate to "str"
+	assert.Equal(t, "str | int", functions[0].ReturnType,
+		"Should extract full pipe union type")
+}
+
+// TestPythonParser_ExtractFunctions_OptionalReturnType tests Optional[str] return type.
+// RED PHASE: Tests Optional type which is shorthand for Union[str, None].
+func TestPythonParser_ExtractFunctions_OptionalReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Optional
+
+def find_user(user_id: int) -> Optional[str]:
+    """May return None."""
+    return None
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Optional[str]"
+	// ACTUAL: May work if tree-sitter provides it, but string manipulation is fragile
+	assert.Equal(t, "Optional[str]", functions[0].ReturnType,
+		"Should extract full Optional type")
+}
+
+// TestPythonParser_ExtractFunctions_CallableReturnType tests Callable[[int], str] return type.
+// RED PHASE: Tests Callable type with parameter and return type specification.
+func TestPythonParser_ExtractFunctions_CallableReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Callable
+
+def get_processor() -> Callable[[int], str]:
+    """Returns a function that takes int and returns str."""
+    return str
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Callable[[int], str]"
+	// ACTUAL: String manipulation will likely fail with nested brackets
+	assert.Equal(t, "Callable[[int], str]", functions[0].ReturnType,
+		"Should extract full Callable type with parameter and return type")
+}
+
+// TestPythonParser_ExtractFunctions_NestedGenericsReturnType tests List[Dict[str, int]].
+// RED PHASE: Tests deeply nested generic types.
+func TestPythonParser_ExtractFunctions_NestedGenericsReturnType(t *testing.T) {
+	sourceCode := `
+from typing import List, Dict
+
+def get_nested_data() -> List[Dict[str, int]]:
+    """Complex nested generic type."""
+    return [{"a": 1}]
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "List[Dict[str, int]]"
+	// ACTUAL: String manipulation cannot handle multiple levels of nesting with commas and colons
+	assert.Equal(t, "List[Dict[str, int]]", functions[0].ReturnType,
+		"Should extract full nested generic type")
+}
+
+// TestPythonParser_ExtractFunctions_ComplexUnionOptionalReturnType tests Optional[Union[str, int]].
+// RED PHASE: Tests combination of Optional and Union.
+func TestPythonParser_ExtractFunctions_ComplexUnionOptionalReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Optional, Union
+
+def get_complex_result() -> Optional[Union[str, int]]:
+    """Optional union type."""
+    return None
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Optional[Union[str, int]]"
+	// ACTUAL: String manipulation will definitely fail with nested generic and comma
+	assert.Equal(t, "Optional[Union[str, int]]", functions[0].ReturnType,
+		"Should extract full Optional[Union[...]] type")
+}
+
+// TestPythonParser_ExtractFunctions_TupleReturnType tests Tuple[float, float, float].
+// RED PHASE: Tests Tuple with multiple type parameters.
+func TestPythonParser_ExtractFunctions_TupleReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Tuple
+
+def get_coordinates() -> Tuple[float, float, float]:
+    """Returns 3D coordinates."""
+    return (0.0, 0.0, 0.0)
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Tuple[float, float, float]"
+	// ACTUAL: String manipulation may truncate after first type
+	assert.Equal(t, "Tuple[float, float, float]", functions[0].ReturnType,
+		"Should extract full Tuple type with all element types")
+}
+
+// TestPythonParser_ExtractFunctions_SetReturnType tests Set[str] return type.
+// RED PHASE: Tests Set generic type.
+func TestPythonParser_ExtractFunctions_SetReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Set
+
+def get_unique_tags() -> Set[str]:
+    """Returns unique tags."""
+    return set()
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Set[str]"
+	// ACTUAL: May work if tree-sitter provides it correctly
+	assert.Equal(t, "Set[str]", functions[0].ReturnType,
+		"Should extract full Set generic type")
+}
+
+// TestPythonParser_ExtractFunctions_DictUnionValueReturnType tests Dict with Union value type.
+// RED PHASE: Tests Dict[str, Union[str, int, bool]].
+func TestPythonParser_ExtractFunctions_DictUnionValueReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Dict, Union
+
+def get_config() -> Dict[str, Union[str, int, bool]]:
+    """Config with mixed value types."""
+    return {}
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Dict[str, Union[str, int, bool]]"
+	// ACTUAL: String manipulation will definitely fail with nested Union inside Dict
+	assert.Equal(t, "Dict[str, Union[str, int, bool]]", functions[0].ReturnType,
+		"Should extract Dict with nested Union value type")
+}
+
+// TestPythonParser_ExtractFunctions_ComplexCallableReturnType tests Callable with multiple params.
+// RED PHASE: Tests Callable[[str, int, bool], bool].
+func TestPythonParser_ExtractFunctions_ComplexCallableReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Callable
+
+def get_validator() -> Callable[[str, int, bool], bool]:
+    """Returns complex validator function."""
+    return lambda s, i, b: True
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Callable[[str, int, bool], bool]"
+	// ACTUAL: String manipulation will fail with complex nested structure
+	assert.Equal(t, "Callable[[str, int, bool], bool]", functions[0].ReturnType,
+		"Should extract Callable with multiple parameter types")
+}
+
+// TestPythonParser_ExtractFunctions_ListOfCallablesReturnType tests List[Callable[[str], None]].
+// RED PHASE: Tests List containing Callable types.
+func TestPythonParser_ExtractFunctions_ListOfCallablesReturnType(t *testing.T) {
+	sourceCode := `
+from typing import List, Callable
+
+def get_handlers() -> List[Callable[[str], None]]:
+    """List of handler functions."""
+    return []
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "List[Callable[[str], None]]"
+	// ACTUAL: String manipulation will fail with triple-nested brackets
+	assert.Equal(t, "List[Callable[[str], None]]", functions[0].ReturnType,
+		"Should extract List of Callable types")
+}
+
+// TestPythonParser_ExtractFunctions_OptionalNestedGenericReturnType tests Optional[Dict[str, List[int]]].
+// RED PHASE: Tests Optional with deeply nested generics.
+func TestPythonParser_ExtractFunctions_OptionalNestedGenericReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Optional, Dict, List
+
+def get_optional_nested() -> Optional[Dict[str, List[int]]]:
+    """Optional nested generic."""
+    return None
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Optional[Dict[str, List[int]]]"
+	// ACTUAL: String manipulation will definitely fail with triple nesting
+	assert.Equal(t, "Optional[Dict[str, List[int]]]", functions[0].ReturnType,
+		"Should extract Optional with deeply nested generics")
+}
+
+// TestPythonParser_ExtractFunctions_UnionOfGenericsReturnType tests Union[List[str], Dict[str, int]].
+// RED PHASE: Tests Union of different generic types.
+func TestPythonParser_ExtractFunctions_UnionOfGenericsReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Union, List, Dict
+
+def get_multi_generic() -> Union[List[str], Dict[str, int]]:
+    """Union of different generic types."""
+    return []
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Union[List[str], Dict[str, int]]"
+	// ACTUAL: String manipulation will fail with Union containing multiple generics
+	assert.Equal(t, "Union[List[str], Dict[str, int]]", functions[0].ReturnType,
+		"Should extract Union of different generic types")
+}
+
+// TestPythonParser_ExtractFunctions_DictWithAnyValueReturnType tests Dict[str, Any].
+// RED PHASE: Tests Dict with Any value type.
+func TestPythonParser_ExtractFunctions_DictWithAnyValueReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Dict, Any
+
+def get_flexible() -> Dict[str, Any]:
+    """Dict with any value type."""
+    return {}
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Dict[str, Any]"
+	// ACTUAL: May work if tree-sitter provides it correctly
+	assert.Equal(t, "Dict[str, Any]", functions[0].ReturnType,
+		"Should extract Dict with Any value type")
+}
+
+// TestPythonParser_ExtractFunctions_NoneReturnType tests explicit None return type.
+// RED PHASE: Tests explicit None return annotation.
+func TestPythonParser_ExtractFunctions_NoneReturnType(t *testing.T) {
+	sourceCode := `
+def no_return() -> None:
+    """Explicitly returns None."""
+    pass
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "None"
+	// ACTUAL: Should work, simple case
+	assert.Equal(t, "None", functions[0].ReturnType,
+		"Should extract explicit None return type")
+}
+
+// TestPythonParser_ExtractFunctions_MultipleNestedGenericsReturnType tests Dict[str, List[Tuple[int, str]]].
+// RED PHASE: Tests Dict with List of Tuples (3 levels of nesting).
+func TestPythonParser_ExtractFunctions_MultipleNestedGenericsReturnType(t *testing.T) {
+	sourceCode := `
+from typing import Dict, List, Tuple
+
+def get_ultra_nested() -> Dict[str, List[Tuple[int, str]]]:
+    """Multiple nested generic types."""
+    return {}
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "Dict[str, List[Tuple[int, str]]]"
+	// ACTUAL: String manipulation will fail with 3 levels of nesting
+	assert.Equal(t, "Dict[str, List[Tuple[int, str]]]", functions[0].ReturnType,
+		"Should extract Dict with List of Tuple (3 levels of nesting)")
+}
+
+// TestPythonParser_ExtractFunctions_ComplexPipeUnionReturnType tests str | int | None.
+// RED PHASE: Tests pipe union with more than 2 alternatives.
+func TestPythonParser_ExtractFunctions_ComplexPipeUnionReturnType(t *testing.T) {
+	sourceCode := `
+def complex_pipe_union() -> str | int | None:
+    """Complex pipe union with None."""
+    pass
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeTypeInfo: true,
+	}
+
+	functions, err := parser.ExtractFunctions(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, functions, 1)
+
+	// EXPECTED: "str | int | None"
+	// ACTUAL: String splitting on space will only get "str"
+	assert.Equal(t, "str | int | None", functions[0].ReturnType,
+		"Should extract full pipe union with multiple alternatives")
+}
+
+// =============================================================================
+// RED PHASE TESTS: Module Variable Extraction with String Manipulation Bug
+// =============================================================================
+// These tests expose the bug in modules.go:134 where `strings.Trim(value, "\"'")`
+// is used instead of tree-sitter navigation with `extractStringContent()`.
+// This string manipulation approach CANNOT correctly handle:
+// 1. Embedded quotes (both double and single)
+// 2. Escaped quotes within strings
+// 3. Mixed quote types in the same string
+// 4. Unicode characters with quotes
+// 5. Empty strings (may strip too much)
+// =============================================================================
+
+// TestPythonParser_ExtractModules_VariableWithEmbeddedDoubleQuotes tests module variable with embedded double quotes.
+// RED PHASE: EXPECTED TO FAIL - Current implementation uses strings.Trim which incorrectly strips embedded quotes.
+// BUG LOCATION: modules.go:134 - `value = strings.Trim(value, "\"'")`
+// WHY IT FAILS: strings.Trim removes ALL occurrences of " and ' from BOTH ends of the string,
+//
+//	which means a value like `"He said "hello" to me"` gets incorrectly processed.
+//
+// FIX: Replace string manipulation with tree-sitter navigation using extractStringContent().
+func TestPythonParser_ExtractModules_VariableWithEmbeddedDoubleQuotes(t *testing.T) {
+	sourceCode := `#!/usr/bin/env python3
+"""Module with embedded quotes in metadata."""
+
+__version__ = "1.0.0"
+__author__ = "He said \"hello\" to me"
+__license__ = "MIT"
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeMetadata: true,
+	}
+
+	modules, err := parser.ExtractModules(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+
+	module := modules[0]
+	require.NotNil(t, module.Metadata, "Module should have metadata")
+
+	// EXPECTED: "He said \"hello\" to me" (embedded quotes preserved)
+	// ACTUAL WITH BUG: "He said \\\"hello\\\" to me" or "He said " (strings.Trim corrupts it)
+	// WHY: strings.Trim(value, "\"'") removes " and ' from both ends, not just delimiters
+	assert.Equal(t, `He said "hello" to me`, module.Metadata["author"],
+		"Module author metadata should preserve embedded double quotes")
+}
+
+// TestPythonParser_ExtractModules_VariableWithEmbeddedSingleQuote tests module variable with embedded single quote.
+// RED PHASE: EXPECTED TO FAIL - Current implementation cannot handle apostrophes in single-quoted strings.
+// BUG LOCATION: modules.go:134.
+func TestPythonParser_ExtractModules_VariableWithEmbeddedSingleQuote(t *testing.T) {
+	sourceCode := `#!/usr/bin/env python3
+"""Module with apostrophes."""
+
+__version__ = "1.0.0"
+__author__ = 'It\'s working correctly'
+__license__ = "MIT"
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeMetadata: true,
+	}
+
+	modules, err := parser.ExtractModules(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+
+	module := modules[0]
+	require.NotNil(t, module.Metadata)
+
+	// EXPECTED: "It's working correctly" (embedded apostrophe preserved)
+	// ACTUAL WITH BUG: "It\\'s working correctly" or truncated (strings.Trim fails)
+	assert.Equal(t, "It's working correctly", module.Metadata["author"],
+		"Module author metadata should preserve embedded single quote")
+}
+
+// TestPythonParser_ExtractModules_VariableWithMixedQuotes tests module variable with both quote types.
+// RED PHASE: EXPECTED TO FAIL - String manipulation cannot handle complex quote combinations.
+// BUG LOCATION: modules.go:134.
+func TestPythonParser_ExtractModules_VariableWithMixedQuotes(t *testing.T) {
+	sourceCode := `#!/usr/bin/env python3
+"""Module with mixed quotes."""
+
+__version__ = "1.0.0"
+__author__ = "She said 'hello' and he replied \"hi\""
+__license__ = "MIT"
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeMetadata: true,
+	}
+
+	modules, err := parser.ExtractModules(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+
+	module := modules[0]
+	require.NotNil(t, module.Metadata)
+
+	// EXPECTED: "She said 'hello' and he replied \"hi\"" (both quote types preserved)
+	// ACTUAL WITH BUG: Malformed string due to strings.Trim removing both ' and " from ends
+	assert.Equal(t, `She said 'hello' and he replied "hi"`, module.Metadata["author"],
+		"Module author metadata should preserve mixed quote types")
+}
+
+// TestPythonParser_ExtractModules_VariableWithEscapedQuotes tests JSON-like escaped quotes.
+// RED PHASE: EXPECTED TO FAIL - String manipulation doesn't properly handle escape sequences.
+// BUG LOCATION: modules.go:134.
+func TestPythonParser_ExtractModules_VariableWithEscapedQuotes(t *testing.T) {
+	sourceCode := `#!/usr/bin/env python3
+"""Module with JSON-like content."""
+
+__version__ = "1.0.0"
+__author__ = "Parser for JSON: {\"key\": \"value\"}"
+__license__ = "MIT"
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeMetadata: true,
+	}
+
+	modules, err := parser.ExtractModules(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+
+	module := modules[0]
+	require.NotNil(t, module.Metadata)
+
+	// EXPECTED: "Parser for JSON: {\"key\": \"value\"}" (escaped quotes preserved)
+	// ACTUAL WITH BUG: Escaped quotes may be incorrectly processed by strings.Trim
+	assert.Contains(t, module.Metadata["author"], `"key"`,
+		"Module author metadata should preserve escaped quotes correctly")
+	assert.Contains(t, module.Metadata["author"], `"value"`,
+		"Module author metadata should preserve escaped quotes correctly")
+}
+
+// TestPythonParser_ExtractModules_VariableWithUnicode tests Unicode content with quotes.
+// RED PHASE: EXPECTED TO FAIL - String manipulation may corrupt Unicode characters near quotes.
+// BUG LOCATION: modules.go:134.
+func TestPythonParser_ExtractModules_VariableWithUnicode(t *testing.T) {
+	sourceCode := `#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Module with international content."""
+
+__version__ = "1.0.0"
+__author__ = "Developer says '你好' and 'مرحبا'"
+__license__ = "MIT"
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeMetadata: true,
+	}
+
+	modules, err := parser.ExtractModules(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+
+	module := modules[0]
+	require.NotNil(t, module.Metadata)
+
+	// EXPECTED: "Developer says '你好' and 'مرحبا'" (Unicode + quotes preserved)
+	// ACTUAL WITH BUG: strings.Trim may corrupt Unicode characters
+	authorValue, ok := module.Metadata["author"].(string)
+	require.True(t, ok, "Author should be a string")
+	assert.Contains(t, authorValue, "你好",
+		"Module author metadata should preserve Unicode characters")
+	assert.Contains(t, authorValue, "مرحبا",
+		"Module author metadata should preserve Arabic characters")
+	assert.Contains(t, authorValue, "'你好'",
+		"Module author metadata should preserve quotes around Unicode")
+}
+
+// TestPythonParser_ExtractModules_VariableEmptyString tests empty string handling.
+// RED PHASE: EXPECTED TO FAIL - strings.Trim may remove too much.
+// BUG LOCATION: modules.go:134.
+func TestPythonParser_ExtractModules_VariableEmptyString(t *testing.T) {
+	sourceCode := `#!/usr/bin/env python3
+"""Module with empty metadata."""
+
+__version__ = ""
+__author__ = "Developer"
+__license__ = ""
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeMetadata: true,
+	}
+
+	modules, err := parser.ExtractModules(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+
+	module := modules[0]
+	require.NotNil(t, module.Metadata)
+
+	// EXPECTED: "" (empty string)
+	// ACTUAL WITH BUG: strings.Trim should handle this correctly, but let's verify
+	assert.Empty(t, module.Metadata["version"],
+		"Module version metadata should handle empty string")
+	assert.Empty(t, module.Metadata["license"],
+		"Module license metadata should handle empty string")
+}
+
+// TestPythonParser_ExtractModules_VariableQuoteAtEnd tests string ending with embedded quote.
+// RED PHASE: EXPECTED TO FAIL - strings.Trim will incorrectly strip embedded quote at end.
+// BUG LOCATION: modules.go:134.
+func TestPythonParser_ExtractModules_VariableQuoteAtEnd(t *testing.T) {
+	sourceCode := `#!/usr/bin/env python3
+"""Module with quote at end."""
+
+__version__ = "1.0.0"
+__author__ = "Developer's quote: \"end\""
+__license__ = "MIT"
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeMetadata: true,
+	}
+
+	modules, err := parser.ExtractModules(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+
+	module := modules[0]
+	require.NotNil(t, module.Metadata)
+
+	// EXPECTED: "Developer's quote: \"end\"" (embedded quote at end preserved)
+	// ACTUAL WITH BUG: strings.Trim(value, "\"'") will strip the ending " that's part of content
+	assert.Equal(t, `Developer's quote: "end"`, module.Metadata["author"],
+		"Module author metadata should preserve embedded quote at end")
+}
+
+// TestPythonParser_ExtractModules_VariableQuoteAtStart tests string starting with embedded quote.
+// RED PHASE: EXPECTED TO FAIL - strings.Trim will incorrectly strip embedded quote at start.
+// BUG LOCATION: modules.go:134.
+func TestPythonParser_ExtractModules_VariableQuoteAtStart(t *testing.T) {
+	sourceCode := `#!/usr/bin/env python3
+"""Module with quote at start."""
+
+__version__ = "1.0.0"
+__author__ = "\"Start\" is the developer name"
+__license__ = "MIT"
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeMetadata: true,
+	}
+
+	modules, err := parser.ExtractModules(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+
+	module := modules[0]
+	require.NotNil(t, module.Metadata)
+
+	// EXPECTED: "\"Start\" is the developer name" (embedded quote at start preserved)
+	// ACTUAL WITH BUG: strings.Trim(value, "\"'") will strip the starting " that's part of content
+	assert.Equal(t, `"Start" is the developer name`, module.Metadata["author"],
+		"Module author metadata should preserve embedded quote at start")
+}
+
+// TestPythonParser_ExtractModules_VariableMultipleQuotesInRow tests consecutive quotes.
+// RED PHASE: EXPECTED TO FAIL - strings.Trim removes multiple quote characters from ends.
+// BUG LOCATION: modules.go:134.
+func TestPythonParser_ExtractModules_VariableMultipleQuotesInRow(t *testing.T) {
+	sourceCode := `#!/usr/bin/env python3
+"""Module with consecutive quotes."""
+
+__version__ = "1.0.0"
+__author__ = "Developer \"\"quoted\"\" text"
+__license__ = "MIT"
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeMetadata: true,
+	}
+
+	modules, err := parser.ExtractModules(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+
+	module := modules[0]
+	require.NotNil(t, module.Metadata)
+
+	// EXPECTED: "Developer \"\"quoted\"\" text" (consecutive quotes preserved)
+	// ACTUAL WITH BUG: strings.Trim will malform this
+	assert.Equal(t, `Developer ""quoted"" text`, module.Metadata["author"],
+		"Module author metadata should preserve consecutive quotes")
+}
+
+// TestPythonParser_ExtractModules_VariableWithRawString tests r-prefix string.
+// RED PHASE: EXPECTED TO FAIL - strings.Trim doesn't know about r-prefix.
+// BUG LOCATION: modules.go:134.
+func TestPythonParser_ExtractModules_VariableWithRawString(t *testing.T) {
+	sourceCode := `#!/usr/bin/env python3
+"""Module with raw string."""
+
+__version__ = "1.0.0"
+__author__ = r"C:\Users\Developer\path"
+__license__ = "MIT"
+`
+
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser, err := NewPythonParser()
+	require.NoError(t, err)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeMetadata: true,
+	}
+
+	modules, err := parser.ExtractModules(context.Background(), parseTree, options)
+	require.NoError(t, err)
+	require.Len(t, modules, 1)
+
+	module := modules[0]
+	require.NotNil(t, module.Metadata)
+
+	// EXPECTED: "C:\\Users\\Developer\\path" (raw string content)
+	// ACTUAL WITH BUG: strings.Trim doesn't handle r-prefix correctly
+	assert.Equal(t, `C:\Users\Developer\path`, module.Metadata["author"],
+		"Module author metadata should extract raw string content correctly")
+}

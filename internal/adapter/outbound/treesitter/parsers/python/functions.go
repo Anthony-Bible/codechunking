@@ -15,6 +15,19 @@ const (
 	nodeTypeType                = "type"
 	nodeTypeDecorator           = "decorator"
 	nodeTypeExpressionStatement = "expression_statement"
+	nodeTypeAsyncFunctionDef    = "async_function_definition"
+	nodeTypeString              = "string"
+	nodeTypeStringContent       = "string_content"
+	nodeTypeComment             = "comment"
+	nodeTypeFloat               = "float"
+	nodeTypeFunctionDef         = "function_definition"
+	nodeTypeDecoratedDef        = "decorated_definition"
+	nodeTypeClassDef            = "class_definition"
+	nodeTypeBlock               = "block"
+	nodeTypeAsync               = "async"
+	nodeTypeParameters          = "parameters"
+	nodeTypeDefaultValue        = "default_value"
+	nodeTypeListSplatPattern    = "list_splat_pattern"
 )
 
 // extractPythonFunctions extracts Python functions from the parse tree.
@@ -23,18 +36,17 @@ func extractPythonFunctions(
 	parseTree *valueobject.ParseTree,
 	options outbound.SemanticExtractionOptions,
 ) ([]outbound.SemanticCodeChunk, error) {
-	// REFACTOR PHASE: Use real tree-sitter parsing
 	now := time.Now()
 
 	// Get function definition nodes from the parse tree
-	functionNodes := parseTree.GetNodesByType("function_definition")
+	functionNodes := parseTree.GetNodesByType(nodeTypeFunctionDef)
 
 	// Try to get async function definitions directly
-	asyncNodes := parseTree.GetNodesByType("async_function_definition")
+	asyncNodes := parseTree.GetNodesByType(nodeTypeAsyncFunctionDef)
 	functionNodes = append(functionNodes, asyncNodes...)
 
 	// Also check for async functions in decorated definitions
-	decoratedNodes := parseTree.GetNodesByType("decorated_definition")
+	decoratedNodes := parseTree.GetNodesByType(nodeTypeDecoratedDef)
 	functionNodes = append(functionNodes, decoratedNodes...)
 
 	var functions []outbound.SemanticCodeChunk
@@ -150,7 +162,7 @@ func extractFunctionName(parseTree *valueobject.ParseTree, node *valueobject.Par
 
 	// For async_function_definition, the function name is typically the third child
 	// (first child is "async", second is "def", third is the identifier)
-	if node.Type == "async_function_definition" && len(node.Children) >= 3 {
+	if node.Type == nodeTypeAsyncFunctionDef && len(node.Children) >= 3 {
 		nameNode := node.Children[2]
 		if nameNode != nil && nameNode.Type == nodeTypeIdentifier {
 			return parseTree.GetNodeText(nameNode)
@@ -166,49 +178,22 @@ func extractReturnType(parseTree *valueobject.ParseTree, node *valueobject.Parse
 		return ""
 	}
 
-	// Look for return type annotation (-> type) in various structures
-	for _, child := range node.Children {
-		if child.Type == "return_type" || child.Type == "type" {
-			// The return type node contains the actual type as its child
-			for _, typeChild := range child.Children {
-				if typeChild.Type == nodeTypeType || typeChild.Type == nodeTypeIdentifier {
-					return parseTree.GetNodeText(typeChild)
+	// Look for the -> arrow marker and get the type node after it
+	for i := range len(node.Children) {
+		child := node.Children[i]
+		if child == nil {
+			continue
+		}
+
+		// Check for the -> arrow marker
+		if parseTree.GetNodeText(child) == "->" {
+			// The next node should be the type
+			if i+1 < len(node.Children) {
+				typeNode := node.Children[i+1]
+				if typeNode != nil {
+					// Extract the entire type expression as text
+					return strings.TrimSpace(parseTree.GetNodeText(typeNode))
 				}
-			}
-			// If no nested type child found, try the node itself
-			if child.Type == nodeTypeType || child.Type == nodeTypeIdentifier {
-				return parseTree.GetNodeText(child)
-			}
-		}
-
-		// Also check for direct type annotations
-		if child.Type == nodeTypeIdentifier {
-			text := parseTree.GetNodeText(child)
-			// Look for common type names that might be return types
-			if text == "dict" || text == "list" || text == "str" || text == "int" || text == "float" || text == "bool" {
-				// Make sure this isn't the function name by checking position
-				// Return types typically come after parameters in the node structure
-				return text
-			}
-		}
-	}
-
-	// Look for arrow annotation pattern (->)
-	nodeText := parseTree.GetNodeText(node)
-	if strings.Contains(nodeText, "->") {
-		parts := strings.Split(nodeText, "->")
-		if len(parts) > 1 {
-			// Extract the return type after ->
-			returnTypePart := strings.TrimSpace(parts[1])
-			// Take the first word/identifier as the return type
-			if colonIndex := strings.Index(returnTypePart, ":"); colonIndex != -1 {
-				returnTypePart = strings.TrimSpace(returnTypePart[:colonIndex])
-			}
-			if spaceIndex := strings.Index(returnTypePart, " "); spaceIndex != -1 {
-				returnTypePart = strings.TrimSpace(returnTypePart[:spaceIndex])
-			}
-			if returnTypePart != "" {
-				return returnTypePart
 			}
 		}
 	}
@@ -223,28 +208,75 @@ func isAsyncFunction(node *valueobject.ParseNode) bool {
 	}
 
 	// Check if it's an async function definition node directly
-	if node.Type == "async_function_definition" {
+	if node.Type == nodeTypeAsyncFunctionDef {
 		return true
 	}
 
 	// For decorated definitions, check if any child is an async function
-	if node.Type == "decorated_definition" {
+	if node.Type == nodeTypeDecoratedDef {
 		for _, child := range node.Children {
-			if child.Type == "async_function_definition" {
+			if child.Type == nodeTypeAsyncFunctionDef {
 				return true
 			}
 		}
 	}
 
 	// For regular function definitions, check if the first token is "async"
-	if node.Type == "function_definition" && len(node.Children) > 0 {
+	if node.Type == nodeTypeFunctionDef && len(node.Children) > 0 {
 		// If first child is "async" keyword
-		if node.Children[0].Type == "async" {
+		if node.Children[0].Type == nodeTypeAsync {
 			return true
 		}
 	}
 
 	return false
+}
+
+// extractStringContent extracts the raw content from a Python string node
+// by navigating to the string_content child node in the AST.
+//
+// Tree-sitter Python string structure:
+//
+//	string
+//	├── string_start ("\"\"\"", "'''", "\"", "'", "f\"", "r'", "b\"", etc.)
+//	├── string_content (raw text without quotes or prefixes)
+//	└── string_end ("\"\"\"", "'''", "\"", "'", etc.)
+//
+// This approach correctly handles all Python string types:
+//   - Regular strings: "text" or 'text'
+//   - Triple-quoted: """text""" or ”'text”'
+//   - F-strings: f"text {expr}" or f'text {expr}'
+//   - Raw strings: r"C:\path" or r'regex\d+'
+//   - Byte strings: b"bytes" or b'bytes'
+//   - Combined prefixes: rf"raw f-string", br"raw bytes", etc.
+//
+// Benefits over string manipulation:
+//   - Embedded quotes don't require manual parsing: "He said \"hello\"" -> He said "hello"
+//   - Escape sequences are preserved correctly: "Line 1\nLine 2" -> Line 1\nLine 2
+//   - String prefixes (f, r, b, u) are automatically stripped by the AST structure
+//   - Triple-quoted strings with embedded quotes work correctly
+//   - No regex or complex string parsing needed
+//
+// The function also unescapes common Python escape sequences that appear in the
+// string_content node (e.g., \", \') for proper display in documentation.
+func extractStringContent(parseTree *valueobject.ParseTree, stringNode *valueobject.ParseNode) string {
+	if stringNode == nil || stringNode.Type != nodeTypeString {
+		return ""
+	}
+
+	// Navigate to string_content child
+	for _, child := range stringNode.Children {
+		if child.Type == nodeTypeStringContent {
+			content := parseTree.GetNodeText(child)
+			// Unescape common Python string escape sequences
+			content = strings.ReplaceAll(content, `\"`, `"`)
+			content = strings.ReplaceAll(content, `\'`, `'`)
+			return content
+		}
+	}
+
+	// Fallback: empty string if no string_content found
+	return ""
 }
 
 // extractFunctionDocumentation extracts docstring from function.
@@ -256,7 +288,7 @@ func extractFunctionDocumentation(parseTree *valueobject.ParseTree, node *valueo
 	// Find the function body block
 	var bodyNode *valueobject.ParseNode
 	for _, child := range node.Children {
-		if child.Type == "block" {
+		if child.Type == nodeTypeBlock {
 			bodyNode = child
 			break
 		}
@@ -272,13 +304,8 @@ func extractFunctionDocumentation(parseTree *valueobject.ParseTree, node *valueo
 		// Check if it's an expression statement containing a string
 		if firstStmt.Type == nodeTypeExpressionStatement && len(firstStmt.Children) > 0 {
 			stringNode := firstStmt.Children[0]
-			if stringNode.Type == "string" {
-				docstring := parseTree.GetNodeText(stringNode)
-				// Clean up the docstring (remove quotes)
-				docstring = strings.Trim(docstring, `"'`)
-				docstring = strings.Trim(docstring, "'''")
-				docstring = strings.Trim(docstring, `"""`)
-				return docstring
+			if stringNode.Type == nodeTypeString {
+				return extractStringContent(parseTree, stringNode)
 			}
 		}
 	}
@@ -315,10 +342,10 @@ func extractMethodsFromClass(
 	var methods []outbound.SemanticCodeChunk
 
 	// Get decorated definitions for filtering
-	decoratedNodes := findChildrenByType(classNode, "decorated_definition")
+	decoratedNodes := findChildrenByType(classNode, nodeTypeDecoratedDef)
 
 	// Find function definitions within the class that are NOT inside decorated definitions
-	functionNodes := findChildrenByType(classNode, "function_definition")
+	functionNodes := findChildrenByType(classNode, nodeTypeFunctionDef)
 	for _, node := range functionNodes {
 		// Skip if this function is inside a decorated definition
 		if isNodeInDecoratedDefinition(node, decoratedNodes) {
@@ -331,7 +358,7 @@ func extractMethodsFromClass(
 	}
 
 	// Find async function definitions within the class that are NOT inside decorated definitions
-	asyncFunctionNodes := findChildrenByType(classNode, "async_function_definition")
+	asyncFunctionNodes := findChildrenByType(classNode, nodeTypeAsyncFunctionDef)
 	for _, node := range asyncFunctionNodes {
 		// Skip if this async function is inside a decorated definition
 		if isNodeInDecoratedDefinition(node, decoratedNodes) {
@@ -346,23 +373,37 @@ func extractMethodsFromClass(
 	// Process decorated definitions within the class
 	for _, node := range decoratedNodes {
 		// Look for function definitions within decorated definitions
-		functionNode := findChildByType(node, "function_definition")
+		functionNode := findChildByType(node, nodeTypeFunctionDef)
 		if functionNode != nil {
-			method := parsePythonMethod(ctx, parseTree, functionNode, className, moduleName, options, now)
+			method := parsePythonDecoratedMethod(
+				ctx,
+				parseTree,
+				functionNode,
+				node,
+				className,
+				moduleName,
+				options,
+				now,
+			)
 			if method != nil {
-				// Extract decorators for decorated methods
-				method.Annotations = extractDecorators(parseTree, node)
 				methods = append(methods, *method)
 			}
 		}
 
 		// Look for async function definitions within decorated definitions
-		asyncFunctionNode := findChildByType(node, "async_function_definition")
+		asyncFunctionNode := findChildByType(node, nodeTypeAsyncFunctionDef)
 		if asyncFunctionNode != nil {
-			method := parsePythonAsyncMethod(ctx, parseTree, asyncFunctionNode, className, moduleName, options, now)
+			method := parsePythonDecoratedAsyncMethod(
+				ctx,
+				parseTree,
+				asyncFunctionNode,
+				node,
+				className,
+				moduleName,
+				options,
+				now,
+			)
 			if method != nil {
-				// Extract decorators for decorated async methods
-				method.Annotations = extractDecorators(parseTree, node)
 				methods = append(methods, *method)
 			}
 		}
@@ -403,8 +444,9 @@ func parsePythonMethod(
 		documentation = extractFunctionDocstring(parseTree, node)
 	}
 
-	// Extract decorators
-	annotations := extractDecorators(parseTree, node)
+	// NOTE: Non-decorated methods don't have decorators
+	// Decorators are only extracted in parsePythonDecoratedMethod
+	var annotations []outbound.Annotation
 
 	// Get method content
 	content := parseTree.GetNodeText(node)
@@ -448,49 +490,160 @@ func parsePythonAsyncMethod(
 	return method
 }
 
+// parsePythonDecoratedMethod parses a decorated method within a class.
+// This function extracts decorators from the decorated_definition node to avoid duplication.
+func parsePythonDecoratedMethod(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	functionNode *valueobject.ParseNode,
+	decoratedNode *valueobject.ParseNode,
+	className, moduleName string,
+	options outbound.SemanticExtractionOptions,
+	now time.Time,
+) *outbound.SemanticCodeChunk {
+	if functionNode == nil {
+		return nil
+	}
+
+	// Extract method name
+	nameNode := findChildByType(functionNode, nodeTypeIdentifier)
+	if nameNode == nil {
+		return nil
+	}
+	methodName := parseTree.GetNodeText(nameNode)
+
+	// Extract parameters
+	parameters := extractFunctionParameters(parseTree, functionNode)
+
+	// Extract return type annotation
+	returnType := extractReturnType(parseTree, functionNode)
+
+	// Extract documentation
+	var documentation string
+	if options.IncludeDocumentation {
+		documentation = extractFunctionDocstring(parseTree, functionNode)
+	}
+
+	// Extract decorators from the decorated_definition node (not the function node)
+	annotations := extractDecorators(parseTree, decoratedNode)
+
+	// Get method content
+	content := parseTree.GetNodeText(functionNode)
+
+	// Check if method is async
+	isAsync := isAsyncFunction(functionNode)
+
+	return &outbound.SemanticCodeChunk{
+		ChunkID:       utils.GenerateID("method", methodName, nil),
+		Type:          outbound.ConstructMethod,
+		Name:          methodName,
+		QualifiedName: qualifyName(moduleName, className, methodName),
+		Language:      parseTree.Language(),
+		StartByte:     functionNode.StartByte,
+		EndByte:       functionNode.EndByte,
+		Content:       content,
+		Documentation: documentation,
+		Visibility:    determinePythonVisibility(methodName),
+		Parameters:    parameters,
+		ReturnType:    returnType,
+		Annotations:   annotations,
+		IsAsync:       isAsync,
+		ExtractedAt:   now,
+		Hash:          utils.GenerateHash(content),
+	}
+}
+
+// parsePythonDecoratedAsyncMethod parses a decorated async method within a class.
+func parsePythonDecoratedAsyncMethod(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	asyncFunctionNode *valueobject.ParseNode,
+	decoratedNode *valueobject.ParseNode,
+	className, moduleName string,
+	options outbound.SemanticExtractionOptions,
+	now time.Time,
+) *outbound.SemanticCodeChunk {
+	method := parsePythonDecoratedMethod(
+		ctx,
+		parseTree,
+		asyncFunctionNode,
+		decoratedNode,
+		className,
+		moduleName,
+		options,
+		now,
+	)
+	if method != nil {
+		method.IsAsync = true
+	}
+	return method
+}
+
 // extractFunctionParameters extracts parameters from a function definition.
 func extractFunctionParameters(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) []outbound.Parameter {
 	var parameters []outbound.Parameter
 
 	// Find parameters node
-	parametersNode := findChildByType(node, "parameters")
+	parametersNode := findChildByType(node, nodeTypeParameters)
 	if parametersNode == nil {
 		return parameters
 	}
 
+	// Track position markers
+	isAfterKeywordSeparator := false
+	isBeforePositionalSeparator := true
+
 	// Extract individual parameters
 	for _, child := range parametersNode.Children {
 		switch child.Type {
+		case "keyword_separator":
+			// * marker - all parameters after this are keyword-only
+			isAfterKeywordSeparator = true
+			continue
+
+		case "positional_separator":
+			// / marker - all parameters before this are positional-only
+			isBeforePositionalSeparator = false
+			continue
+
 		case nodeTypeIdentifier:
+			// Simple identifier parameter
 			paramName := parseTree.GetNodeText(child)
-			// Check if it's a variadic parameter by looking at the text
-			if strings.HasPrefix(paramName, "*") {
-				parameters = append(parameters, outbound.Parameter{
-					Name:       strings.TrimPrefix(paramName, "*"),
-					Type:       "Any",
-					IsVariadic: true,
-				})
-			} else {
-				parameters = append(parameters, outbound.Parameter{
-					Name: paramName,
-					Type: "Any", // Default type
-				})
+			param := outbound.Parameter{
+				Name:             paramName,
+				Type:             "Any",
+				IsKeywordOnly:    isAfterKeywordSeparator,
+				IsPositionalOnly: isBeforePositionalSeparator && !isAfterKeywordSeparator,
 			}
+			parameters = append(parameters, param)
+
 		case "typed_parameter", "default_parameter", "typed_default_parameter":
 			param := extractParameterInfo(parseTree, child)
 			if param != nil {
+				param.IsKeywordOnly = isAfterKeywordSeparator
+				param.IsPositionalOnly = isBeforePositionalSeparator && !isAfterKeywordSeparator
+				param.IsOptional = param.DefaultValue != ""
 				parameters = append(parameters, *param)
 			}
+
 		case "variadic_parameter", "list_splat_pattern", "dictionary_splat_pattern":
 			// Handle *args and **kwargs
 			param := extractVariadicParameterInfo(parseTree, child)
 			if param != nil {
+				// After *args, subsequent params are keyword-only
+				if child.Type == nodeTypeListSplatPattern {
+					isAfterKeywordSeparator = true
+				}
 				parameters = append(parameters, *param)
 			}
+
 		default:
 			// Try to extract parameter info from unknown node types
 			param := extractParameterInfo(parseTree, child)
 			if param != nil {
+				param.IsKeywordOnly = isAfterKeywordSeparator
+				param.IsPositionalOnly = isBeforePositionalSeparator && !isAfterKeywordSeparator
+				param.IsOptional = param.DefaultValue != ""
 				parameters = append(parameters, *param)
 			}
 		}
@@ -522,7 +675,7 @@ func extractParameterInfo(parseTree *valueobject.ParseTree, paramNode *valueobje
 	}
 
 	// Check for default value
-	defaultNode := findChildByType(paramNode, "default_value")
+	defaultNode := findChildByType(paramNode, nodeTypeDefaultValue)
 	if defaultNode != nil {
 		param.DefaultValue = parseTree.GetNodeText(defaultNode)
 	}
@@ -588,25 +741,15 @@ func extractFunctionDocstring(parseTree *valueobject.ParseTree, node *valueobjec
 }
 
 // extractDecorators extracts decorators from a function/method.
+// This function should ONLY be called with decorated_definition nodes.
 func extractDecorators(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) []outbound.Annotation {
 	var annotations []outbound.Annotation
 
-	// Look for decorator nodes in decorated_definition
-	if node.Type == "decorated_definition" {
-		// In decorated_definition, decorators come before the function definition
-		for _, child := range node.Children {
-			if child.Type == nodeTypeDecorator {
-				decoratorName := parseTree.GetNodeText(child)
-				decoratorName = strings.TrimPrefix(decoratorName, "@")
-				annotations = append(annotations, outbound.Annotation{
-					Name: decoratorName,
-				})
-			}
-		}
+	if node == nil || node.Type != nodeTypeDecoratedDef {
+		return annotations
 	}
 
-	// Look for decorator nodes before the function in regular contexts
-	// This is a simplified implementation - in a real parser we'd need to look at preceding siblings
+	// In decorated_definition, decorators come before the function definition
 	for _, child := range node.Children {
 		if child.Type == nodeTypeDecorator {
 			decoratorName := parseTree.GetNodeText(child)
@@ -669,7 +812,7 @@ func extractModuleName(parseTree *valueobject.ParseTree) string {
 	rootNode := parseTree.RootNode()
 	if rootNode != nil {
 		for _, child := range rootNode.Children {
-			if child.Type == "comment" {
+			if child.Type == nodeTypeComment {
 				commentText := parseTree.GetNodeText(child)
 				// Remove # prefix
 				commentText = strings.TrimPrefix(commentText, "#")
@@ -713,7 +856,7 @@ func isInsideClass(functionNode *valueobject.ParseNode, parseTree *valueobject.P
 	}
 
 	// Get all class definition nodes
-	classNodes := parseTree.GetNodesByType("class_definition")
+	classNodes := parseTree.GetNodesByType(nodeTypeClassDef)
 
 	// Check if the function node is contained within any class node
 	for _, classNode := range classNodes {
@@ -749,7 +892,7 @@ func findContainingClassName(functionNode *valueobject.ParseNode, parseTree *val
 	}
 
 	// Get all class definition nodes
-	classNodes := parseTree.GetNodesByType("class_definition")
+	classNodes := parseTree.GetNodesByType(nodeTypeClassDef)
 
 	// Find the class node that contains this function
 	for _, classNode := range classNodes {

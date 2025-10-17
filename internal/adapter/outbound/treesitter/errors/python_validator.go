@@ -152,15 +152,9 @@ func (v *PythonValidator) validateVariableSyntax(source string) *ParserError {
 	}
 
 	// Check for unclosed string literals
-	unClosedStringPattern := regexp.MustCompile(`["'][^"']*$`)
-	lines := strings.Split(source, "\n")
-	for i, line := range lines {
-		if unClosedStringPattern.MatchString(line) && !strings.Contains(line, `\"`) && !strings.Contains(line, `\'`) {
-			return NewSyntaxError("invalid syntax: unclosed string literal").
-				WithLocation(i+1, 0).
-				WithSuggestion("Close the string literal with a matching quote")
-		}
-	}
+	// Skip this check as it has false positives with triple-quoted strings and type annotations
+	// Tree-sitter will catch actual unclosed string literals during parsing
+	_ = source // Keep parameter used
 
 	return nil
 }

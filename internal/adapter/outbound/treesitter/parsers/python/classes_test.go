@@ -699,6 +699,7 @@ func TestPythonClassParser_PrivateVisibilityFiltering(t *testing.T) {
 	// Test with IncludePrivate: false
 	optionsNoPrivate := outbound.SemanticExtractionOptions{
 		IncludePrivate: false,
+		MaxDepth:       10, // Must set MaxDepth > 0 to enable child extraction
 	}
 
 	result := parser.ParsePythonClass(
@@ -723,6 +724,7 @@ func TestPythonClassParser_PrivateVisibilityFiltering(t *testing.T) {
 	// Test with IncludePrivate: true
 	optionsIncludePrivate := outbound.SemanticExtractionOptions{
 		IncludePrivate: true,
+		MaxDepth:       10, // Must set MaxDepth > 0 to enable child extraction
 	}
 
 	allResult := parser.ParsePythonClass(
@@ -761,6 +763,326 @@ func findDependencyByName(deps []outbound.DependencyReference, name string) *out
 		}
 	}
 	return nil
+}
+
+// RED PHASE: Edge case tests for class docstring extraction with string manipulation bugs
+
+// TestPythonClassParser_ClassDocstringWithEmbeddedDoubleQuotes tests class docstring with embedded double quotes.
+// EXPECTED TO FAIL: Current implementation uses strings.Trim which doesn't handle embedded quotes correctly.
+func TestPythonClassParser_ClassDocstringWithEmbeddedDoubleQuotes(t *testing.T) {
+	sourceCode := `class Speaker:
+    """A class that says \"hello\" loudly"""
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser := NewPythonClassParser()
+
+	classNodes := parseTree.GetNodesByType("class_definition")
+	require.Len(t, classNodes, 1)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	result := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[0],
+		"test_module",
+		options,
+		time.Now(),
+	)
+	require.NotNil(t, result)
+
+	// Should extract: A class that says "hello" loudly
+	// Current bug: strings.Trim will fail on embedded quotes
+	assert.Equal(t, "A class that says \"hello\" loudly", result.Documentation,
+		"Class docstring should preserve embedded double quotes")
+}
+
+// TestPythonClassParser_ClassDocstringWithEmbeddedSingleQuote tests class docstring with embedded single quote.
+// EXPECTED TO FAIL: Current implementation uses strings.Trim which doesn't handle embedded quotes correctly.
+func TestPythonClassParser_ClassDocstringWithEmbeddedSingleQuote(t *testing.T) {
+	sourceCode := `class Validator:
+    '''Checks if it's valid'''
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser := NewPythonClassParser()
+
+	classNodes := parseTree.GetNodesByType("class_definition")
+	require.Len(t, classNodes, 1)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	result := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[0],
+		"test_module",
+		options,
+		time.Now(),
+	)
+	require.NotNil(t, result)
+
+	// Should extract: Checks if it's valid
+	assert.Equal(t, "Checks if it's valid", result.Documentation,
+		"Class docstring should preserve embedded single quote")
+}
+
+// TestPythonClassParser_ClassDocstringWithMixedQuotes tests class docstring with mixed quote types.
+// EXPECTED TO FAIL: String manipulation fails with complex quote combinations.
+func TestPythonClassParser_ClassDocstringWithMixedQuotes(t *testing.T) {
+	sourceCode := `class Conversation:
+    """Handles phrases like 'hi' and \"hello\" """
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser := NewPythonClassParser()
+
+	classNodes := parseTree.GetNodesByType("class_definition")
+	require.Len(t, classNodes, 1)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	result := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[0],
+		"test_module",
+		options,
+		time.Now(),
+	)
+	require.NotNil(t, result)
+
+	// Should extract with both quote types preserved
+	assert.Equal(t, "Handles phrases like 'hi' and \"hello\" ", result.Documentation,
+		"Class docstring should preserve mixed quote types")
+}
+
+// TestPythonClassParser_ClassDocstringWithRawString tests raw string class docstring.
+// EXPECTED TO FAIL: Current implementation may not handle r-string prefix correctly.
+func TestPythonClassParser_ClassDocstringWithRawString(t *testing.T) {
+	sourceCode := `class PathHandler:
+    r"""Handles paths like C:\Users\name\file.txt"""
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser := NewPythonClassParser()
+
+	classNodes := parseTree.GetNodesByType("class_definition")
+	require.Len(t, classNodes, 1)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	result := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[0],
+		"test_module",
+		options,
+		time.Now(),
+	)
+	require.NotNil(t, result)
+
+	// Should extract: Handles paths like C:\Users\name\file.txt
+	assert.Equal(t, `Handles paths like C:\Users\name\file.txt`, result.Documentation,
+		"Class docstring should extract raw string content correctly")
+}
+
+// TestPythonClassParser_ClassDocstringMultilineWithQuotes tests multiline class docstring with quotes.
+// EXPECTED TO FAIL: String trimming may affect internal structure.
+func TestPythonClassParser_ClassDocstringMultilineWithQuotes(t *testing.T) {
+	sourceCode := `class DataProcessor:
+    """
+    A class for processing data.
+
+    Handles formats like:
+    - JSON: {\"key\": \"value\"}
+    - CSV: \"col1\",\"col2\",\"col3\"
+
+    Methods include 'parse' and \"process\"
+    """
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser := NewPythonClassParser()
+
+	classNodes := parseTree.GetNodesByType("class_definition")
+	require.Len(t, classNodes, 1)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	result := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[0],
+		"test_module",
+		options,
+		time.Now(),
+	)
+	require.NotNil(t, result)
+
+	doc := result.Documentation
+	// Should preserve internal structure with quotes
+	assert.Contains(t, doc, "{\"key\": \"value\"}",
+		"Class docstring should preserve JSON examples with quotes")
+	assert.Contains(t, doc, "\"col1\",\"col2\",\"col3\"",
+		"Class docstring should preserve CSV examples with quotes")
+	assert.Contains(t, doc, "'parse'",
+		"Class docstring should preserve single-quoted references")
+	assert.Contains(t, doc, "\"process\"",
+		"Class docstring should preserve double-quoted references")
+}
+
+// TestPythonClassParser_MethodDocstringWithEmbeddedQuotes tests method docstring with embedded quotes.
+// EXPECTED TO FAIL: Method docstrings also use the same flawed string manipulation.
+func TestPythonClassParser_MethodDocstringWithEmbeddedQuotes(t *testing.T) {
+	sourceCode := `class Formatter:
+    """Formatter class"""
+
+    def format_message(self):
+        """Formats messages like \"Hello, World!\" """
+        pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser := NewPythonClassParser()
+
+	classNodes := parseTree.GetNodesByType("class_definition")
+	require.Len(t, classNodes, 1)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludePrivate:       true,
+		IncludeDocumentation: true,
+		MaxDepth:             10,
+	}
+
+	result := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[0],
+		"test_module",
+		options,
+		time.Now(),
+	)
+	require.NotNil(t, result)
+
+	// Find the method
+	formatMethod := findChildByName(result.ChildChunks, "format_message")
+	require.NotNil(t, formatMethod, "Should find format_message method")
+
+	// Should extract: Formats messages like "Hello, World!"
+	assert.Equal(t, "Formats messages like \"Hello, World!\" ", formatMethod.Documentation,
+		"Method docstring should preserve embedded quotes")
+}
+
+// TestPythonClassParser_ClassDocstringWithCodeExamples tests class docstring with code examples.
+// EXPECTED TO FAIL: Code examples with quotes may be mangled by string trimming.
+func TestPythonClassParser_ClassDocstringWithCodeExamples(t *testing.T) {
+	sourceCode := `class Example:
+    """
+    Example class showing usage:
+
+        obj = Example()
+        obj.method(\"param\")
+        result = obj.get('key')
+
+    Returns data in format: {\"status\": \"ok\"}
+    """
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser := NewPythonClassParser()
+
+	classNodes := parseTree.GetNodesByType("class_definition")
+	require.Len(t, classNodes, 1)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	result := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[0],
+		"test_module",
+		options,
+		time.Now(),
+	)
+	require.NotNil(t, result)
+
+	doc := result.Documentation
+	// Should preserve code examples with various quote styles
+	assert.Contains(t, doc, "obj.method(\"param\")",
+		"Class docstring should preserve code with double quotes")
+	assert.Contains(t, doc, "obj.get('key')",
+		"Class docstring should preserve code with single quotes")
+	assert.Contains(t, doc, "{\"status\": \"ok\"}",
+		"Class docstring should preserve JSON examples")
+}
+
+// TestPythonClassParser_ClassDocstringWithFString tests f-string class docstring.
+// EXPECTED TO FAIL: f-string prefix may not be handled correctly.
+func TestPythonClassParser_ClassDocstringWithFString(t *testing.T) {
+	sourceCode := `class Config:
+    f"""Configuration class with settings"""
+    pass
+`
+	language, err := valueobject.NewLanguage(valueobject.LanguagePython)
+	require.NoError(t, err)
+
+	parseTree := createMockParseTreeFromSource(t, language, sourceCode)
+	parser := NewPythonClassParser()
+
+	classNodes := parseTree.GetNodesByType("class_definition")
+	require.Len(t, classNodes, 1)
+
+	options := outbound.SemanticExtractionOptions{
+		IncludeDocumentation: true,
+	}
+
+	result := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[0],
+		"test_module",
+		options,
+		time.Now(),
+	)
+	require.NotNil(t, result)
+
+	// Should extract content without f prefix
+	assert.Equal(t, "Configuration class with settings", result.Documentation,
+		"Class docstring should extract f-string content correctly")
 }
 
 // Note: RED PHASE stub implementations removed - now implemented in classes.go

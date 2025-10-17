@@ -179,11 +179,13 @@ type Annotation struct {
 }
 
 type Parameter struct {
-	Name         string `json:"name"`
-	Type         string `json:"type"`
-	DefaultValue string `json:"default_value,omitempty"`
-	IsOptional   bool   `json:"is_optional"`
-	IsVariadic   bool   `json:"is_variadic"`
+	Name             string `json:"name"`
+	Type             string `json:"type"`
+	DefaultValue     string `json:"default_value,omitempty"`
+	IsOptional       bool   `json:"is_optional"`
+	IsVariadic       bool   `json:"is_variadic"`
+	IsKeywordOnly    bool   `json:"is_keyword_only"`
+	IsPositionalOnly bool   `json:"is_positional_only"`
 }
 
 type GenericParameter struct {

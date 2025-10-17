@@ -77,14 +77,10 @@ func extractModuleDocstring(parseTree *valueobject.ParseTree) string {
 
 	// Look for the first string literal at module level (docstring)
 	for _, child := range rootNode.Children {
-		if child.Type == "expression_statement" {
-			stringNode := findChildByType(child, "string")
+		if child.Type == nodeTypeExpressionStatement {
+			stringNode := findChildByType(child, nodeTypeString)
 			if stringNode != nil {
-				docstring := parseTree.GetNodeText(stringNode)
-				// Clean up the docstring (remove quotes and extra whitespace)
-				docstring = strings.Trim(docstring, `"'`)
-				docstring = strings.TrimSpace(docstring)
-				return docstring
+				return extractStringContent(parseTree, stringNode)
 			}
 		}
 	}
@@ -102,7 +98,7 @@ func extractModuleMetadata(parseTree *valueobject.ParseTree) map[string]interfac
 
 	// Look for common module-level metadata variables
 	for _, child := range rootNode.Children {
-		if child.Type == "expression_statement" {
+		if child.Type == nodeTypeExpressionStatement {
 			assignmentNode := findChildByType(child, "assignment")
 			if assignmentNode != nil {
 				key, value := extractMetadataFromAssignment(parseTree, assignmentNode)
@@ -133,9 +129,8 @@ func extractMetadataFromAssignment(
 		case "identifier":
 			varName = parseTree.GetNodeText(child)
 		case "string":
-			value = parseTree.GetNodeText(child)
-			// Remove quotes
-			value = strings.Trim(value, `"'`)
+			// Extract string content using tree-sitter navigation
+			value = extractStringContent(parseTree, child)
 		}
 	}
 
@@ -168,20 +163,12 @@ func extractMetadataFromAssignment(
 	return "", nil
 }
 
-// extractShebang extracts shebang line if present.
-func extractShebang(parseTree *valueobject.ParseTree) string {
-	source := parseTree.Source()
-	lines := strings.Split(string(source), "\n")
-
-	if len(lines) > 0 && strings.HasPrefix(lines[0], "#!") {
-		return lines[0]
-	}
-
-	return ""
-}
-
 // extractModuleComments extracts module-level comments.
 func extractModuleComments(parseTree *valueobject.ParseTree) []string {
+	if parseTree == nil {
+		return []string{}
+	}
+
 	var comments []string
 	rootNode := parseTree.RootNode()
 	if rootNode == nil {
@@ -202,56 +189,4 @@ func extractModuleComments(parseTree *valueobject.ParseTree) []string {
 	}
 
 	return comments
-}
-
-// extractModuleLevelStatements extracts statistics about module-level statements.
-func extractModuleLevelStatements(parseTree *valueobject.ParseTree) map[string]int {
-	stats := make(map[string]int)
-	rootNode := parseTree.RootNode()
-	if rootNode == nil {
-		return stats
-	}
-
-	// Count different types of statements
-	for _, child := range rootNode.Children {
-		switch child.Type {
-		case "import_statement", "import_from_statement":
-			stats["imports"]++
-		case "function_definition", "async_function_definition":
-			stats["functions"]++
-		case "class_definition":
-			stats["classes"]++
-		case "expression_statement":
-			// Check if it's an assignment
-			if findChildByType(child, "assignment") != nil {
-				stats["variables"]++
-			}
-		}
-	}
-
-	return stats
-}
-
-// Helper function to get a reasonable module name from the parse tree context.
-func getModuleNameFromContext(parseTree *valueobject.ParseTree) string {
-	// This is a minimal implementation
-	// In a real implementation, this would be derived from the file path
-	source := parseTree.Source()
-
-	// Look for common patterns to infer module type
-	if strings.Contains(string(source), "if __name__ == \"__main__\"") {
-		return "main"
-	}
-
-	if strings.Contains(string(source), "def main()") {
-		return "main"
-	}
-
-	// Check for class definitions to infer module purpose
-	if strings.Contains(string(source), "class ") {
-		return "module"
-	}
-
-	// Default
-	return "utility"
 }

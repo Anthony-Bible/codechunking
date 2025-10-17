@@ -36,6 +36,9 @@ func (p *PythonClassParser) ParsePythonClass(
 		return nil
 	}
 
+	// Build full qualified name by detecting parent classes
+	qualifiedName := buildQualifiedNameForClass(parseTree, node, moduleName)
+
 	// Extract class documentation
 	var documentation string
 	if options.IncludeDocumentation {
@@ -61,7 +64,7 @@ func (p *PythonClassParser) ParsePythonClass(
 		ChunkID:       utils.GenerateID("class", className, nil),
 		Type:          outbound.ConstructClass,
 		Name:          className,
-		QualifiedName: qualifyName(moduleName, className),
+		QualifiedName: qualifiedName,
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
@@ -74,6 +77,90 @@ func (p *PythonClassParser) ParsePythonClass(
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(content),
 	}
+}
+
+// buildQualifiedNameForClass builds a qualified name for a class, detecting parent classes.
+func buildQualifiedNameForClass(
+	parseTree *valueobject.ParseTree,
+	classNode *valueobject.ParseNode,
+	moduleName string,
+) string {
+	if classNode == nil || parseTree == nil {
+		return moduleName
+	}
+
+	// Get class name
+	className := extractClassNameFromNode(parseTree, classNode)
+	if className == "" {
+		return moduleName
+	}
+
+	// Find parent classes by checking byte ranges
+	parentClasses := findParentClasses(parseTree, classNode)
+
+	// Build qualified name: module.ParentClass1.ParentClass2.ClassName
+	parts := []string{moduleName}
+	parts = append(parts, parentClasses...)
+	parts = append(parts, className)
+
+	return qualifyName(parts...)
+}
+
+// findParentClasses finds all parent class names for a nested class.
+func findParentClasses(parseTree *valueobject.ParseTree, classNode *valueobject.ParseNode) []string {
+	var parentNames []string
+
+	if classNode == nil || parseTree == nil {
+		return parentNames
+	}
+
+	// Get all class definitions
+	allClassNodes := parseTree.GetNodesByType("class_definition")
+
+	// Find classes that contain this class (sorted by nesting level, innermost first)
+	type parentClass struct {
+		node *valueobject.ParseNode
+		name string
+	}
+	var parents []parentClass
+
+	for _, potentialParent := range allClassNodes {
+		// Skip self
+		if potentialParent.StartByte == classNode.StartByte && potentialParent.EndByte == classNode.EndByte {
+			continue
+		}
+
+		// Check if potentialParent contains classNode
+		// Use <= for EndByte because nested classes may share the same end byte
+		if classNode.StartByte > potentialParent.StartByte && classNode.EndByte <= potentialParent.EndByte {
+			parentName := extractClassNameFromNode(parseTree, potentialParent)
+			if parentName != "" {
+				parents = append(parents, parentClass{node: potentialParent, name: parentName})
+			}
+		}
+	}
+
+	// Sort parents by nesting level (outermost first)
+	// A parent is "outer" to another if it contains the other parent
+	for i := range len(parents) - 1 {
+		for j := i + 1; j < len(parents); j++ {
+			// Check if parent[j] contains parent[i]
+			// If so, parent[j] is outer and should come before parent[i]
+			// Use <= for EndByte because nested classes may share the same end byte
+			if parents[i].node.StartByte > parents[j].node.StartByte &&
+				parents[i].node.EndByte <= parents[j].node.EndByte {
+				// parents[j] contains parents[i], so swap to put outer one first
+				parents[i], parents[j] = parents[j], parents[i]
+			}
+		}
+	}
+
+	// Extract names in order (outermost to innermost)
+	for _, parent := range parents {
+		parentNames = append(parentNames, parent.name)
+	}
+
+	return parentNames
 }
 
 // extractPythonClasses extracts Python classes from the parse tree.
@@ -181,10 +268,7 @@ func extractClassDocstring(parseTree *valueobject.ParseTree, node *valueobject.P
 		if child.Type == nodeTypeExpressionStatement {
 			stringNode := findChildByType(child, "string")
 			if stringNode != nil {
-				docstring := parseTree.GetNodeText(stringNode)
-				// Clean up the docstring (remove quotes)
-				docstring = strings.Trim(docstring, `"'`)
-				return docstring
+				return extractStringContent(parseTree, stringNode)
 			}
 		}
 	}

@@ -126,6 +126,7 @@ func TestRepositoryStatus_CanTransitionTo_ValidTransitions(t *testing.T) {
 
 		// From completed
 		{RepositoryStatusCompleted, RepositoryStatusProcessing}, // re-indexing
+		{RepositoryStatusCompleted, RepositoryStatusCompleted},  // idempotent completion (re-indexing same commit)
 		{RepositoryStatusCompleted, RepositoryStatusArchived},
 
 		// From failed
@@ -183,11 +184,10 @@ func TestRepositoryStatus_CanTransitionTo_InvalidTransitions(t *testing.T) {
 		{RepositoryStatusArchived, RepositoryStatusCompleted},
 		{RepositoryStatusArchived, RepositoryStatusFailed},
 
-		// Self-transitions (should be invalid)
+		// Self-transitions (should be invalid, except completed->completed for idempotent re-indexing)
 		{RepositoryStatusPending, RepositoryStatusPending},
 		{RepositoryStatusCloning, RepositoryStatusCloning},
 		{RepositoryStatusProcessing, RepositoryStatusProcessing},
-		{RepositoryStatusCompleted, RepositoryStatusCompleted},
 		{RepositoryStatusFailed, RepositoryStatusFailed},
 		{RepositoryStatusArchived, RepositoryStatusArchived},
 	}

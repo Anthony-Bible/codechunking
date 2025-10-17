@@ -66,6 +66,7 @@ func (s RepositoryStatus) CanTransitionTo(target RepositoryStatus) bool {
 		},
 		RepositoryStatusCompleted: {
 			RepositoryStatusProcessing, // For re-indexing
+			RepositoryStatusCompleted,  // Allow idempotent completion (re-indexing same commit)
 			RepositoryStatusArchived,
 		},
 		RepositoryStatusFailed: {

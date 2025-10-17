@@ -24,6 +24,7 @@ const (
 	jobStatusFailed    = "failed"
 	jobStatusRunning   = "running"
 	jobStatusCompleted = "completed"
+	unknownCommitHash  = "unknown"
 )
 
 // JobProcessorConfig holds configuration for the job processor.
@@ -107,24 +108,8 @@ func NewDefaultJobProcessor(
 
 // ProcessJob processes an indexing job message.
 func (p *DefaultJobProcessor) ProcessJob(ctx context.Context, message messaging.EnhancedIndexingJobMessage) error {
-	// Basic validation
-	if err := p.validateMessage(message); err != nil {
+	if err := p.validateAndPrepareJob(&message); err != nil {
 		return err
-	}
-
-	jobID := uuid.New()
-	if message.MessageID == "" {
-		message.MessageID = jobID.String()
-	}
-
-	// Check memory pressure before starting job
-	if p.isMemoryPressureHigh() {
-		return errors.New("memory pressure too high, rejecting job")
-	}
-
-	// Resource limits enforcement not implemented yet
-	if p.config.MaxMemoryMB > 0 || p.config.MaxDiskUsageMB > 0 {
-		return errors.New("resource limits enforcement not implemented yet")
 	}
 
 	// Acquire semaphore for concurrency control
@@ -137,8 +122,45 @@ func (p *DefaultJobProcessor) ProcessJob(ctx context.Context, message messaging.
 	jobCtx, cancel := context.WithTimeout(ctx, p.config.JobTimeout)
 	defer cancel()
 
+	execution := p.createJobExecution(message)
+	workspacePath := filepath.Join(p.config.WorkspaceDir, message.MessageID)
+	defer p.cleanupWorkspace(workspacePath, message.MessageID)
+
+	chunks, err := p.executeJobPipeline(jobCtx, message, workspacePath, execution)
+	if err != nil {
+		return err
+	}
+
+	p.finalizeJobCompletion(jobCtx, message, execution, chunks)
+	return nil
+}
+
+// validateAndPrepareJob validates the message and checks system resources.
+func (p *DefaultJobProcessor) validateAndPrepareJob(message *messaging.EnhancedIndexingJobMessage) error {
+	if err := p.validateMessage(*message); err != nil {
+		return err
+	}
+
+	jobID := uuid.New()
+	if message.MessageID == "" {
+		message.MessageID = jobID.String()
+	}
+
+	if p.isMemoryPressureHigh() {
+		return errors.New("memory pressure too high, rejecting job")
+	}
+
+	if p.config.MaxMemoryMB > 0 || p.config.MaxDiskUsageMB > 0 {
+		return errors.New("resource limits enforcement not implemented yet")
+	}
+
+	return nil
+}
+
+// createJobExecution creates and registers a job execution.
+func (p *DefaultJobProcessor) createJobExecution(message messaging.EnhancedIndexingJobMessage) *JobExecution {
 	execution := &JobExecution{
-		JobID:        jobID,
+		JobID:        uuid.New(),
 		RepositoryID: message.RepositoryID,
 		StartTime:    time.Now(),
 		Status:       jobStatusRunning,
@@ -150,64 +172,98 @@ func (p *DefaultJobProcessor) ProcessJob(ctx context.Context, message messaging.
 	p.healthStatus.ActiveJobs = len(p.activeJobs)
 	p.jobsMu.Unlock()
 
-	// Ensure cleanup of workspace directory
-	workspacePath := filepath.Join(p.config.WorkspaceDir, message.MessageID)
-	defer p.cleanupWorkspace(workspacePath, message.MessageID)
+	return execution
+}
 
-	// Update repository status to processing
-	if err := p.updateRepositoryStatus(jobCtx, message.RepositoryID, "processing"); err != nil {
-		slogger.Error(jobCtx, "Failed to update repository status to processing", slogger.Fields{
-			"repository_id": message.RepositoryID.String(),
-			"error":         err.Error(),
-		})
-		// Continue processing even if status update fails - don't block the job
-	}
-
+// executeJobPipeline executes the main job processing pipeline.
+func (p *DefaultJobProcessor) executeJobPipeline(
+	ctx context.Context,
+	message messaging.EnhancedIndexingJobMessage,
+	workspacePath string,
+	execution *JobExecution,
+) ([]outbound.CodeChunk, error) {
 	if err := p.setupWorkspace(workspacePath); err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
-		p.markRepositoryFailed(jobCtx, message.RepositoryID)
-		return err
+		p.markRepositoryFailed(ctx, message.RepositoryID)
+		return nil, err
 	}
 
-	if err := p.cloneRepository(jobCtx, message, workspacePath); err != nil {
+	if err := p.transitionToCloning(ctx, message.RepositoryID, message.MessageID); err != nil {
+		return nil, err
+	}
+
+	if err := p.cloneRepository(ctx, message, workspacePath); err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
-		p.markRepositoryFailed(jobCtx, message.RepositoryID)
-		return err
+		p.markRepositoryFailed(ctx, message.RepositoryID)
+		return nil, err
+	}
+
+	if err := p.transitionToProcessing(ctx, message.RepositoryID, message.MessageID); err != nil {
+		return nil, err
 	}
 
 	chunkSize := p.getChunkSize(message)
-	config := outbound.CodeParsingConfig{
-		ChunkSizeBytes: chunkSize,
-	}
+	config := outbound.CodeParsingConfig{ChunkSizeBytes: chunkSize}
 
-	chunks, err := p.parseCode(jobCtx, workspacePath, config)
+	chunks, err := p.parseCode(ctx, workspacePath, config)
 	if err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
-		p.markRepositoryFailed(jobCtx, message.RepositoryID)
-		return err
+		p.markRepositoryFailed(ctx, message.RepositoryID)
+		return nil, err
 	}
 
-	if err := p.generateEmbeddings(jobCtx, message.MessageID, message.RepositoryID, chunks); err != nil {
+	if err := p.generateEmbeddings(ctx, message.MessageID, message.RepositoryID, chunks); err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
-		p.markRepositoryFailed(jobCtx, message.RepositoryID)
-		return err
+		p.markRepositoryFailed(ctx, message.RepositoryID)
+		return nil, err
 	}
 
+	return chunks, nil
+}
+
+// transitionToCloning updates repository status to cloning.
+func (p *DefaultJobProcessor) transitionToCloning(ctx context.Context, repoID uuid.UUID, jobID string) error {
+	if err := p.updateRepositoryStatus(ctx, repoID, "cloning"); err != nil {
+		slogger.Error(ctx, "Failed to update repository status to cloning", slogger.Fields{
+			"repository_id": repoID.String(),
+			"error":         err.Error(),
+		})
+		p.updateJobStatus(jobID, jobStatusFailed)
+		p.markRepositoryFailed(ctx, repoID)
+		return fmt.Errorf("failed to update repository status to cloning: %w", err)
+	}
+	return nil
+}
+
+// transitionToProcessing updates repository status to processing.
+func (p *DefaultJobProcessor) transitionToProcessing(ctx context.Context, repoID uuid.UUID, jobID string) error {
+	if err := p.updateRepositoryStatus(ctx, repoID, "processing"); err != nil {
+		slogger.Error(ctx, "Failed to update repository status to processing", slogger.Fields{
+			"repository_id": repoID.String(),
+			"error":         err.Error(),
+		})
+		p.updateJobStatus(jobID, jobStatusFailed)
+		p.markRepositoryFailed(ctx, repoID)
+		return fmt.Errorf("failed to update repository status to processing: %w", err)
+	}
+	return nil
+}
+
+// finalizeJobCompletion marks the job and repository as completed.
+func (p *DefaultJobProcessor) finalizeJobCompletion(
+	ctx context.Context,
+	message messaging.EnhancedIndexingJobMessage,
+	execution *JobExecution,
+	chunks []outbound.CodeChunk,
+) {
 	p.updateJobStatus(message.MessageID, jobStatusCompleted)
 	if execution.Progress != nil {
 		execution.Progress.Stage = jobStatusCompleted
 	}
 
-	// Mark repository as completed with metadata
-	// TODO: Get actual commit hash from git client
-	commitHash := "unknown"
-	fileCount := len(chunks) // Approximate - each chunk represents a file or part of a file
-	p.markRepositoryCompleted(jobCtx, message.RepositoryID, commitHash, fileCount, len(chunks))
-
-	// Update metrics atomically
+	fileCount := len(chunks)
+	p.markRepositoryCompleted(ctx, message.RepositoryID, unknownCommitHash, fileCount, len(chunks))
 	p.updateMetrics(int64(len(chunks)))
-
-	return nil
 }
 
 // GetHealthStatus returns the current health status.

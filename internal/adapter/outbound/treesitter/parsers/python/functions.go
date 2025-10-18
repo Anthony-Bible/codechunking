@@ -678,10 +678,21 @@ func extractParameterInfo(parseTree *valueobject.ParseTree, paramNode *valueobje
 		param.Type = parseTree.GetNodeText(typeNode)
 	}
 
-	// Check for default value
-	defaultNode := findChildByType(paramNode, nodeTypeDefaultValue)
-	if defaultNode != nil {
-		param.DefaultValue = parseTree.GetNodeText(defaultNode)
+	// Extract default value from parameter node
+	// Tree-sitter structure:
+	// - default_parameter: [identifier, =, value_expression]
+	// - typed_default_parameter: [identifier, :, type, =, value_expression]
+	switch paramNode.Type {
+	case "default_parameter":
+		// Value is at position 2: [identifier, =, VALUE]
+		if len(paramNode.Children) >= 3 {
+			param.DefaultValue = parseTree.GetNodeText(paramNode.Children[2])
+		}
+	case "typed_default_parameter":
+		// Value is at position 4: [identifier, :, type, =, VALUE]
+		if len(paramNode.Children) >= 5 {
+			param.DefaultValue = parseTree.GetNodeText(paramNode.Children[4])
+		}
 	}
 
 	return param

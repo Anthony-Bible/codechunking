@@ -26,6 +26,7 @@ func (p *PythonClassParser) ParsePythonClass(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	node *valueobject.ParseNode,
+	allClassNodes []*valueobject.ParseNode,
 	moduleName string,
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
@@ -46,7 +47,7 @@ func (p *PythonClassParser) ParsePythonClass(
 	}
 
 	// Build full qualified name by detecting parent classes
-	qualifiedName := buildQualifiedNameForClass(parseTree, node, moduleName)
+	qualifiedName := buildQualifiedNameForClass(parseTree, node, allClassNodes, moduleName)
 
 	// Extract class documentation
 	var documentation string
@@ -63,7 +64,7 @@ func (p *PythonClassParser) ParsePythonClass(
 	// Extract child chunks (methods, class variables, nested classes)
 	var childChunks []outbound.SemanticCodeChunk
 	if options.MaxDepth > 0 {
-		childChunks = extractClassChildren(ctx, parseTree, node, className, moduleName, options, now)
+		childChunks = extractClassChildren(ctx, parseTree, node, allClassNodes, className, moduleName, options, now)
 	}
 
 	// Get class content
@@ -92,6 +93,7 @@ func (p *PythonClassParser) ParsePythonClass(
 func buildQualifiedNameForClass(
 	parseTree *valueobject.ParseTree,
 	classNode *valueobject.ParseNode,
+	allClassNodes []*valueobject.ParseNode,
 	moduleName string,
 ) string {
 	if classNode == nil || parseTree == nil {
@@ -105,7 +107,7 @@ func buildQualifiedNameForClass(
 	}
 
 	// Find parent classes by checking byte ranges
-	parentClasses := findParentClasses(parseTree, classNode)
+	parentClasses := findParentClasses(parseTree, allClassNodes, classNode)
 
 	// Build qualified name: module.ParentClass1.ParentClass2.ClassName
 	parts := []string{moduleName}
@@ -116,15 +118,19 @@ func buildQualifiedNameForClass(
 }
 
 // findParentClasses finds all parent class names for a nested class.
-func findParentClasses(parseTree *valueobject.ParseTree, classNode *valueobject.ParseNode) []string {
+func findParentClasses(
+	parseTree *valueobject.ParseTree,
+	allClassNodes []*valueobject.ParseNode,
+	classNode *valueobject.ParseNode,
+) []string {
 	var parentNames []string
 
-	if classNode == nil || parseTree == nil {
+	if classNode == nil || allClassNodes == nil {
 		return parentNames
 	}
 
-	// Get all class definitions
-	allClassNodes := parseTree.GetNodesByType("class_definition")
+	// PERFORMANCE OPTIMIZATION: Use pre-fetched allClassNodes instead of calling GetNodesByType
+	// This eliminates the O(n²) bottleneck when processing thousands of classes
 
 	// Find classes that contain this class (sorted by nesting level, innermost first)
 	type parentClass struct {
@@ -186,14 +192,37 @@ func extractPythonClasses(
 	classNodes := parseTree.GetNodesByType("class_definition")
 	decoratedNodes := parseTree.GetNodesByType("decorated_definition")
 
+	// PERFORMANCE OPTIMIZATION: Fetch all class nodes once to avoid O(n²) lookups
+	// This pre-fetched list is passed down to all functions that need to find parent classes
+	allClassNodes := classNodes
+
 	parser := NewPythonClassParser()
 
 	// Process decorated definitions first
-	decoratedClasses := extractDecoratedClasses(ctx, parseTree, decoratedNodes, parser, moduleName, options, now)
+	decoratedClasses := extractDecoratedClasses(
+		ctx,
+		parseTree,
+		decoratedNodes,
+		allClassNodes,
+		parser,
+		moduleName,
+		options,
+		now,
+	)
 	classes = append(classes, decoratedClasses...)
 
 	// Process plain class definitions (skip those that are inside decorated_definition)
-	plainClasses := extractPlainClasses(ctx, parseTree, classNodes, decoratedNodes, parser, moduleName, options, now)
+	plainClasses := extractPlainClasses(
+		ctx,
+		parseTree,
+		classNodes,
+		allClassNodes,
+		decoratedNodes,
+		parser,
+		moduleName,
+		options,
+		now,
+	)
 	classes = append(classes, plainClasses...)
 
 	return classes, nil
@@ -204,6 +233,7 @@ func extractPlainClasses(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	classNodes []*valueobject.ParseNode,
+	allClassNodes []*valueobject.ParseNode,
 	decoratedNodes []*valueobject.ParseNode,
 	parser *PythonClassParser,
 	moduleName string,
@@ -221,7 +251,7 @@ func extractPlainClasses(
 
 		// Check if this class node is part of a decorated definition
 		if !isNodeInDecoratedDefinition(node, decoratedNodes) {
-			class := parser.ParsePythonClass(ctx, parseTree, node, moduleName, options, now)
+			class := parser.ParsePythonClass(ctx, parseTree, node, allClassNodes, moduleName, options, now)
 			if class != nil && shouldIncludeByVisibility(class.Visibility, options.IncludePrivate) {
 				classes = append(classes, *class)
 			}
@@ -236,6 +266,7 @@ func extractDecoratedClasses(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	decoratedNodes []*valueobject.ParseNode,
+	allClassNodes []*valueobject.ParseNode,
 	parser *PythonClassParser,
 	moduleName string,
 	options outbound.SemanticExtractionOptions,
@@ -254,7 +285,7 @@ func extractDecoratedClasses(
 		for _, child := range decoratedNode.Children {
 			if child.Type == "class_definition" {
 				// Parse the class
-				class := parser.ParsePythonClass(ctx, parseTree, child, moduleName, options, now)
+				class := parser.ParsePythonClass(ctx, parseTree, child, allClassNodes, moduleName, options, now)
 				if class != nil && shouldIncludeByVisibility(class.Visibility, options.IncludePrivate) {
 					classes = append(classes, *class)
 				}
@@ -457,6 +488,7 @@ func extractClassChildren(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	classNode *valueobject.ParseNode,
+	allClassNodes []*valueobject.ParseNode,
 	className, moduleName string,
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
@@ -485,7 +517,16 @@ func extractClassChildren(
 
 	// Extract nested classes (if depth allows)
 	if childOptions.MaxDepth > 0 {
-		nestedClasses := extractNestedClasses(ctx, parseTree, classNode, className, moduleName, childOptions, now)
+		nestedClasses := extractNestedClasses(
+			ctx,
+			parseTree,
+			classNode,
+			allClassNodes,
+			className,
+			moduleName,
+			childOptions,
+			now,
+		)
 		for _, nestedClass := range nestedClasses {
 			if shouldIncludeByVisibility(nestedClass.Visibility, options.IncludePrivate) {
 				children = append(children, nestedClass)
@@ -652,6 +693,7 @@ func extractNestedClasses(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	parentClassNode *valueobject.ParseNode,
+	allClassNodes []*valueobject.ParseNode,
 	parentClassName, moduleName string,
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
@@ -671,7 +713,7 @@ func extractNestedClasses(
 	for _, node := range nestedClassNodes {
 		// Create qualified module name for nested class
 		nestedModuleName := qualifyName(moduleName, parentClassName)
-		nestedClass := parser.ParsePythonClass(ctx, parseTree, node, nestedModuleName, options, now)
+		nestedClass := parser.ParsePythonClass(ctx, parseTree, node, allClassNodes, nestedModuleName, options, now)
 		if nestedClass != nil {
 			nestedClasses = append(nestedClasses, *nestedClass)
 		}

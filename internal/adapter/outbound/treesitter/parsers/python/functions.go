@@ -38,6 +38,9 @@ func extractPythonFunctions(
 ) ([]outbound.SemanticCodeChunk, error) {
 	now := time.Now()
 
+	// Get all class definition nodes ONCE (optimization to avoid O(n²) with 10,000 functions)
+	allClassNodes := parseTree.GetNodesByType(nodeTypeClassDef)
+
 	// Get function definition nodes from the parse tree
 	functionNodes := parseTree.GetNodesByType(nodeTypeFunctionDef)
 
@@ -52,7 +55,7 @@ func extractPythonFunctions(
 	var functions []outbound.SemanticCodeChunk
 
 	for _, node := range functionNodes {
-		function := extractPythonFunction(ctx, parseTree, node, options, now)
+		function := extractPythonFunction(ctx, parseTree, node, allClassNodes, options, now)
 		if function != nil {
 			// Apply visibility filtering if needed
 			if !options.IncludePrivate && function.Visibility == outbound.Private {
@@ -70,6 +73,7 @@ func extractPythonFunction(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	node *valueobject.ParseNode,
+	allClassNodes []*valueobject.ParseNode,
 	options outbound.SemanticExtractionOptions,
 	extractedAt time.Time,
 ) *outbound.SemanticCodeChunk {
@@ -102,14 +106,14 @@ func extractPythonFunction(
 	documentation := extractFunctionDocumentation(parseTree, node)
 
 	// Check if this function is inside a class (making it a method)
-	isMethod := isInsideClass(node, parseTree)
+	isMethod := isInsideClass(node, allClassNodes)
 	var constructType outbound.SemanticConstructType
 	var qualifiedName string
 
 	if isMethod {
 		constructType = outbound.ConstructMethod
 		// Find the class name for qualified name
-		className := findContainingClassName(node, parseTree)
+		className := findContainingClassName(node, parseTree, allClassNodes)
 		qualifiedName = qualifyName(className, name)
 	} else {
 		constructType = outbound.ConstructFunction
@@ -850,16 +854,13 @@ func shouldIncludeByVisibility(visibility outbound.VisibilityModifier, includePr
 }
 
 // isInsideClass checks if a function node is nested inside a class definition.
-func isInsideClass(functionNode *valueobject.ParseNode, parseTree *valueobject.ParseTree) bool {
-	if functionNode == nil || parseTree == nil {
+func isInsideClass(functionNode *valueobject.ParseNode, allClassNodes []*valueobject.ParseNode) bool {
+	if functionNode == nil {
 		return false
 	}
 
-	// Get all class definition nodes
-	classNodes := parseTree.GetNodesByType(nodeTypeClassDef)
-
 	// Check if the function node is contained within any class node
-	for _, classNode := range classNodes {
+	for _, classNode := range allClassNodes {
 		if isNodeContainedInParent(functionNode, classNode) {
 			return true
 		}
@@ -886,16 +887,17 @@ func isNodeContainedInParent(child, parent *valueobject.ParseNode) bool {
 }
 
 // findContainingClassName finds the name of the class that contains a function node.
-func findContainingClassName(functionNode *valueobject.ParseNode, parseTree *valueobject.ParseTree) string {
+func findContainingClassName(
+	functionNode *valueobject.ParseNode,
+	parseTree *valueobject.ParseTree,
+	allClassNodes []*valueobject.ParseNode,
+) string {
 	if functionNode == nil || parseTree == nil {
 		return ""
 	}
 
-	// Get all class definition nodes
-	classNodes := parseTree.GetNodesByType(nodeTypeClassDef)
-
 	// Find the class node that contains this function
-	for _, classNode := range classNodes {
+	for _, classNode := range allClassNodes {
 		if isNodeContainedInParent(functionNode, classNode) {
 			// Extract class name from class definition
 			className := extractClassName(parseTree, classNode)

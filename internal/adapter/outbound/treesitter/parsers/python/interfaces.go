@@ -42,15 +42,33 @@ func extractPythonInterfaces(
 	var interfaces []outbound.SemanticCodeChunk
 	moduleName := extractModuleName(parseTree)
 
+	// PERFORMANCE OPTIMIZATION: Fetch all class nodes once to avoid O(n²) lookups
+	// This pre-fetched list is passed down to all functions that need to find parent classes
+	allClassNodes := parseTree.GetNodesByType(classDefinition)
+
 	// Keep track of class nodes that are inside decorated definitions
 	decoratedClassNodes := make(map[*valueobject.ParseNode]bool)
 
 	// Process decorated interfaces first
-	decoratedInterfaces := processDecoratedInterfaces(ctx, parseTree, options, moduleName, decoratedClassNodes)
+	decoratedInterfaces := processDecoratedInterfaces(
+		ctx,
+		parseTree,
+		allClassNodes,
+		options,
+		moduleName,
+		decoratedClassNodes,
+	)
 	interfaces = append(interfaces, decoratedInterfaces...)
 
 	// Process standalone interfaces
-	standaloneInterfaces := processStandaloneInterfaces(ctx, parseTree, options, moduleName, decoratedClassNodes)
+	standaloneInterfaces := processStandaloneInterfaces(
+		ctx,
+		parseTree,
+		allClassNodes,
+		options,
+		moduleName,
+		decoratedClassNodes,
+	)
 	interfaces = append(interfaces, standaloneInterfaces...)
 
 	return interfaces, nil
@@ -75,6 +93,7 @@ func extractPythonInterfaces(
 func processDecoratedInterfaces(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
+	allClassNodes []*valueobject.ParseNode,
 	options outbound.SemanticExtractionOptions,
 	moduleName string,
 	decoratedClassNodes map[*valueobject.ParseNode]bool,
@@ -99,7 +118,15 @@ func processDecoratedInterfaces(
 		}
 
 		decorators := extractDecoratorsFromDecoratedDefinition(parseTree, node)
-		interfaceChunk := createInterfaceFromClass(ctx, parseTree, classChild, moduleName, options, decorators)
+		interfaceChunk := createInterfaceFromClass(
+			ctx,
+			parseTree,
+			classChild,
+			allClassNodes,
+			moduleName,
+			options,
+			decorators,
+		)
 		if interfaceChunk != nil && shouldIncludeByVisibility(interfaceChunk.Visibility, options.IncludePrivate) {
 			interfaces = append(interfaces, *interfaceChunk)
 			decoratedClassNodes[classChild] = true
@@ -126,6 +153,7 @@ func processDecoratedInterfaces(
 func processStandaloneInterfaces(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
+	allClassNodes []*valueobject.ParseNode,
 	options outbound.SemanticExtractionOptions,
 	moduleName string,
 	decoratedClassNodes map[*valueobject.ParseNode]bool,
@@ -149,7 +177,7 @@ func processStandaloneInterfaces(
 			continue
 		}
 
-		interfaceChunk := createInterfaceFromClass(ctx, parseTree, node, moduleName, options, nil)
+		interfaceChunk := createInterfaceFromClass(ctx, parseTree, node, allClassNodes, moduleName, options, nil)
 		if interfaceChunk != nil && shouldIncludeByVisibility(interfaceChunk.Visibility, options.IncludePrivate) {
 			interfaces = append(interfaces, *interfaceChunk)
 		}
@@ -179,6 +207,7 @@ func createInterfaceFromClass(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
 	classNode *valueobject.ParseNode,
+	allClassNodes []*valueobject.ParseNode,
 	moduleName string,
 	options outbound.SemanticExtractionOptions,
 	additionalDecorators []outbound.Annotation,
@@ -222,7 +251,7 @@ func createInterfaceFromClass(
 	content := parseTree.GetNodeText(classNode)
 
 	// Build qualified name for interface (different from classes - omits module prefix when nested)
-	qualifiedName := buildQualifiedNameForInterface(parseTree, classNode, moduleName)
+	qualifiedName := buildQualifiedNameForInterface(parseTree, classNode, allClassNodes, moduleName)
 
 	now := time.Now()
 	chunk := &outbound.SemanticCodeChunk{
@@ -693,6 +722,7 @@ func hasOnlyPassStatement(parseTree *valueobject.ParseTree, methodNode *valueobj
 func buildQualifiedNameForInterface(
 	parseTree *valueobject.ParseTree,
 	classNode *valueobject.ParseNode,
+	allClassNodes []*valueobject.ParseNode,
 	moduleName string,
 ) string {
 	if classNode == nil || parseTree == nil {
@@ -706,7 +736,7 @@ func buildQualifiedNameForInterface(
 	}
 
 	// Find parent classes
-	parentClasses := findParentClasses(parseTree, classNode)
+	parentClasses := findParentClasses(parseTree, allClassNodes, classNode)
 
 	// If nested in classes, use class hierarchy without module
 	if len(parentClasses) > 0 {

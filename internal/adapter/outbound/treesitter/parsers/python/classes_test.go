@@ -49,6 +49,7 @@ func TestPythonClassParser_ParsePythonClass_BasicClass(t *testing.T) {
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"test_module",
 		options,
 		time.Now(),
@@ -139,6 +140,7 @@ class Puppy(Dog):
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"animals",
 		options,
 		time.Now(),
@@ -150,7 +152,14 @@ class Puppy(Dog):
 	assert.Empty(t, animalResult.Dependencies) // No inheritance
 
 	// Test single inheritance (Dog)
-	dogResult := parser.ParsePythonClass(context.Background(), parseTree, classNodes[1], "animals", options, time.Now())
+	dogResult := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[1],
+		classNodes, "animals",
+		options,
+		time.Now(),
+	)
 	require.NotNil(t, dogResult)
 	assert.Equal(t, "Dog", dogResult.Name)
 	assert.Equal(t, "animals.Dog", dogResult.QualifiedName)
@@ -166,6 +175,7 @@ class Puppy(Dog):
 		context.Background(),
 		parseTree,
 		classNodes[2],
+		classNodes,
 		"animals",
 		options,
 		time.Now(),
@@ -232,7 +242,14 @@ class Duck(Flyable, Swimmable):
 	}
 
 	// Test Duck class with multiple inheritance
-	duckResult := parser.ParsePythonClass(context.Background(), parseTree, classNodes[2], "birds", options, time.Now())
+	duckResult := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[2],
+		classNodes, "birds",
+		options,
+		time.Now(),
+	)
 	require.NotNil(t, duckResult)
 
 	assert.Equal(t, "Duck", duckResult.Name)
@@ -317,6 +334,7 @@ class DecoratedClass:
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"geometry",
 		options,
 		time.Now(),
@@ -332,6 +350,7 @@ class DecoratedClass:
 		context.Background(),
 		parseTree,
 		classNodes[1],
+		classNodes,
 		"geometry",
 		options,
 		time.Now(),
@@ -348,6 +367,7 @@ class DecoratedClass:
 		context.Background(),
 		parseTree,
 		classNodes[3],
+		classNodes,
 		"geometry",
 		options,
 		time.Now(),
@@ -416,6 +436,7 @@ func TestPythonClassParser_ParsePythonClass_InnerClasses(t *testing.T) {
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"nested",
 		options,
 		time.Now(),
@@ -445,6 +466,7 @@ func TestPythonClassParser_ParsePythonClass_InnerClasses(t *testing.T) {
 		context.Background(),
 		parseTree,
 		classNodes[1],
+		classNodes,
 		"nested",
 		options,
 		time.Now(),
@@ -455,7 +477,14 @@ func TestPythonClassParser_ParsePythonClass_InnerClasses(t *testing.T) {
 	assert.Equal(t, "nested.OuterClass.InnerClass", innerResult.QualifiedName)
 
 	// Test deeply nested class
-	deepResult := parser.ParsePythonClass(context.Background(), parseTree, classNodes[2], "nested", options, time.Now())
+	deepResult := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[2],
+		classNodes, "nested",
+		options,
+		time.Now(),
+	)
 	require.NotNil(t, deepResult)
 
 	assert.Equal(t, "DeeplyNested", deepResult.Name)
@@ -504,7 +533,11 @@ func TestPythonClassParser_ParsePythonClass_ClassVariables(t *testing.T) {
 		MaxDepth:        10,
 	}
 
-	result := parser.ParsePythonClass(context.Background(), parseTree, classNodes[0], "config", options, time.Now())
+	result := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[0],
+		classNodes, "config", options, time.Now())
 	require.NotNil(t, result)
 
 	assert.Equal(t, "Config", result.Name)
@@ -581,7 +614,11 @@ func TestPythonClassParser_ParsePythonClass_Properties(t *testing.T) {
 		MaxDepth:             10,
 	}
 
-	result := parser.ParsePythonClass(context.Background(), parseTree, classNodes[0], "shapes", options, time.Now())
+	result := parser.ParsePythonClass(
+		context.Background(),
+		parseTree,
+		classNodes[0],
+		classNodes, "shapes", options, time.Now())
 	require.NotNil(t, result)
 
 	assert.Equal(t, "Circle", result.Name)
@@ -610,6 +647,7 @@ func TestPythonClassParser_ErrorHandling(t *testing.T) {
 			context.Background(),
 			nil,
 			nil,
+			nil,
 			"test",
 			outbound.SemanticExtractionOptions{},
 			time.Now(),
@@ -625,6 +663,7 @@ func TestPythonClassParser_ErrorHandling(t *testing.T) {
 		result := parser.ParsePythonClass(
 			context.Background(),
 			parseTree,
+			nil,
 			nil,
 			"test",
 			outbound.SemanticExtractionOptions{},
@@ -648,6 +687,7 @@ func TestPythonClassParser_ErrorHandling(t *testing.T) {
 				context.Background(),
 				parseTree,
 				classNodes[0],
+				classNodes,
 				"test",
 				outbound.SemanticExtractionOptions{},
 				time.Now(),
@@ -706,6 +746,7 @@ func TestPythonClassParser_PrivateVisibilityFiltering(t *testing.T) {
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"test",
 		optionsNoPrivate,
 		time.Now(),
@@ -731,6 +772,7 @@ func TestPythonClassParser_PrivateVisibilityFiltering(t *testing.T) {
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"test",
 		optionsIncludePrivate,
 		time.Now(),
@@ -791,6 +833,7 @@ func TestPythonClassParser_ClassDocstringWithEmbeddedDoubleQuotes(t *testing.T) 
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"test_module",
 		options,
 		time.Now(),
@@ -827,6 +870,7 @@ func TestPythonClassParser_ClassDocstringWithEmbeddedSingleQuote(t *testing.T) {
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"test_module",
 		options,
 		time.Now(),
@@ -862,6 +906,7 @@ func TestPythonClassParser_ClassDocstringWithMixedQuotes(t *testing.T) {
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"test_module",
 		options,
 		time.Now(),
@@ -897,6 +942,7 @@ func TestPythonClassParser_ClassDocstringWithRawString(t *testing.T) {
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"test_module",
 		options,
 		time.Now(),
@@ -940,6 +986,7 @@ func TestPythonClassParser_ClassDocstringMultilineWithQuotes(t *testing.T) {
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"test_module",
 		options,
 		time.Now(),
@@ -987,6 +1034,7 @@ func TestPythonClassParser_MethodDocstringWithEmbeddedQuotes(t *testing.T) {
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"test_module",
 		options,
 		time.Now(),
@@ -1034,6 +1082,7 @@ func TestPythonClassParser_ClassDocstringWithCodeExamples(t *testing.T) {
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"test_module",
 		options,
 		time.Now(),
@@ -1074,6 +1123,7 @@ func TestPythonClassParser_ClassDocstringWithFString(t *testing.T) {
 		context.Background(),
 		parseTree,
 		classNodes[0],
+		classNodes,
 		"test_module",
 		options,
 		time.Now(),

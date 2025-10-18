@@ -46,17 +46,11 @@ func extractPythonInterfaces(
 	decoratedClassNodes := make(map[*valueobject.ParseNode]bool)
 
 	// Process decorated interfaces first
-	decoratedInterfaces, err := processDecoratedInterfaces(ctx, parseTree, options, moduleName, decoratedClassNodes)
-	if err != nil {
-		return nil, err
-	}
+	decoratedInterfaces := processDecoratedInterfaces(ctx, parseTree, options, moduleName, decoratedClassNodes)
 	interfaces = append(interfaces, decoratedInterfaces...)
 
 	// Process standalone interfaces
-	standaloneInterfaces, err := processStandaloneInterfaces(ctx, parseTree, options, moduleName, decoratedClassNodes)
-	if err != nil {
-		return nil, err
-	}
+	standaloneInterfaces := processStandaloneInterfaces(ctx, parseTree, options, moduleName, decoratedClassNodes)
 	interfaces = append(interfaces, standaloneInterfaces...)
 
 	return interfaces, nil
@@ -69,7 +63,7 @@ func processDecoratedInterfaces(
 	options outbound.SemanticExtractionOptions,
 	moduleName string,
 	decoratedClassNodes map[*valueobject.ParseNode]bool,
-) ([]outbound.SemanticCodeChunk, error) {
+) []outbound.SemanticCodeChunk {
 	var interfaces []outbound.SemanticCodeChunk
 
 	decoratedNodes := parseTree.GetNodesByType(decoratedDefinition)
@@ -93,7 +87,7 @@ func processDecoratedInterfaces(
 		}
 	}
 
-	return interfaces, nil
+	return interfaces
 }
 
 // processStandaloneInterfaces handles extraction of interfaces that are not part of decorated definitions.
@@ -103,7 +97,7 @@ func processStandaloneInterfaces(
 	options outbound.SemanticExtractionOptions,
 	moduleName string,
 	decoratedClassNodes map[*valueobject.ParseNode]bool,
-) ([]outbound.SemanticCodeChunk, error) {
+) []outbound.SemanticCodeChunk {
 	var interfaces []outbound.SemanticCodeChunk
 
 	classNodes := parseTree.GetNodesByType(classDefinition)
@@ -125,7 +119,7 @@ func processStandaloneInterfaces(
 		}
 	}
 
-	return interfaces, nil
+	return interfaces
 }
 
 // createInterfaceFromClass creates a SemanticCodeChunk representing an interface from a class node.
@@ -163,7 +157,9 @@ func createInterfaceFromClass(
 	classAnnotations := extractClassDecorators(parseTree, classNode)
 
 	// Combine class decorators with additional decorators
-	allAnnotations := append(additionalDecorators, classAnnotations...)
+	allAnnotations := make([]outbound.Annotation, 0, len(additionalDecorators)+len(classAnnotations))
+	allAnnotations = append(allAnnotations, additionalDecorators...)
+	allAnnotations = append(allAnnotations, classAnnotations...)
 
 	// Extract interface methods (abstract methods)
 	var childChunks []outbound.SemanticCodeChunk
@@ -174,12 +170,15 @@ func createInterfaceFromClass(
 	// Get class content
 	content := parseTree.GetNodeText(classNode)
 
+	// Build qualified name (same logic as classes - handles nested interfaces)
+	qualifiedName := buildQualifiedNameForClass(parseTree, classNode, moduleName)
+
 	now := time.Now()
 	chunk := &outbound.SemanticCodeChunk{
 		ChunkID:       utils.GenerateID("interface", className, nil),
 		Type:          outbound.ConstructInterface,
 		Name:          className,
-		QualifiedName: qualifyName(moduleName, className),
+		QualifiedName: qualifiedName,
 		Language:      parseTree.Language(),
 		StartByte:     classNode.StartByte,
 		EndByte:       classNode.EndByte,
@@ -246,7 +245,52 @@ func isInterfaceClass(parseTree *valueobject.ParseTree, classNode *valueobject.P
 	return false
 }
 
+// extractBaseClassName extracts the base class name from an inheritance expression node.
+// Handles different AST node types:
+//   - identifier: "Protocol" -> "Protocol"
+//   - subscript: "Protocol[T, U]" -> "Protocol"
+//   - attribute: "typing.Protocol" -> "Protocol"
+func extractBaseClassName(parseTree *valueobject.ParseTree, exprNode *valueobject.ParseNode) string {
+	if exprNode == nil {
+		return ""
+	}
+
+	switch exprNode.Type {
+	case identifier:
+		// Simple case: class Foo(Protocol)
+		return parseTree.GetNodeText(exprNode)
+
+	case "subscript":
+		// Generic case: class Foo(Protocol[T, U])
+		// The base class name is in the 'value' child (first child that's an identifier)
+		for _, child := range exprNode.Children {
+			if child.Type == identifier {
+				return parseTree.GetNodeText(child)
+			}
+		}
+		return ""
+
+	case "attribute":
+		// Qualified case: class Foo(typing.Protocol)
+		// Extract the rightmost identifier (e.g., "Protocol" from "typing.Protocol")
+		text := parseTree.GetNodeText(exprNode)
+		parts := strings.Split(text, ".")
+		if len(parts) > 0 {
+			return parts[len(parts)-1]
+		}
+		return text
+
+	default:
+		// For any other node type, return empty string (e.g., punctuation like commas)
+		return ""
+	}
+}
+
 // inheritsFromProtocol checks if class inherits from typing.Protocol.
+// Handles multiple inheritance patterns:
+//   - Simple: class Foo(Protocol)
+//   - Generic: class Foo(Protocol[T, U])
+//   - Qualified: class Foo(typing.Protocol)
 func inheritsFromProtocol(parseTree *valueobject.ParseTree, classNode *valueobject.ParseNode) bool {
 	// Find argument list (base classes)
 	argListNode := findChildByType(classNode, argumentList)
@@ -254,13 +298,11 @@ func inheritsFromProtocol(parseTree *valueobject.ParseTree, classNode *valueobje
 		return false
 	}
 
-	// Check if any base class is "Protocol"
+	// Check if any base class is "Protocol" (in any form)
 	for _, child := range argListNode.Children {
-		if child.Type == identifier {
-			baseName := parseTree.GetNodeText(child)
-			if baseName == protocolClassType {
-				return true
-			}
+		baseName := extractBaseClassName(parseTree, child)
+		if baseName == protocolClassType {
+			return true
 		}
 	}
 
@@ -268,6 +310,9 @@ func inheritsFromProtocol(parseTree *valueobject.ParseTree, classNode *valueobje
 }
 
 // inheritsFromABC checks if class inherits from abc.ABC.
+// Handles multiple inheritance patterns:
+//   - Simple: class Foo(ABC)
+//   - Qualified: class Foo(abc.ABC)
 func inheritsFromABC(parseTree *valueobject.ParseTree, classNode *valueobject.ParseNode) bool {
 	// Find argument list (base classes)
 	argListNode := findChildByType(classNode, argumentList)
@@ -275,13 +320,11 @@ func inheritsFromABC(parseTree *valueobject.ParseTree, classNode *valueobject.Pa
 		return false
 	}
 
-	// Check if any base class is "ABC"
+	// Check if any base class is "ABC" (in any form)
 	for _, child := range argListNode.Children {
-		if child.Type == identifier {
-			baseName := parseTree.GetNodeText(child)
-			if baseName == abcClassType {
-				return true
-			}
+		baseName := extractBaseClassName(parseTree, child)
+		if baseName == abcClassType {
+			return true
 		}
 	}
 
@@ -289,6 +332,7 @@ func inheritsFromABC(parseTree *valueobject.ParseTree, classNode *valueobject.Pa
 }
 
 // hasAbstractMethods checks if class has abstract methods (decorated with @abstractmethod).
+// Handles both plain functions and decorated functions.
 func hasAbstractMethods(parseTree *valueobject.ParseTree, classNode *valueobject.ParseNode) bool {
 	// Find the class body
 	bodyNode := findChildByType(classNode, block)
@@ -296,11 +340,23 @@ func hasAbstractMethods(parseTree *valueobject.ParseTree, classNode *valueobject
 		return false
 	}
 
-	// Look for function definitions with @abstractmethod decorator
+	// Check plain function definitions with @abstractmethod decorator
 	functionNodes := findChildrenByType(bodyNode, functionDefinition)
 	for _, funcNode := range functionNodes {
 		if hasAbstractMethodDecorator(parseTree, funcNode) {
 			return true
+		}
+	}
+
+	// Check decorated definitions for @abstractmethod
+	decoratedNodes := findChildrenByType(bodyNode, decoratedDefinition)
+	for _, decoratedNode := range decoratedNodes {
+		// Check if the decorated_definition has @abstractmethod decorator
+		decorators := extractDecoratorsFromDecoratedDefinition(parseTree, decoratedNode)
+		for _, decorator := range decorators {
+			if decorator.Name == abstractmethodType {
+				return true
+			}
 		}
 	}
 
@@ -322,6 +378,8 @@ func hasAbstractMethodDecorator(parseTree *valueobject.ParseTree, funcNode *valu
 }
 
 // extractInterfaceMethods extracts methods from an interface/protocol class.
+// This function handles both plain function definitions and decorated function definitions
+// (such as methods with @abstractmethod, @property, @staticmethod, etc.)
 func extractInterfaceMethods(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
@@ -341,16 +399,68 @@ func extractInterfaceMethods(
 	childOptions := options
 	childOptions.MaxDepth = options.MaxDepth - 1
 
-	// Extract function definitions within the interface
+	// Get decorated definitions for filtering
+	decoratedNodes := findChildrenByType(bodyNode, decoratedDefinition)
+
+	// Extract plain function definitions (not inside decorated_definition)
 	functionNodes := findChildrenByType(bodyNode, functionDefinition)
 	for _, node := range functionNodes {
+		// Skip if this function is inside a decorated definition
+		if isNodeInDecoratedDefinition(node, decoratedNodes) {
+			continue
+		}
 		method := parseInterfaceMethod(ctx, parseTree, node, className, moduleName, childOptions)
 		if method != nil && shouldIncludeByVisibility(method.Visibility, options.IncludePrivate) {
 			methods = append(methods, *method)
 		}
 	}
 
+	// Process decorated function definitions
+	for _, decoratedNode := range decoratedNodes {
+		method := extractDecoratedInterfaceMethod(ctx, parseTree, decoratedNode, className, moduleName, childOptions)
+		if method != nil && shouldIncludeByVisibility(method.Visibility, options.IncludePrivate) {
+			methods = append(methods, *method)
+		}
+	}
+
 	return methods
+}
+
+// extractDecoratedInterfaceMethod extracts a decorated method from a decorated_definition node.
+func extractDecoratedInterfaceMethod(
+	ctx context.Context,
+	parseTree *valueobject.ParseTree,
+	decoratedNode *valueobject.ParseNode,
+	className, moduleName string,
+	options outbound.SemanticExtractionOptions,
+) *outbound.SemanticCodeChunk {
+	// Look for function definition within decorated_definition
+	functionNode := findChildByType(decoratedNode, functionDefinition)
+	if functionNode == nil {
+		return nil
+	}
+
+	// Extract decorators from the decorated_definition
+	decorators := extractDecoratorsFromDecoratedDefinition(parseTree, decoratedNode)
+
+	// Parse the method
+	method := parseInterfaceMethod(ctx, parseTree, functionNode, className, moduleName, options)
+	if method == nil {
+		return nil
+	}
+
+	// Merge decorators from decorated_definition
+	method.Annotations = append(decorators, method.Annotations...)
+
+	// Check if method is abstract based on decorators
+	for _, ann := range method.Annotations {
+		if ann.Name == abstractmethodType {
+			method.IsAbstract = true
+			break
+		}
+	}
+
+	return method
 }
 
 // parseInterfaceMethod parses a method within an interface/protocol.

@@ -276,6 +276,11 @@ func extractClassDocstring(parseTree *valueobject.ParseTree, node *valueobject.P
 }
 
 // extractInheritanceDependencies extracts inheritance information from class definition.
+// Handles multiple inheritance patterns:
+//   - Simple: class Foo(Bar) -> "Bar"
+//   - Generic: class Foo(Protocol[T, U]) -> "Protocol[T, U]"
+//   - Qualified: class Foo(typing.Protocol) -> "typing.Protocol"
+//   - Multiple: class Foo(ABC, Protocol) -> ["ABC", "Protocol"]
 func extractInheritanceDependencies(
 	parseTree *valueobject.ParseTree,
 	node *valueobject.ParseNode,
@@ -288,12 +293,28 @@ func extractInheritanceDependencies(
 		return dependencies
 	}
 
-	// Extract base class names
+	// Extract base class names - handle all node types
 	for _, child := range argListNode.Children {
-		if child.Type == nodeTypeIdentifier {
-			baseName := parseTree.GetNodeText(child)
+		var depName string
+
+		switch child.Type {
+		case nodeTypeIdentifier:
+			// Simple case: class Foo(Bar)
+			depName = parseTree.GetNodeText(child)
+
+		case "subscript", "attribute":
+			// Generic or qualified case: Protocol[T, U] or typing.Protocol
+			// Get full text including generics or module path
+			depName = parseTree.GetNodeText(child)
+
+		default:
+			// Skip punctuation and other non-dependency nodes
+			continue
+		}
+
+		if depName != "" {
 			dependencies = append(dependencies, outbound.DependencyReference{
-				Name: baseName,
+				Name: depName,
 				Type: "inheritance",
 			})
 		}

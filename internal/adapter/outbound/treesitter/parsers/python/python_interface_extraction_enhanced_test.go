@@ -11,6 +11,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// NOTE: Interface extraction tests that verify child method extraction MUST set MaxDepth > 0
+// in SemanticExtractionOptions. When MaxDepth = 0 (default), child chunks are not extracted
+// (see interfaces.go:166-168). For interface tests expecting method extraction, use MaxDepth: 2
+// or higher to enable extraction of methods (depth 1) within interfaces (depth 0).
+//
+// Background: In Python's tree-sitter AST, methods with decorators (like @abstractmethod) are
+// wrapped in decorated_definition nodes. The function_definition is NOT a direct child of the
+// class body block, but is nested inside the decorated_definition. The extraction logic in
+// interfaces.go correctly handles this by processing decorated_definition nodes separately.
+
 // findMethodByName finds a method chunk by name within child chunks.
 func findMethodByName(chunks []outbound.SemanticCodeChunk, name string) *outbound.SemanticCodeChunk {
 	for i, chunk := range chunks {
@@ -19,6 +29,26 @@ func findMethodByName(chunks []outbound.SemanticCodeChunk, name string) *outboun
 		}
 	}
 	return nil
+}
+
+// hasAnnotation checks if an annotation with the given name exists in the annotations slice.
+func hasAnnotation(annotations []outbound.Annotation, name string) bool {
+	for _, ann := range annotations {
+		if ann.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// hasDependency checks if a dependency with the given name exists in the dependencies slice.
+func hasDependency(dependencies []outbound.DependencyReference, name string) bool {
+	for _, dep := range dependencies {
+		if dep.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func TestPythonParser_ExtractInterfaces_Enhanced(t *testing.T) {
@@ -51,6 +81,7 @@ class Serializable(ABC):
 	options := outbound.SemanticExtractionOptions{
 		IncludeDocumentation: true,
 		IncludeTypeInfo:      true,
+		MaxDepth:             2, // Required to extract child methods from interfaces
 	}
 
 	interfaces, err := parser.ExtractInterfaces(context.Background(), parseTree, options)
@@ -70,7 +101,7 @@ class Serializable(ABC):
 		if drawMethod != nil {
 			assert.Equal(t, "draw", drawMethod.Name, "Method name should match")
 			assert.Equal(t, "None", drawMethod.ReturnType, "Return type should match")
-			assert.Contains(t, drawMethod.Annotations, "abstractmethod", "Method should be abstract")
+			assert.True(t, hasAnnotation(drawMethod.Annotations, "abstractmethod"), "Method should be abstract")
 		}
 	}
 
@@ -80,7 +111,7 @@ class Serializable(ABC):
 		assert.Equal(t, "Shape", shape.Name, "Interface name should match")
 		assert.Equal(t, outbound.ConstructInterface, shape.Type, "Interface should be of interface type")
 		assert.Len(t, shape.Dependencies, 1, "Should have exactly one dependency")
-		assert.Equal(t, "Drawable", shape.Dependencies[0], "Dependency should match")
+		assert.True(t, hasDependency(shape.Dependencies, "Drawable"), "Dependency should match")
 		children := shape.ChildChunks
 		require.Len(t, children, 2, "Should have exactly two methods")
 
@@ -89,7 +120,7 @@ class Serializable(ABC):
 		if areaMethod != nil {
 			assert.Equal(t, "area", areaMethod.Name, "Method name should match")
 			assert.Equal(t, "float", areaMethod.ReturnType, "Return type should match")
-			assert.Contains(t, areaMethod.Annotations, "abstractmethod", "Method should be abstract")
+			assert.True(t, hasAnnotation(areaMethod.Annotations, "abstractmethod"), "Method should be abstract")
 		}
 
 		perimeterMethod := findMethodByName(children, "perimeter")
@@ -97,7 +128,7 @@ class Serializable(ABC):
 		if perimeterMethod != nil {
 			assert.Equal(t, "perimeter", perimeterMethod.Name, "Method name should match")
 			assert.Equal(t, "float", perimeterMethod.ReturnType, "Return type should match")
-			assert.Contains(t, perimeterMethod.Annotations, "abstractmethod", "Method should be abstract")
+			assert.True(t, hasAnnotation(perimeterMethod.Annotations, "abstractmethod"), "Method should be abstract")
 		}
 	}
 
@@ -113,7 +144,7 @@ class Serializable(ABC):
 		if serializeMethod != nil {
 			assert.Equal(t, "serialize", serializeMethod.Name, "Method name should match")
 			assert.Equal(t, "str", serializeMethod.ReturnType, "Return type should match")
-			assert.Contains(t, serializeMethod.Annotations, "abstractmethod", "Method should be abstract")
+			assert.True(t, hasAnnotation(serializeMethod.Annotations, "abstractmethod"), "Method should be abstract")
 		}
 	}
 }
@@ -143,6 +174,7 @@ class ABCProtocol(ABC, Protocol):
 	options := outbound.SemanticExtractionOptions{
 		IncludeDocumentation: true,
 		IncludeTypeInfo:      true,
+		MaxDepth:             2, // Required to extract child methods from interfaces
 	}
 
 	interfaces, err := parser.ExtractInterfaces(context.Background(), parseTree, options)
@@ -155,8 +187,8 @@ class ABCProtocol(ABC, Protocol):
 	if iface1 != nil {
 		assert.Equal(t, outbound.ConstructInterface, iface1.Type, "Should be interface type")
 		require.Len(t, iface1.Dependencies, 2, "Should have two dependencies")
-		assert.Contains(t, iface1.Dependencies, "Protocol", "Should inherit from Protocol")
-		assert.Contains(t, iface1.Dependencies, "SomeBaseClass", "Should inherit from SomeBaseClass")
+		assert.True(t, hasDependency(iface1.Dependencies, "Protocol"), "Should inherit from Protocol")
+		assert.True(t, hasDependency(iface1.Dependencies, "SomeBaseClass"), "Should inherit from SomeBaseClass")
 		children := iface1.ChildChunks
 		require.Len(t, children, 1, "Should have one method")
 	}
@@ -166,9 +198,9 @@ class ABCProtocol(ABC, Protocol):
 	if iface2 != nil {
 		assert.Equal(t, outbound.ConstructInterface, iface2.Type, "Should be interface type")
 		require.Len(t, iface2.Dependencies, 3, "Should have three dependencies")
-		assert.Contains(t, iface2.Dependencies, "SomeBase", "Should inherit from SomeBase")
-		assert.Contains(t, iface2.Dependencies, "Protocol", "Should inherit from Protocol")
-		assert.Contains(t, iface2.Dependencies, "ThirdBase", "Should inherit from ThirdBase")
+		assert.True(t, hasDependency(iface2.Dependencies, "SomeBase"), "Should inherit from SomeBase")
+		assert.True(t, hasDependency(iface2.Dependencies, "Protocol"), "Should inherit from Protocol")
+		assert.True(t, hasDependency(iface2.Dependencies, "ThirdBase"), "Should inherit from ThirdBase")
 		children := iface2.ChildChunks
 		require.Len(t, children, 1, "Should have one method")
 	}
@@ -178,8 +210,8 @@ class ABCProtocol(ABC, Protocol):
 	if iface3 != nil {
 		assert.Equal(t, outbound.ConstructInterface, iface3.Type, "Should be identified as interface")
 		require.Len(t, iface3.Dependencies, 2, "Should have two dependencies")
-		assert.Contains(t, iface3.Dependencies, "ABC", "Should inherit from ABC")
-		assert.Contains(t, iface3.Dependencies, "Protocol", "Should inherit from Protocol")
+		assert.True(t, hasDependency(iface3.Dependencies, "ABC"), "Should inherit from ABC")
+		assert.True(t, hasDependency(iface3.Dependencies, "Protocol"), "Should inherit from Protocol")
 		children := iface3.ChildChunks
 		require.Len(t, children, 1, "Should have one method")
 	}
@@ -212,6 +244,7 @@ class AnotherMixed(BaseClass, ABC, Protocol):
 	options := outbound.SemanticExtractionOptions{
 		IncludeDocumentation: true,
 		IncludeTypeInfo:      true,
+		MaxDepth:             2, // Required to extract child methods from interfaces
 	}
 
 	interfaces, err := parser.ExtractInterfaces(context.Background(), parseTree, options)
@@ -234,16 +267,19 @@ class AnotherMixed(BaseClass, ABC, Protocol):
 		abstractMethod := findMethodByName(children, "method1")
 		assert.NotNil(t, abstractMethod, "Should find abstract method1")
 		if abstractMethod != nil {
-			assert.Contains(t, abstractMethod.Annotations, "abstractmethod", "method1 should be marked as abstract")
+			assert.True(
+				t,
+				hasAnnotation(abstractMethod.Annotations, "abstractmethod"),
+				"method1 should be marked as abstract",
+			)
 		}
 
 		concreteMethod := findMethodByName(children, "concrete_method")
 		assert.NotNil(t, concreteMethod, "Should find concrete_method")
 		if concreteMethod != nil {
-			assert.NotContains(
+			assert.False(
 				t,
-				concreteMethod.Annotations,
-				"abstractmethod",
+				hasAnnotation(concreteMethod.Annotations, "abstractmethod"),
 				"concrete_method should not be abstract",
 			)
 		}
@@ -257,10 +293,9 @@ class AnotherMixed(BaseClass, ABC, Protocol):
 		abstractMethod := findMethodByName(children, "abstract_method")
 		assert.NotNil(t, abstractMethod, "Should find abstract_method")
 		if abstractMethod != nil {
-			assert.Contains(
+			assert.True(
 				t,
-				abstractMethod.Annotations,
-				"abstractmethod",
+				hasAnnotation(abstractMethod.Annotations, "abstractmethod"),
 				"abstract_method should be marked as abstract",
 			)
 		}
@@ -302,6 +337,7 @@ class DecoratedProtocol(Protocol):
 	options := outbound.SemanticExtractionOptions{
 		IncludeDocumentation: true,
 		IncludeTypeInfo:      true,
+		MaxDepth:             2, // Required to extract child methods from interfaces
 	}
 
 	interfaces, err := parser.ExtractInterfaces(context.Background(), parseTree, options)
@@ -310,35 +346,39 @@ class DecoratedProtocol(Protocol):
 	require.Len(t, interfaces, 1, "Should find one interface")
 	iface := interfaces[0]
 	assert.Equal(t, "DecoratedProtocol", iface.Name, "Interface name should match")
-	assert.Contains(t, iface.Annotations, "runtime_checkable", "Interface should be runtime checkable")
+	assert.True(t, hasAnnotation(iface.Annotations, "runtime_checkable"), "Interface should be runtime checkable")
 	children := iface.ChildChunks
 	require.Len(t, children, 4, "Should have four methods")
 
 	prop := findMethodByName(children, "readonly_prop")
 	assert.NotNil(t, prop, "Should find readonly_prop")
 	if prop != nil {
-		assert.Contains(t, prop.Annotations, "abstractmethod", "readonly_prop should be abstract")
+		assert.True(t, hasAnnotation(prop.Annotations, "abstractmethod"), "readonly_prop should be abstract")
 		assert.Equal(t, "str", prop.ReturnType, "Return type should match")
 	}
 
 	staticMethod := findMethodByName(children, "static_method")
 	assert.NotNil(t, staticMethod, "Should find static_method")
 	if staticMethod != nil {
-		assert.Contains(t, staticMethod.Annotations, "abstractmethod", "static_method should be abstract")
-		assert.Contains(t, staticMethod.Annotations, "staticmethod", "static_method should be static")
+		assert.True(t, hasAnnotation(staticMethod.Annotations, "abstractmethod"), "static_method should be abstract")
+		assert.True(t, hasAnnotation(staticMethod.Annotations, "staticmethod"), "static_method should be static")
 	}
 
 	classMethod := findMethodByName(children, "class_method")
 	assert.NotNil(t, classMethod, "Should find class_method")
 	if classMethod != nil {
-		assert.Contains(t, classMethod.Annotations, "abstractmethod", "class_method should be abstract")
-		assert.Contains(t, classMethod.Annotations, "classmethod", "class_method should be class method")
+		assert.True(t, hasAnnotation(classMethod.Annotations, "abstractmethod"), "class_method should be abstract")
+		assert.True(t, hasAnnotation(classMethod.Annotations, "classmethod"), "class_method should be class method")
 	}
 
 	customMethod := findMethodByName(children, "custom_decorated_method")
 	assert.NotNil(t, customMethod, "Should find custom_decorated_method")
 	if customMethod != nil {
-		assert.Contains(t, customMethod.Annotations, "abstractmethod", "custom_decorated_method should be abstract")
+		assert.True(
+			t,
+			hasAnnotation(customMethod.Annotations, "abstractmethod"),
+			"custom_decorated_method should be abstract",
+		)
 	}
 }
 
@@ -369,6 +409,7 @@ def outer_function():
 	options := outbound.SemanticExtractionOptions{
 		IncludeDocumentation: true,
 		IncludeTypeInfo:      true,
+		MaxDepth:             2, // Required to extract child methods from interfaces
 	}
 
 	interfaces, err := parser.ExtractInterfaces(context.Background(), parseTree, options)
@@ -446,6 +487,7 @@ class ProtocolWithDocstring(Protocol):
 	options := outbound.SemanticExtractionOptions{
 		IncludeDocumentation: true,
 		IncludeTypeInfo:      true,
+		MaxDepth:             2, // Required to extract child methods from interfaces
 	}
 
 	interfaces, err := parser.ExtractInterfaces(context.Background(), parseTree, options)

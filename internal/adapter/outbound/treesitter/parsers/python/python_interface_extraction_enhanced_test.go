@@ -487,7 +487,8 @@ class ProtocolWithDocstring(Protocol):
 	options := outbound.SemanticExtractionOptions{
 		IncludeDocumentation: true,
 		IncludeTypeInfo:      true,
-		MaxDepth:             2, // Required to extract child methods from interfaces
+		IncludePrivate:       true, // Required to extract _PrivateProtocol
+		MaxDepth:             2,    // Required to extract child methods from interfaces
 	}
 
 	interfaces, err := parser.ExtractInterfaces(context.Background(), parseTree, options)
@@ -498,7 +499,7 @@ class ProtocolWithDocstring(Protocol):
 	runtime := testhelpers.FindChunkByName(interfaces, "RuntimeProtocol")
 	assert.NotNil(t, runtime, "Should find RuntimeProtocol")
 	if runtime != nil {
-		assert.Contains(t, runtime.Annotations, "runtime_checkable", "Should be marked as runtime_checkable")
+		assert.True(t, hasAnnotation(runtime.Annotations, "runtime_checkable"), "Should be marked as runtime_checkable")
 		children := runtime.ChildChunks
 		concreteMethod := findMethodByName(children, "concrete_method")
 		assert.NotNil(t, concreteMethod, "Should find concrete_method")
@@ -524,7 +525,7 @@ class ProtocolWithDocstring(Protocol):
 	assert.NotNil(t, generic, "Should find GenericProtocol")
 	if generic != nil {
 		// The base class information would be in Dependencies
-		assert.Contains(t, generic.Dependencies, "Protocol[T, U]", "Should preserve generic type parameters")
+		assert.True(t, hasDependency(generic.Dependencies, "Protocol[T, U]"), "Should preserve generic type parameters")
 	}
 
 	empty1 := testhelpers.FindChunkByName(interfaces, "EmptyProtocol")

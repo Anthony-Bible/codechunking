@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	forest "github.com/alexaandru/go-sitter-forest"
+	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -936,27 +938,105 @@ func TestPythonParser_ErrorHandling_ResourceCleanup(t *testing.T) {
 	}
 }
 
-// Helper function to create a mock Python parse tree for testing.
+// Helper function to create a Python parse tree using actual tree-sitter parsing.
 func createMockPythonParseTree(t *testing.T, source string) *valueobject.ParseTree {
+	t.Helper()
 	ctx := context.Background()
 
+	// Get Python grammar from forest (using go-sitter-forest)
+	grammar := forest.GetLanguage("python")
+	require.NotNil(t, grammar, "Failed to get Python grammar from forest")
+
+	// Create tree-sitter parser
+	parser := tree_sitter.NewParser()
+	require.NotNil(t, parser, "Failed to create tree-sitter parser")
+
+	success := parser.SetLanguage(grammar)
+	require.True(t, success, "Failed to set Python language")
+
+	// Parse the source code with tree-sitter (will create ERROR nodes for syntax errors)
+	tree, err := parser.ParseString(ctx, nil, []byte(source))
+	require.NoError(t, err, "Failed to parse Python source")
+	require.NotNil(t, tree, "Parse tree should not be nil")
+	defer tree.Close()
+
+	// Convert tree-sitter tree to domain ParseNode
+	rootTSNode := tree.RootNode()
+	rootNode, nodeCount, maxDepth := convertTreeSitterNodeForErrorTest(rootTSNode, 0)
+
+	// Create metadata with parsing statistics
+	metadata, err := valueobject.NewParseMetadata(
+		time.Millisecond, // placeholder duration
+		"go-tree-sitter-bare",
+		"1.0.0",
+	)
+	require.NoError(t, err, "Failed to create metadata")
+
+	// Update metadata with actual counts
+	metadata.NodeCount = nodeCount
+	metadata.MaxDepth = maxDepth
+
+	// Create Python language
 	pythonLang, err := valueobject.NewLanguage(valueobject.LanguagePython)
 	require.NoError(t, err)
 
-	rootNode := &valueobject.ParseNode{
-		Type:      "module",
-		StartByte: 0,
-		EndByte:   uint32(len(source)),
-		Children:  []*valueobject.ParseNode{},
+	// Create domain parse tree
+	domainParseTree, err := valueobject.NewParseTree(
+		ctx,
+		pythonLang,
+		rootNode,
+		[]byte(source),
+		metadata,
+	)
+	require.NoError(t, err, "Failed to create domain parse tree")
+
+	return domainParseTree
+}
+
+// convertTreeSitterNodeForErrorTest converts a tree-sitter node to domain ParseNode recursively.
+func convertTreeSitterNodeForErrorTest(node tree_sitter.Node, depth int) (*valueobject.ParseNode, int, int) {
+	if node.IsNull() {
+		return nil, 0, depth
 	}
 
-	metadata, err := valueobject.NewParseMetadata(0, "0.0.0", "0.0.0")
-	require.NoError(t, err)
+	// Convert tree-sitter node to domain ParseNode
+	parseNode := &valueobject.ParseNode{
+		Type:      node.Type(),
+		StartByte: valueobject.ClampToUint32(int(node.StartByte())),
+		EndByte:   valueobject.ClampToUint32(int(node.EndByte())),
+		StartPos: valueobject.Position{
+			Row:    valueobject.ClampToUint32(int(node.StartPoint().Row)),
+			Column: valueobject.ClampToUint32(int(node.StartPoint().Column)),
+		},
+		EndPos: valueobject.Position{
+			Row:    valueobject.ClampToUint32(int(node.EndPoint().Row)),
+			Column: valueobject.ClampToUint32(int(node.EndPoint().Column)),
+		},
+		Children: make([]*valueobject.ParseNode, 0),
+	}
 
-	parseTree, err := valueobject.NewParseTree(ctx, pythonLang, rootNode, []byte(source), metadata)
-	require.NoError(t, err)
+	nodeCount := 1
+	maxDepth := depth
 
-	return parseTree
+	// Convert children recursively
+	childCount := node.ChildCount()
+	for i := range childCount {
+		childNode := node.Child(i)
+		if childNode.IsNull() {
+			continue
+		}
+
+		child, childNodeCount, childMaxDepth := convertTreeSitterNodeForErrorTest(childNode, depth+1)
+		if child != nil {
+			parseNode.Children = append(parseNode.Children, child)
+			nodeCount += childNodeCount
+			if childMaxDepth > maxDepth {
+				maxDepth = childMaxDepth
+			}
+		}
+	}
+
+	return parseNode, nodeCount, maxDepth
 }
 
 // Helper function to generate deeply nested Python code for testing.

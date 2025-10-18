@@ -85,21 +85,10 @@ func (v *PythonValidator) ValidateLanguageFeatures(source string) *ParserError {
 
 // validateFunctionSyntax validates Python function syntax.
 func (v *PythonValidator) validateFunctionSyntax(source string) *ParserError {
-	// Check for malformed function definitions
-	malformedDefPattern := regexp.MustCompile(`def\s+[^(]*\(\s*[^)]*$`)
-	if malformedDefPattern.MatchString(source) {
-		return NewSyntaxError("invalid function definition: malformed parameter list").
-			WithSuggestion("Ensure function parameters are properly closed with ')'")
-	}
+	// Most syntax validation is now handled by tree-sitter AST analysis
+	// This function is kept for non-structural validations only
 
-	// Check for missing colon after function definition
-	missingColonPattern := regexp.MustCompile(`def\s+\w+\([^)]*\)\s*$`)
-	if missingColonPattern.MatchString(source) {
-		return NewSyntaxError("invalid function definition: missing colon").
-			WithSuggestion("Add ':' at the end of function definition")
-	}
-
-	// Check for async function syntax
+	// Check for async function syntax (semantic check, not structural)
 	if strings.Contains(source, "async def") && !strings.Contains(source, "await") {
 		return NewSyntaxError("async function without await usage").
 			WithSeverity(ErrorSeverityLow).
@@ -111,14 +100,10 @@ func (v *PythonValidator) validateFunctionSyntax(source string) *ParserError {
 
 // validateClassSyntax validates Python class syntax.
 func (v *PythonValidator) validateClassSyntax(source string) *ParserError {
-	// Check for incomplete class definitions
-	missingColonPattern := regexp.MustCompile(`class\s+\w+\s*$`)
-	if missingColonPattern.MatchString(source) {
-		return NewSyntaxError("invalid class definition: missing colon").
-			WithSuggestion("Add ':' at the end of class definition")
-	}
+	// Most syntax validation is now handled by tree-sitter AST analysis
+	// This function is kept for semantic validations only
 
-	// Check for malformed inheritance syntax
+	// Check for malformed inheritance syntax (semantic check)
 	if strings.Contains(source, "class") && strings.Contains(source, "(") {
 		malformedInheritancePattern := regexp.MustCompile(`class\s+\w+\(\s*\)`)
 		if malformedInheritancePattern.MatchString(source) {
@@ -214,7 +199,7 @@ func (v *PythonValidator) validateIndentation(source string) *ParserError {
 				prevLine = strings.TrimSpace(lines[i-1])
 			}
 			if strings.HasSuffix(prevLine, ":") && leadingSpaces == 0 {
-				return NewSyntaxError("invalid indentation: expected indented block").
+				return NewSyntaxError("indentation error: expected indented block").
 					WithLocation(i+1, 0).
 					WithSuggestion("Indent the line after a colon")
 			}

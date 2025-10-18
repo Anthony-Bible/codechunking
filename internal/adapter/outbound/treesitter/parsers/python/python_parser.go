@@ -64,30 +64,26 @@ func (o *ObservablePythonParser) Parse(ctx context.Context, source []byte) (*tre
 		return nil, err
 	}
 
-	// Create a minimal rootNode
-	rootNode := &valueobject.ParseNode{
-		Type:      "module",
-		StartByte: 0,
-		EndByte:   valueobject.ClampToUint32(len(source)),
-		StartPos:  valueobject.Position{Row: 0, Column: 0},
-		EndPos:    valueobject.Position{Row: 0, Column: valueobject.ClampToUint32(len(source))},
-		Children:  nil,
-	}
+	var domainTree *valueobject.ParseTree
+	var err error
 
-	// Create minimal metadata
-	metadata, err := valueobject.NewParseMetadata(
-		time.Since(start),
-		"0.0.0", // treeSitterVersion
-		"0.0.0", // grammarVersion
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create parse metadata: %w", err)
-	}
-
-	// Create a minimal parse tree
-	domainTree, err := valueobject.NewParseTree(ctx, o.parser.supportedLanguage, rootNode, source, metadata)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create domain parse tree: %w", err)
+	// Check if chunking is needed for large files
+	if shouldUseChunking(source) {
+		slogger.Info(ctx, "Using chunked parsing for large Python file", slogger.Fields{
+			"source_size_bytes": len(source),
+			"threshold":         MaxFileSizeBeforeChunking,
+		})
+		domainTree, err = o.parseWithChunking(ctx, source)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse with chunking: %w", err)
+		}
+	} else {
+		// Normal parsing for small files - create minimal parse tree
+		// (Real tree-sitter integration would go here in future)
+		domainTree, err = o.parseMinimal(ctx, source, time.Since(start))
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse: %w", err)
+		}
 	}
 
 	// Convert to port tree
@@ -103,6 +99,90 @@ func (o *ObservablePythonParser) Parse(ctx context.Context, source []byte) (*tre
 		ParseTree: portTree,
 		Duration:  duration,
 	}, nil
+}
+
+// parseMinimal creates a minimal parse tree without full tree-sitter parsing.
+// This is used for small files or as a fallback.
+func (o *ObservablePythonParser) parseMinimal(
+	ctx context.Context,
+	source []byte,
+	duration time.Duration,
+) (*valueobject.ParseTree, error) {
+	// Create a minimal rootNode
+	rootNode := &valueobject.ParseNode{
+		Type:      "module",
+		StartByte: 0,
+		EndByte:   valueobject.ClampToUint32(len(source)),
+		StartPos:  valueobject.Position{Row: 0, Column: 0},
+		EndPos:    valueobject.Position{Row: 0, Column: valueobject.ClampToUint32(len(source))},
+		Children:  nil,
+	}
+
+	// Create minimal metadata
+	metadata, err := valueobject.NewParseMetadata(
+		duration,
+		"0.0.0", // treeSitterVersion
+		"0.0.0", // grammarVersion
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create parse metadata: %w", err)
+	}
+
+	// Create a minimal parse tree
+	domainTree, err := valueobject.NewParseTree(ctx, o.parser.supportedLanguage, rootNode, source, metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create domain parse tree: %w", err)
+	}
+
+	return domainTree, nil
+}
+
+// parseWithChunking parses large Python files using chunking to avoid tree-sitter buffer overflow.
+func (o *ObservablePythonParser) parseWithChunking(
+	ctx context.Context,
+	source []byte,
+) (*valueobject.ParseTree, error) {
+	// Split source into chunks
+	chunks, err := ChunkSourceByTopLevelDefinitions(ctx, source, DefaultChunkSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to chunk source: %w", err)
+	}
+
+	slogger.Info(ctx, "Source chunked for parsing", slogger.Fields{
+		"chunk_count": len(chunks),
+		"chunk_size":  DefaultChunkSize,
+	})
+
+	// Parse each chunk into a parse tree
+	parseTrees := make([]*valueobject.ParseTree, 0, len(chunks))
+	for i, chunk := range chunks {
+		// Check for context cancellation
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("context cancelled while parsing chunk %d/%d: %w", i+1, len(chunks), ctx.Err())
+		}
+
+		// Parse this chunk (using minimal parsing for now)
+		chunkTree, err := o.parseMinimal(ctx, chunk, time.Millisecond)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse chunk %d/%d: %w", i+1, len(chunks), err)
+		}
+
+		parseTrees = append(parseTrees, chunkTree)
+	}
+
+	// Merge all chunk parse trees into a single tree
+	mergedTree, err := MergeParseTreeChunks(ctx, parseTrees)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge parse tree chunks: %w", err)
+	}
+
+	slogger.Info(ctx, "Successfully parsed large file with chunking", slogger.Fields{
+		"chunk_count":  len(chunks),
+		"merged_nodes": mergedTree.RootNode().Children,
+		"total_size":   len(source),
+	})
+
+	return mergedTree, nil
 }
 
 // ParseSource implements the ObservableTreeSitterParser interface.

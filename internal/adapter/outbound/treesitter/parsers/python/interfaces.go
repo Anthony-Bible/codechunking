@@ -57,6 +57,21 @@ func extractPythonInterfaces(
 }
 
 // processDecoratedInterfaces handles extraction of interfaces from decorated definitions.
+//
+// Decorated definitions have the AST structure:
+//
+//	decorated_definition
+//	├── decorator (e.g., @runtime_checkable)
+//	└── class_definition (the actual class)
+//
+// This function:
+//  1. Finds all decorated_definition nodes
+//  2. Extracts class_definition child from each
+//  3. Filters to only interface classes (Protocol, ABC, or abstract methods)
+//  4. Extracts decorators and creates interface chunks
+//  5. Tracks processed class nodes to prevent duplicate extraction
+//
+// Returns empty slice if no decorated interfaces are found.
 func processDecoratedInterfaces(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
@@ -64,6 +79,10 @@ func processDecoratedInterfaces(
 	moduleName string,
 	decoratedClassNodes map[*valueobject.ParseNode]bool,
 ) []outbound.SemanticCodeChunk {
+	if parseTree == nil || decoratedClassNodes == nil {
+		return nil
+	}
+
 	var interfaces []outbound.SemanticCodeChunk
 
 	decoratedNodes := parseTree.GetNodesByType(decoratedDefinition)
@@ -91,6 +110,19 @@ func processDecoratedInterfaces(
 }
 
 // processStandaloneInterfaces handles extraction of interfaces that are not part of decorated definitions.
+//
+// This function processes plain class definitions like:
+//
+//	class Foo(Protocol): ...
+//	class Bar(ABC): ...
+//
+// It skips any classes that were already processed as part of decorated_definition nodes
+// to prevent duplicate extraction.
+//
+// Returns empty slice if:
+//   - parseTree is nil
+//   - decoratedClassNodes is nil
+//   - no standalone interface classes are found
 func processStandaloneInterfaces(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
@@ -98,6 +130,10 @@ func processStandaloneInterfaces(
 	moduleName string,
 	decoratedClassNodes map[*valueobject.ParseNode]bool,
 ) []outbound.SemanticCodeChunk {
+	if parseTree == nil || decoratedClassNodes == nil {
+		return nil
+	}
+
 	var interfaces []outbound.SemanticCodeChunk
 
 	classNodes := parseTree.GetNodesByType(classDefinition)
@@ -123,7 +159,22 @@ func processStandaloneInterfaces(
 }
 
 // createInterfaceFromClass creates a SemanticCodeChunk representing an interface from a class node.
-// It handles both decorated and standalone class definitions.
+//
+// This function extracts all relevant interface metadata including:
+//   - Class name and qualified name (with special nesting rules)
+//   - Documentation (docstrings)
+//   - Inheritance relationships (dependencies)
+//   - Decorators (both class-level and from decorated_definition)
+//   - Child methods (abstract and concrete)
+//
+// Handles both:
+//   - Decorated definitions: @decorator class Foo(Protocol): ...
+//   - Standalone classes: class Foo(Protocol): ...
+//
+// Returns nil if:
+//   - classNode is nil
+//   - parseTree is nil (via helper functions)
+//   - class name cannot be extracted
 func createInterfaceFromClass(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
@@ -132,8 +183,8 @@ func createInterfaceFromClass(
 	options outbound.SemanticExtractionOptions,
 	additionalDecorators []outbound.Annotation,
 ) *outbound.SemanticCodeChunk {
-	if classNode == nil {
-		slogger.Warn(ctx, "Attempted to create interface from nil class node", slogger.Fields{})
+	if classNode == nil || parseTree == nil {
+		slogger.Warn(ctx, "Attempted to create interface from nil class or parse tree", slogger.Fields{})
 		return nil
 	}
 
@@ -170,8 +221,8 @@ func createInterfaceFromClass(
 	// Get class content
 	content := parseTree.GetNodeText(classNode)
 
-	// Build qualified name (same logic as classes - handles nested interfaces)
-	qualifiedName := buildQualifiedNameForClass(parseTree, classNode, moduleName)
+	// Build qualified name for interface (different from classes - omits module prefix when nested)
+	qualifiedName := buildQualifiedNameForInterface(parseTree, classNode, moduleName)
 
 	now := time.Now()
 	chunk := &outbound.SemanticCodeChunk{
@@ -198,21 +249,45 @@ func createInterfaceFromClass(
 }
 
 // extractDecoratorsFromDecoratedDefinition extracts decorators from a decorated_definition node.
+//
+// Processes decorator nodes and converts them to Annotation objects:
+//   - Strips @ prefix from decorator names
+//   - Removes parameter lists (e.g., "@runtime_checkable()" -> "runtime_checkable")
+//   - Preserves decorator order as they appear in source code
+//
+// Returns empty slice if:
+//   - decoratedNode is nil
+//   - parseTree is nil
+//   - no decorators are found
 func extractDecoratorsFromDecoratedDefinition(
 	parseTree *valueobject.ParseTree,
 	decoratedNode *valueobject.ParseNode,
 ) []outbound.Annotation {
+	if decoratedNode == nil || parseTree == nil {
+		return nil
+	}
+
 	var decorators []outbound.Annotation
 
 	// Find all decorator nodes within the decorated_definition
 	decoratorNodes := findChildrenByType(decoratedNode, decorator)
 	for _, decoratorNode := range decoratorNodes {
 		decoratorText := parseTree.GetNodeText(decoratorNode)
+
 		// Clean up the decorator text (remove @ and any parentheses)
 		decoratorText = strings.TrimPrefix(decoratorText, "@")
+		decoratorText = strings.TrimSpace(decoratorText)
+
+		// Strip parameter list if present
 		if idx := strings.Index(decoratorText, "("); idx != -1 {
 			decoratorText = decoratorText[:idx]
 		}
+
+		// Skip empty decorator names (defensive check)
+		if decoratorText == "" {
+			continue
+		}
+
 		decorators = append(decorators, outbound.Annotation{
 			Name: decoratorText,
 		})
@@ -222,8 +297,18 @@ func extractDecoratorsFromDecoratedDefinition(
 }
 
 // isInterfaceClass determines if a class represents an interface/protocol.
+//
+// A class is considered an interface if it meets any of these criteria:
+//  1. Inherits from typing.Protocol (structural typing interface)
+//  2. Inherits from abc.ABC (abstract base class)
+//  3. Contains methods decorated with @abstractmethod
+//
+// Returns false if:
+//   - classNode is nil
+//   - parseTree is nil
+//   - none of the interface criteria are met
 func isInterfaceClass(parseTree *valueobject.ParseTree, classNode *valueobject.ParseNode) bool {
-	if classNode == nil {
+	if classNode == nil || parseTree == nil {
 		return false
 	}
 
@@ -246,12 +331,18 @@ func isInterfaceClass(parseTree *valueobject.ParseTree, classNode *valueobject.P
 }
 
 // extractBaseClassName extracts the base class name from an inheritance expression node.
-// Handles different AST node types:
+//
+// Handles different AST node types representing inheritance patterns:
 //   - identifier: "Protocol" -> "Protocol"
-//   - subscript: "Protocol[T, U]" -> "Protocol"
-//   - attribute: "typing.Protocol" -> "Protocol"
+//   - subscript: "Protocol[T, U]" -> "Protocol" (generic parameters stripped)
+//   - attribute: "typing.Protocol" -> "Protocol" (module prefix stripped)
+//
+// Returns empty string for:
+//   - nil nodes
+//   - unsupported node types (e.g., punctuation)
+//   - malformed expressions
 func extractBaseClassName(parseTree *valueobject.ParseTree, exprNode *valueobject.ParseNode) string {
-	if exprNode == nil {
+	if exprNode == nil || parseTree == nil {
 		return ""
 	}
 
@@ -378,8 +469,18 @@ func hasAbstractMethodDecorator(parseTree *valueobject.ParseTree, funcNode *valu
 }
 
 // extractInterfaceMethods extracts methods from an interface/protocol class.
-// This function handles both plain function definitions and decorated function definitions
-// (such as methods with @abstractmethod, @property, @staticmethod, etc.)
+//
+// This function handles both types of method definitions:
+//  1. Plain function definitions: def method(self): ...
+//  2. Decorated function definitions: @abstractmethod, @property, @staticmethod, etc.
+//
+// The function ensures no duplicate extraction by tracking decorated nodes separately.
+//
+// Returns empty slice if:
+//   - classNode is nil
+//   - parseTree is nil
+//   - class has no method body
+//   - options.MaxDepth is 0 or negative
 func extractInterfaceMethods(
 	ctx context.Context,
 	parseTree *valueobject.ParseTree,
@@ -387,6 +488,10 @@ func extractInterfaceMethods(
 	className, moduleName string,
 	options outbound.SemanticExtractionOptions,
 ) []outbound.SemanticCodeChunk {
+	if classNode == nil || parseTree == nil {
+		return nil
+	}
+
 	var methods []outbound.SemanticCodeChunk
 
 	// Find the class body
@@ -570,4 +675,83 @@ func hasOnlyPassStatement(parseTree *valueobject.ParseTree, methodNode *valueobj
 	}
 
 	return passCount == totalStatements && totalStatements == 1
+}
+
+// buildQualifiedNameForInterface builds a qualified name for an interface/protocol.
+//
+// Qualified name format rules:
+//   - Nested in class(es): "ParentClass.ChildClass.InterfaceName" (no module prefix)
+//   - Nested in function: "function_name.InterfaceName" (no module prefix)
+//   - Top-level: "module.InterfaceName" (includes module prefix)
+//
+// Examples:
+//   - class Outer: class Inner(Protocol): pass  -> "Outer.Inner"
+//   - def func(): class Local(Protocol): pass   -> "func.Local"
+//   - class TopLevel(Protocol): pass            -> "models.TopLevel"
+//
+// This differs from class qualified names, which always include the module prefix.
+func buildQualifiedNameForInterface(
+	parseTree *valueobject.ParseTree,
+	classNode *valueobject.ParseNode,
+	moduleName string,
+) string {
+	if classNode == nil || parseTree == nil {
+		return moduleName
+	}
+
+	// Get class name
+	className := extractClassNameFromNode(parseTree, classNode)
+	if className == "" {
+		return moduleName
+	}
+
+	// Find parent classes
+	parentClasses := findParentClasses(parseTree, classNode)
+
+	// If nested in classes, use class hierarchy without module
+	if len(parentClasses) > 0 {
+		parts := make([]string, 0, len(parentClasses)+1)
+		parts = append(parts, parentClasses...)
+		parts = append(parts, className)
+		return qualifyName(parts...)
+	}
+
+	// Find parent function
+	parentFunction := findParentNode(parseTree, classNode, functionDefinition, extractFunctionName)
+	if parentFunction != "" {
+		return qualifyName(parentFunction, className)
+	}
+
+	// Top-level interface - include module
+	return qualifyName(moduleName, className)
+}
+
+// findParentNode finds the parent node of a specified type that contains the given node.
+// It uses an extraction function to extract the name from the parent node.
+// Returns empty string if no parent is found.
+//
+// This is a generic helper for finding parent functions, classes, or other enclosing scopes.
+func findParentNode(
+	parseTree *valueobject.ParseTree,
+	childNode *valueobject.ParseNode,
+	parentNodeType string,
+	extractName func(*valueobject.ParseTree, *valueobject.ParseNode) string,
+) string {
+	if childNode == nil || parseTree == nil {
+		return ""
+	}
+
+	// Get all nodes of the specified type
+	allNodes := parseTree.GetNodesByType(parentNodeType)
+
+	// Find node that contains this child
+	for _, node := range allNodes {
+		// Check if node contains childNode
+		if childNode.StartByte > node.StartByte && childNode.EndByte <= node.EndByte {
+			// Extract and return the name
+			return extractName(parseTree, node)
+		}
+	}
+
+	return ""
 }

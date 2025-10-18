@@ -80,7 +80,8 @@ func extractModuleDocstring(parseTree *valueobject.ParseTree) string {
 		if child.Type == nodeTypeExpressionStatement {
 			stringNode := findChildByType(child, nodeTypeString)
 			if stringNode != nil {
-				return extractStringContent(parseTree, stringNode)
+				// Unescape quotes in docstrings to match Python's behavior
+				return extractStringContent(parseTree, stringNode, true)
 			}
 		}
 	}
@@ -126,11 +127,12 @@ func extractMetadataFromAssignment(
 	// Extract variable name and value
 	for _, child := range assignmentNode.Children {
 		switch child.Type {
-		case "identifier":
+		case nodeTypeIdentifier:
 			varName = parseTree.GetNodeText(child)
-		case "string":
+		case nodeTypeString:
 			// Extract string content using tree-sitter navigation
-			value = extractStringContent(parseTree, child)
+			// Unescape quotes for display in module metadata
+			value = extractStringContent(parseTree, child, true)
 		}
 	}
 

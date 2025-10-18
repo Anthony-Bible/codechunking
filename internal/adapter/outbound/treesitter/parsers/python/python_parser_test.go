@@ -1024,9 +1024,9 @@ func TestPythonParser_ExtractFunctions_DocstringWithTripleQuotesInside(t *testin
 	require.NoError(t, err)
 	require.Len(t, functions, 1)
 
-	// Should preserve escaped triple quotes
-	assert.Contains(t, functions[0].Documentation, "\\\"\\\"\\\"Example docstring\\\"\\\"\\\"",
-		"Docstring should preserve escaped triple quotes")
+	// Python unescapes \" to " in docstrings, so \"\"\" becomes """
+	assert.Contains(t, functions[0].Documentation, "\"\"\"Example docstring\"\"\"",
+		"Docstring should contain unescaped triple quotes (matching Python's behavior)")
 }
 
 // TestPythonParser_ExtractFunctions_DocstringWithUnicode tests Unicode in docstring.

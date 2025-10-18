@@ -11,23 +11,24 @@ import (
 
 // Constants for commonly used node types.
 const (
-	nodeTypeIdentifier          = "identifier"
-	nodeTypeType                = "type"
-	nodeTypeDecorator           = "decorator"
-	nodeTypeExpressionStatement = "expression_statement"
-	nodeTypeAsyncFunctionDef    = "async_function_definition"
-	nodeTypeString              = "string"
-	nodeTypeStringContent       = "string_content"
-	nodeTypeComment             = "comment"
-	nodeTypeFloat               = "float"
-	nodeTypeFunctionDef         = "function_definition"
-	nodeTypeDecoratedDef        = "decorated_definition"
-	nodeTypeClassDef            = "class_definition"
-	nodeTypeBlock               = "block"
-	nodeTypeAsync               = "async"
-	nodeTypeParameters          = "parameters"
-	nodeTypeDefaultValue        = "default_value"
-	nodeTypeListSplatPattern    = "list_splat_pattern"
+	nodeTypeIdentifier             = "identifier"
+	nodeTypeType                   = "type"
+	nodeTypeDecorator              = "decorator"
+	nodeTypeExpressionStatement    = "expression_statement"
+	nodeTypeAsyncFunctionDef       = "async_function_definition"
+	nodeTypeString                 = "string"
+	nodeTypeStringContent          = "string_content"
+	nodeTypeComment                = "comment"
+	nodeTypeFloat                  = "float"
+	nodeTypeFunctionDef            = "function_definition"
+	nodeTypeDecoratedDef           = "decorated_definition"
+	nodeTypeClassDef               = "class_definition"
+	nodeTypeBlock                  = "block"
+	nodeTypeAsync                  = "async"
+	nodeTypeParameters             = "parameters"
+	nodeTypeDefaultValue           = "default_value"
+	nodeTypeListSplatPattern       = "list_splat_pattern"
+	nodeTypeDictionarySplatPattern = "dictionary_splat_pattern"
 )
 
 // extractPythonFunctions extracts Python functions from the parse tree.
@@ -248,7 +249,7 @@ func isAsyncFunction(node *valueobject.ParseNode) bool {
 //
 // This approach correctly handles all Python string types:
 //   - Regular strings: "text" or 'text'
-//   - Triple-quoted: """text""" or ”'text”'
+//   - Triple-quoted: """text""" or "'text"'
 //   - F-strings: f"text {expr}" or f'text {expr}'
 //   - Raw strings: r"C:\path" or r'regex\d+'
 //   - Byte strings: b"bytes" or b'bytes'
@@ -261,9 +262,16 @@ func isAsyncFunction(node *valueobject.ParseNode) bool {
 //   - Triple-quoted strings with embedded quotes work correctly
 //   - No regex or complex string parsing needed
 //
-// The function also unescapes common Python escape sequences that appear in the
-// string_content node (e.g., \", \') for proper display in documentation.
-func extractStringContent(parseTree *valueobject.ParseTree, stringNode *valueobject.ParseNode) string {
+// Parameters:
+//   - parseTree: The parse tree containing the string node
+//   - stringNode: The string node to extract content from
+//   - unescapeQuotes: If true, unescapes \" and \' to " and ' (for display).
+//     If false, preserves escape sequences (for documentation/code examples).
+func extractStringContent(
+	parseTree *valueobject.ParseTree,
+	stringNode *valueobject.ParseNode,
+	unescapeQuotes bool,
+) string {
 	if stringNode == nil || stringNode.Type != nodeTypeString {
 		return ""
 	}
@@ -272,9 +280,14 @@ func extractStringContent(parseTree *valueobject.ParseTree, stringNode *valueobj
 	for _, child := range stringNode.Children {
 		if child.Type == nodeTypeStringContent {
 			content := parseTree.GetNodeText(child)
-			// Unescape common Python string escape sequences
-			content = strings.ReplaceAll(content, `\"`, `"`)
-			content = strings.ReplaceAll(content, `\'`, `'`)
+
+			if unescapeQuotes {
+				// Unescape quotes for display (module variables, regular string values)
+				content = strings.ReplaceAll(content, `\"`, `"`)
+				content = strings.ReplaceAll(content, `\'`, `'`)
+			}
+			// else: preserve escape sequences for documentation/code examples
+
 			return content
 		}
 	}
@@ -309,7 +322,8 @@ func extractFunctionDocumentation(parseTree *valueobject.ParseTree, node *valueo
 		if firstStmt.Type == nodeTypeExpressionStatement && len(firstStmt.Children) > 0 {
 			stringNode := firstStmt.Children[0]
 			if stringNode.Type == nodeTypeString {
-				return extractStringContent(parseTree, stringNode)
+				// Unescape quotes in docstrings to match Python's behavior
+				return extractStringContent(parseTree, stringNode, true)
 			}
 		}
 	}
@@ -622,16 +636,52 @@ func extractFunctionParameters(parseTree *valueobject.ParseTree, node *valueobje
 			parameters = append(parameters, param)
 
 		case "typed_parameter", "default_parameter", "typed_default_parameter":
-			param := extractParameterInfo(parseTree, child)
-			if param != nil {
+			// Check if typed_parameter wraps a variadic pattern (*args: type or **kwargs: type)
+			// According to tree-sitter Python grammar, typed_parameter can wrap:
+			// - identifier (regular typed param)
+			// - list_splat_pattern (typed *args)
+			// - dictionary_splat_pattern (typed **kwargs)
+			isTypedVariadic := false
+			if child.Type == "typed_parameter" {
+				// Check first child to see if it's a variadic pattern
+				for _, c := range child.Children {
+					if c.Type == nodeTypeListSplatPattern || c.Type == nodeTypeDictionarySplatPattern {
+						isTypedVariadic = true
+						break
+					}
+				}
+			}
+
+			var param *outbound.Parameter
+			if isTypedVariadic {
+				// Route typed variadic params to variadic handler
+				param = extractVariadicParameterInfo(parseTree, child)
+			} else {
+				// Route regular typed/default params to regular handler
+				param = extractParameterInfo(parseTree, child)
+			}
+
+			if param == nil {
+				continue
+			}
+
+			// Set flags for typed variadic parameters
+			if isTypedVariadic {
+				// After *args, subsequent params are keyword-only
+				if hasChildOfType(child, nodeTypeListSplatPattern) {
+					isAfterKeywordSeparator = true
+				}
+			} else {
+				// Set flags for regular parameters
 				param.IsKeywordOnly = isAfterKeywordSeparator
 				param.IsPositionalOnly = isBeforePositionalSeparator && !isAfterKeywordSeparator
 				param.IsOptional = param.DefaultValue != ""
-				parameters = append(parameters, *param)
 			}
 
+			parameters = append(parameters, *param)
+
 		case "variadic_parameter", "list_splat_pattern", "dictionary_splat_pattern":
-			// Handle *args and **kwargs
+			// Handle *args and **kwargs (untyped variadic parameters)
 			param := extractVariadicParameterInfo(parseTree, child)
 			if param != nil {
 				// After *args, subsequent params are keyword-only

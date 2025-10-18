@@ -330,20 +330,9 @@ func (v *PythonValidator) validatePythonVersion(source string) *ParserError {
 
 // validateCommonPitfalls checks for common Python programming pitfalls.
 func (v *PythonValidator) validateCommonPitfalls(source string) *ParserError {
-	// Check for mutable default arguments
-	mutableDefaultPattern := regexp.MustCompile(`def\s+\w+\([^)]*=\s*\[\]`)
-	if mutableDefaultPattern.MatchString(source) {
-		return NewLanguageError("Python", "code quality: mutable default argument").
-			WithSeverity(ErrorSeverityMedium).
-			WithSuggestion("Use None as default and create list inside function")
-	}
-
-	// Check for bare except clauses
-	if strings.Contains(source, "except:") && !strings.Contains(source, "except Exception:") {
-		return NewLanguageError("Python", "code quality: bare except clause").
-			WithSeverity(ErrorSeverityLow).
-			WithSuggestion("Specify exception type or use 'except Exception:'")
-	}
-
+	// NOTE: Code quality checks like mutable defaults and bare except clauses have been removed.
+	// This is a parser/extractor, not a linter. Code quality validation belongs in separate tools.
+	// The parser should extract code structure as-is without opinionated quality checks.
+	_ = source // Keep parameter used
 	return nil
 }

@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+const (
+	nodeTypeTypeAnnotation = "type_annotation"
+)
+
 // PythonClassParser represents the specialized Python class parser.
 type PythonClassParser struct{}
 
@@ -26,6 +30,11 @@ func (p *PythonClassParser) ParsePythonClass(
 	options outbound.SemanticExtractionOptions,
 	now time.Time,
 ) *outbound.SemanticCodeChunk {
+	// Check for context cancellation
+	if ctx.Err() != nil {
+		return nil
+	}
+
 	if parseTree == nil || node == nil {
 		return nil
 	}
@@ -205,6 +214,11 @@ func extractPlainClasses(
 
 	// Process plain class definitions (skip those that are inside decorated_definition)
 	for _, node := range classNodes {
+		// Check for context cancellation
+		if ctx.Err() != nil {
+			return classes
+		}
+
 		// Check if this class node is part of a decorated definition
 		if !isNodeInDecoratedDefinition(node, decoratedNodes) {
 			class := parser.ParsePythonClass(ctx, parseTree, node, moduleName, options, now)
@@ -231,6 +245,11 @@ func extractDecoratedClasses(
 
 	// Process decorated definitions (which may contain classes)
 	for _, decoratedNode := range decoratedNodes {
+		// Check for context cancellation
+		if ctx.Err() != nil {
+			return classes
+		}
+
 		// Look for class_definition within decorated_definition
 		for _, child := range decoratedNode.Children {
 			if child.Type == "class_definition" {
@@ -505,7 +524,7 @@ func extractClassVariables(
 
 		// Handle annotated assignments (type annotations)
 		if child.Type == "annotated_assignment" {
-			variable := extractClassVariableFromAnnotatedAssignment(
+			variable := extractClassVariableFromAssignment(
 				parseTree,
 				child,
 				className,
@@ -520,44 +539,69 @@ func extractClassVariables(
 
 		// Handle expression statements that might contain assignments
 		if child.Type == nodeTypeExpressionStatement {
-			// Check if this expression statement contains an assignment
-			assignmentNode := findChildByType(child, "assignment")
-			if assignmentNode != nil {
-				variable := extractClassVariableFromAssignment(
-					parseTree,
-					assignmentNode,
-					className,
-					moduleName,
-					options,
-					now,
-				)
-				if variable != nil {
-					variables = append(variables, *variable)
-				}
-			}
-
-			// Check if this expression statement contains an annotated assignment
-			annotatedAssignmentNode := findChildByType(child, "annotated_assignment")
-			if annotatedAssignmentNode != nil {
-				variable := extractClassVariableFromAnnotatedAssignment(
-					parseTree,
-					annotatedAssignmentNode,
-					className,
-					moduleName,
-					options,
-					now,
-				)
-				if variable != nil {
-					variables = append(variables, *variable)
-				}
-			}
+			extracted := extractClassVariablesFromExpressionStatement(
+				parseTree,
+				child,
+				className,
+				moduleName,
+				options,
+				now,
+			)
+			variables = append(variables, extracted...)
 		}
 	}
 
 	return variables
 }
 
-// extractClassVariableFromAssignment extracts a class variable from an assignment statement.
+// extractClassVariablesFromExpressionStatement extracts class-level variables from an expression statement.
+// This helper reduces nesting complexity in extractClassVariables.
+func extractClassVariablesFromExpressionStatement(
+	parseTree *valueobject.ParseTree,
+	exprStmt *valueobject.ParseNode,
+	className, moduleName string,
+	options outbound.SemanticExtractionOptions,
+	now time.Time,
+) []outbound.SemanticCodeChunk {
+	var variables []outbound.SemanticCodeChunk
+
+	// Check if this expression statement contains an assignment
+	assignmentNode := findChildByType(exprStmt, "assignment")
+	if assignmentNode != nil {
+		variable := extractClassVariableFromAssignment(
+			parseTree,
+			assignmentNode,
+			className,
+			moduleName,
+			options,
+			now,
+		)
+		if variable != nil {
+			variables = append(variables, *variable)
+		}
+	}
+
+	// Check if this expression statement contains an annotated assignment
+	annotatedAssignmentNode := findChildByType(exprStmt, "annotated_assignment")
+	if annotatedAssignmentNode != nil {
+		variable := extractClassVariableFromAssignment(
+			parseTree,
+			annotatedAssignmentNode,
+			className,
+			moduleName,
+			options,
+			now,
+		)
+		if variable != nil {
+			variables = append(variables, *variable)
+		}
+	}
+
+	return variables
+}
+
+// extractClassVariableFromAssignment extracts a class variable from an assignment or annotated assignment statement.
+// This function handles both plain assignments and annotated assignments.
 func extractClassVariableFromAssignment(
 	parseTree *valueobject.ParseTree,
 	assignmentNode *valueobject.ParseNode,
@@ -584,53 +628,7 @@ func extractClassVariableFromAssignment(
 		constructType = outbound.ConstructConstant
 	}
 
-	// Extract type annotation if present
-	returnType := extractTypeAnnotation(parseTree, assignmentNode)
-
-	return &outbound.SemanticCodeChunk{
-		ChunkID:       utils.GenerateID("class_var", varName, nil),
-		Type:          constructType,
-		Name:          varName,
-		QualifiedName: qualifyName(moduleName, className, varName),
-		Language:      parseTree.Language(),
-		StartByte:     assignmentNode.StartByte,
-		EndByte:       assignmentNode.EndByte,
-		Content:       content,
-		Visibility:    getPythonVisibility(varName),
-		ReturnType:    returnType,
-		ExtractedAt:   now,
-		Hash:          utils.GenerateHash(content),
-	}
-}
-
-// extractClassVariableFromAnnotatedAssignment extracts a class variable from an annotated assignment statement.
-func extractClassVariableFromAnnotatedAssignment(
-	parseTree *valueobject.ParseTree,
-	assignmentNode *valueobject.ParseNode,
-	className, moduleName string,
-	options outbound.SemanticExtractionOptions,
-	now time.Time,
-) *outbound.SemanticCodeChunk {
-	if assignmentNode == nil {
-		return nil
-	}
-
-	// Find the variable name (left side of assignment)
-	identifierNode := findChildByType(assignmentNode, "identifier")
-	if identifierNode == nil {
-		return nil
-	}
-
-	varName := parseTree.GetNodeText(identifierNode)
-	content := parseTree.GetNodeText(assignmentNode)
-
-	// Determine if it's a constant (all uppercase) or variable
-	constructType := outbound.ConstructVariable
-	if strings.ToUpper(varName) == varName && varName != "" {
-		constructType = outbound.ConstructConstant
-	}
-
-	// Extract type annotation
+	// Extract type annotation (works for both annotated and non-annotated assignments)
 	returnType := extractTypeAnnotation(parseTree, assignmentNode)
 
 	return &outbound.SemanticCodeChunk{
@@ -686,7 +684,7 @@ func extractNestedClasses(
 func extractTypeAnnotation(parseTree *valueobject.ParseTree, node *valueobject.ParseNode) string {
 	// Look for type annotation
 	for _, child := range node.Children {
-		if child.Type == "type" || child.Type == "type_annotation" {
+		if child.Type == nodeTypeType || child.Type == nodeTypeTypeAnnotation {
 			return parseTree.GetNodeText(child)
 		}
 	}

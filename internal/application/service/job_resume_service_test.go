@@ -729,8 +729,8 @@ func TestJobResumeService_CanResumeJob_NoCheckpoint(t *testing.T) {
 	result, err := service.CanResumeJob(ctx, jobID)
 
 	// Assert
-	require.Error(t, err, "Expected error in RED phase")
-	assert.Contains(t, err.Error(), "not implemented")
+	require.Error(t, err, "Expected error when checkpoint service is nil")
+	assert.Contains(t, err.Error(), "checkpoint service not initialized")
 	assert.Nil(t, result)
 }
 
@@ -752,8 +752,8 @@ func TestJobResumeService_ResumeJob_Success(t *testing.T) {
 	result, err := service.ResumeJob(ctx, jobID, options)
 
 	// Assert
-	require.Error(t, err, "Expected error in RED phase")
-	assert.Contains(t, err.Error(), "not implemented")
+	require.Error(t, err, "Expected error when checkpoint service is nil")
+	assert.Contains(t, err.Error(), "checkpoint service not initialized")
 	assert.Nil(t, result)
 }
 
@@ -773,8 +773,8 @@ func TestJobResumeService_ResumeJob_ForceResume(t *testing.T) {
 	result, err := service.ResumeJob(ctx, jobID, options)
 
 	// Assert
-	require.Error(t, err, "Expected error in RED phase")
-	assert.Contains(t, err.Error(), "not implemented")
+	require.Error(t, err, "Expected error when checkpoint service is nil")
+	assert.Contains(t, err.Error(), "checkpoint service not initialized")
 	assert.Nil(t, result)
 }
 
@@ -800,8 +800,7 @@ func TestJobResumeService_ValidateResumePoint_Success(t *testing.T) {
 	err := service.ValidateResumePoint(ctx, checkpoint)
 
 	// Assert
-	require.Error(t, err, "Expected error in RED phase")
-	assert.Contains(t, err.Error(), "not implemented")
+	require.NoError(t, err, "Valid checkpoint should pass validation")
 }
 
 func TestJobResumeService_ValidateResumePoint_CorruptedCheckpoint(t *testing.T) {
@@ -821,8 +820,8 @@ func TestJobResumeService_ValidateResumePoint_CorruptedCheckpoint(t *testing.T) 
 	err := service.ValidateResumePoint(ctx, checkpoint)
 
 	// Assert
-	require.Error(t, err, "Expected error in RED phase")
-	assert.Contains(t, err.Error(), "not implemented")
+	require.Error(t, err, "Corrupted checkpoint should fail validation")
+	assert.Contains(t, err.Error(), "checkpoint has no resume point")
 }
 
 func TestJobResumeService_GetResumeStrategy_StageSpecific(t *testing.T) {
@@ -858,8 +857,8 @@ func TestJobResumeService_GetResumeStrategy_StageSpecific(t *testing.T) {
 			strategy, err := service.GetResumeStrategy(ctx, job, checkpoint)
 
 			// Assert
-			require.Error(t, err, "Expected error in RED phase")
-			assert.Contains(t, err.Error(), "not implemented")
+			require.Error(t, err, "Expected error when checkpoint has no resume point")
+			assert.Contains(t, err.Error(), "invalid checkpoint or resume point")
 			assert.Nil(t, strategy)
 		})
 	}

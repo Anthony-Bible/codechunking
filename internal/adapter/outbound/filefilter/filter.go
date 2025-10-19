@@ -207,6 +207,24 @@ func (f *Filter) isBinaryByHeuristics(content []byte) bool {
 		return false
 	}
 
+	// First check if content is valid UTF-8 - if so, it's likely text
+	if f.isValidUTF8(content) {
+		// Even valid UTF-8 can be binary if it has too many null bytes
+		nullBytes := 0
+		sampleSize := len(content)
+		if sampleSize > 8192 {
+			sampleSize = 8192
+		}
+		for i := range sampleSize {
+			if content[i] == 0 {
+				nullBytes++
+			}
+		}
+		nullRatio := float64(nullBytes) / float64(sampleSize)
+		return nullRatio > 0.3
+	}
+
+	// Not valid UTF-8, so use byte-level heuristics
 	nullBytes := 0
 	nonPrintable := 0
 	sampleSize := len(content)
@@ -218,7 +236,7 @@ func (f *Filter) isBinaryByHeuristics(content []byte) bool {
 		b := content[i]
 		if b == 0 {
 			nullBytes++
-		} else if b < 32 && b != '\t' && b != '\n' && b != '\r' {
+		} else if (b < 32 && b != '\t' && b != '\n' && b != '\r') || b > 127 {
 			nonPrintable++
 		}
 	}
@@ -228,6 +246,59 @@ func (f *Filter) isBinaryByHeuristics(content []byte) bool {
 	nonPrintableRatio := float64(nonPrintable) / float64(sampleSize)
 
 	return nullRatio > 0.3 || nonPrintableRatio > 0.2
+}
+
+// isValidUTF8 checks if the content is valid UTF-8 text.
+// This helps distinguish UTF-8 text (with multibyte characters) from binary data.
+func (f *Filter) isValidUTF8(content []byte) bool {
+	// Check if at least 95% of the content is valid UTF-8
+	// This allows for some corruption while still detecting valid text
+	invalidBytes := 0
+	i := 0
+	for i < len(content) {
+		r, size := f.decodeUTF8Rune(content[i:])
+		if r == 0xFFFD && size == 1 { // Invalid UTF-8 sequence
+			invalidBytes++
+		}
+		if size == 0 {
+			break
+		}
+		i += size
+	}
+
+	invalidRatio := float64(invalidBytes) / float64(len(content))
+	return invalidRatio < 0.05 // Less than 5% invalid bytes
+}
+
+// decodeUTF8Rune decodes a single UTF-8 rune from the input.
+// Returns the rune and the number of bytes consumed.
+func (f *Filter) decodeUTF8Rune(b []byte) (rune, int) {
+	if len(b) == 0 {
+		return 0, 0
+	}
+
+	// Single-byte ASCII (0xxxxxxx)
+	if b[0] < 0x80 {
+		return rune(b[0]), 1
+	}
+
+	// Two-byte sequence (110xxxxx 10xxxxxx)
+	if len(b) >= 2 && b[0]&0xE0 == 0xC0 && b[1]&0xC0 == 0x80 {
+		return rune((b[0]&0x1F)<<6 | (b[1] & 0x3F)), 2
+	}
+
+	// Three-byte sequence (1110xxxx 10xxxxxx 10xxxxxx)
+	if len(b) >= 3 && b[0]&0xF0 == 0xE0 && b[1]&0xC0 == 0x80 && b[2]&0xC0 == 0x80 {
+		return rune(uint32(b[0]&0x0F)<<12 | uint32(b[1]&0x3F)<<6 | uint32(b[2]&0x3F)), 3
+	}
+
+	// Four-byte sequence (11110xxx 10xxxxxx 10xxxxxx 10xxxxxx)
+	if len(b) >= 4 && b[0]&0xF8 == 0xF0 && b[1]&0xC0 == 0x80 && b[2]&0xC0 == 0x80 && b[3]&0xC0 == 0x80 {
+		return rune(uint32(b[0]&0x07)<<18 | uint32(b[1]&0x3F)<<12 | uint32(b[2]&0x3F)<<6 | uint32(b[3]&0x3F)), 4
+	}
+
+	// Invalid sequence
+	return 0xFFFD, 1
 }
 
 // DetectBinaryFromPath determines if a file is binary based on extension only.

@@ -76,62 +76,54 @@ func (m *GitignoreMatcher) gitignoreToRegex(pattern string) string {
 		pattern = strings.TrimSuffix(pattern, "/")
 	}
 
-	// Escape special regex characters before processing wildcards
-	regex := m.escapeRegexChars(pattern)
-
-	// Handle gitignore wildcard patterns
-	regex = m.convertWildcards(regex)
+	// Convert wildcards first, then escape the remaining special chars
+	regex := m.convertWildcards(pattern)
 
 	// Build the final regex based on pattern type
 	var finalRegex string
 
 	if isRooted {
 		// Rooted patterns match from the beginning
-		finalRegex = "^" + regex
+		finalRegex = "^" + regex + "(/.*)?$"
 	} else {
 		// Non-rooted patterns can match at any level
-		finalRegex = "(^|/)" + regex
+		finalRegex = "(^|/)" + regex + "(/.*)?$"
 	}
-
-	// Add appropriate ending - both patterns need the same ending for gitignore semantics
-	finalRegex += "($|/.*)"
 
 	return finalRegex
 }
 
-// escapeRegexChars escapes special regex characters except wildcards.
-func (m *GitignoreMatcher) escapeRegexChars(s string) string {
-	// Characters that need escaping in regex (excluding * and ? which we handle separately)
-	chars := []string{".", "+", "(", ")", "{", "}", "^", "$", "|", "\\"}
+// convertWildcards converts gitignore wildcards to regex equivalents.
+// This function also escapes special regex characters except for wildcards and brackets.
+func (m *GitignoreMatcher) convertWildcards(s string) string {
+	// Use placeholders for wildcard patterns to avoid escaping issues
+	const (
+		placeholderGlobstarSlash = "\x00GLOBSTARSLASH\x00"
+		placeholderSlashGlobstar = "\x00SLASHGLOBSTAR\x00"
+		placeholderGlobstar      = "\x00GLOBSTAR\x00"
+		placeholderStar          = "\x00STAR\x00"
+		placeholderQuestion      = "\x00QUESTION\x00"
+	)
 
-	for _, char := range chars {
+	// Step 1: Replace wildcards with placeholders (order matters!)
+	s = strings.ReplaceAll(s, "**/", placeholderGlobstarSlash)
+	s = strings.ReplaceAll(s, "/**", placeholderSlashGlobstar)
+	s = strings.ReplaceAll(s, "**", placeholderGlobstar)
+	s = strings.ReplaceAll(s, "*", placeholderStar)
+	s = strings.ReplaceAll(s, "?", placeholderQuestion)
+
+	// Step 2: Escape special regex characters (but not brackets - they're valid in gitignore)
+	specialChars := []string{".", "+", "(", ")", "{", "}", "^", "$", "|", "\\"}
+	for _, char := range specialChars {
 		s = strings.ReplaceAll(s, char, "\\"+char)
 	}
 
-	return s
-}
-
-// convertWildcards converts gitignore wildcards to regex equivalents.
-func (m *GitignoreMatcher) convertWildcards(s string) string {
-	// Handle different wildcard patterns
-
-	// 1. Handle **/ (matches zero or more directories)
-	s = regexp.MustCompile(`\*\*/`).ReplaceAllString(s, `([^/]*/)*`)
-
-	// 2. Handle /** (matches everything inside a directory)
-	s = regexp.MustCompile(`/\*\*`).ReplaceAllString(s, `/.*`)
-
-	// 3. Handle ** in the middle (matches zero or more path segments)
-	s = regexp.MustCompile(`\*\*`).ReplaceAllString(s, `.*`)
-
-	// 4. Handle bracket expressions like [cod] or [0-9]
-	// These are already valid regex, but we need to be careful not to double-escape
-
-	// 5. Handle single * (matches anything except slash)
-	s = strings.ReplaceAll(s, "*", `[^/]*`)
-
-	// 6. Handle ? (matches single character except slash)
-	s = strings.ReplaceAll(s, "?", `[^/]`)
+	// Step 3: Replace placeholders with regex equivalents
+	s = strings.ReplaceAll(s, placeholderGlobstarSlash, "(?:.*/)?")
+	s = strings.ReplaceAll(s, placeholderSlashGlobstar, "(?:/.*)?")
+	s = strings.ReplaceAll(s, placeholderGlobstar, ".*")
+	s = strings.ReplaceAll(s, placeholderStar, "[^/]*")
+	s = strings.ReplaceAll(s, placeholderQuestion, "[^/]")
 
 	return s
 }

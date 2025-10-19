@@ -672,10 +672,24 @@ __pycache__/
 		t.Fatalf("LoadGitignorePatterns() error = %v", err)
 	}
 
-	expected := []string{
-		"*.log", "*.tmp", "/build", "node_modules/", "!important.log",
-		"**/*.test.js", "*.py[cod]", "__pycache__/", ".DS_Store",
-		"/dist/", ".env", "*.backup",
+	// Expected patterns - note that negation patterns have ! stripped
+	expected := []struct {
+		pattern     string
+		isNegation  bool
+		isDirectory bool
+	}{
+		{"*.log", false, false},
+		{"*.tmp", false, false},
+		{"/build", false, false},
+		{"node_modules/", false, true},
+		{"important.log", true, false}, // Negation pattern - ! is stripped
+		{"**/*.test.js", false, false},
+		{"*.py[cod]", false, false},
+		{"__pycache__/", false, true},
+		{".DS_Store", false, false},
+		{"/dist/", false, true},
+		{".env", false, false},
+		{"*.backup", false, false},
 	}
 
 	if len(patterns) != len(expected) {
@@ -687,25 +701,27 @@ __pycache__/
 		if i >= len(expected) {
 			break
 		}
-		expectedPattern := expected[i]
+		exp := expected[i]
 
-		if pattern.Pattern != expectedPattern {
-			t.Errorf("Pattern %d: expected %q, got %q", i, expectedPattern, pattern.Pattern)
+		if pattern.Pattern != exp.pattern {
+			t.Errorf("Pattern %d: expected %q, got %q", i, exp.pattern, pattern.Pattern)
 		}
 
 		// Check negation pattern
-		if strings.HasPrefix(expectedPattern, "!") && !pattern.IsNegation {
-			t.Errorf("Pattern %q should be marked as negation", expectedPattern)
+		if pattern.IsNegation != exp.isNegation {
+			t.Errorf("Pattern %q: expected IsNegation=%v, got %v",
+				exp.pattern, exp.isNegation, pattern.IsNegation)
 		}
 
 		// Check directory pattern
-		if strings.HasSuffix(expectedPattern, "/") && !pattern.IsDirectory {
-			t.Errorf("Pattern %q should be marked as directory", expectedPattern)
+		if pattern.IsDirectory != exp.isDirectory {
+			t.Errorf("Pattern %q: expected IsDirectory=%v, got %v",
+				exp.pattern, exp.isDirectory, pattern.IsDirectory)
 		}
 
 		if pattern.SourceFile != gitignorePath {
 			t.Errorf("Pattern %q source file should be %q, got %q",
-				expectedPattern, gitignorePath, pattern.SourceFile)
+				exp.pattern, gitignorePath, pattern.SourceFile)
 		}
 	}
 }

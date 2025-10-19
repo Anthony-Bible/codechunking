@@ -364,12 +364,66 @@ func (f *Filter) FilterFilesBatch(
 	for _, file := range files {
 		start := time.Now()
 
-		decision, err := f.ShouldProcessFile(ctx, file.Path, file)
+		// Build decision manually to use the correct repoPath
+		decision := outbound.FilterDecision{
+			ProcessingTime: 0,
+			Confidence:     1.0,
+			Metadata:       make(map[string]interface{}),
+		}
+
+		// Check if binary by extension first (fastest)
+		isBinary, err := f.DetectBinaryFromPath(ctx, file.Path)
+		if err != nil {
+			result := outbound.FilterResult{
+				FileInfo:       file,
+				Decision:       decision,
+				Error:          err,
+				ProcessingTime: time.Since(start),
+			}
+			results = append(results, result)
+			continue
+		}
+
+		decision.IsBinary = isBinary
+		if isBinary {
+			decision.ShouldProcess = false
+			decision.FilterReason = "Binary file detected by extension"
+			decision.DetectionMethod = "extension"
+			decision.ProcessingTime = time.Since(start)
+
+			result := outbound.FilterResult{
+				FileInfo:       file,
+				Decision:       decision,
+				Error:          nil,
+				ProcessingTime: time.Since(start),
+			}
+			results = append(results, result)
+			continue
+		}
+
+		// Check gitignore patterns with the correct repoPath
+		isIgnored, err := f.MatchesGitignorePatterns(ctx, file.Path, repoPath)
+		if err != nil {
+			// Don't fail on gitignore errors, just log and continue
+			isIgnored = false
+		}
+
+		decision.IsGitIgnored = isIgnored
+		if isIgnored {
+			decision.ShouldProcess = false
+			decision.FilterReason = "File matches gitignore patterns"
+			decision.DetectionMethod = "gitignore"
+		} else {
+			decision.ShouldProcess = true
+			decision.DetectionMethod = "combined"
+		}
+
+		decision.ProcessingTime = time.Since(start)
 
 		result := outbound.FilterResult{
 			FileInfo:       file,
 			Decision:       decision,
-			Error:          err,
+			Error:          nil,
 			ProcessingTime: time.Since(start),
 		}
 

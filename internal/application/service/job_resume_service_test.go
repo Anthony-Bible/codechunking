@@ -680,6 +680,11 @@ func TestJobResumeService_CanResumeJob_Success(t *testing.T) {
 	)
 
 	jobID := uuid.New()
+	repositoryID := uuid.New()
+
+	// Create mock job entity
+	mockJob := entity.NewIndexingJob(repositoryID)
+
 	expectedCheckpoint := &JobCheckpoint{
 		ID:    uuid.New(),
 		JobID: jobID,
@@ -689,17 +694,28 @@ func TestJobResumeService_CanResumeJob_Success(t *testing.T) {
 			CurrentFile: "src/main.go",
 			FileIndex:   10,
 		},
+		IsCorrupted: false,
 	}
 
 	mockCheckpointService.On("GetLatestCheckpoint", ctx, jobID).Return(expectedCheckpoint, nil)
+	mockJobRepo.On("FindByID", ctx, jobID).Return(mockJob, nil)
 
 	// Act
 	result, err := service.CanResumeJob(ctx, jobID)
 
 	// Assert
-	require.Error(t, err, "Expected error in RED phase")
-	assert.Contains(t, err.Error(), "not implemented")
-	assert.Nil(t, result)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.CanResume, "Job should be resumable with valid checkpoint")
+	assert.Equal(t, expectedCheckpoint, result.LastCheckpoint)
+	assert.Equal(t, expectedCheckpoint.ResumePoint, result.ResumePoint)
+	assert.Equal(t, ResumeRiskLow, result.RiskLevel)
+	assert.NotEmpty(t, result.Prerequisites, "Should have at least one prerequisite")
+	assert.Equal(t, "Assessment completed", result.Reason)
+
+	// Verify all mocks were called as expected
+	mockCheckpointService.AssertExpectations(t)
+	mockJobRepo.AssertExpectations(t)
 }
 
 func TestJobResumeService_CanResumeJob_NoCheckpoint(t *testing.T) {

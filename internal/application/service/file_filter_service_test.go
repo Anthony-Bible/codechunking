@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -30,9 +31,17 @@ func getTestFilter() outbound.FileFilter {
 	return &testFileFilter{}
 }
 
+// getTestFilterWithRepo creates a test filter with a specific repo path.
+func getTestFilterWithRepo(repoPath string) outbound.FileFilter {
+	return &testFileFilter{
+		repoPath: repoPath,
+	}
+}
+
 // testFileFilter is a minimal implementation for testing.
 type testFileFilter struct {
 	binaryExtensions map[string]bool
+	repoPath         string // Optional: if set, use this as the repo root
 }
 
 func (f *testFileFilter) init() {
@@ -224,6 +233,11 @@ func (f *testFileFilter) DetectBinaryFromPath(_ context.Context, filePath string
 }
 
 func (f *testFileFilter) findRepoRoot(filePath string) string {
+	// If repoPath is configured, use it
+	if f.repoPath != "" {
+		return f.repoPath
+	}
+
 	// For testing purposes, use a simple approach
 	// Look for common test directory names in the path
 	dir := filepath.Dir(filePath)
@@ -263,123 +277,128 @@ func (f *testFileFilter) MatchesGitignorePatterns(ctx context.Context, filePath 
 }
 
 func (f *testFileFilter) matchPattern(pattern, path string) bool {
-	pattern = strings.TrimPrefix(pattern, "/")
-
-	// Handle directory patterns
-	if strings.HasSuffix(pattern, "/") {
-		return f.matchDirectoryPattern(pattern, path)
-	}
-
-	// Handle glob patterns
-	if strings.Contains(pattern, "*") {
-		return f.matchGlobPattern(pattern, path)
-	}
-
-	// Handle simple directory patterns
-	return f.matchSimplePattern(pattern, path)
-}
-
-func (f *testFileFilter) matchDirectoryPattern(pattern, path string) bool {
-	pattern = strings.TrimSuffix(pattern, "/")
-	return strings.HasPrefix(path, pattern+"/") || path == pattern
-}
-
-func (f *testFileFilter) matchGlobPattern(pattern, path string) bool {
-	// Handle *.extension patterns
-	if strings.HasPrefix(pattern, "*.") {
-		ext := pattern[1:] // Remove *
-		return strings.HasSuffix(path, ext)
-	}
-
-	// Handle **/ patterns (any directory depth)
-	if strings.Contains(pattern, "**/") {
-		return f.matchDoubleStarPattern(pattern, path)
-	}
-
-	// Handle patterns with brackets like *.py[cod]
-	if strings.Contains(pattern, "[") && strings.Contains(pattern, "]") {
-		return f.matchBracketPattern(pattern, path)
-	}
-
-	// Handle path-specific patterns
-	if pattern == "build" {
-		return strings.HasPrefix(path, "build/") || path == "build"
-	}
-
-	// Generic glob fallback
-	patternWithoutStars := strings.ReplaceAll(pattern, "*", "")
-	return strings.Contains(path, patternWithoutStars)
-}
-
-func (f *testFileFilter) matchDoubleStarPattern(pattern, path string) bool {
-	parts := strings.Split(pattern, "**/")
-	if len(parts) != 2 {
+	// Use regex-based matching like GitignoreMatcher
+	regexPattern := f.gitignoreToRegex(pattern)
+	re, err := regexp.Compile(regexPattern)
+	if err != nil {
 		return false
 	}
-
-	prefix := parts[0]
-	suffix := parts[1]
-
-	// Handle patterns like **/*.test.js (matches any depth)
-	if prefix == "" {
-		return strings.HasSuffix(path, suffix) || strings.Contains(path, "/"+suffix)
-	}
-
-	// Handle patterns like src/**/*.spec.ts
-	if prefix != "" && strings.HasPrefix(path, prefix) {
-		remaining := strings.TrimPrefix(path, prefix)
-		remaining = strings.TrimPrefix(remaining, "/")
-		return strings.HasSuffix(remaining, suffix) || strings.Contains(remaining, "/"+suffix)
-	}
-
-	// Handle **/temp/ patterns
-	if strings.HasSuffix(suffix, "/") {
-		dirName := strings.TrimSuffix(suffix, "/")
-		return strings.HasPrefix(path, dirName+"/") || strings.Contains(path, "/"+dirName+"/")
-	}
-
-	return false
+	return re.MatchString(path)
 }
 
-func (f *testFileFilter) matchBracketPattern(pattern, path string) bool {
-	if strings.HasPrefix(pattern, "*.py[") && strings.HasSuffix(pattern, "]") {
-		// Extract extensions from [cod]
-		bracketContent := pattern[5 : len(pattern)-1] // Remove "*.py[" and "]"
-		for _, char := range bracketContent {
-			ext := ".py" + string(char)
-			if strings.HasSuffix(path, ext) {
-				return true
-			}
-		}
+func (f *testFileFilter) gitignoreToRegex(pattern string) string {
+	// Handle rooted patterns (starting with /)
+	isRooted := strings.HasPrefix(pattern, "/")
+	if isRooted {
+		pattern = strings.TrimPrefix(pattern, "/")
 	}
-	return false
+
+	// Handle directory patterns (ending with /)
+	isDirectory := strings.HasSuffix(pattern, "/")
+	if isDirectory {
+		pattern = strings.TrimSuffix(pattern, "/")
+	}
+
+	// Convert wildcards
+	regex := f.convertWildcards(pattern)
+
+	// Build the final regex based on pattern type
+	var finalRegex string
+
+	switch {
+	case isRooted:
+		// Rooted patterns match from the beginning
+		finalRegex = "^" + regex + "(/.*)?$"
+	case isDirectory:
+		// Non-rooted directory patterns can match at any level
+		finalRegex = "(^|/)" + regex + "(/.*)?$"
+	default:
+		// Non-rooted file patterns don't allow trailing path
+		finalRegex = "(^|/)" + regex + "$"
+	}
+
+	return finalRegex
 }
 
-func (f *testFileFilter) matchSimplePattern(pattern, path string) bool {
-	if strings.Contains(pattern, "*") || strings.Contains(pattern, "[") {
-		return false
+func (f *testFileFilter) convertWildcards(s string) string {
+	// Use placeholders for wildcard patterns to avoid escaping issues
+	const (
+		placeholderGlobstarSlash = "\x00GLOBSTARSLASH\x00"
+		placeholderSlashGlobstar = "\x00SLASHGLOBSTAR\x00"
+		placeholderGlobstar      = "\x00GLOBSTAR\x00"
+		placeholderStar          = "\x00STAR\x00"
+		placeholderQuestion      = "\x00QUESTION\x00"
+	)
+
+	// Step 1: Replace wildcards with placeholders (order matters!)
+	s = strings.ReplaceAll(s, "**/", placeholderGlobstarSlash)
+	s = strings.ReplaceAll(s, "/**", placeholderSlashGlobstar)
+	s = strings.ReplaceAll(s, "**", placeholderGlobstar)
+	s = strings.ReplaceAll(s, "*", placeholderStar)
+	s = strings.ReplaceAll(s, "?", placeholderQuestion)
+
+	// Step 2: Escape special regex characters (but not brackets - they're valid in gitignore)
+	// Note: We don't escape backslash here because it's not expected in gitignore patterns
+	specialChars := []string{".", "+", "(", ")", "{", "}", "^", "$", "|"}
+	for _, char := range specialChars {
+		s = strings.ReplaceAll(s, char, "\\"+char)
 	}
 
-	// For patterns like "/build", match "build/" prefix
-	if strings.HasPrefix(pattern, "/") {
-		cleanPattern := strings.TrimPrefix(pattern, "/")
-		return strings.HasPrefix(path, cleanPattern+"/") || path == cleanPattern
-	}
+	// Step 3: Replace placeholders with regex equivalents
+	s = strings.ReplaceAll(s, placeholderGlobstarSlash, "(?:.*/)?")
+	s = strings.ReplaceAll(s, placeholderSlashGlobstar, "(?:/.*)?")
+	s = strings.ReplaceAll(s, placeholderGlobstar, ".*")
+	s = strings.ReplaceAll(s, placeholderStar, "[^/]*")
+	s = strings.ReplaceAll(s, placeholderQuestion, "[^/]")
 
-	// For other patterns, exact match or suffix match
-	return path == pattern || strings.HasSuffix(path, "/"+pattern)
+	return s
 }
 
 func (f *testFileFilter) LoadGitignorePatterns(
 	_ context.Context,
 	repoPath string,
 ) ([]outbound.GitignorePattern, error) {
-	gitignorePath := filepath.Join(repoPath, ".gitignore")
+	var allPatterns []outbound.GitignorePattern
+
+	// Load root .gitignore
+	rootGitignore := filepath.Join(repoPath, ".gitignore")
+	rootPatterns, err := f.loadGitignoreFile(rootGitignore)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	allPatterns = append(allPatterns, rootPatterns...)
+
+	// Walk subdirectories to find nested .gitignore files
+	walkErr := filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err // Propagate errors
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if filepath.Base(path) == ".gitignore" && path != rootGitignore {
+			patterns, loadErr := f.loadGitignoreFile(path)
+			if loadErr == nil {
+				// Make patterns relative to the subdirectory
+				relDir, _ := filepath.Rel(repoPath, filepath.Dir(path))
+				for i := range patterns {
+					// Prefix patterns with the subdirectory path
+					if !strings.HasPrefix(patterns[i].Pattern, "/") {
+						patterns[i].Pattern = relDir + "/" + patterns[i].Pattern
+					}
+				}
+				allPatterns = append(allPatterns, patterns...)
+			}
+		}
+		return nil
+	})
+
+	return allPatterns, walkErr
+}
+
+func (f *testFileFilter) loadGitignoreFile(gitignorePath string) ([]outbound.GitignorePattern, error) {
 	file, err := os.Open(gitignorePath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return []outbound.GitignorePattern{}, nil
-		}
 		return nil, err
 	}
 	defer file.Close()
@@ -423,9 +442,17 @@ func (f *testFileFilter) LoadGitignorePatterns(
 func (f *testFileFilter) FilterFilesBatch(
 	ctx context.Context,
 	files []outbound.FileInfo,
-	_ string,
+	repoPath string,
 ) ([]outbound.FilterResult, error) {
 	results := make([]outbound.FilterResult, 0, len(files))
+
+	// Temporarily set repoPath for batch processing
+	originalRepoPath := f.repoPath
+	f.repoPath = repoPath
+	defer func() {
+		f.repoPath = originalRepoPath
+	}()
+
 	for _, file := range files {
 		start := time.Now()
 		decision, err := f.ShouldProcessFile(ctx, file.Path, file)
@@ -968,7 +995,7 @@ func validateFileDecision(t *testing.T, decision outbound.FilterDecision, expect
 }
 
 func TestFileFilterService_ShouldProcessFile_Complex(t *testing.T) {
-	setupComplexTestRepo(t)
+	repoPath := setupComplexTestRepo(t)
 
 	tests := []struct {
 		name        string
@@ -989,8 +1016,8 @@ func TestFileFilterService_ShouldProcessFile_Complex(t *testing.T) {
 			"Important test",
 			"src/important.test.js",
 			[]byte("// test"),
-			expectedFileResult{true, false, true},
-		}, // Negated
+			expectedFileResult{true, false, false}, // Negated - should NOT be ignored
+		},
 		{"Temp file", "src/temp/data.json", []byte("{}"), expectedFileResult{false, false, true}},
 
 		// Binary files
@@ -1007,7 +1034,7 @@ func TestFileFilterService_ShouldProcessFile_Complex(t *testing.T) {
 		{"Text in temp", "src/temp/notes.txt", []byte("notes"), expectedFileResult{false, false, true}},
 	}
 
-	filter := getTestFilter()
+	filter := getTestFilterWithRepo(repoPath)
 	ctx := context.Background()
 
 	for _, tt := range tests {

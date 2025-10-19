@@ -82,12 +82,16 @@ func (m *GitignoreMatcher) gitignoreToRegex(pattern string) string {
 	// Build the final regex based on pattern type
 	var finalRegex string
 
-	if isRooted {
+	switch {
+	case isRooted:
 		// Rooted patterns match from the beginning
 		finalRegex = "^" + regex + "(/.*)?$"
-	} else {
-		// Non-rooted patterns can match at any level
+	case isDirectory:
+		// Non-rooted directory patterns can match at any level
 		finalRegex = "(^|/)" + regex + "(/.*)?$"
+	default:
+		// Non-rooted file patterns don't allow trailing path
+		finalRegex = "(^|/)" + regex + "$"
 	}
 
 	return finalRegex
@@ -113,7 +117,8 @@ func (m *GitignoreMatcher) convertWildcards(s string) string {
 	s = strings.ReplaceAll(s, "?", placeholderQuestion)
 
 	// Step 2: Escape special regex characters (but not brackets - they're valid in gitignore)
-	specialChars := []string{".", "+", "(", ")", "{", "}", "^", "$", "|", "\\"}
+	// Note: We don't escape backslash here because it's not expected in gitignore patterns
+	specialChars := []string{".", "+", "(", ")", "{", "}", "^", "$", "|"}
 	for _, char := range specialChars {
 		s = strings.ReplaceAll(s, char, "\\"+char)
 	}

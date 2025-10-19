@@ -81,7 +81,7 @@ func extractModuleDocstring(parseTree *valueobject.ParseTree) string {
 			stringNode := findChildByType(child, nodeTypeString)
 			if stringNode != nil {
 				// Unescape quotes in docstrings to match Python's behavior
-				return extractStringContent(parseTree, stringNode, true)
+				return extractStringContent(parseTree, stringNode)
 			}
 		}
 	}
@@ -132,7 +132,7 @@ func extractMetadataFromAssignment(
 		case nodeTypeString:
 			// Extract string content using tree-sitter navigation
 			// Unescape quotes for display in module metadata
-			value = extractStringContent(parseTree, child, true)
+			value = extractStringContent(parseTree, child)
 		}
 	}
 

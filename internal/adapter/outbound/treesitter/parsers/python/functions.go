@@ -265,12 +265,11 @@ func isAsyncFunction(node *valueobject.ParseNode) bool {
 // Parameters:
 //   - parseTree: The parse tree containing the string node
 //   - stringNode: The string node to extract content from
-//   - unescapeQuotes: If true, unescapes \" and \' to " and ' (for display).
-//     If false, preserves escape sequences (for documentation/code examples).
+//
+// The function unescapes \" and \' to " and ' for display.
 func extractStringContent(
 	parseTree *valueobject.ParseTree,
 	stringNode *valueobject.ParseNode,
-	unescapeQuotes bool,
 ) string {
 	if stringNode == nil || stringNode.Type != nodeTypeString {
 		return ""
@@ -281,12 +280,9 @@ func extractStringContent(
 		if child.Type == nodeTypeStringContent {
 			content := parseTree.GetNodeText(child)
 
-			if unescapeQuotes {
-				// Unescape quotes for display (module variables, regular string values)
-				content = strings.ReplaceAll(content, `\"`, `"`)
-				content = strings.ReplaceAll(content, `\'`, `'`)
-			}
-			// else: preserve escape sequences for documentation/code examples
+			// Unescape quotes for display (module variables, regular string values)
+			content = strings.ReplaceAll(content, `\"`, `"`)
+			content = strings.ReplaceAll(content, `\'`, `'`)
 
 			return content
 		}
@@ -323,7 +319,7 @@ func extractFunctionDocumentation(parseTree *valueobject.ParseTree, node *valueo
 			stringNode := firstStmt.Children[0]
 			if stringNode.Type == nodeTypeString {
 				// Unescape quotes in docstrings to match Python's behavior
-				return extractStringContent(parseTree, stringNode, true)
+				return extractStringContent(parseTree, stringNode)
 			}
 		}
 	}
@@ -869,30 +865,184 @@ func findChildrenByType(node *valueobject.ParseNode, nodeType string) []*valueob
 	return matches
 }
 
-// extractModuleName extracts module name from parse tree.
-func extractModuleName(parseTree *valueobject.ParseTree) string {
-	// For now, return a default module name matching test expectations
-	// In a real implementation, this would be derived from file path
-	// We'll extract it from the first comment line if available
-	rootNode := parseTree.RootNode()
-	if rootNode != nil {
-		for _, child := range rootNode.Children {
-			if child.Type == nodeTypeComment {
-				commentText := parseTree.GetNodeText(child)
-				// Remove # prefix
-				commentText = strings.TrimPrefix(commentText, "#")
-				// Trim whitespace
-				commentText = strings.TrimSpace(commentText)
-				// Extract module name (e.g., "math_utils.py" -> "math_utils")
-				if strings.HasSuffix(commentText, ".py") {
-					moduleName := strings.TrimSuffix(commentText, ".py")
-					return moduleName
-				}
-			}
+const (
+	// maxDistanceBetweenModuleAndPattern is the maximum number of characters allowed
+	// between "module" and "for"/"provides" keywords for pattern matching.
+	maxDistanceBetweenModuleAndPattern = 10
+)
+
+// extractModuleNameFromDocstring extracts module name from docstring by finding
+// "module for [keyword]" or "module provides [keyword]" pattern and returning the keyword.
+// Returns empty string if no pattern is found.
+func extractModuleNameFromDocstring(docstring string) string {
+	lowerDocstring := strings.ToLower(docstring)
+
+	// Find the "module" keyword
+	moduleIdx := strings.Index(lowerDocstring, "module")
+	if moduleIdx == -1 {
+		return ""
+	}
+
+	// Find pattern keyword after "module"
+	searchStart := moduleIdx + len("module")
+	keywordStart := findPatternKeywordPosition(lowerDocstring, searchStart)
+	if keywordStart == -1 {
+		return ""
+	}
+
+	// Extract and return the keyword following the pattern
+	return extractKeywordAfterPattern(docstring, keywordStart)
+}
+
+// findPatternKeywordPosition finds the position after "for" or "provides" keywords
+// that follow "module". Returns -1 if no valid pattern is found.
+func findPatternKeywordPosition(lowerDocstring string, searchStart int) int {
+	// Search for "for" and "provides" after "module"
+	forIdx := strings.Index(lowerDocstring[searchStart:], "for")
+	providesIdx := strings.Index(lowerDocstring[searchStart:], "provides")
+
+	// Determine which pattern to use (whichever comes first and is close enough)
+	patterns := []struct {
+		idx    int
+		length int
+	}{
+		{forIdx, len("for")},
+		{providesIdx, len("provides")},
+	}
+
+	for _, pattern := range patterns {
+		if pattern.idx != -1 && pattern.idx <= maxDistanceBetweenModuleAndPattern {
+			return searchStart + pattern.idx + pattern.length
 		}
 	}
 
-	return "models"
+	return -1
+}
+
+// extractKeywordAfterPattern extracts the keyword that follows the pattern.
+// It skips whitespace and extracts alphanumeric characters and underscores.
+// Returns empty string if no valid keyword is found.
+func extractKeywordAfterPattern(docstring string, position int) string {
+	// Skip whitespace after pattern
+	pos := skipWhitespace(docstring, position)
+	if pos >= len(docstring) {
+		return ""
+	}
+
+	// Don't match across lines
+	if docstring[pos] == '\n' || docstring[pos] == '\r' {
+		return ""
+	}
+
+	// Extract the keyword (alphanumeric + underscore)
+	keywordEnd := extractIdentifierEnd(docstring, pos)
+	if keywordEnd == pos {
+		return ""
+	}
+
+	return docstring[pos:keywordEnd]
+}
+
+// skipWhitespace skips spaces and tabs starting at the given position.
+func skipWhitespace(s string, start int) int {
+	pos := start
+	for pos < len(s) && (s[pos] == ' ' || s[pos] == '\t') {
+		pos++
+	}
+	return pos
+}
+
+// extractIdentifierEnd finds the end position of an identifier starting at the given position.
+// An identifier consists of alphanumeric characters and underscores.
+func extractIdentifierEnd(s string, start int) int {
+	pos := start
+	for pos < len(s) {
+		ch := s[pos]
+		if isIdentifierChar(ch) {
+			pos++
+		} else {
+			break
+		}
+	}
+	return pos
+}
+
+// isIdentifierChar returns true if the character is valid in an identifier.
+func isIdentifierChar(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= '0' && ch <= '9') ||
+		ch == '_'
+}
+
+const (
+	// defaultModuleName is returned when no module name can be extracted from the source.
+	defaultModuleName = "models"
+)
+
+// extractModuleName extracts module name from parse tree.
+// It tries multiple extraction strategies in order of preference:
+// 1. From module-level docstring using pattern matching
+// 2. From comment-based file name annotation (backward compatibility)
+// Returns defaultModuleName if no module name can be extracted.
+func extractModuleName(parseTree *valueobject.ParseTree) string {
+	rootNode := parseTree.RootNode()
+	if rootNode == nil {
+		return defaultModuleName
+	}
+
+	// Try to extract from module docstring first
+	if moduleName := extractModuleNameFromTree(parseTree, rootNode); moduleName != "" {
+		return moduleName
+	}
+
+	// Fallback to comment-based extraction for backward compatibility
+	if moduleName := extractModuleNameFromComment(parseTree, rootNode); moduleName != "" {
+		return moduleName
+	}
+
+	return defaultModuleName
+}
+
+// extractModuleNameFromTree extracts module name from the module-level docstring.
+func extractModuleNameFromTree(parseTree *valueobject.ParseTree, rootNode *valueobject.ParseNode) string {
+	for _, child := range rootNode.Children {
+		if child.Type != nodeTypeExpressionStatement {
+			continue
+		}
+
+		stringNode := findChildByType(child, nodeTypeString)
+		if stringNode == nil {
+			continue
+		}
+
+		docstring := extractStringContent(parseTree, stringNode)
+		if moduleName := extractModuleNameFromDocstring(docstring); moduleName != "" {
+			return moduleName
+		}
+	}
+	return ""
+}
+
+// extractModuleNameFromComment extracts module name from comment annotations.
+// This is a legacy extraction method for backward compatibility.
+// It looks for comments like "# math_utils.py" and extracts "math_utils".
+func extractModuleNameFromComment(parseTree *valueobject.ParseTree, rootNode *valueobject.ParseNode) string {
+	for _, child := range rootNode.Children {
+		if child.Type != nodeTypeComment {
+			continue
+		}
+
+		commentText := parseTree.GetNodeText(child)
+		// Remove # prefix and trim whitespace
+		commentText = strings.TrimSpace(strings.TrimPrefix(commentText, "#"))
+
+		// Extract module name (e.g., "math_utils.py" -> "math_utils")
+		if strings.HasSuffix(commentText, ".py") {
+			return strings.TrimSuffix(commentText, ".py")
+		}
+	}
+	return ""
 }
 
 // qualifyName creates a qualified name from parts.

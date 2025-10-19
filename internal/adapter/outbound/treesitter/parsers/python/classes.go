@@ -319,7 +319,7 @@ func extractClassDocstring(parseTree *valueobject.ParseTree, node *valueobject.P
 			stringNode := findChildByType(child, "string")
 			if stringNode != nil {
 				// Unescape quotes in docstrings to match Python's behavior
-				return extractStringContent(parseTree, stringNode, true)
+				return extractStringContent(parseTree, stringNode)
 			}
 		}
 	}

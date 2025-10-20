@@ -876,18 +876,26 @@ func TestJobResumeService_MarkJobForResume_Success(t *testing.T) {
 		{"resource_failure", ResumeReasonResourceFailure},
 	}
 
-	ctx := context.Background()
-	service := NewDefaultJobResumeService(nil, nil, nil, nil, nil, nil, nil)
-	jobID := uuid.New()
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			// Arrange
+			ctx := context.Background()
+			mockJobRepo := new(MockIndexingJobRepository)
+			service := NewDefaultJobResumeService(nil, mockJobRepo, nil, nil, nil, nil, nil)
+
+			jobID := uuid.New()
+			repositoryID := uuid.New()
+			mockJob := entity.NewIndexingJob(repositoryID)
+
+			// Set up expectations
+			mockJobRepo.On("FindByID", ctx, jobID).Return(mockJob, nil)
+
 			// Act
 			err := service.MarkJobForResume(ctx, jobID, tc.reason)
 
 			// Assert
-			require.Error(t, err, "Expected error in RED phase")
-			assert.Contains(t, err.Error(), "not implemented")
+			require.NoError(t, err, "Should successfully mark job for resume with valid reason")
+			mockJobRepo.AssertExpectations(t)
 		})
 	}
 }
@@ -978,11 +986,11 @@ func TestJobResumeService_ConcurrentResumeOperations(t *testing.T) {
 		}(jobID)
 	}
 
-	// Collect results
+	// Collect results - should all fail with checkpoint service not initialized
 	for range jobIDs {
 		err := <-results
-		require.Error(t, err, "Expected error in RED phase")
-		assert.Contains(t, err.Error(), "not implemented")
+		require.Error(t, err, "Expected error when checkpoint service is nil")
+		assert.Contains(t, err.Error(), "checkpoint service not initialized")
 	}
 }
 
@@ -1101,8 +1109,8 @@ func TestJobResumeService_HandleInvalidCheckpoint(t *testing.T) {
 	err := service.ValidateResumePoint(ctx, invalidCheckpoint)
 
 	// Assert
-	require.Error(t, err, "Expected error in RED phase")
-	assert.Contains(t, err.Error(), "not implemented")
+	require.Error(t, err, "Invalid checkpoint should fail validation")
+	assert.Contains(t, err.Error(), "checkpoint has no resume point")
 }
 
 func TestJobResumeService_HandleMissingPrerequisites(t *testing.T) {
@@ -1115,9 +1123,9 @@ func TestJobResumeService_HandleMissingPrerequisites(t *testing.T) {
 	// Act
 	assessment, err := service.CanResumeJob(ctx, jobID)
 
-	// Assert - should fail in RED phase but test defines prerequisite checking
-	require.Error(t, err, "Expected error in RED phase")
-	assert.Contains(t, err.Error(), "not implemented")
+	// Assert - should fail when checkpoint service is not initialized
+	require.Error(t, err, "Expected error when checkpoint service is nil")
+	assert.Contains(t, err.Error(), "checkpoint service not initialized")
 	assert.Nil(t, assessment)
 }
 
@@ -1135,8 +1143,8 @@ func TestJobResumeService_HandleResourceConstraints(t *testing.T) {
 	// Act
 	result, err := service.ResumeJob(ctx, jobID, options)
 
-	// Assert
-	require.Error(t, err, "Expected error in RED phase")
-	assert.Contains(t, err.Error(), "not implemented")
+	// Assert - should fail when checkpoint service is not initialized
+	require.Error(t, err, "Expected error when checkpoint service is nil")
+	assert.Contains(t, err.Error(), "checkpoint service not initialized")
 	assert.Nil(t, result)
 }

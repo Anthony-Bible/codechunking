@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	forest "github.com/alexaandru/go-sitter-forest"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -29,6 +30,75 @@ const (
 	// DetectionMethodHeuristic represents heuristic-based detection method.
 	DetectionMethodHeuristic = "Heuristic"
 )
+
+// getForestExtensionOverrides returns manual overrides for forest.DetectLanguage for specific extensions.
+// These overrides are necessary because forest's heuristic detection may not correctly identify
+// certain React/TypeScript file types. By explicitly mapping these extensions, we ensure
+// consistent and accurate detection for JSX and TSX files.
+func getForestExtensionOverrides() map[string]string {
+	return map[string]string{
+		".jsx": "jsx", // React JavaScript files
+		".tsx": "tsx", // React TypeScript files
+	}
+}
+
+// forestLangToValueObjectLang maps forest.DetectLanguage output to our valueobject language constants.
+// This function handles the normalization of language names returned by go-sitter-forest's DetectLanguage
+// into our internal language representation. It performs case-insensitive matching and handles various
+// language name variations (e.g., "cpp" and "c_plus_plus" both map to C++).
+//
+// Parameters:
+//   - forestLang: The language string returned by forest.DetectLanguage
+//
+// Returns:
+//   - A valueobject language constant (e.g., valueobject.LanguageGo, valueobject.LanguagePython)
+//   - Returns valueobject.LanguageUnknown for unrecognized or unsupported languages
+func forestLangToValueObjectLang(forestLang string) string {
+	lowerLang := strings.ToLower(forestLang)
+
+	switch lowerLang {
+	case "go":
+		return valueobject.LanguageGo
+	case "python":
+		return valueobject.LanguagePython
+	case "javascript", "jsx":
+		return valueobject.LanguageJavaScript
+	case "typescript", "tsx":
+		return valueobject.LanguageTypeScript
+	case "java":
+		return valueobject.LanguageJava
+	case "c":
+		return valueobject.LanguageC
+	case "cpp", "c_plus_plus":
+		return valueobject.LanguageCPlusPlus
+	case "rust":
+		return valueobject.LanguageRust
+	case "ruby":
+		return valueobject.LanguageRuby
+	case "php":
+		return valueobject.LanguagePHP
+	case "html":
+		return valueobject.LanguageHTML
+	case "css":
+		return valueobject.LanguageCSS
+	case "json":
+		return valueobject.LanguageJSON
+	case "yaml":
+		return valueobject.LanguageYAML
+	case "xml":
+		return valueobject.LanguageXML
+	case "markdown":
+		return valueobject.LanguageMarkdown
+	case "sql":
+		return valueobject.LanguageSQL
+	case "bash", "shell", "sh":
+		return valueobject.LanguageShell
+	case "make":
+		return valueobject.LanguageUnknown
+	default:
+		return valueobject.LanguageUnknown
+	}
+}
 
 // Detector implements the outbound.LanguageDetector interface.
 // It provides concrete implementation for language detection using various strategies.
@@ -243,6 +313,20 @@ func (d *Detector) DetectFromFilePath(ctx context.Context, filePath string) (val
 			}
 		}
 
+		// Set confidence and detection method
+		confidence := d.getConfidenceForMethod(DetectionMethodExtension)
+		language = language.WithDetectionMethod(valueobject.DetectionMethodExtension)
+		language, err = language.WithConfidence(confidence)
+		if err != nil {
+			return valueobject.Language{}, &outbound.DetectionError{
+				Type:      outbound.ErrorTypeInternal,
+				Message:   fmt.Sprintf("failed to set confidence: %v", err),
+				FilePath:  filePath,
+				Timestamp: time.Now(),
+				Cause:     err,
+			}
+		}
+
 		// Cache the result
 		d.cache.Put(ctx, cacheKey, language)
 		span.SetAttributes(attribute.Bool("cache_hit", false))
@@ -256,12 +340,197 @@ func (d *Detector) DetectFromFilePath(ctx context.Context, filePath string) (val
 		return language, nil
 	}
 
+	// Try forest detection as fallback
+	if lang, err := d.detectFromForest(ctx, filePath); err == nil {
+		// Cache the result
+		d.cache.Put(ctx, cacheKey, lang)
+		return lang, nil
+	}
+
 	return valueobject.Language{}, &outbound.DetectionError{
 		Type:      outbound.ErrorTypeUnsupportedFormat,
 		Message:   fmt.Sprintf("unsupported file extension: %s", ext),
 		FilePath:  filePath,
 		Timestamp: time.Now(),
 	}
+}
+
+// detectFromForest detects language using forest.DetectLanguage as a fallback mechanism.
+// This method is used when extension-based detection fails (e.g., for unknown extensions
+// or files without extensions). It leverages go-sitter-forest's heuristic detection which
+// analyzes file paths and can handle 300+ programming languages.
+//
+// The detection process:
+//  1. Validates the file path is not empty
+//  2. Calls forest.DetectLanguage (with jsx/tsx overrides via getForestLanguage)
+//  3. Maps the forest result to our valueobject.Language constants
+//  4. Sets detection method to Heuristic with 0.75 confidence
+//  5. Returns LanguageUnknown for unsupported languages detected by forest
+//  6. Returns error for files with no extension that forest cannot detect
+//
+// Parameters:
+//   - ctx: Context for tracing and cancellation
+//   - filePath: The file path to detect (must not be empty)
+//
+// Returns:
+//   - A Language value object with heuristic detection metadata
+//   - DetectionError if the file path is invalid or detection fails
+func (d *Detector) detectFromForest(ctx context.Context, filePath string) (valueobject.Language, error) {
+	// Handle empty file path
+	if filePath == "" {
+		return valueobject.Language{}, &outbound.DetectionError{
+			Type:      outbound.ErrorTypeInvalidFile,
+			Message:   "cannot detect language: file path is empty",
+			FilePath:  filePath,
+			Timestamp: time.Now(),
+		}
+	}
+
+	// Check if file has no extension
+	ext := strings.ToLower(filepath.Ext(filePath))
+	hasNoExtension := ext == ""
+
+	// Get forest language detection result
+	slogger.Debug(ctx, "Attempting forest.DetectLanguage for file", slogger.Fields{
+		"file_path": filePath,
+		"extension": ext,
+	})
+	forestLang := d.getForestLanguage(ext, filePath)
+
+	// Handle empty result from forest
+	if forestLang == "" {
+		slogger.Debug(ctx, "Forest returned empty result", slogger.Fields{
+			"file_path": filePath,
+			"extension": ext,
+		})
+		return valueobject.Language{}, &outbound.DetectionError{
+			Type: outbound.ErrorTypeUnsupportedFormat,
+			Message: fmt.Sprintf(
+				"forest.DetectLanguage returned empty string for file: %s (extension: %s)",
+				filePath,
+				ext,
+			),
+			FilePath:  filePath,
+			Timestamp: time.Now(),
+		}
+	}
+
+	// Map forest language to our constants
+	langName := forestLangToValueObjectLang(forestLang)
+
+	// If file has no extension and maps to Unknown, return error
+	if hasNoExtension && langName == valueobject.LanguageUnknown {
+		slogger.Debug(ctx, "Extensionless file maps to unknown language", slogger.Fields{
+			"file_path":   filePath,
+			"forest_lang": forestLang,
+		})
+		return valueobject.Language{}, &outbound.DetectionError{
+			Type: outbound.ErrorTypeUnsupportedFormat,
+			Message: fmt.Sprintf(
+				"forest detected '%s' but it maps to unsupported language for extensionless file: %s",
+				forestLang,
+				filePath,
+			),
+			FilePath:  filePath,
+			Timestamp: time.Now(),
+		}
+	}
+
+	// Create and configure language with heuristic detection method
+	return d.createForestDetectedLanguage(ctx, langName, forestLang, filePath)
+}
+
+// getForestLanguage gets the language from forest.DetectLanguage with overrides for specific extensions.
+// This method provides extension-specific overrides before calling forest.DetectLanguage because
+// forest's detection for certain React/JSX file types needs correction:
+//   - .jsx files: Forest may not correctly identify these as JSX, so we explicitly return "jsx"
+//   - .tsx files: Forest may not correctly identify these as TSX, so we explicitly return "tsx"
+//
+// These overrides ensure consistent detection for React and TypeScript React files while still
+// leveraging forest's detection for all other file types. The overrides are defined via
+// getForestExtensionOverrides() for easy maintenance and extensibility.
+//
+// Parameters:
+//   - ext: The file extension (e.g., ".jsx", ".tsx", ".go")
+//   - filePath: The complete file path to pass to forest.DetectLanguage
+//
+// Returns:
+//   - A language string from forest.DetectLanguage or an override value
+func (d *Detector) getForestLanguage(ext, filePath string) string {
+	// Check for extension-specific overrides first
+	overrides := getForestExtensionOverrides()
+	if override, exists := overrides[ext]; exists {
+		return override
+	}
+	// Fall back to forest's heuristic detection
+	detectedLang := forest.DetectLanguage(filePath)
+	return detectedLang
+}
+
+// createForestDetectedLanguage creates a Language object with heuristic detection metadata.
+// This helper method constructs a properly configured Language value object for languages
+// detected via forest.DetectLanguage. It handles:
+//   - Creating the Language with the mapped language name
+//   - Setting detection method to Heuristic (since forest uses path-based heuristics)
+//   - Assigning confidence score of 0.75 (lower than extension-based detection)
+//   - Logging the detection result for debugging and monitoring
+//
+// Parameters:
+//   - ctx: Context for logging
+//   - langName: Our internal language constant (e.g., valueobject.LanguageGo)
+//   - forestLang: The original language string returned by forest (for logging)
+//   - filePath: The file path being detected (for logging and error reporting)
+//
+// Returns:
+//   - A fully configured Language value object with heuristic detection metadata
+//   - DetectionError if language creation or confidence setting fails
+func (d *Detector) createForestDetectedLanguage(
+	ctx context.Context,
+	langName, forestLang, filePath string,
+) (valueobject.Language, error) {
+	language, err := valueobject.NewLanguage(langName)
+	if err != nil {
+		return valueobject.Language{}, &outbound.DetectionError{
+			Type:      outbound.ErrorTypeInternal,
+			Message:   fmt.Sprintf("failed to create language: %v", err),
+			FilePath:  filePath,
+			Timestamp: time.Now(),
+			Cause:     err,
+		}
+	}
+
+	// Set confidence and detection method
+	confidence := d.getConfidenceForMethod(DetectionMethodHeuristic)
+	language = language.WithDetectionMethod(valueobject.DetectionMethodHeuristic)
+	language, err = language.WithConfidence(confidence)
+	if err != nil {
+		return valueobject.Language{}, &outbound.DetectionError{
+			Type:      outbound.ErrorTypeInternal,
+			Message:   fmt.Sprintf("failed to set confidence: %v", err),
+			FilePath:  filePath,
+			Timestamp: time.Now(),
+			Cause:     err,
+		}
+	}
+
+	// Log detection result with confidence information
+	if langName == valueobject.LanguageUnknown {
+		slogger.Debug(ctx, "Forest detected unsupported language, returning Unknown", slogger.Fields{
+			"file_path":   filePath,
+			"forest_lang": forestLang,
+			"confidence":  confidence,
+		})
+	} else {
+		slogger.Info(ctx, "Language successfully detected by forest", slogger.Fields{
+			"file_path":       filePath,
+			"forest_lang":     forestLang,
+			"mapped_language": langName,
+			"confidence":      confidence,
+			"method":          valueobject.DetectionMethodHeuristic,
+		})
+	}
+
+	return language, nil
 }
 
 // DetectFromContent detects language based on file content analysis.
@@ -306,6 +575,14 @@ func (d *Detector) DetectFromContent(ctx context.Context, content []byte, hint s
 				continue
 			}
 
+			// Set confidence and detection method for content
+			confidence := d.getConfidenceForMethod(DetectionMethodContent)
+			language = language.WithDetectionMethod(valueobject.DetectionMethodContent)
+			language, err = language.WithConfidence(confidence)
+			if err != nil {
+				continue
+			}
+
 			slogger.Debug(ctx, "Language detected by content pattern", slogger.Fields{
 				"language": langName,
 				"pattern":  pattern.String(),
@@ -338,7 +615,20 @@ func (d *Detector) detectFromHint(hint string) (valueobject.Language, error) {
 		return valueobject.Language{}, errors.New("unsupported extension in hint")
 	}
 
-	return valueobject.NewLanguage(langName)
+	language, err := valueobject.NewLanguage(langName)
+	if err != nil {
+		return valueobject.Language{}, err
+	}
+
+	// Set confidence and detection method for hint-based detection
+	confidence := d.getConfidenceForMethod(DetectionMethodExtension)
+	language = language.WithDetectionMethod(valueobject.DetectionMethodExtension)
+	language, err = language.WithConfidence(confidence)
+	if err != nil {
+		return valueobject.Language{}, err
+	}
+
+	return language, nil
 }
 
 // createUnknownLanguage creates an Unknown language instance.
@@ -352,6 +642,19 @@ func (d *Detector) createUnknownLanguage() (valueobject.Language, error) {
 			Cause:     err,
 		}
 	}
+
+	// Set low confidence and unknown detection method
+	language = language.WithDetectionMethod(valueobject.DetectionMethodUnknown)
+	language, err = language.WithConfidence(0.0)
+	if err != nil {
+		return valueobject.Language{}, &outbound.DetectionError{
+			Type:      outbound.ErrorTypeInternal,
+			Message:   fmt.Sprintf("failed to set confidence for unknown language: %v", err),
+			Timestamp: time.Now(),
+			Cause:     err,
+		}
+	}
+
 	return language, nil
 }
 
@@ -395,6 +698,24 @@ func (d *Detector) DetectMultipleLanguages(
 ) ([]valueobject.Language, error) {
 	ctx, span := d.tracer.Start(ctx, "DetectMultipleLanguages")
 	defer span.End()
+
+	// Validate input
+	if len(content) == 0 {
+		return nil, &outbound.DetectionError{
+			Type:      outbound.ErrorTypeInvalidFile,
+			Message:   "content is empty",
+			Timestamp: time.Now(),
+		}
+	}
+
+	// Check if binary content
+	if isBinary(content) {
+		return nil, &outbound.DetectionError{
+			Type:      outbound.ErrorTypeBinaryFile,
+			Message:   "content appears to be binary",
+			Timestamp: time.Now(),
+		}
+	}
 
 	var languages []valueobject.Language
 
@@ -440,29 +761,37 @@ func (d *Detector) isHTMLContent(filename, contentStr string) bool {
 
 // addHTMLLanguages adds HTML and embedded languages.
 func (d *Detector) addHTMLLanguages(languages []valueobject.Language, contentStr string) []valueobject.Language {
-	// Add HTML
-	if htmlLang, err := valueobject.NewLanguage(valueobject.LanguageHTML); err == nil {
-		if !containsLanguage(languages, htmlLang) {
-			languages = append(languages, htmlLang)
-		}
-	}
+	// Add HTML with confidence
+	languages = d.addLanguageIfNotPresent(languages, valueobject.LanguageHTML)
 
-	// Add embedded JavaScript
+	// Add embedded JavaScript with confidence
 	if regexp.MustCompile(`<script\b`).MatchString(contentStr) {
-		if jsLang, err := valueobject.NewLanguage(valueobject.LanguageJavaScript); err == nil {
-			if !containsLanguage(languages, jsLang) {
-				languages = append(languages, jsLang)
-			}
-		}
+		languages = d.addLanguageIfNotPresent(languages, valueobject.LanguageJavaScript)
 	}
 
-	// Add embedded CSS
+	// Add embedded CSS with confidence
 	if regexp.MustCompile(`<style\b`).MatchString(contentStr) {
-		if cssLang, err := valueobject.NewLanguage(valueobject.LanguageCSS); err == nil {
-			if !containsLanguage(languages, cssLang) {
-				languages = append(languages, cssLang)
-			}
-		}
+		languages = d.addLanguageIfNotPresent(languages, valueobject.LanguageCSS)
+	}
+
+	return languages
+}
+
+// addLanguageIfNotPresent adds a language to the list if not already present.
+func (d *Detector) addLanguageIfNotPresent(languages []valueobject.Language, langName string) []valueobject.Language {
+	lang, err := valueobject.NewLanguage(langName)
+	if err != nil {
+		return languages
+	}
+
+	lang = lang.WithDetectionMethod(valueobject.DetectionMethodContent)
+	lang, err = lang.WithConfidence(d.getConfidenceForMethod(DetectionMethodContent))
+	if err != nil {
+		return languages
+	}
+
+	if !containsLanguage(languages, lang) {
+		languages = append(languages, lang)
 	}
 
 	return languages
@@ -543,6 +872,14 @@ func (d *Detector) detectFromShebang(ctx context.Context, content string) (value
 				continue
 			}
 
+			// Set confidence and detection method for shebang
+			confidence := d.getConfidenceForMethod(DetectionMethodShebang)
+			language = language.WithDetectionMethod(valueobject.DetectionMethodShebang)
+			language, err = language.WithConfidence(confidence)
+			if err != nil {
+				continue
+			}
+
 			slogger.Debug(ctx, "Language detected by shebang", slogger.Fields{
 				"language": langName,
 				"shebang":  firstLine,
@@ -565,7 +902,7 @@ func (d *Detector) getConfidenceForMethod(method string) float64 {
 	case DetectionMethodContent:
 		return 0.80
 	case DetectionMethodHeuristic:
-		return 0.70
+		return 0.75
 	default:
 		return 0.50
 	}

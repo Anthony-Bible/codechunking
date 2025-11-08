@@ -1487,6 +1487,21 @@ func createMockLanguageDetector(t *testing.T) outbound.LanguageDetector {
 // MockLanguageDetector provides a simple mock implementation for testing.
 type MockLanguageDetector struct{}
 
+// createLanguageWithMetadata creates a language with detection method and confidence.
+func createLanguageWithMetadata(
+	langName string,
+	method valueobject.DetectionMethod,
+	confidence float64,
+) (valueobject.Language, error) {
+	lang, err := valueobject.NewLanguage(langName)
+	if err != nil {
+		return valueobject.Language{}, err
+	}
+	lang = lang.WithDetectionMethod(method)
+	lang, err = lang.WithConfidence(confidence)
+	return lang, err
+}
+
 // DetectFromFilePath implements basic extension-based detection for testing.
 func (m *MockLanguageDetector) DetectFromFilePath(_ context.Context, filePath string) (valueobject.Language, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
@@ -1494,8 +1509,6 @@ func (m *MockLanguageDetector) DetectFromFilePath(_ context.Context, filePath st
 	extensionMap := map[string]string{
 		".go":   valueobject.LanguageGo,
 		".py":   valueobject.LanguagePython,
-		".js":   valueobject.LanguageJavaScript,
-		".ts":   valueobject.LanguageTypeScript,
 		".java": valueobject.LanguageJava,
 		".c":    valueobject.LanguageC,
 		".cpp":  valueobject.LanguageCPlusPlus,
@@ -1513,7 +1526,20 @@ func (m *MockLanguageDetector) DetectFromFilePath(_ context.Context, filePath st
 	}
 
 	if langName, exists := extensionMap[ext]; exists {
-		return valueobject.NewLanguage(langName)
+		// JavaScript and TypeScript get 0.90 confidence, others get 0.95
+		confidence := 0.95
+		if langName == valueobject.LanguageJavaScript || langName == valueobject.LanguageTypeScript {
+			confidence = 0.90
+		}
+		return createLanguageWithMetadata(langName, valueobject.DetectionMethodExtension, confidence)
+	}
+
+	// Add special handling for .js and .ts extensions
+	if ext == ".js" {
+		return createLanguageWithMetadata(valueobject.LanguageJavaScript, valueobject.DetectionMethodExtension, 0.90)
+	}
+	if ext == ".ts" {
+		return createLanguageWithMetadata(valueobject.LanguageTypeScript, valueobject.DetectionMethodExtension, 0.95)
 	}
 
 	return valueobject.Language{}, &outbound.DetectionError{
@@ -1551,83 +1577,114 @@ func (m *MockLanguageDetector) DetectFromContent(
 
 	contentStr := string(content)
 
-	// Basic shebang detection
-	if strings.HasPrefix(contentStr, "#!/usr/bin/env python") || strings.HasPrefix(contentStr, "#!/usr/bin/python") {
-		return valueobject.NewLanguage(valueobject.LanguagePython)
+	// Filename-based detection for specific file types
+	if strings.HasSuffix(hint, ".vue") {
+		return createLanguageWithMetadata(valueobject.LanguageHTML, valueobject.DetectionMethodContent, 0.85)
 	}
-	if strings.HasPrefix(contentStr, "#!/usr/bin/env node") {
-		return valueobject.NewLanguage(valueobject.LanguageJavaScript)
+	if strings.HasSuffix(hint, ".tsx") {
+		return createLanguageWithMetadata(valueobject.LanguageTypeScript, valueobject.DetectionMethodContent, 0.88)
 	}
-	if strings.HasPrefix(contentStr, "#!/usr/bin/env ruby") || strings.HasPrefix(contentStr, "#!/usr/bin/ruby") {
-		return valueobject.NewLanguage(valueobject.LanguageRuby)
+	if strings.HasSuffix(hint, ".md") {
+		return createLanguageWithMetadata(valueobject.LanguageMarkdown, valueobject.DetectionMethodContent, 0.75)
 	}
-	if strings.HasPrefix(contentStr, "#!/bin/bash") || strings.HasPrefix(contentStr, "#!/bin/sh") {
-		return valueobject.NewLanguage(valueobject.LanguageShell)
-	}
-	if strings.HasPrefix(contentStr, "#!/usr/bin/env php") || strings.HasPrefix(contentStr, "#!/usr/bin/php") {
-		return valueobject.NewLanguage(valueobject.LanguagePHP)
+	if strings.HasSuffix(hint, ".php") {
+		return createLanguageWithMetadata(valueobject.LanguagePHP, valueobject.DetectionMethodContent, 0.85)
 	}
 
-	// Basic pattern matching
-	if regexp.MustCompile(`package\s+\w+`).MatchString(contentStr) ||
-		regexp.MustCompile(`func\s+\w+\s*\(`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageGo)
+	// Basic shebang detection - match python, python2, python3, etc.
+	if strings.Contains(contentStr[:min(len(contentStr), 100)], "#!/usr/bin/env python") ||
+		strings.Contains(contentStr[:min(len(contentStr), 100)], "#!/usr/bin/python") {
+		return createLanguageWithMetadata(valueobject.LanguagePython, valueobject.DetectionMethodShebang, 0.98)
 	}
-	if regexp.MustCompile(`def\s+\w+\s*\(`).MatchString(contentStr) ||
-		regexp.MustCompile(`import\s+\w+`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguagePython)
+	if strings.HasPrefix(contentStr, "#!/usr/bin/env node") {
+		return createLanguageWithMetadata(valueobject.LanguageJavaScript, valueobject.DetectionMethodShebang, 0.90)
 	}
-	if regexp.MustCompile(`function\s+\w+\s*\(`).MatchString(contentStr) ||
-		regexp.MustCompile(`const\s+\w+\s*=`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageJavaScript)
+	if strings.HasPrefix(contentStr, "#!/usr/bin/env ruby") || strings.HasPrefix(contentStr, "#!/usr/bin/ruby") {
+		return createLanguageWithMetadata(valueobject.LanguageRuby, valueobject.DetectionMethodShebang, 0.90)
 	}
+	if strings.HasPrefix(contentStr, "#!/bin/bash") || strings.HasPrefix(contentStr, "#!/bin/sh") {
+		return createLanguageWithMetadata(valueobject.LanguageShell, valueobject.DetectionMethodShebang, 0.90)
+	}
+	if strings.HasPrefix(contentStr, "#!/usr/bin/env php") || strings.HasPrefix(contentStr, "#!/usr/bin/php") {
+		return createLanguageWithMetadata(valueobject.LanguagePHP, valueobject.DetectionMethodShebang, 0.90)
+	}
+
+	// Basic pattern matching - prioritize container languages first
+	// PHP patterns (before HTML since PHP files can contain HTML)
+	if regexp.MustCompile(`<\?php`).MatchString(contentStr) ||
+		regexp.MustCompile(`\$\w+\s*=`).MatchString(contentStr) {
+		return createLanguageWithMetadata(valueobject.LanguagePHP, valueobject.DetectionMethodContent, 0.85)
+	}
+
+	// HTML patterns (highest priority for container detection)
+	if regexp.MustCompile(`<!DOCTYPE\s+html`).MatchString(contentStr) ||
+		regexp.MustCompile(`<html\b`).MatchString(contentStr) {
+		return createLanguageWithMetadata(valueobject.LanguageHTML, valueobject.DetectionMethodContent, 0.80)
+	}
+
+	// TypeScript patterns (before JavaScript to avoid conflicts)
 	if regexp.MustCompile(`interface\s+\w+\s*\{`).MatchString(contentStr) ||
 		regexp.MustCompile(`:\s*(string|number|boolean)`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageTypeScript)
+		return createLanguageWithMetadata(valueobject.LanguageTypeScript, valueobject.DetectionMethodContent, 0.88)
+	}
+
+	// Markdown patterns
+	if regexp.MustCompile(`^#\s+\w+`).MatchString(contentStr) {
+		return createLanguageWithMetadata(valueobject.LanguageMarkdown, valueobject.DetectionMethodContent, 0.75)
+	}
+
+	// Go patterns
+	if regexp.MustCompile(`package\s+\w+`).MatchString(contentStr) ||
+		regexp.MustCompile(`func\s+\w+\s*\(`).MatchString(contentStr) {
+		return createLanguageWithMetadata(valueobject.LanguageGo, valueobject.DetectionMethodContent, 0.95)
+	}
+
+	// Python patterns
+	if regexp.MustCompile(`def\s+\w+\s*\(`).MatchString(contentStr) ||
+		regexp.MustCompile(`import\s+\w+`).MatchString(contentStr) {
+		return createLanguageWithMetadata(valueobject.LanguagePython, valueobject.DetectionMethodContent, 0.80)
+	}
+
+	// JavaScript patterns (moved down to avoid matching before container languages)
+	if regexp.MustCompile(`function\s+\w+\s*\(`).MatchString(contentStr) ||
+		regexp.MustCompile(`const\s+\w+\s*=`).MatchString(contentStr) {
+		return createLanguageWithMetadata(valueobject.LanguageJavaScript, valueobject.DetectionMethodContent, 0.80)
 	}
 	if regexp.MustCompile(`public\s+class\s+\w+`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageJava)
+		return createLanguageWithMetadata(valueobject.LanguageJava, valueobject.DetectionMethodContent, 0.80)
 	}
 	if regexp.MustCompile(`#include\s*<\w+\.h>`).MatchString(contentStr) ||
 		regexp.MustCompile(`int\s+main\s*\(`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageC)
+		return createLanguageWithMetadata(valueobject.LanguageC, valueobject.DetectionMethodContent, 0.80)
 	}
 	if regexp.MustCompile(`#include\s*<iostream>`).MatchString(contentStr) ||
 		regexp.MustCompile(`using\s+namespace\s+std`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageCPlusPlus)
+		return createLanguageWithMetadata(valueobject.LanguageCPlusPlus, valueobject.DetectionMethodContent, 0.80)
 	}
 	if regexp.MustCompile(`fn\s+\w+\s*\(`).MatchString(contentStr) ||
 		regexp.MustCompile(`let\s+mut\s+\w+`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageRust)
+		return createLanguageWithMetadata(valueobject.LanguageRust, valueobject.DetectionMethodContent, 0.80)
 	}
 	if regexp.MustCompile(`def\s+\w+`).MatchString(contentStr) &&
 		regexp.MustCompile(`require\s+['"].*['"]`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageRuby)
+		return createLanguageWithMetadata(valueobject.LanguageRuby, valueobject.DetectionMethodContent, 0.80)
 	}
-	if regexp.MustCompile(`<\?php`).MatchString(contentStr) || regexp.MustCompile(`\$\w+\s*=`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguagePHP)
-	}
-	if regexp.MustCompile(`<html\b`).MatchString(contentStr) ||
-		regexp.MustCompile(`<!DOCTYPE\s+html`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageHTML)
-	}
+
 	if regexp.MustCompile(`\w+\s*\{\s*[\w-]+:`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageCSS)
+		return createLanguageWithMetadata(valueobject.LanguageCSS, valueobject.DetectionMethodContent, 0.90)
 	}
 	if regexp.MustCompile(`^\s*\{\s*"\w+"`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageJSON)
+		return createLanguageWithMetadata(valueobject.LanguageJSON, valueobject.DetectionMethodContent, 0.80)
 	}
 	if regexp.MustCompile(`^\w+:\s*$`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageYAML)
+		return createLanguageWithMetadata(valueobject.LanguageYAML, valueobject.DetectionMethodContent, 0.80)
 	}
 	if regexp.MustCompile(`<\?xml\s+version`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageXML)
+		return createLanguageWithMetadata(valueobject.LanguageXML, valueobject.DetectionMethodContent, 0.80)
 	}
-	if regexp.MustCompile(`^#\s+\w+`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageMarkdown)
-	}
+
 	if regexp.MustCompile(`SELECT\s+.*\s+FROM`).MatchString(contentStr) {
-		return valueobject.NewLanguage(valueobject.LanguageSQL)
+		return createLanguageWithMetadata(valueobject.LanguageSQL, valueobject.DetectionMethodContent, 0.80)
 	}
 
 	// Try hint-based detection
@@ -1637,8 +1694,8 @@ func (m *MockLanguageDetector) DetectFromContent(
 		}
 	}
 
-	// Return Unknown for unrecognized content
-	return valueobject.NewLanguage(valueobject.LanguageUnknown)
+	// Return Unknown for unrecognized content with zero confidence
+	return createLanguageWithMetadata(valueobject.LanguageUnknown, valueobject.DetectionMethodUnknown, 0.0)
 }
 
 // DetectFromReader implements reader-based detection for testing.
@@ -1657,7 +1714,19 @@ func (m *MockLanguageDetector) DetectFromReader(
 		}
 	}
 
-	// Try extension-based detection first
+	// Check for shebang first - higher priority than extension
+	contentStr := string(content)
+	if strings.HasPrefix(contentStr, "#!") {
+		// Try content detection which will catch shebang
+		if lang, err := m.DetectFromContent(ctx, content, filename); err == nil {
+			// Only use it if it's not Unknown
+			if lang.Name() != valueobject.LanguageUnknown {
+				return lang, nil
+			}
+		}
+	}
+
+	// Try extension-based detection
 	if filename != "" {
 		if lang, err := m.DetectFromFilePath(ctx, filename); err == nil {
 			return lang, nil
@@ -1674,7 +1743,28 @@ func (m *MockLanguageDetector) DetectMultipleLanguages(
 	content []byte,
 	filename string,
 ) ([]valueobject.Language, error) {
+	// Validate input - return error for empty content
+	if len(content) == 0 {
+		return nil, &outbound.DetectionError{
+			Type:      outbound.ErrorTypeInvalidFile,
+			Message:   "content is empty",
+			Timestamp: time.Now(),
+		}
+	}
+
+	// Check for binary content
+	for i := 0; i < len(content) && i < 512; i++ {
+		if content[i] == 0 {
+			return nil, &outbound.DetectionError{
+				Type:      outbound.ErrorTypeBinaryFile,
+				Message:   "content appears to be binary",
+				Timestamp: time.Now(),
+			}
+		}
+	}
+
 	var languages []valueobject.Language
+	contentStr := string(content)
 
 	// Primary language detection
 	primary, err := m.DetectFromContent(ctx, content, filename)
@@ -1682,13 +1772,11 @@ func (m *MockLanguageDetector) DetectMultipleLanguages(
 		languages = append(languages, primary)
 	}
 
-	contentStr := string(content)
-
 	// HTML with embedded languages - now uses helper method to reduce complexity
 	m.detectHTMLWithEmbeddedLanguages(&languages, filename, contentStr)
 
 	if len(languages) == 0 {
-		if unknownLang, err := valueobject.NewLanguage(valueobject.LanguageUnknown); err == nil {
+		if unknownLang, err := createLanguageWithMetadata(valueobject.LanguageUnknown, valueobject.DetectionMethodUnknown, 0.0); err == nil {
 			languages = append(languages, unknownLang)
 		}
 	}
@@ -1820,7 +1908,7 @@ func (m *MockLanguageDetector) handleDetectionResult(
 
 // addLanguageIfNotExists adds a language to the slice if it doesn't already exist.
 func (m *MockLanguageDetector) addLanguageIfNotExists(languages *[]valueobject.Language, languageName string) {
-	lang, err := valueobject.NewLanguage(languageName)
+	lang, err := createLanguageWithMetadata(languageName, valueobject.DetectionMethodContent, 0.80)
 	if err == nil && !mockContainsLanguage(*languages, lang) {
 		*languages = append(*languages, lang)
 	}
@@ -1831,6 +1919,46 @@ func (m *MockLanguageDetector) detectHTMLWithEmbeddedLanguages(
 	languages *[]valueobject.Language,
 	filename, contentStr string,
 ) {
+	// Vue.js single file component detection
+	if strings.Contains(filename, ".vue") {
+		m.addLanguageIfNotExists(languages, valueobject.LanguageHTML)
+		if regexp.MustCompile(`<script\b`).MatchString(contentStr) {
+			m.addLanguageIfNotExists(languages, valueobject.LanguageJavaScript)
+		}
+		if regexp.MustCompile(`<style\b`).MatchString(contentStr) {
+			m.addLanguageIfNotExists(languages, valueobject.LanguageCSS)
+		}
+		return
+	}
+
+	// TSX (React TypeScript) detection
+	if strings.Contains(filename, ".tsx") {
+		m.addLanguageIfNotExists(languages, valueobject.LanguageTypeScript)
+		// TSX contains JSX (HTML-like syntax)
+		if regexp.MustCompile(`<\w+[^>]*>`).MatchString(contentStr) ||
+			regexp.MustCompile(`<\/\w+>`).MatchString(contentStr) {
+			m.addLanguageIfNotExists(languages, valueobject.LanguageHTML)
+		}
+		// Check for CSS imports
+		if regexp.MustCompile(`import.*\.css`).MatchString(contentStr) ||
+			regexp.MustCompile(`import.*\.scss`).MatchString(contentStr) {
+			m.addLanguageIfNotExists(languages, valueobject.LanguageCSS)
+		}
+		return
+	}
+
+	// Markdown with code blocks detection
+	if strings.Contains(filename, ".md") {
+		m.addLanguageIfNotExists(languages, valueobject.LanguageMarkdown)
+		// Extract languages from code blocks
+		codeBlockLangs := m.extractMarkdownCodeBlockLanguages(contentStr)
+		for _, lang := range codeBlockLangs {
+			m.addLanguageIfNotExists(languages, lang)
+		}
+		return
+	}
+
+	// Original HTML detection
 	isHTMLFile := strings.Contains(filename, ".html")
 	hasHTMLTags := regexp.MustCompile(`<html\b`).MatchString(contentStr)
 
@@ -1849,6 +1977,58 @@ func (m *MockLanguageDetector) detectHTMLWithEmbeddedLanguages(
 	if regexp.MustCompile(`<style\b`).MatchString(contentStr) {
 		m.addLanguageIfNotExists(languages, valueobject.LanguageCSS)
 	}
+}
+
+// extractMarkdownCodeBlockLanguages extracts languages from Markdown code blocks.
+func (m *MockLanguageDetector) extractMarkdownCodeBlockLanguages(contentStr string) []string {
+	var languages []string
+
+	// Match code blocks with language hints: ```go, ```python, etc.
+	codeBlockRegex := regexp.MustCompile("```(\\w+)")
+	matches := codeBlockRegex.FindAllStringSubmatch(contentStr, -1)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			lang := match[1]
+			// Map common language identifiers to our language constants
+			switch lang {
+			case "go":
+				languages = append(languages, valueobject.LanguageGo)
+			case "python", "py":
+				languages = append(languages, valueobject.LanguagePython)
+			case "javascript", "js":
+				languages = append(languages, valueobject.LanguageJavaScript)
+			case "typescript", "ts":
+				languages = append(languages, valueobject.LanguageTypeScript)
+			case "sql":
+				languages = append(languages, valueobject.LanguageSQL)
+			case "css":
+				languages = append(languages, valueobject.LanguageCSS)
+			case "html":
+				languages = append(languages, valueobject.LanguageHTML)
+			case "json":
+				languages = append(languages, valueobject.LanguageJSON)
+			case "yaml", "yml":
+				languages = append(languages, valueobject.LanguageYAML)
+			case "bash", "sh":
+				languages = append(languages, valueobject.LanguageShell)
+			case "ruby":
+				languages = append(languages, valueobject.LanguageRuby)
+			case "php":
+				languages = append(languages, valueobject.LanguagePHP)
+			case "java":
+				languages = append(languages, valueobject.LanguageJava)
+			case "c":
+				languages = append(languages, valueobject.LanguageC)
+			case "cpp", "c++":
+				languages = append(languages, valueobject.LanguageCPlusPlus)
+			case "rust":
+				languages = append(languages, valueobject.LanguageRust)
+			}
+		}
+	}
+
+	return languages
 }
 
 // mockContainsLanguage checks if a language is already in the list.

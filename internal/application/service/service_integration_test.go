@@ -1,6 +1,8 @@
 package service
 
 import (
+	"codechunking/internal/application/common/logging"
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/valueobject"
@@ -84,6 +86,17 @@ func TestApplicationServiceInterfaces_MustExist(t *testing.T) {
 
 // TestRepositoryServiceBehaviorSpecification defines the expected behavior of repository services.
 func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
 	t.Run("CreateRepositoryService behavior specification", func(t *testing.T) {
 		// Test case: Auto-generate name from URL if not provided
 		t.Run("should auto-generate name from URL when name is empty", func(t *testing.T) {

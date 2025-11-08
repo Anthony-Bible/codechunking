@@ -1,6 +1,8 @@
 package service
 
 import (
+	"codechunking/internal/application/common/logging"
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -152,6 +154,17 @@ func (m *MockChunkRepository) FindChunksByIDs(ctx context.Context, chunkIDs []uu
 
 // TestSearchService exercises the main search orchestration path and error branches.
 func TestSearchService(t *testing.T) {
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
 	t.Run("Valid_Semantic_Search_Success", func(t *testing.T) {
 		// Setup mocks
 		mockVectorRepo := new(MockVectorStorageRepository)
@@ -208,8 +221,9 @@ func TestSearchService(t *testing.T) {
 		}
 
 		expectedSearchOptions := outbound.SimilaritySearchOptions{
-			MaxResults:    10,
-			MinSimilarity: 0.7,
+			UsePartitionedTable: true,
+			MaxResults:          10,
+			MinSimilarity:       0.7,
 		}
 
 		mockVectorRepo.On("VectorSimilaritySearch", ctx, expectedVector, expectedSearchOptions).
@@ -306,9 +320,10 @@ func TestSearchService(t *testing.T) {
 
 		// Verify that repository filtering is applied to search options
 		expectedSearchOptions := outbound.SimilaritySearchOptions{
-			MaxResults:    5,
-			MinSimilarity: 0.8,
-			RepositoryIDs: []uuid.UUID{filterRepoID},
+			UsePartitionedTable: true,
+			MaxResults:          5,
+			MinSimilarity:       0.8,
+			RepositoryIDs:       []uuid.UUID{filterRepoID},
 		}
 
 		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, expectedSearchOptions).
@@ -758,6 +773,17 @@ func TestNewSearchService(t *testing.T) {
 
 // TestSearchService_Performance documents basic performance expectations.
 func TestSearchService_Performance(t *testing.T) {
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
 	t.Run("Search_Execution_Time_Tracked", func(t *testing.T) {
 		mockVectorRepo := new(MockVectorStorageRepository)
 		mockEmbeddingService := new(MockEmbeddingService)

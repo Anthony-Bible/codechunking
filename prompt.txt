@@ -1,7 +1,0 @@
-I think this might be overengineered mess and may take too long for a 
-  tryable POC, should I start over? I was thinking of starting over with one 
-  language, first doing tree sitter and chunking, then embedding those chunks 
-  then inserting into a database and carrying on from there if I started over?
-   Or is there something demonstratable in this project I can build on? Use 
-  ultrathink and sequentialThinking
-

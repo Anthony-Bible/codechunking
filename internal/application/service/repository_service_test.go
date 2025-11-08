@@ -167,6 +167,19 @@ func TestCreateRepositoryService_CreateRepository_InvalidURL(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
 	mockPublisher := new(MockMessagePublisher)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewCreateRepositoryService(mockRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
@@ -194,6 +207,19 @@ func TestCreateRepositoryService_CreateRepository_RepositoryAlreadyExists(t *tes
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
 	mockPublisher := new(MockMessagePublisher)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewCreateRepositoryService(mockRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
@@ -223,6 +249,19 @@ func TestCreateRepositoryService_CreateRepository_RepositoryExistsCheckFails(t *
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
 	mockPublisher := new(MockMessagePublisher)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewCreateRepositoryService(mockRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
@@ -253,6 +292,19 @@ func TestCreateRepositoryService_CreateRepository_SaveFails(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
 	mockPublisher := new(MockMessagePublisher)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewCreateRepositoryService(mockRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
@@ -283,6 +335,19 @@ func TestCreateRepositoryService_CreateRepository_PublishJobFails(t *testing.T) 
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
 	mockPublisher := new(MockMessagePublisher)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewCreateRepositoryService(mockRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
@@ -315,6 +380,19 @@ func TestCreateRepositoryService_CreateRepository_AutoGeneratesNameFromURL(t *te
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
 	mockPublisher := new(MockMessagePublisher)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewCreateRepositoryService(mockRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
@@ -344,6 +422,19 @@ func TestCreateRepositoryService_CreateRepository_AutoGeneratesNameFromURL(t *te
 func TestGetRepositoryService_GetRepository_Success(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewGetRepositoryService(mockRepo)
 
 	repositoryID := uuid.New()
@@ -392,6 +483,19 @@ func TestGetRepositoryService_GetRepository_Success(t *testing.T) {
 func TestGetRepositoryService_GetRepository_NotFound(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewGetRepositoryService(mockRepo)
 
 	repositoryID := uuid.New()
@@ -413,6 +517,19 @@ func TestGetRepositoryService_GetRepository_NotFound(t *testing.T) {
 func TestGetRepositoryService_GetRepository_DatabaseError(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewGetRepositoryService(mockRepo)
 
 	repositoryID := uuid.New()
@@ -436,6 +553,19 @@ func TestGetRepositoryService_GetRepository_DatabaseError(t *testing.T) {
 func TestUpdateRepositoryService_UpdateRepository_Success(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewUpdateRepositoryService(mockRepo)
 
 	repositoryID := uuid.New()
@@ -485,6 +615,19 @@ func TestUpdateRepositoryService_UpdateRepository_Success(t *testing.T) {
 func TestUpdateRepositoryService_UpdateRepository_NotFound(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewUpdateRepositoryService(mockRepo)
 
 	repositoryID := uuid.New()
@@ -511,6 +654,19 @@ func TestUpdateRepositoryService_UpdateRepository_NotFound(t *testing.T) {
 func TestUpdateRepositoryService_UpdateRepository_CannotUpdateProcessingRepository(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewUpdateRepositoryService(mockRepo)
 
 	repositoryID := uuid.New()
@@ -556,6 +712,19 @@ func TestUpdateRepositoryService_UpdateRepository_CannotUpdateProcessingReposito
 func TestDeleteRepositoryService_DeleteRepository_Success(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, loggerErr := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, loggerErr)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewDeleteRepositoryService(mockRepo)
 
 	repositoryID := uuid.New()
@@ -594,6 +763,19 @@ func TestDeleteRepositoryService_DeleteRepository_Success(t *testing.T) {
 func TestDeleteRepositoryService_DeleteRepository_NotFound(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, loggerErr := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, loggerErr)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewDeleteRepositoryService(mockRepo)
 
 	repositoryID := uuid.New()
@@ -615,6 +797,19 @@ func TestDeleteRepositoryService_DeleteRepository_NotFound(t *testing.T) {
 func TestDeleteRepositoryService_DeleteRepository_CannotDeleteProcessingRepository(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, loggerErr := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, loggerErr)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewDeleteRepositoryService(mockRepo)
 
 	repositoryID := uuid.New()
@@ -654,6 +849,19 @@ func TestDeleteRepositoryService_DeleteRepository_CannotDeleteProcessingReposito
 func TestListRepositoriesService_ListRepositories_Success(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewListRepositoriesService(mockRepo)
 
 	testURL1, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
@@ -731,6 +939,19 @@ func TestListRepositoriesService_ListRepositories_Success(t *testing.T) {
 func TestListRepositoriesService_ListRepositories_WithPagination(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewListRepositoriesService(mockRepo)
 
 	query := dto.RepositoryListQuery{
@@ -765,6 +986,19 @@ func TestListRepositoriesService_ListRepositories_WithPagination(t *testing.T) {
 func TestListRepositoriesService_ListRepositories_InvalidStatus(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewListRepositoriesService(mockRepo)
 
 	query := dto.RepositoryListQuery{
@@ -787,6 +1021,19 @@ func TestListRepositoriesService_ListRepositories_InvalidStatus(t *testing.T) {
 func TestListRepositoriesService_ListRepositories_DatabaseError(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewListRepositoriesService(mockRepo)
 
 	query := dto.RepositoryListQuery{
@@ -813,6 +1060,18 @@ func TestListRepositoriesService_ListRepositories_DatabaseError(t *testing.T) {
 
 // TestListRepositoriesService_ListRepositories_FilterByName tests name filtering functionality.
 func TestListRepositoriesService_ListRepositories_FilterByName(t *testing.T) {
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, loggerErr := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, loggerErr)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	tests := []struct {
 		name           string
 		nameFilter     string
@@ -939,6 +1198,18 @@ func TestListRepositoriesService_ListRepositories_FilterByName(t *testing.T) {
 
 // TestListRepositoriesService_ListRepositories_FilterByURL tests URL filtering functionality.
 func TestListRepositoriesService_ListRepositories_FilterByURL(t *testing.T) {
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, loggerErr := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, loggerErr)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	tests := []struct {
 		name           string
 		urlFilter      string
@@ -1068,6 +1339,17 @@ func TestListRepositoriesService_ListRepositories_FilterByURL(t *testing.T) {
 
 // TestListRepositoriesService_ListRepositories_CombinedFilters tests combined filtering scenarios.
 func TestListRepositoriesService_ListRepositories_CombinedFilters(t *testing.T) {
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, loggerErr := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, loggerErr)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
 	tests := []struct {
 		name           string
 		query          dto.RepositoryListQuery
@@ -1204,6 +1486,17 @@ func TestListRepositoriesService_ListRepositories_CombinedFilters(t *testing.T) 
 
 // TestListRepositoriesService_ListRepositories_EdgeCases tests edge case scenarios for filtering.
 func TestListRepositoriesService_ListRepositories_EdgeCases(t *testing.T) {
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, loggerErr := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, loggerErr)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
 	t.Run("Empty_Name_Filter_Returns_All_Repositories", func(t *testing.T) {
 		// Arrange
 		mockRepo := new(MockRepositoryRepository)

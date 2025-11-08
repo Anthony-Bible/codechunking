@@ -1,6 +1,8 @@
 package service
 
 import (
+	"codechunking/internal/application/common/logging"
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/dto"
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/valueobject"
@@ -110,6 +112,19 @@ func TestCreateRepositoryService_CreateRepository_Success(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
 	mockPublisher := new(MockMessagePublisher)
+
+	// Set up silent logger for tests to avoid logging side effects
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR", // Only log errors, suppress INFO/DEBUG
+		Format: "json",
+		Output: "buffer", // Output to buffer instead of stdout
+	})
+	require.NoError(t, err)
+
+	// Set silent logger for test and restore default behavior after test
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
 	service := NewCreateRepositoryService(mockRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{

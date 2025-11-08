@@ -800,9 +800,9 @@ func TestParallelBatchProcessor_ErrorHandling(t *testing.T) {
 
 		ctx := context.Background()
 
-		// First batch should trigger circuit breaker
-		firstBatches := make([][]*outbound.EmbeddingRequest, 5)
-		for i := range 5 {
+		// First batch should trigger circuit breaker - use more batches to ensure minimum sample size
+		firstBatches := make([][]*outbound.EmbeddingRequest, 10)
+		for i := range 10 {
 			firstBatches[i] = []*outbound.EmbeddingRequest{{
 				RequestID: fmt.Sprintf("first-req-%d", i),
 				Text:      fmt.Sprintf("test text %d", i),
@@ -816,6 +816,9 @@ func TestParallelBatchProcessor_ErrorHandling(t *testing.T) {
 			t.Fatalf("First batch failed: %v", err)
 		}
 
+		// Add a small delay to ensure circuit breaker state is updated
+		time.Sleep(10 * time.Millisecond)
+
 		// Check if circuit breaker is open
 		stats, err := processor.GetWorkerPoolStats(ctx)
 		if err != nil {
@@ -823,7 +826,8 @@ func TestParallelBatchProcessor_ErrorHandling(t *testing.T) {
 		}
 
 		if !stats.CircuitOpen {
-			t.Error("Expected circuit breaker to be open after high error rate")
+			t.Errorf("Expected circuit breaker to be open after high error rate, got open=%v, total_batches=%d, total_errors=%d",
+				stats.CircuitOpen, stats.TotalBatchesProcessed, stats.TotalErrors)
 		}
 
 		// Immediate retry should fail due to circuit breaker
@@ -848,6 +852,8 @@ func TestParallelBatchProcessor_ErrorHandling(t *testing.T) {
 
 		if err == nil {
 			t.Error("Expected error when circuit breaker is open")
+		} else if err.Error() != "circuit breaker is open" {
+			t.Errorf("Expected 'circuit breaker is open' error, got: %v", err)
 		}
 	})
 }

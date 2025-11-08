@@ -233,12 +233,17 @@ func (p *parallelBatchProcessor) ProcessBatchesParallel(
 		return nil, errors.New("processor is shutdown")
 	}
 
-	if p.circuitBreaker != nil && p.circuitBreaker.isOpen {
-		if time.Since(p.circuitBreaker.lastFailure) < p.circuitBreaker.timeout {
-			return nil, errors.New("circuit breaker is open")
+	if p.circuitBreaker != nil {
+		p.circuitBreaker.mu.Lock()
+		if p.circuitBreaker.isOpen {
+			if time.Since(p.circuitBreaker.lastFailure) < p.circuitBreaker.timeout {
+				p.circuitBreaker.mu.Unlock()
+				return nil, errors.New("circuit breaker is open")
+			}
+			// Reset circuit breaker after timeout
+			p.circuitBreaker.isOpen = false
 		}
-		// Reset circuit breaker after timeout
-		p.circuitBreaker.isOpen = false
+		p.circuitBreaker.mu.Unlock()
 	}
 
 	results := make([][]*outbound.EmbeddingBatchResult, len(batches))
@@ -470,7 +475,10 @@ func (p *parallelBatchProcessor) GetWorkerPoolStats(ctx context.Context) (*Worke
 
 	// Circuit breaker stats
 	if p.circuitBreaker != nil {
+		p.circuitBreaker.mu.RLock()
 		stats.CircuitOpen = p.circuitBreaker.isOpen
+		p.circuitBreaker.mu.RUnlock()
+
 		if stats.TotalBatchesProcessed > 0 {
 			stats.ErrorRate = float64(stats.TotalErrors) / float64(stats.TotalBatchesProcessed)
 		}

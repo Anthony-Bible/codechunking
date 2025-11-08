@@ -51,13 +51,11 @@ func (cb *circuitBreaker) recordFailure() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
-	atomic.AddInt64(&cb.failures, 1)
-	failures := atomic.LoadInt64(&cb.failures)
-	successes := atomic.LoadInt64(&cb.successes)
-	total := failures + successes
+	cb.failures++
+	total := cb.failures + cb.successes
 
 	// Only evaluate circuit breaker after minimum sample size
-	if total >= 5 && float64(failures)/float64(total) >= cb.errorThreshold {
+	if total >= 5 && float64(cb.failures)/float64(total) >= cb.errorThreshold {
 		cb.isOpen = true
 		cb.lastFailure = time.Now()
 	}
@@ -69,7 +67,10 @@ func (cb *circuitBreaker) recordSuccess() {
 		return
 	}
 
-	atomic.AddInt64(&cb.successes, 1)
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	cb.successes++
 }
 
 // estimateBatchProcessingCost calculates approximate cost for batch processing.

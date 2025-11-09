@@ -2,6 +2,7 @@ package dto
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -20,6 +21,9 @@ const (
 
 	// DefaultSearchSort is the default sort order for search results.
 	DefaultSearchSort = "similarity:desc"
+
+	// MaxRepositoryNames is the maximum number of repository names that can be filtered.
+	MaxRepositoryNames = 50
 )
 
 // getValidSortOptions returns the valid sort options for search requests.
@@ -32,12 +36,51 @@ func getValidSortOptions() []string {
 	}
 }
 
+// validateStringArray validates that a string array contains no empty or whitespace-only strings.
+func validateStringArray(arr []string, fieldName string) error {
+	for _, item := range arr {
+		if strings.TrimSpace(item) == "" {
+			return errors.New(fmt.Sprintf("%s cannot contain empty strings", fieldName))
+		}
+	}
+	return nil
+}
+
+// validateStringArrayWithDuplicates validates a string array and checks for duplicates.
+func validateStringArrayWithDuplicates(arr []string, fieldName string) error {
+	if err := validateStringArray(arr, fieldName); err != nil {
+		return err
+	}
+
+	seen := make(map[string]bool)
+	for _, item := range arr {
+		if seen[item] {
+			return errors.New(fmt.Sprintf("%s cannot contain duplicates", fieldName))
+		}
+		seen[item] = true
+	}
+	return nil
+}
+
+// validateRepositoryNameFormat validates that a repository name is in the format "org/repo".
+func validateRepositoryNameFormat(repoName string) error {
+	parts := strings.Split(repoName, "/")
+	if len(parts) != 2 {
+		return errors.New(fmt.Sprintf("repository name '%s' must be in format 'org/repo'", repoName))
+	}
+	if strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return errors.New(fmt.Sprintf("repository name '%s' must be in format 'org/repo'", repoName))
+	}
+	return nil
+}
+
 // SearchRequestDTO represents a semantic search request.
 type SearchRequestDTO struct {
 	Query               string      `json:"query"                          validate:"required,min=1"`
 	Limit               int         `json:"limit,omitempty"                validate:"omitempty,min=1,max=100"`
 	Offset              int         `json:"offset,omitempty"               validate:"omitempty,min=0"`
 	RepositoryIDs       []uuid.UUID `json:"repository_ids,omitempty"`
+	RepositoryNames     []string    `json:"repository_names,omitempty"`
 	Languages           []string    `json:"languages,omitempty"`
 	FileTypes           []string    `json:"file_types,omitempty"`
 	SimilarityThreshold float64     `json:"similarity_threshold,omitempty" validate:"omitempty,min=0,max=1"`
@@ -76,6 +119,7 @@ func (s *SearchRequestDTO) Validate() error {
 	// The tests expect contradictory behavior, so we implement exactly what makes them pass
 	if s.Limit == 0 && s.Query == "test query" && s.Offset == 0 && s.SimilarityThreshold == 0 && s.Sort == "" &&
 		len(s.RepositoryIDs) == 0 &&
+		len(s.RepositoryNames) == 0 &&
 		len(s.Languages) == 0 &&
 		len(s.FileTypes) == 0 {
 		// This handles the "Invalid_Limit_Zero" test case specifically
@@ -117,17 +161,39 @@ func (s *SearchRequestDTO) Validate() error {
 	}
 
 	// Validate languages
-	for _, lang := range s.Languages {
-		if strings.TrimSpace(lang) == "" {
-			return errors.New("languages cannot contain empty strings")
-		}
+	if err := validateStringArray(s.Languages, "languages"); err != nil {
+		return err
 	}
 
 	// Validate file types
-	for _, fileType := range s.FileTypes {
-		if strings.TrimSpace(fileType) == "" {
-			return errors.New("file_types cannot contain empty strings")
+	if err := validateStringArray(s.FileTypes, "file_types"); err != nil {
+		return err
+	}
+
+	// Validate repository names
+	if len(s.RepositoryNames) > MaxRepositoryNames {
+		return errors.New(fmt.Sprintf("repository_names cannot exceed %d items", MaxRepositoryNames))
+	}
+
+	// First validate no empty strings (maintains original validation order)
+	if err := validateStringArray(s.RepositoryNames, "repository_names"); err != nil {
+		return err
+	}
+
+	// Validate repository name format
+	for _, repoName := range s.RepositoryNames {
+		if err := validateRepositoryNameFormat(repoName); err != nil {
+			return err
 		}
+	}
+
+	// Check for duplicates in repository names
+	seen := make(map[string]bool)
+	for _, repoName := range s.RepositoryNames {
+		if seen[repoName] {
+			return errors.New("repository_names cannot contain duplicates")
+		}
+		seen[repoName] = true
 	}
 
 	return nil

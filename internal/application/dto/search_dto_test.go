@@ -2,6 +2,7 @@ package dto
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -664,5 +665,239 @@ func TestSearchDTO_Constants(t *testing.T) {
 
 		// Maximum limits
 		assert.Equal(t, 100, MaxSearchLimit, "MaxSearchLimit should be 100")
+	})
+}
+
+// TestSearchRequestDTO_RepositoryNamesValidation tests repository name filtering functionality.
+func TestSearchRequestDTO_RepositoryNamesValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupDTO    func() SearchRequestDTO
+		expectValid bool
+		expectError string
+	}{
+		{
+			name: "Valid_Repository_Names_Single",
+			setupDTO: func() SearchRequestDTO {
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: []string{"golang/go"},
+				}
+			},
+			expectValid: true,
+		},
+		{
+			name: "Valid_Repository_Names_Multiple",
+			setupDTO: func() SearchRequestDTO {
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: []string{"golang/go", "facebook/react", "microsoft/vscode"},
+				}
+			},
+			expectValid: true,
+		},
+		{
+			name: "Valid_Repository_Names_With_Repository_IDs",
+			setupDTO: func() SearchRequestDTO {
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryIDs:   []uuid.UUID{uuid.New()},
+					RepositoryNames: []string{"golang/go"},
+				}
+			},
+			expectValid: true,
+		},
+		{
+			name: "Invalid_Repository_Name_Empty_String",
+			setupDTO: func() SearchRequestDTO {
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: []string{""},
+				}
+			},
+			expectValid: false,
+			expectError: "repository_names cannot contain empty strings",
+		},
+		{
+			name: "Invalid_Repository_Name_Whitespace_Only",
+			setupDTO: func() SearchRequestDTO {
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: []string{"   "},
+				}
+			},
+			expectValid: false,
+			expectError: "repository_names cannot contain empty strings",
+		},
+		{
+			name: "Invalid_Repository_Name_No_Slash",
+			setupDTO: func() SearchRequestDTO {
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: []string{"golanggo"},
+				}
+			},
+			expectValid: false,
+			expectError: "repository name 'golanggo' must be in format 'org/repo'",
+		},
+		{
+			name: "Invalid_Repository_Name_Multiple_Slashes",
+			setupDTO: func() SearchRequestDTO {
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: []string{"golang/go/extra"},
+				}
+			},
+			expectValid: false,
+			expectError: "repository name 'golang/go/extra' must be in format 'org/repo'",
+		},
+		{
+			name: "Invalid_Repository_Name_Starts_With_Slash",
+			setupDTO: func() SearchRequestDTO {
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: []string{"/golang/go"},
+				}
+			},
+			expectValid: false,
+			expectError: "repository name '/golang/go' must be in format 'org/repo'",
+		},
+		{
+			name: "Invalid_Repository_Name_Ends_With_Slash",
+			setupDTO: func() SearchRequestDTO {
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: []string{"golang/"},
+				}
+			},
+			expectValid: false,
+			expectError: "repository name 'golang/' must be in format 'org/repo'",
+		},
+		{
+			name: "Invalid_Repository_Name_Empty_Org",
+			setupDTO: func() SearchRequestDTO {
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: []string{"/go"},
+				}
+			},
+			expectValid: false,
+			expectError: "repository name '/go' must be in format 'org/repo'",
+		},
+		{
+			name: "Invalid_Repository_Name_Empty_Repo",
+			setupDTO: func() SearchRequestDTO {
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: []string{"golang/"},
+				}
+			},
+			expectValid: false,
+			expectError: "repository name 'golang/' must be in format 'org/repo'",
+		},
+		{
+			name: "Invalid_Repository_Names_Too_Many",
+			setupDTO: func() SearchRequestDTO {
+				names := make([]string, 51) // Exceeds max limit of 50
+				for i := range names {
+					names[i] = "org/repo"
+				}
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: names,
+				}
+			},
+			expectValid: false,
+			expectError: "repository_names cannot exceed 50 items",
+		},
+		{
+			name: "Invalid_Repository_Names_Duplicate",
+			setupDTO: func() SearchRequestDTO {
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: []string{"golang/go", "golang/go"},
+				}
+			},
+			expectValid: false,
+			expectError: "repository_names cannot contain duplicates",
+		},
+		{
+			name: "Valid_Repository_Names_Max_Limit",
+			setupDTO: func() SearchRequestDTO {
+				names := make([]string, 50) // Exactly at max limit
+				for i := range names {
+					names[i] = fmt.Sprintf("org%d/repo%d", i, i)
+				}
+				return SearchRequestDTO{
+					Query:           "test query",
+					RepositoryNames: names,
+				}
+			},
+			expectValid: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dto := tt.setupDTO()
+
+			// This should call the Validate() method on SearchRequestDTO
+			err := dto.Validate()
+
+			if tt.expectValid {
+				assert.NoError(t, err, "Expected valid DTO to pass validation")
+			} else {
+				assert.Error(t, err, "Expected invalid DTO to fail validation")
+				if tt.expectError != "" {
+					assert.Contains(t, err.Error(), tt.expectError, "Error message should contain expected text")
+				}
+			}
+		})
+	}
+}
+
+// TestSearchRequestDTO_RepositoryNamesJSONSerialization tests JSON serialization with repository names.
+func TestSearchRequestDTO_RepositoryNamesJSONSerialization(t *testing.T) {
+	t.Run("Repository_Names_JSON_Roundtrip", func(t *testing.T) {
+		originalDTO := SearchRequestDTO{
+			Query:           "test query",
+			RepositoryNames: []string{"golang/go", "facebook/react"},
+			Limit:           10,
+		}
+
+		// Marshal to JSON
+		jsonData, err := json.Marshal(originalDTO)
+		require.NoError(t, err, "Should marshal SearchRequestDTO with repository names to JSON")
+
+		// Unmarshal from JSON
+		var unmarshaledDTO SearchRequestDTO
+		err = json.Unmarshal(jsonData, &unmarshaledDTO)
+		require.NoError(t, err, "Should unmarshal JSON to SearchRequestDTO with repository names")
+
+		// Verify repository names field is preserved
+		assert.Equal(t, originalDTO.Query, unmarshaledDTO.Query)
+		assert.Equal(t, originalDTO.RepositoryNames, unmarshaledDTO.RepositoryNames)
+		assert.Equal(t, originalDTO.Limit, unmarshaledDTO.Limit)
+	})
+
+	t.Run("Repository_Names_And_Repository_IDs_JSON", func(t *testing.T) {
+		originalDTO := SearchRequestDTO{
+			Query:           "test query",
+			RepositoryIDs:   []uuid.UUID{uuid.New(), uuid.New()},
+			RepositoryNames: []string{"golang/go", "facebook/react"},
+		}
+
+		// Marshal to JSON
+		jsonData, err := json.Marshal(originalDTO)
+		require.NoError(t, err, "Should marshal DTO with both repository IDs and names")
+
+		// Unmarshal from JSON
+		var unmarshaledDTO SearchRequestDTO
+		err = json.Unmarshal(jsonData, &unmarshaledDTO)
+		require.NoError(t, err, "Should unmarshal DTO with both repository IDs and names")
+
+		// Verify both fields are preserved
+		assert.Equal(t, originalDTO.RepositoryIDs, unmarshaledDTO.RepositoryIDs)
+		assert.Equal(t, originalDTO.RepositoryNames, unmarshaledDTO.RepositoryNames)
 	})
 }

@@ -341,6 +341,153 @@ func TestSearchService(t *testing.T) {
 		mockEmbeddingService.AssertExpectations(t)
 	})
 
+	t.Run("Search_With_Repository_Names_Filtering", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+
+		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+
+		ctx := context.Background()
+		searchRequest := dto.SearchRequestDTO{
+			Query:           "authentication middleware",
+			Limit:           10,
+			RepositoryNames: []string{"golang/go", "facebook/react"},
+		}
+
+		// Mock embedding generation
+		queryVector := []float64{0.1, 0.3, 0.5}
+		mockEmbedding := &outbound.EmbeddingResult{Vector: queryVector}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, searchRequest.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(mockEmbedding, nil)
+
+		// Mock repository name resolution - these should be resolved to UUIDs
+		resolvedRepoIDs := []uuid.UUID{uuid.New(), uuid.New()}
+
+		// Verify that repository names are resolved to IDs and applied to search options
+		expectedSearchOptions := outbound.SimilaritySearchOptions{
+			UsePartitionedTable: true,
+			MaxResults:          10,
+			MinSimilarity:       0.7, // Default threshold
+			RepositoryIDs:       resolvedRepoIDs,
+		}
+
+		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, expectedSearchOptions).
+			Return([]outbound.VectorSimilarityResult{}, nil)
+
+		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
+			Return([]ChunkInfo{}, nil)
+
+		result, err := searchService.Search(ctx, searchRequest)
+
+		require.NoError(t, err, "Repository names filtered search should succeed")
+		assert.NotNil(t, result, "Result should not be nil")
+
+		mockVectorRepo.AssertExpectations(t)
+		mockEmbeddingService.AssertExpectations(t)
+	})
+
+	t.Run("Search_With_Repository_Names_And_Repository_IDs_Mixed", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+
+		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+
+		ctx := context.Background()
+		existingRepoID := uuid.New()
+		searchRequest := dto.SearchRequestDTO{
+			Query:           "mixed filtering test",
+			Limit:           15,
+			RepositoryIDs:   []uuid.UUID{existingRepoID},
+			RepositoryNames: []string{"golang/go"},
+		}
+
+		queryVector := []float64{0.2, 0.4, 0.6}
+		mockEmbedding := &outbound.EmbeddingResult{Vector: queryVector}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, searchRequest.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(mockEmbedding, nil)
+
+		// Both existing IDs and resolved names should be combined
+		resolvedRepoID := uuid.New()
+		expectedSearchOptions := outbound.SimilaritySearchOptions{
+			UsePartitionedTable: true,
+			MaxResults:          15,
+			MinSimilarity:       0.7,
+			RepositoryIDs:       []uuid.UUID{existingRepoID, resolvedRepoID}, // Combined
+		}
+
+		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, expectedSearchOptions).
+			Return([]outbound.VectorSimilarityResult{}, nil)
+
+		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
+			Return([]ChunkInfo{}, nil)
+
+		result, err := searchService.Search(ctx, searchRequest)
+
+		require.NoError(t, err, "Mixed filtering search should succeed")
+		assert.NotNil(t, result, "Result should not be nil")
+
+		mockVectorRepo.AssertExpectations(t)
+		mockEmbeddingService.AssertExpectations(t)
+	})
+
+	t.Run("Search_Repository_Name_Resolution_Failure", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+
+		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+
+		ctx := context.Background()
+		searchRequest := dto.SearchRequestDTO{
+			Query:           "test query",
+			RepositoryNames: []string{"nonexistent/repo"},
+		}
+
+		queryVector := []float64{0.1, 0.2, 0.3}
+		mockEmbedding := &outbound.EmbeddingResult{Vector: queryVector}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, searchRequest.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(mockEmbedding, nil)
+
+		result, err := searchService.Search(ctx, searchRequest)
+
+		// Should fail when repository name cannot be resolved
+		assert.Error(t, err, "Should return error when repository name resolution fails")
+		assert.Nil(t, result, "Result should be nil on resolution failure")
+		assert.Contains(t, err.Error(), "failed to resolve repository names", "Error message should indicate resolution failure")
+
+		mockEmbeddingService.AssertExpectations(t)
+	})
+
+	t.Run("Search_Repository_Name_Duplicate_Handling", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+
+		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+
+		ctx := context.Background()
+		searchRequest := dto.SearchRequestDTO{
+			Query:           "duplicate test",
+			RepositoryNames: []string{"golang/go", "golang/go"}, // Duplicate
+		}
+
+		queryVector := []float64{0.1, 0.2, 0.3}
+		mockEmbedding := &outbound.EmbeddingResult{Vector: queryVector}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, searchRequest.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(mockEmbedding, nil)
+
+		result, err := searchService.Search(ctx, searchRequest)
+
+		// Should fail due to duplicate repository names
+		assert.Error(t, err, "Should return error for duplicate repository names")
+		assert.Nil(t, result, "Result should be nil for duplicate names")
+		assert.Contains(t, err.Error(), "repository_names cannot contain duplicates", "Error message should indicate duplicate names")
+
+		mockEmbeddingService.AssertExpectations(t)
+	})
+
 	t.Run("Search_With_Language_And_FileType_Filtering", func(t *testing.T) {
 		mockVectorRepo := new(MockVectorStorageRepository)
 		mockEmbeddingService := new(MockEmbeddingService)

@@ -190,6 +190,184 @@ func TestSearchHandler(t *testing.T) {
 		mockSearchService.AssertExpectations(t)
 	})
 
+	t.Run("Search_Request_With_Repository_Names_Filtering", func(t *testing.T) {
+		mockSearchService := new(MockSearchService)
+		mockErrorHandler := new(MockErrorHandler)
+
+		handler := NewSearchHandler(mockSearchService, mockErrorHandler)
+
+		// Setup request with repository names
+		searchRequest := dto.SearchRequestDTO{
+			Query:           "authentication middleware",
+			Limit:           10,
+			RepositoryNames: []string{"golang/go", "facebook/react"},
+		}
+
+		requestBody, err := json.Marshal(searchRequest)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/search", bytes.NewReader(requestBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		// Mock response
+		mockResponse := &dto.SearchResponseDTO{
+			Results: []dto.SearchResultDTO{},
+			Pagination: dto.PaginationResponse{
+				Limit:   10,
+				Offset:  0,
+				Total:   0,
+				HasMore: false,
+			},
+			Metadata: dto.SearchMetadata{
+				Query:           "authentication middleware",
+				ExecutionTimeMs: 120,
+			},
+		}
+
+		mockSearchService.On("Search", mock.Anything, searchRequest).
+			Return(mockResponse, nil)
+
+		// Execute request
+		handler.Search(w, req)
+
+		// Verify response
+		assert.Equal(t, http.StatusOK, w.Code, "Should return HTTP 200 OK")
+
+		var response dto.SearchResponseDTO
+		err = json.Unmarshal(w.Body.Bytes(), &response)
+		require.NoError(t, err)
+
+		assert.Equal(t, "authentication middleware", response.Metadata.Query, "Query should match")
+
+		mockSearchService.AssertExpectations(t)
+	})
+
+	t.Run("Search_Request_With_Repository_Names_And_Repository_IDs", func(t *testing.T) {
+		mockSearchService := new(MockSearchService)
+		mockErrorHandler := new(MockErrorHandler)
+
+		handler := NewSearchHandler(mockSearchService, mockErrorHandler)
+
+		// Setup request with both repository names and IDs
+		repoID1 := uuid.New()
+		repoID2 := uuid.New()
+		searchRequest := dto.SearchRequestDTO{
+			Query:           "mixed filtering",
+			Limit:           15,
+			RepositoryIDs:   []uuid.UUID{repoID1, repoID2},
+			RepositoryNames: []string{"golang/go", "microsoft/vscode"},
+		}
+
+		requestBody, err := json.Marshal(searchRequest)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/search", bytes.NewReader(requestBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		// Mock response
+		mockResponse := &dto.SearchResponseDTO{
+			Results: []dto.SearchResultDTO{},
+			Pagination: dto.PaginationResponse{
+				Limit:   15,
+				Offset:  0,
+				Total:   0,
+				HasMore: false,
+			},
+			Metadata: dto.SearchMetadata{
+				Query:           "mixed filtering",
+				ExecutionTimeMs: 95,
+			},
+		}
+
+		mockSearchService.On("Search", mock.Anything, searchRequest).
+			Return(mockResponse, nil)
+
+		// Execute request
+		handler.Search(w, req)
+
+		// Verify response
+		assert.Equal(t, http.StatusOK, w.Code, "Should return HTTP 200 OK")
+
+		var response dto.SearchResponseDTO
+		err = json.Unmarshal(w.Body.Bytes(), &response)
+		require.NoError(t, err)
+
+		assert.Equal(t, 15, response.Pagination.Limit, "Pagination limit should match")
+
+		mockSearchService.AssertExpectations(t)
+	})
+
+	t.Run("Invalid_Repository_Name_Format", func(t *testing.T) {
+		mockSearchService := new(MockSearchService)
+		mockErrorHandler := new(MockErrorHandler)
+
+		handler := NewSearchHandler(mockSearchService, mockErrorHandler)
+
+		// Request with invalid repository name format
+		searchRequest := dto.SearchRequestDTO{
+			Query:           "test query",
+			RepositoryNames: []string{"invalid-format-no-slash"},
+		}
+
+		requestBody, err := json.Marshal(searchRequest)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/search", bytes.NewReader(requestBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		// Mock error handler call for validation error
+		mockErrorHandler.On("HandleValidationError", w, req, mock.AnythingOfType("common.ValidationError")).
+			Return()
+
+		// Execute request
+		handler.Search(w, req)
+
+		// Verify error handling
+		assert.Equal(t, http.StatusBadRequest, w.Code, "Should return HTTP 400 Bad Request for invalid repository name format")
+
+		mockErrorHandler.AssertExpectations(t)
+	})
+
+	t.Run("Too_Many_Repository_Names", func(t *testing.T) {
+		mockSearchService := new(MockSearchService)
+		mockErrorHandler := new(MockErrorHandler)
+
+		handler := NewSearchHandler(mockSearchService, mockErrorHandler)
+
+		// Request with too many repository names (exceeds limit of 50)
+		tooManyNames := make([]string, 51)
+		for i := range tooManyNames {
+			tooManyNames[i] = fmt.Sprintf("org%d/repo%d", i, i)
+		}
+
+		searchRequest := dto.SearchRequestDTO{
+			Query:           "test query",
+			RepositoryNames: tooManyNames,
+		}
+
+		requestBody, err := json.Marshal(searchRequest)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/search", bytes.NewReader(requestBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		// Mock error handler call for validation error
+		mockErrorHandler.On("HandleValidationError", w, req, mock.AnythingOfType("common.ValidationError")).
+			Return()
+
+		// Execute request
+		handler.Search(w, req)
+
+		// Verify error handling
+		assert.Equal(t, http.StatusBadRequest, w.Code, "Should return HTTP 400 Bad Request for too many repository names")
+
+		mockErrorHandler.AssertExpectations(t)
+	})
+
 	t.Run("Invalid_JSON_Request_Body", func(t *testing.T) {
 		mockSearchService := new(MockSearchService)
 		mockErrorHandler := new(MockErrorHandler)

@@ -9,6 +9,7 @@ var (
 	ErrRepositoryAlreadyExists = errors.New("repository already exists")
 	ErrRepositoryProcessing    = errors.New("repository is currently being processed")
 	ErrRepositoryInvalidURL    = errors.New("repository URL is invalid")
+	ErrInvalidRepositoryURL    = errors.New("repository URL is invalid")
 )
 
 // Job-related errors.

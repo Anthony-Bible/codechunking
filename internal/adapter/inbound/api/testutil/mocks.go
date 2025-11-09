@@ -342,6 +342,8 @@ func (m *MockErrorHandler) HandleServiceError(w http.ResponseWriter, r *http.Req
 
 	// Default mock behavior - map domain errors to proper HTTP status codes
 	switch {
+	case errors.Is(err, domain.ErrInvalidRepositoryURL):
+		http.Error(w, "service error", http.StatusBadRequest)
 	case errors.Is(err, domain.ErrRepositoryNotFound):
 		http.Error(w, "service error", http.StatusNotFound)
 	case errors.Is(err, domain.ErrRepositoryAlreadyExists):

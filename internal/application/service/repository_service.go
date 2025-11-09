@@ -117,7 +117,7 @@ func (s *CreateRepositoryService) validateRepositoryURL(
 		slogger.Error(ctx, "DEBUG: Failed to create repository URL", slogger.Fields{
 			"url": url, "error": err.Error(),
 		})
-		return valueobject.RepositoryURL{}, fmt.Errorf("invalid repository URL: %w", err)
+		return valueobject.RepositoryURL{}, err
 	}
 	slogger.Info(ctx, "DEBUG: Repository URL created", slogger.Fields{
 		"normalized_url": repositoryURL.String(),

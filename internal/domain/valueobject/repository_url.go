@@ -2,6 +2,7 @@ package valueobject
 
 import (
 	"codechunking/internal/application/common/security"
+	domainerrors "codechunking/internal/domain/errors/domain"
 	"codechunking/internal/domain/normalization"
 	"errors"
 	"fmt"
@@ -55,7 +56,7 @@ func NewRepositoryURL(rawURL string) (RepositoryURL, error) {
 // validateAndCreate performs comprehensive URL validation and creates RepositoryURL.
 func (uv *URLValidator) validateAndCreate(rawURL string) (RepositoryURL, error) {
 	if rawURL == "" {
-		return RepositoryURL{}, errors.New("repository URL cannot be empty")
+		return RepositoryURL{}, fmt.Errorf("invalid repository URL: URL cannot be empty: %w", domainerrors.ErrInvalidRepositoryURL)
 	}
 
 	// Security validation: URL length limit using centralized validator
@@ -82,7 +83,7 @@ func (uv *URLValidator) validateAndCreate(rawURL string) (RepositoryURL, error) 
 	// Parse URL for structural validation
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
-		return RepositoryURL{}, fmt.Errorf("invalid URL format: %w", err)
+		return RepositoryURL{}, fmt.Errorf("invalid repository URL: invalid URL format: %w", domainerrors.ErrInvalidRepositoryURL)
 	}
 
 	// Perform structural validation (including port checks)
@@ -226,12 +227,12 @@ func (uv *URLValidator) validateURLForSQLInjection(rawURL string) error {
 func (uv *URLValidator) validateURLStructure(rawURL string, parsedURL *url.URL) error {
 	// Check scheme
 	if parsedURL.Scheme != "https" && parsedURL.Scheme != "http" {
-		return fmt.Errorf("URL must use http or https scheme, got: %s", parsedURL.Scheme)
+		return fmt.Errorf("invalid repository URL: URL must use http or https scheme: %w", domainerrors.ErrInvalidRepositoryURL)
 	}
 
 	// Security: no non-standard ports
 	if parsedURL.Port() != "" {
-		return errors.New("non-standard port not allowed")
+		return fmt.Errorf("invalid repository URL: non-standard port not allowed: %w", domainerrors.ErrInvalidRepositoryURL)
 	}
 
 	// Security: validate host format using centralized validator
@@ -242,7 +243,7 @@ func (uv *URLValidator) validateURLStructure(rawURL string, parsedURL *url.URL) 
 	// Extract hostname without port and normalize to lowercase for supported host check
 	hostname := strings.ToLower(parsedURL.Hostname())
 	if !security.GetSupportedHosts()[hostname] {
-		return fmt.Errorf("unsupported host: %s. Supported hosts: github.com, gitlab.com, bitbucket.org", hostname)
+		return fmt.Errorf("invalid repository URL: unsupported host %s: %w", hostname, domainerrors.ErrInvalidRepositoryURL)
 	}
 
 	// Note: We rely on individual structural validations rather than a rigid regex pattern
@@ -251,7 +252,7 @@ func (uv *URLValidator) validateURLStructure(rawURL string, parsedURL *url.URL) 
 	// Validate path structure
 	pathParts := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
 	if len(pathParts) < MinPathPartsForRepoURL {
-		return errors.New("repository URL must include owner and repository name")
+		return fmt.Errorf("invalid repository URL: missing repository path in URL: %w", domainerrors.ErrInvalidRepositoryURL)
 	}
 
 	return nil
@@ -380,7 +381,7 @@ func (uv *URLValidator) checkMaliciousSchemes(rawURL string) error {
 func (uv *URLValidator) validateHTTPScheme(rawURL string) error {
 	lowercaseURL := strings.ToLower(rawURL)
 	if !strings.HasPrefix(lowercaseURL, "http://") && !strings.HasPrefix(lowercaseURL, "https://") {
-		return errors.New("URL must use http or https scheme")
+		return fmt.Errorf("invalid repository URL: URL must use http or https scheme: %w", domainerrors.ErrInvalidRepositoryURL)
 	}
 	return nil
 }

@@ -191,7 +191,7 @@ func TestSymlinkResolutionService_DetectSymlinks_BasicDetection(t *testing.T) {
 				},
 				{
 					path:       "lib",
-					targetPath: "./vendor/lib",
+					targetPath: "vendor/lib",
 					linkType:   valueobject.SymlinkTypeDirectory,
 					scope:      valueobject.SymlinkScopeInternal,
 					isBroken:   false,
@@ -219,7 +219,7 @@ func TestSymlinkResolutionService_DetectSymlinks_BasicDetection(t *testing.T) {
 				},
 				{
 					path:       "missing_dir",
-					targetPath: "./non/existent/directory",
+					targetPath: "non/existent/directory",
 					linkType:   valueobject.SymlinkTypeBroken,
 					scope:      valueobject.SymlinkScopeBroken,
 					isBroken:   true,
@@ -233,14 +233,14 @@ func TestSymlinkResolutionService_DetectSymlinks_BasicDetection(t *testing.T) {
 			expected: []symlinkExpectation{
 				{
 					path:       "link_a",
-					targetPath: "./link_b",
+					targetPath: "link_b",
 					linkType:   valueobject.SymlinkTypeFile,
 					scope:      valueobject.SymlinkScopeInternal,
 					isCircular: true,
 				},
 				{
 					path:       "link_b",
-					targetPath: "./link_a",
+					targetPath: "link_a",
 					linkType:   valueobject.SymlinkTypeFile,
 					scope:      valueobject.SymlinkScopeInternal,
 					isCircular: true,
@@ -344,7 +344,12 @@ func TestSymlinkResolutionService_ResolveSymlinkChain_Comprehensive(t *testing.T
 			name:        "Depth limit exceeded",
 			symlinkPath: "deep_chain",
 			maxDepth:    3,
-			expected:    chainExpectation{},
+			expected: chainExpectation{
+				chainLength: 5, // Longer than maxDepth
+				isResolved:  false,
+				isBroken:    false,
+				isCircular:  false,
+			},
 			expectError: true,
 		},
 		{
@@ -816,7 +821,15 @@ func createMockResolverForChain(symlinkPath string, expectation chainExpectation
 	}
 
 	if expectation.chainLength > maxDepth {
-		// Don't add to mock - will cause error
+		// Add a symlink that exceeds max depth to trigger depth error
+		symlink, _ := valueobject.NewSymlinkInfo(symlinkPath, "/intermediate/target")
+		// Create a chain longer than maxDepth
+		chain := make([]string, expectation.chainLength)
+		for i := range chain {
+			chain[i] = fmt.Sprintf("%s_step_%d", symlinkPath, i)
+		}
+		symlink, _ = symlink.WithCircularReference(false, chain)
+		resolver.resolvedChains[symlinkPath] = &symlink
 		return resolver
 	}
 
@@ -841,6 +854,16 @@ func createMockResolverForChain(symlinkPath string, expectation chainExpectation
 			chain[i] = fmt.Sprintf("%s_step_%d", symlinkPath, i)
 		}
 		symlink, _ = symlink.WithCircularReference(true, chain)
+	} else {
+		// For non-circular chains, set the depth manually
+		if expectation.chainLength > 0 {
+			// Create a chain to set the depth properly
+			chain := make([]string, expectation.chainLength)
+			for i := range chain {
+				chain[i] = fmt.Sprintf("%s_step_%d", symlinkPath, i)
+			}
+			symlink, _ = symlink.WithCircularReference(false, chain)
+		}
 	}
 
 	resolver.resolvedChains[symlinkPath] = &symlink

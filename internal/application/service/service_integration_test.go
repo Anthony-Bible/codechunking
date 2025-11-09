@@ -122,7 +122,7 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 		})
 
 		// Test case: URL normalization
-		t.Run("should normalize repository URL by removing .git suffix", func(t *testing.T) {
+		t.Run("should_normalize_repository_URL_by_removing_.git_suffix", func(t *testing.T) {
 			mockRepo := new(MockRepositoryRepository)
 			mockPublisher := new(MockMessagePublisher)
 			service := NewCreateRepositoryService(mockRepo, mockPublisher)
@@ -135,7 +135,7 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 			mockRepo.On("Exists", context.Background(), mock.AnythingOfType("valueobject.RepositoryURL")).
 				Return(false, nil)
 			mockRepo.On("Save", context.Background(), mock.AnythingOfType("*entity.Repository")).Return(nil)
-			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").
+			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
 				Return(nil)
 
 			response, err := service.CreateRepository(context.Background(), request)

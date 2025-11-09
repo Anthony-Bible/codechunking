@@ -142,9 +142,11 @@ func (w *DefaultWorkerService) Stop(ctx context.Context) error {
 		}
 	}
 
-	// Call job processor cleanup
-	if err := w.jobProcessor.Cleanup(); err != nil {
-		stopErrors = append(stopErrors, err)
+	// Call job processor cleanup if processor is available
+	if w.jobProcessor != nil {
+		if err := w.jobProcessor.Cleanup(); err != nil {
+			stopErrors = append(stopErrors, err)
+		}
 	}
 
 	// Update service state

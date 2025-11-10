@@ -556,6 +556,11 @@ func (c *ClassChunker) splitLargeClassGroup(
 		enhancedChunks = chunks
 	}
 
+	// Add semantic overlap between adjacent chunks if configured
+	if config.OverlapSize > 0 && len(enhancedChunks) > 1 {
+		c.addClassOverlapContext(ctx, enhancedChunks, config)
+	}
+
 	return enhancedChunks, nil
 }
 
@@ -946,4 +951,128 @@ func (c *ClassChunker) hasSharedDependencies(chunk1, chunk2 outbound.SemanticCod
 	}
 
 	return false
+}
+
+// addClassOverlapContext adds semantic overlap context between adjacent class chunks.
+// This implements overlap strategy for class-based chunking to improve retrieval.
+func (c *ClassChunker) addClassOverlapContext(
+	ctx context.Context,
+	chunks []outbound.EnhancedCodeChunk,
+	config outbound.ChunkingConfiguration,
+) {
+	if len(chunks) <= 1 {
+		return
+	}
+
+	// Add overlap from previous chunk to each subsequent chunk
+	for i := 1; i < len(chunks); i++ {
+		previousChunk := &chunks[i-1]
+		currentChunk := &chunks[i]
+
+		// Extract class definition and key methods from previous chunk
+		overlapContext := c.extractClassOverlapContext(previousChunk, config.OverlapSize)
+		if overlapContext == "" {
+			continue
+		}
+
+		// Add to preserved context as preceding context
+		if currentChunk.PreservedContext.PrecedingContext == "" {
+			currentChunk.PreservedContext.PrecedingContext = overlapContext
+		} else {
+			currentChunk.PreservedContext.PrecedingContext = overlapContext + "\n" + currentChunk.PreservedContext.PrecedingContext
+		}
+
+		slogger.Debug(ctx, "Added class overlap to chunk", slogger.Fields{
+			"chunk_id":     currentChunk.ID,
+			"overlap_size": len(overlapContext),
+		})
+	}
+}
+
+// extractClassOverlapContext extracts relevant context from a class chunk for overlap.
+// Prioritizes: class definition > key methods > properties
+func (c *ClassChunker) extractClassOverlapContext(chunk *outbound.EnhancedCodeChunk, maxSize int) string {
+	if maxSize <= 0 {
+		return ""
+	}
+
+	var contextParts []string
+	currentSize := 0
+
+	// Priority 1: Extract class/struct definitions
+	for _, semantic := range chunk.SemanticConstructs {
+		if c.isClassLikeConstruct(semantic.Type) && currentSize+len(semantic.Content) <= maxSize {
+			// Extract just the class definition (first few lines)
+			classDef := c.extractClassDefinition(semantic.Content, maxSize-currentSize)
+			if classDef != "" {
+				contextParts = append(contextParts, classDef)
+				currentSize += len(classDef)
+			}
+		}
+	}
+
+	// Priority 2: Add key method signatures
+	for _, semantic := range chunk.SemanticConstructs {
+		if semantic.Type == outbound.ConstructMethod && currentSize < maxSize {
+			signature := c.extractMethodSignature(semantic)
+			if signature != "" && currentSize+len(signature) <= maxSize {
+				contextParts = append(contextParts, signature)
+				currentSize += len(signature)
+			}
+		}
+	}
+
+	if len(contextParts) == 0 {
+		return ""
+	}
+
+	return strings.Join(contextParts, "\n")
+}
+
+// extractClassDefinition extracts the class definition (header) from class content.
+func (c *ClassChunker) extractClassDefinition(content string, maxSize int) string {
+	lines := strings.Split(content, "\n")
+	var defLines []string
+	currentSize := 0
+
+	// Extract lines until we hit the opening brace or maxSize
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if currentSize+len(line)+1 > maxSize {
+			break
+		}
+
+		defLines = append(defLines, line)
+		currentSize += len(line) + 1 // +1 for newline
+
+		// Stop after opening brace (end of class definition)
+		if strings.Contains(trimmed, "{") && !strings.HasPrefix(trimmed, "//") {
+			break
+		}
+	}
+
+	if len(defLines) == 0 {
+		return ""
+	}
+
+	return strings.Join(defLines, "\n")
+}
+
+// extractMethodSignature extracts the method signature from a semantic chunk.
+func (c *ClassChunker) extractMethodSignature(chunk outbound.SemanticCodeChunk) string {
+	if chunk.Signature != "" {
+		return chunk.Signature
+	}
+
+	// Fallback: extract first line
+	lines := strings.Split(chunk.Content, "\n")
+	if len(lines) > 0 {
+		firstLine := strings.TrimSpace(lines[0])
+		if len(firstLine) <= 200 {
+			return firstLine
+		}
+		return firstLine[:200] + "..."
+	}
+
+	return ""
 }

@@ -163,6 +163,12 @@ func (lfc *LargeFunctionChunker) ChunkCode(
 		if err != nil {
 			return nil, fmt.Errorf("failed to process chunk %s: %w", chunk.Name, err)
 		}
+
+		// Add overlap between split chunks if configured and multiple chunks were created
+		if config.OverlapSize > 0 && len(chunksToAdd) > 1 {
+			lfc.addSplitChunkOverlap(ctx, chunksToAdd, config)
+		}
+
 		enhancedChunks = append(enhancedChunks, chunksToAdd...)
 
 		slogger.Debug(ctx, "Function processing completed", slogger.Fields{
@@ -736,6 +742,80 @@ func (lfc *LargeFunctionChunker) calculateComplexityScore(chunk outbound.Enhance
 		complexityFactor = 1.0
 	}
 	return complexityFactor * 0.5 // Scale to reasonable complexity
+}
+
+// addSplitChunkOverlap adds semantic overlap context between split chunks from a large function.
+// This helps maintain continuity and context across split boundaries.
+func (lfc *LargeFunctionChunker) addSplitChunkOverlap(
+	ctx context.Context,
+	chunks []outbound.EnhancedCodeChunk,
+	config outbound.ChunkingConfiguration,
+) {
+	if len(chunks) <= 1 {
+		return
+	}
+
+	// Add overlap from previous chunk to each subsequent chunk
+	for i := 1; i < len(chunks); i++ {
+		previousChunk := &chunks[i-1]
+		currentChunk := &chunks[i]
+
+		// Extract ending context from previous chunk
+		overlapContext := lfc.extractSplitOverlapContext(previousChunk, config.OverlapSize)
+		if overlapContext == "" {
+			continue
+		}
+
+		// Add to preserved context as preceding context
+		if currentChunk.PreservedContext.PrecedingContext == "" {
+			currentChunk.PreservedContext.PrecedingContext = overlapContext
+		} else {
+			currentChunk.PreservedContext.PrecedingContext = overlapContext + "\n" + currentChunk.PreservedContext.PrecedingContext
+		}
+
+		slogger.Debug(ctx, "Added split chunk overlap", slogger.Fields{
+			"chunk_id":     currentChunk.ID,
+			"overlap_size": len(overlapContext),
+		})
+	}
+}
+
+// extractSplitOverlapContext extracts the ending portion of a chunk for overlap context.
+// For split functions, we want to preserve the last few statements/lines as context.
+func (lfc *LargeFunctionChunker) extractSplitOverlapContext(
+	chunk *outbound.EnhancedCodeChunk,
+	maxSize int,
+) string {
+	if maxSize <= 0 || chunk.Content == "" {
+		return ""
+	}
+
+	content := chunk.Content
+	lines := strings.Split(content, "\n")
+
+	// Extract last N lines that fit within maxSize
+	var overlapLines []string
+	currentSize := 0
+
+	// Work backwards from the end
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		lineSize := len(line) + 1 // +1 for newline
+
+		if currentSize+lineSize > maxSize {
+			break
+		}
+
+		// Prepend to maintain order
+		overlapLines = append([]string{line}, overlapLines...)
+		currentSize += lineSize
+	}
+
+	if len(overlapLines) == 0 {
+		return ""
+	}
+
+	return strings.Join(overlapLines, "\n")
 }
 
 // Mock implementation for basic testing.

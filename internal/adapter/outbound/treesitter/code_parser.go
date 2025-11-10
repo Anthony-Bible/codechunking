@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -20,6 +21,8 @@ import (
 // TreeSitterCodeParser implements outbound.CodeParser using TreeSitter infrastructure.
 type TreeSitterCodeParser struct {
 	factory *ParserFactoryImpl
+	// Cache for cleaned base paths to avoid repeated operations
+	basePathCache map[string]string
 }
 
 // NewTreeSitterCodeParser creates a new TreeSitter-based code parser.
@@ -30,7 +33,8 @@ func NewTreeSitterCodeParser(ctx context.Context) (*TreeSitterCodeParser, error)
 	}
 
 	return &TreeSitterCodeParser{
-		factory: factory,
+		factory:       factory,
+		basePathCache: make(map[string]string),
 	}, nil
 }
 
@@ -40,6 +44,11 @@ func (p *TreeSitterCodeParser) ParseDirectory(
 	dirPath string,
 	config outbound.CodeParsingConfig,
 ) ([]outbound.CodeChunk, error) {
+	// Validate input parameters
+	if err := p.validateParseDirectoryInput(ctx, dirPath, config); err != nil {
+		return nil, fmt.Errorf("invalid input parameters: %w", err)
+	}
+
 	slogger.Info(ctx, "Starting directory parsing with TreeSitter", slogger.Fields{
 		"directory":        dirPath,
 		"chunk_size_bytes": config.ChunkSizeBytes,
@@ -61,6 +70,26 @@ func (p *TreeSitterCodeParser) ParseDirectory(
 			return err // Return the error to stop walking
 		}
 
+		// Skip directories and files that are too large early to avoid unnecessary processing
+		if d.IsDir() {
+			if p.shouldSkipDirectory(path, config) {
+				slogger.Debug(ctx, "Skipping directory", slogger.Fields{"path": path})
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Quick file size check before more expensive operations
+		if info, err := d.Info(); err == nil && config.MaxFileSizeBytes > 0 && info.Size() > config.MaxFileSizeBytes {
+			slogger.Debug(ctx, "Skipping file due to size limit", slogger.Fields{
+				"path":      path,
+				"file_size": info.Size(),
+				"max_size":  config.MaxFileSizeBytes,
+			})
+			skippedFiles++
+			return nil
+		}
+
 		// Skip directories
 		if d.IsDir() {
 			if p.shouldSkipDirectory(path, config) {
@@ -72,11 +101,24 @@ func (p *TreeSitterCodeParser) ParseDirectory(
 
 		// Process files
 		if p.shouldProcessFile(path, d, config) {
-			chunks, err := p.parseFile(ctx, path, config)
+			// Convert absolute path to repository-relative path with robust error handling
+			relativePath, err := p.calculateRelativePath(ctx, dirPath, path)
+			if err != nil {
+				slogger.Warn(ctx, "Failed to calculate relative path, skipping file", slogger.Fields{
+					"absolute_path": path,
+					"base_path":     dirPath,
+					"error":         err.Error(),
+				})
+				skippedFiles++
+				return nil // Continue walking other files
+			}
+
+			chunks, err := p.parseFile(ctx, path, relativePath, config)
 			if err != nil {
 				slogger.Warn(ctx, "Failed to parse file", slogger.Fields{
-					"file":  path,
-					"error": err.Error(),
+					"file":          relativePath,
+					"absolute_path": path,
+					"error":         err.Error(),
 				})
 				skippedFiles++
 			} else {
@@ -103,52 +145,208 @@ func (p *TreeSitterCodeParser) ParseDirectory(
 	return allChunks, nil
 }
 
+// getCleanBasePath returns a cleaned base path, using cache for performance.
+func (p *TreeSitterCodeParser) getCleanBasePath(basePath string) string {
+	if cleaned, exists := p.basePathCache[basePath]; exists {
+		return cleaned
+	}
+
+	cleaned := filepath.Clean(basePath)
+	p.basePathCache[basePath] = cleaned
+	return cleaned
+}
+
+// calculateRelativePath converts an absolute file path to a repository-relative path
+// with robust error handling and validation.
+func (p *TreeSitterCodeParser) calculateRelativePath(
+	ctx context.Context,
+	basePath string,
+	absolutePath string,
+) (string, error) {
+	// Get cleaned base path from cache for performance
+	cleanBasePath := p.getCleanBasePath(basePath)
+	cleanAbsolutePath := filepath.Clean(absolutePath)
+
+	// Validate input parameters
+	if err := p.validatePathParameters(cleanBasePath, cleanAbsolutePath); err != nil {
+		return "", fmt.Errorf("invalid path parameters: %w", err)
+	}
+
+	// Calculate relative path using cleaned paths
+	relativePath, err := filepath.Rel(cleanBasePath, cleanAbsolutePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to calculate relative path from %s to %s: %w",
+			cleanBasePath, cleanAbsolutePath, err)
+	}
+
+	// Validate the calculated relative path
+	if err := p.validateRelativePath(relativePath, cleanBasePath, cleanAbsolutePath); err != nil {
+		return "", fmt.Errorf("invalid relative path calculated: %w", err)
+	}
+
+	// Normalize path separators for consistency
+	relativePath = filepath.ToSlash(relativePath)
+
+	slogger.Debug(ctx, "Successfully calculated relative path", slogger.Fields{
+		"base_path":      basePath,
+		"absolute_path":  absolutePath,
+		"clean_base":     cleanBasePath,
+		"clean_absolute": cleanAbsolutePath,
+		"relative_path":  relativePath,
+	})
+
+	return relativePath, nil
+}
+
+// validatePathParameters validates the input parameters for path calculation.
+func (p *TreeSitterCodeParser) validatePathParameters(basePath, absolutePath string) error {
+	if basePath == "" {
+		return errors.New("base path cannot be empty")
+	}
+	if absolutePath == "" {
+		return errors.New("absolute path cannot be empty")
+	}
+
+	// Ensure paths are absolute
+	if !filepath.IsAbs(basePath) {
+		return fmt.Errorf("base path must be absolute: %s", basePath)
+	}
+	if !filepath.IsAbs(absolutePath) {
+		return fmt.Errorf("absolute path must be absolute: %s", absolutePath)
+	}
+
+	// Clean paths to remove any redundant elements
+	basePath = filepath.Clean(basePath)
+	absolutePath = filepath.Clean(absolutePath)
+
+	return nil
+}
+
+// validateRelativePath validates the calculated relative path for correctness.
+func (p *TreeSitterCodeParser) validateRelativePath(relativePath, basePath, absolutePath string) error {
+	if relativePath == "" {
+		return errors.New("calculated relative path is empty")
+	}
+
+	// Check if the relative path contains directory traversal attempts
+	if strings.Contains(relativePath, "..") {
+		// This might be legitimate in some cases, but log it for investigation
+		// We'll allow it but ensure it's safe by reconstructing and verifying
+		reconstructed := filepath.Join(basePath, relativePath)
+		reconstructed = filepath.Clean(reconstructed)
+
+		absClean := filepath.Clean(absolutePath)
+		if reconstructed != absClean {
+			return fmt.Errorf("path traversal detected: reconstructed path %s doesn't match original %s",
+				reconstructed, absClean)
+		}
+	}
+
+	// Ensure the relative path doesn't contain the base path (indicating calculation error)
+	if strings.Contains(relativePath, basePath) {
+		return fmt.Errorf("relative path contains base path: %s contains %s", relativePath, basePath)
+	}
+
+	// Verify the path is actually relative
+	if filepath.IsAbs(relativePath) {
+		return fmt.Errorf("calculated path is not relative: %s", relativePath)
+	}
+
+	return nil
+}
+
+// validateParseDirectoryInput validates the input parameters for ParseDirectory.
+func (p *TreeSitterCodeParser) validateParseDirectoryInput(
+	ctx context.Context,
+	dirPath string,
+	config outbound.CodeParsingConfig,
+) error {
+	if dirPath == "" {
+		return errors.New("directory path cannot be empty")
+	}
+
+	// Ensure directory path is absolute and clean
+	if !filepath.IsAbs(dirPath) {
+		return fmt.Errorf("directory path must be absolute: %s", dirPath)
+	}
+
+	cleanPath := filepath.Clean(dirPath)
+	if cleanPath != dirPath {
+		slogger.Warn(ctx, "Directory path was cleaned", slogger.Fields{
+			"original_path": dirPath,
+			"cleaned_path":  cleanPath,
+		})
+	}
+
+	// Validate configuration
+	if config.ChunkSizeBytes <= 0 {
+		return fmt.Errorf("chunk size must be positive: %d", config.ChunkSizeBytes)
+	}
+
+	if config.MaxFileSizeBytes < 0 {
+		return fmt.Errorf("max file size cannot be negative: %d", config.MaxFileSizeBytes)
+	}
+
+	// Check if directory exists and is accessible
+	if stat, err := os.Stat(dirPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("directory does not exist: %s", dirPath)
+		}
+		return fmt.Errorf("cannot access directory %s: %w", dirPath, err)
+	} else if !stat.IsDir() {
+		return fmt.Errorf("path is not a directory: %s", dirPath)
+	}
+
+	return nil
+}
+
 // parseFile parses a single file and returns code chunks.
 func (p *TreeSitterCodeParser) parseFile(
 	ctx context.Context,
-	filePath string,
+	absoluteFilePath string,
+	relativeFilePath string,
 	config outbound.CodeParsingConfig,
 ) ([]outbound.CodeChunk, error) {
 	// Check file size
-	fileInfo, err := os.Stat(filePath)
+	fileInfo, err := os.Stat(absoluteFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to stat file %s: %w", filePath, err)
+		return nil, fmt.Errorf("failed to stat file %s: %w", absoluteFilePath, err)
 	}
 
 	if config.MaxFileSizeBytes > 0 && fileInfo.Size() > config.MaxFileSizeBytes {
-		return nil, fmt.Errorf("file %s too large (%d bytes)", filePath, fileInfo.Size())
+		return nil, fmt.Errorf("file %s too large (%d bytes)", absoluteFilePath, fileInfo.Size())
 	}
 
 	// Read file content
-	content, err := os.ReadFile(filePath)
+	content, err := os.ReadFile(absoluteFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file %s: %w", filePath, err)
+		return nil, fmt.Errorf("failed to read file %s: %w", absoluteFilePath, err)
 	}
 
 	// Detect language
-	language := p.detectLanguage(filePath)
+	language := p.detectLanguage(absoluteFilePath)
 	if language == nil {
 		slogger.Debug(ctx, "Unsupported language, creating simple chunks", slogger.Fields{
-			"file": filePath,
+			"file": absoluteFilePath,
 		})
 		// For unsupported languages, create simple text chunks
-		return p.createSimpleChunks(filePath, string(content), "text", config), nil
+		return p.createSimpleChunks(relativeFilePath, string(content), "text", config), nil
 	}
 
 	// Check if factory supports this language
 	if !p.factory.IsLanguageSupported(ctx, *language) {
 		slogger.Debug(ctx, "Language not supported by factory, creating simple chunks", slogger.Fields{
-			"file":     filePath,
+			"file":     absoluteFilePath,
 			"language": language.Name(),
 		})
 		// Fallback to simple text chunks
-		return p.createSimpleChunks(filePath, string(content), language.Name(), config), nil
+		return p.createSimpleChunks(relativeFilePath, string(content), language.Name(), config), nil
 	}
 
 	// Try to use TreeSitter parsing
-	if chunks, err := p.parseWithTreeSitter(ctx, filePath, string(content), *language, config); err == nil {
+	if chunks, err := p.parseWithTreeSitter(ctx, relativeFilePath, string(content), *language, config); err == nil {
 		slogger.Debug(ctx, "File parsed successfully with TreeSitter", slogger.Fields{
-			"file":      filePath,
+			"file":      absoluteFilePath,
 			"language":  language.Name(),
 			"chunks":    len(chunks),
 			"file_size": fileInfo.Size(),
@@ -156,12 +354,12 @@ func (p *TreeSitterCodeParser) parseFile(
 		return chunks, nil
 	} else {
 		slogger.Warn(ctx, "TreeSitter parsing failed, falling back to simple chunks", slogger.Fields{
-			"file":     filePath,
+			"file":     absoluteFilePath,
 			"language": language.Name(),
 			"error":    err.Error(),
 		})
 		// Fallback to simple text chunks - this is not an error, it's expected behavior
-		return p.createSimpleChunks(filePath, string(content), language.Name(), config), nil
+		return p.createSimpleChunks(relativeFilePath, string(content), language.Name(), config), nil
 	}
 }
 
@@ -379,6 +577,7 @@ func (p *TreeSitterCodeParser) shouldProcessFile(
 		".scala", ".kt", ".swift", ".dart", ".cs", ".fs", ".ml", ".hs", ".pl",
 		".sh", ".bash", ".zsh", ".fish", ".ps1", ".sql", ".html", ".css",
 		".json", ".yaml", ".yml", ".xml", ".toml", ".ini", ".cfg", ".conf",
+		".md", ".markdown", ".txt",
 	}
 
 	for _, codeExt := range codeExtensions {

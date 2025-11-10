@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -394,6 +395,7 @@ func (s *SizeBasedChunker) createEnhancedChunkFromGroup(
 	var allContent string
 	allLanguages := make(map[string]bool)
 
+	var allContentSb397 strings.Builder
 	for _, chunk := range group {
 		if chunk.StartByte < minStart {
 			minStart = chunk.StartByte
@@ -401,9 +403,10 @@ func (s *SizeBasedChunker) createEnhancedChunkFromGroup(
 		if chunk.EndByte > maxEnd {
 			maxEnd = chunk.EndByte
 		}
-		allContent += chunk.Content + "\n"
+		allContentSb397.WriteString(chunk.Content + "\n")
 		allLanguages[chunk.Language.Name()] = true
 	}
+	allContent += allContentSb397.String()
 
 	// Determine primary language
 	var primaryLanguage string
@@ -549,12 +552,14 @@ func (s *SizeBasedChunker) splitIntoLines(content string) []string {
 
 func (s *SizeBasedChunker) joinLines(lines []string) string {
 	result := ""
+	var resultSb552 strings.Builder
 	for i, line := range lines {
-		result += line
+		resultSb552.WriteString(line)
 		if i < len(lines)-1 {
-			result += "\n"
+			resultSb552.WriteString("\n")
 		}
 	}
+	result += resultSb552.String()
 	return result
 }
 

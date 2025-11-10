@@ -455,7 +455,12 @@ func TestSearchService(t *testing.T) {
 		// Should fail when repository name cannot be resolved
 		assert.Error(t, err, "Should return error when repository name resolution fails")
 		assert.Nil(t, result, "Result should be nil on resolution failure")
-		assert.Contains(t, err.Error(), "failed to resolve repository names", "Error message should indicate resolution failure")
+		assert.Contains(
+			t,
+			err.Error(),
+			"failed to resolve repository names",
+			"Error message should indicate resolution failure",
+		)
 
 		mockEmbeddingService.AssertExpectations(t)
 	})
@@ -483,7 +488,12 @@ func TestSearchService(t *testing.T) {
 		// Should fail due to duplicate repository names
 		assert.Error(t, err, "Should return error for duplicate repository names")
 		assert.Nil(t, result, "Result should be nil for duplicate names")
-		assert.Contains(t, err.Error(), "repository_names cannot contain duplicates", "Error message should indicate duplicate names")
+		assert.Contains(
+			t,
+			err.Error(),
+			"repository_names cannot contain duplicates",
+			"Error message should indicate duplicate names",
+		)
 
 		mockEmbeddingService.AssertExpectations(t)
 	})

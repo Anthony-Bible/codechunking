@@ -6,6 +6,7 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,13 +22,13 @@ type GitSubmoduleDetector struct {
 	config             *SubmoduleDetectorConfig
 }
 
-// GitCommandExecutor interface for Git command execution (allows for mocking)
+// GitCommandExecutor interface for Git command execution (allows for mocking).
 type GitCommandExecutor interface {
 	ExecuteGitCommand(ctx context.Context, args ...string) (string, error)
 	ExecuteGitCommandInDir(ctx context.Context, dir string, args ...string) (string, error)
 }
 
-// SubmoduleDetectorConfig contains configuration for the submodule detector
+// SubmoduleDetectorConfig contains configuration for the submodule detector.
 type SubmoduleDetectorConfig struct {
 	EnableCaching  bool          `json:"enable_caching"`
 	CacheTTL       time.Duration `json:"cache_ttl"`
@@ -37,7 +38,7 @@ type SubmoduleDetectorConfig struct {
 	Timeout        time.Duration `json:"timeout"`
 }
 
-// DefaultSubmoduleDetectorConfig returns the default configuration
+// DefaultSubmoduleDetectorConfig returns the default configuration.
 func DefaultSubmoduleDetectorConfig() *SubmoduleDetectorConfig {
 	return &SubmoduleDetectorConfig{
 		EnableCaching:  true,
@@ -49,7 +50,7 @@ func DefaultSubmoduleDetectorConfig() *SubmoduleDetectorConfig {
 	}
 }
 
-// NewGitSubmoduleDetector creates a new GitSubmoduleDetector instance
+// NewGitSubmoduleDetector creates a new GitSubmoduleDetector instance.
 func NewGitSubmoduleDetector(executor GitCommandExecutor) *GitSubmoduleDetector {
 	if executor == nil {
 		executor = &DefaultGitCommandExecutor{}
@@ -61,8 +62,11 @@ func NewGitSubmoduleDetector(executor GitCommandExecutor) *GitSubmoduleDetector 
 	}
 }
 
-// NewGitSubmoduleDetectorWithConfig creates a new GitSubmoduleDetector with custom configuration
-func NewGitSubmoduleDetectorWithConfig(executor GitCommandExecutor, config *SubmoduleDetectorConfig) *GitSubmoduleDetector {
+// NewGitSubmoduleDetectorWithConfig creates a new GitSubmoduleDetector with custom configuration.
+func NewGitSubmoduleDetectorWithConfig(
+	executor GitCommandExecutor,
+	config *SubmoduleDetectorConfig,
+) *GitSubmoduleDetector {
 	if executor == nil {
 		executor = &DefaultGitCommandExecutor{}
 	}
@@ -76,8 +80,11 @@ func NewGitSubmoduleDetectorWithConfig(executor GitCommandExecutor, config *Subm
 	}
 }
 
-// DetectSubmodules discovers all submodules in a repository using Git commands
-func (g *GitSubmoduleDetector) DetectSubmodules(ctx context.Context, repositoryPath string) ([]valueobject.SubmoduleInfo, error) {
+// DetectSubmodules discovers all submodules in a repository using Git commands.
+func (g *GitSubmoduleDetector) DetectSubmodules(
+	ctx context.Context,
+	repositoryPath string,
+) ([]valueobject.SubmoduleInfo, error) {
 	slogger.Info(ctx, "Detecting submodules in repository", slogger.Fields{
 		"repository_path": repositoryPath,
 	})
@@ -139,8 +146,11 @@ func (g *GitSubmoduleDetector) DetectSubmodules(ctx context.Context, repositoryP
 	return submodules, nil
 }
 
-// ParseGitmodulesFile parses a .gitmodules file and returns submodule configurations
-func (g *GitSubmoduleDetector) ParseGitmodulesFile(ctx context.Context, gitmodulesPath string) ([]valueobject.SubmoduleInfo, error) {
+// ParseGitmodulesFile parses a .gitmodules file and returns submodule configurations.
+func (g *GitSubmoduleDetector) ParseGitmodulesFile(
+	ctx context.Context,
+	gitmodulesPath string,
+) ([]valueobject.SubmoduleInfo, error) {
 	slogger.Debug(ctx, "Parsing .gitmodules file", slogger.Fields{
 		"gitmodules_path": gitmodulesPath,
 	})
@@ -218,8 +228,12 @@ func (g *GitSubmoduleDetector) ParseGitmodulesFile(ctx context.Context, gitmodul
 	return submodules, nil
 }
 
-// IsSubmoduleDirectory determines if a directory is a Git submodule
-func (g *GitSubmoduleDetector) IsSubmoduleDirectory(ctx context.Context, directoryPath string, repositoryRoot string) (bool, *valueobject.SubmoduleInfo, error) {
+// IsSubmoduleDirectory determines if a directory is a Git submodule.
+func (g *GitSubmoduleDetector) IsSubmoduleDirectory(
+	ctx context.Context,
+	directoryPath string,
+	repositoryRoot string,
+) (bool, *valueobject.SubmoduleInfo, error) {
 	slogger.Debug(ctx, "Checking if directory is a submodule", slogger.Fields{
 		"directory_path":  directoryPath,
 		"repository_root": repositoryRoot,
@@ -250,15 +264,25 @@ func (g *GitSubmoduleDetector) IsSubmoduleDirectory(ctx context.Context, directo
 	return false, nil, nil
 }
 
-// GetSubmoduleStatus retrieves the status of a specific submodule
-func (g *GitSubmoduleDetector) GetSubmoduleStatus(ctx context.Context, submodulePath string, repositoryRoot string) (valueobject.SubmoduleStatus, error) {
+// GetSubmoduleStatus retrieves the status of a specific submodule.
+func (g *GitSubmoduleDetector) GetSubmoduleStatus(
+	ctx context.Context,
+	submodulePath string,
+	repositoryRoot string,
+) (valueobject.SubmoduleStatus, error) {
 	slogger.Debug(ctx, "Getting submodule status", slogger.Fields{
 		"submodule_path":  submodulePath,
 		"repository_root": repositoryRoot,
 	})
 
 	// Use Git command to get submodule status
-	output, err := g.gitCommandExecutor.ExecuteGitCommandInDir(ctx, repositoryRoot, "submodule", "status", submodulePath)
+	output, err := g.gitCommandExecutor.ExecuteGitCommandInDir(
+		ctx,
+		repositoryRoot,
+		"submodule",
+		"status",
+		submodulePath,
+	)
 	if err != nil {
 		slogger.Debug(ctx, "Failed to get submodule status", slogger.Fields{
 			"submodule_path": submodulePath,
@@ -278,8 +302,11 @@ func (g *GitSubmoduleDetector) GetSubmoduleStatus(ctx context.Context, submodule
 	return status, nil
 }
 
-// ValidateSubmoduleConfiguration validates a submodule configuration
-func (g *GitSubmoduleDetector) ValidateSubmoduleConfiguration(ctx context.Context, submodule valueobject.SubmoduleInfo) error {
+// ValidateSubmoduleConfiguration validates a submodule configuration.
+func (g *GitSubmoduleDetector) ValidateSubmoduleConfiguration(
+	ctx context.Context,
+	submodule valueobject.SubmoduleInfo,
+) error {
 	slogger.Debug(ctx, "Validating submodule configuration", slogger.Fields{
 		"submodule_path": submodule.Path(),
 		"submodule_name": submodule.Name(),
@@ -289,18 +316,18 @@ func (g *GitSubmoduleDetector) ValidateSubmoduleConfiguration(ctx context.Contex
 	// Basic validation - check path
 	path := submodule.Path()
 	if path == "" {
-		return fmt.Errorf("empty path")
+		return errors.New("empty path")
 	}
 
 	// Basic validation - check URL format
 	url := submodule.URL()
 	if url == "" {
-		return fmt.Errorf("submodule URL cannot be empty")
+		return errors.New("submodule URL cannot be empty")
 	}
 
 	// Check for invalid URL schemes
 	if strings.Contains(url, "invalid://") {
-		return fmt.Errorf("invalid URL")
+		return errors.New("invalid URL")
 	}
 
 	// Additional URL validation - must have proper scheme or be relative
@@ -309,7 +336,7 @@ func (g *GitSubmoduleDetector) ValidateSubmoduleConfiguration(ctx context.Contex
 		!strings.HasPrefix(url, "git@") &&
 		!strings.HasPrefix(url, "../") &&
 		!strings.HasPrefix(url, "./") {
-		return fmt.Errorf("invalid URL")
+		return errors.New("invalid URL")
 	}
 
 	slogger.Debug(ctx, "Submodule configuration validation passed", slogger.Fields{
@@ -330,7 +357,7 @@ type submoduleBuilder struct {
 
 func (sb *submoduleBuilder) build() (valueobject.SubmoduleInfo, error) {
 	if sb.path == "" || sb.name == "" || sb.url == "" {
-		return valueobject.SubmoduleInfo{}, fmt.Errorf("incomplete submodule configuration")
+		return valueobject.SubmoduleInfo{}, errors.New("incomplete submodule configuration")
 	}
 
 	// Default to inactive until status is checked
@@ -359,7 +386,10 @@ func (g *GitSubmoduleDetector) extractSubmoduleName(line string) string {
 	return ""
 }
 
-func (g *GitSubmoduleDetector) detectSubmodulesViaGit(ctx context.Context, repositoryPath string) ([]valueobject.SubmoduleInfo, error) {
+func (g *GitSubmoduleDetector) detectSubmodulesViaGit(
+	ctx context.Context,
+	repositoryPath string,
+) ([]valueobject.SubmoduleInfo, error) {
 	output, err := g.gitCommandExecutor.ExecuteGitCommandInDir(ctx, repositoryPath, "submodule", "status")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list submodules: %w", err)
@@ -385,7 +415,13 @@ func (g *GitSubmoduleDetector) detectSubmodulesViaGit(ctx context.Context, repos
 		status := g.parseStatusFromGitOutput(parts[0])
 
 		// Get submodule URL
-		url, err := g.gitCommandExecutor.ExecuteGitCommandInDir(ctx, repositoryPath, "config", "--get", "submodule."+path+".url")
+		url, err := g.gitCommandExecutor.ExecuteGitCommandInDir(
+			ctx,
+			repositoryPath,
+			"config",
+			"--get",
+			"submodule."+path+".url",
+		)
 		if err != nil {
 			continue
 		}
@@ -443,23 +479,40 @@ func (g *GitSubmoduleDetector) parseStatusFromGitOutput(statusChar string) value
 
 // EnhancedSubmoduleDetector methods
 
-// DetectNestedSubmodules discovers nested submodules
-func (g *GitSubmoduleDetector) DetectNestedSubmodules(ctx context.Context, repositoryPath string, maxDepth int) ([]valueobject.SubmoduleInfo, error) {
+// DetectNestedSubmodules discovers nested submodules.
+func (g *GitSubmoduleDetector) DetectNestedSubmodules(
+	ctx context.Context,
+	repositoryPath string,
+	maxDepth int,
+) ([]valueobject.SubmoduleInfo, error) {
 	// For now, return regular submodules - nesting can be implemented later
 	return g.DetectSubmodules(ctx, repositoryPath)
 }
 
-// ResolveSubmoduleURL resolves a submodule URL to its absolute form
-func (g *GitSubmoduleDetector) ResolveSubmoduleURL(ctx context.Context, submoduleURL, repositoryRoot string) (string, error) {
+// ResolveSubmoduleURL resolves a submodule URL to its absolute form.
+func (g *GitSubmoduleDetector) ResolveSubmoduleURL(
+	ctx context.Context,
+	submoduleURL, repositoryRoot string,
+) (string, error) {
 	if strings.HasPrefix(submoduleURL, "./") {
 		return filepath.Join(repositoryRoot, submoduleURL[2:]), nil
 	}
 	return submoduleURL, nil
 }
 
-// GetSubmoduleCommit retrieves the commit SHA that a submodule points to
-func (g *GitSubmoduleDetector) GetSubmoduleCommit(ctx context.Context, submodulePath string, repositoryRoot string) (string, error) {
-	output, err := g.gitCommandExecutor.ExecuteGitCommandInDir(ctx, repositoryRoot, "submodule", "status", submodulePath)
+// GetSubmoduleCommit retrieves the commit SHA that a submodule points to.
+func (g *GitSubmoduleDetector) GetSubmoduleCommit(
+	ctx context.Context,
+	submodulePath string,
+	repositoryRoot string,
+) (string, error) {
+	output, err := g.gitCommandExecutor.ExecuteGitCommandInDir(
+		ctx,
+		repositoryRoot,
+		"submodule",
+		"status",
+		submodulePath,
+	)
 	if err != nil {
 		return "", fmt.Errorf("failed to get submodule commit: %w", err)
 	}
@@ -473,8 +526,12 @@ func (g *GitSubmoduleDetector) GetSubmoduleCommit(ctx context.Context, submodule
 	return "", fmt.Errorf("commit not found for submodule: %s", submodulePath)
 }
 
-// IsSubmoduleActive determines if a submodule is active
-func (g *GitSubmoduleDetector) IsSubmoduleActive(ctx context.Context, submodulePath string, repositoryRoot string) (bool, error) {
+// IsSubmoduleActive determines if a submodule is active.
+func (g *GitSubmoduleDetector) IsSubmoduleActive(
+	ctx context.Context,
+	submodulePath string,
+	repositoryRoot string,
+) (bool, error) {
 	status, err := g.GetSubmoduleStatus(ctx, submodulePath, repositoryRoot)
 	if err != nil {
 		return false, err
@@ -483,10 +540,20 @@ func (g *GitSubmoduleDetector) IsSubmoduleActive(ctx context.Context, submoduleP
 	return status != valueobject.SubmoduleStatusUninitialized, nil
 }
 
-// GetSubmoduleBranch retrieves the branch that a submodule is tracking
-func (g *GitSubmoduleDetector) GetSubmoduleBranch(ctx context.Context, submodulePath string, repositoryRoot string) (string, error) {
+// GetSubmoduleBranch retrieves the branch that a submodule is tracking.
+func (g *GitSubmoduleDetector) GetSubmoduleBranch(
+	ctx context.Context,
+	submodulePath string,
+	repositoryRoot string,
+) (string, error) {
 	// Try to get branch from Git config
-	branch, err := g.gitCommandExecutor.ExecuteGitCommandInDir(ctx, repositoryRoot, "config", "--get", "submodule."+submodulePath+".branch")
+	branch, err := g.gitCommandExecutor.ExecuteGitCommandInDir(
+		ctx,
+		repositoryRoot,
+		"config",
+		"--get",
+		"submodule."+submodulePath+".branch",
+	)
 	if err != nil {
 		return "main", nil // Default to main
 	}
@@ -497,8 +564,11 @@ func (g *GitSubmoduleDetector) GetSubmoduleBranch(ctx context.Context, submodule
 	return branch, nil
 }
 
-// ValidateSubmoduleAccess checks if a submodule repository is accessible
-func (g *GitSubmoduleDetector) ValidateSubmoduleAccess(ctx context.Context, submodule valueobject.SubmoduleInfo) (*outbound.SubmoduleAccessResult, error) {
+// ValidateSubmoduleAccess checks if a submodule repository is accessible.
+func (g *GitSubmoduleDetector) ValidateSubmoduleAccess(
+	ctx context.Context,
+	submodule valueobject.SubmoduleInfo,
+) (*outbound.SubmoduleAccessResult, error) {
 	// For now, assume accessible - actual access validation can be implemented later
 	return &outbound.SubmoduleAccessResult{
 		Submodule:    submodule,

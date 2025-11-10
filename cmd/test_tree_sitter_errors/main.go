@@ -1,8 +1,10 @@
+//nolint:forbidigo // This is a test utility that intentionally uses fmt.Print for debugging
 package main
 
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	forest "github.com/alexaandru/go-sitter-forest"
 	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
@@ -40,10 +42,11 @@ func printTree(node tree_sitter.Node, depth int, source []byte) {
 		return
 	}
 
-	indent := ""
+	var indent strings.Builder
 	for range depth {
-		indent += "  "
+		indent.WriteString("  ")
 	}
+	indentStr := indent.String()
 
 	nodeType := node.Type()
 	content := source[node.StartByte():node.EndByte()]
@@ -62,7 +65,7 @@ func printTree(node tree_sitter.Node, depth int, source []byte) {
 		flags += " [HasError]"
 	}
 
-	fmt.Printf("%s%s%s: %q\n", indent, nodeType, flags, content)
+	fmt.Printf("%s%s%s: %q\n", indentStr, nodeType, flags, content)
 
 	for i := range node.ChildCount() {
 		child := node.Child(i)

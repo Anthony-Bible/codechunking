@@ -8,32 +8,36 @@ import (
 	"time"
 )
 
-// DefaultGitCommandExecutor provides a default implementation of Git command execution
+// DefaultGitCommandExecutor provides a default implementation of Git command execution.
 type DefaultGitCommandExecutor struct {
 	timeout time.Duration
 }
 
-// NewDefaultGitCommandExecutor creates a new DefaultGitCommandExecutor with default timeout
+// NewDefaultGitCommandExecutor creates a new DefaultGitCommandExecutor with default timeout.
 func NewDefaultGitCommandExecutor() *DefaultGitCommandExecutor {
 	return &DefaultGitCommandExecutor{
 		timeout: 30 * time.Second,
 	}
 }
 
-// NewDefaultGitCommandExecutorWithTimeout creates a new DefaultGitCommandExecutor with custom timeout
+// NewDefaultGitCommandExecutorWithTimeout creates a new DefaultGitCommandExecutor with custom timeout.
 func NewDefaultGitCommandExecutorWithTimeout(timeout time.Duration) *DefaultGitCommandExecutor {
 	return &DefaultGitCommandExecutor{
 		timeout: timeout,
 	}
 }
 
-// ExecuteGitCommand executes a Git command in the current directory
+// ExecuteGitCommand executes a Git command in the current directory.
 func (e *DefaultGitCommandExecutor) ExecuteGitCommand(ctx context.Context, args ...string) (string, error) {
 	return e.ExecuteGitCommandInDir(ctx, ".", args...)
 }
 
-// ExecuteGitCommandInDir executes a Git command in a specific directory
-func (e *DefaultGitCommandExecutor) ExecuteGitCommandInDir(ctx context.Context, dir string, args ...string) (string, error) {
+// ExecuteGitCommandInDir executes a Git command in a specific directory.
+func (e *DefaultGitCommandExecutor) ExecuteGitCommandInDir(
+	ctx context.Context,
+	dir string,
+	args ...string,
+) (string, error) {
 	// Create command with timeout
 	cmdCtx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()

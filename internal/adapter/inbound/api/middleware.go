@@ -102,16 +102,17 @@ func (l *DefaultLogger) logWithLevel(level, template string, args ...interface{}
 	timestamp := time.Now().Format(time.RFC3339)
 	message := fmt.Sprintf(template, args...)
 
-	// Build structured log entry
-	logEntry := fmt.Sprintf("[%s] %s: %s", timestamp, level, message)
+	// Build structured log entry with efficient string building
+	var logEntry strings.Builder
+	logEntry.WriteString(fmt.Sprintf("[%s] %s: %s", timestamp, level, message))
 
 	// Add fields if any - materialize the field chain at log time
 	allFields := l.materializeFields()
 	for key, value := range allFields {
-		logEntry += fmt.Sprintf(" %s=%v", key, value)
+		logEntry.WriteString(fmt.Sprintf(" %s=%v", key, value))
 	}
 
-	_, _ = fmt.Fprintln(l.output, logEntry)
+	_, _ = fmt.Fprintln(l.output, logEntry.String())
 }
 
 // materializeFields combines base fields and field chain into a single map for logging.

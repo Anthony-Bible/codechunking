@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// Test URL validation in repository service
+// Test URL validation in repository service.
 func TestRepositoryService_URLValidation(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -156,7 +156,7 @@ func TestRepositoryService_URLValidation(t *testing.T) {
 	}
 }
 
-// Test successful URL validation
+// Test successful URL validation.
 func TestRepositoryService_SuccessfulURLValidation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -208,7 +208,8 @@ func TestRepositoryService_SuccessfulURLValidation(t *testing.T) {
 			service := NewCreateRepositoryService(mockRepo, mockPublisher)
 
 			// Mock repository doesn't exist
-			mockRepo.On("ExistsByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
+			mockRepo.On("ExistsByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).
+				Return(false, nil)
 
 			// Mock successful save
 			mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
@@ -230,7 +231,7 @@ func TestRepositoryService_SuccessfulURLValidation(t *testing.T) {
 	}
 }
 
-// Test URL validation error propagation
+// Test URL validation error propagation.
 func TestRepositoryService_URLValidationErrorPropagation(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -271,7 +272,7 @@ func TestRepositoryService_URLValidationErrorPropagation(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.expectedError)
 
 			if tt.expectDomain {
-				assert.True(t, errors.Is(err, domain.ErrInvalidRepositoryURL))
+				assert.ErrorIs(t, err, domain.ErrInvalidRepositoryURL)
 			}
 
 			// Ensure no repository operations were attempted
@@ -281,7 +282,7 @@ func TestRepositoryService_URLValidationErrorPropagation(t *testing.T) {
 	}
 }
 
-// Test URL validation edge cases
+// Test URL validation edge cases.
 func TestRepositoryService_URLValidationEdgeCases(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -370,7 +371,7 @@ func TestRepositoryService_URLValidationEdgeCases(t *testing.T) {
 	}
 }
 
-// Test URL validation with RepositoryURL value object
+// Test URL validation with RepositoryURL value object.
 func TestRepositoryService_RepositoryURLValidation(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -417,7 +418,7 @@ func TestRepositoryService_RepositoryURLValidation(t *testing.T) {
 	}
 }
 
-// Test error handling consistency
+// Test error handling consistency.
 func TestRepositoryService_ErrorHandlingConsistency(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -440,7 +441,8 @@ func TestRepositoryService_ErrorHandlingConsistency(t *testing.T) {
 		{
 			name: "repository_exists_error_after_url_validation",
 			setupMock: func(mockRepo *MockRepositoryRepository, mockPub *MockMessagePublisher) {
-				mockRepo.On("ExistsByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(true, nil)
+				mockRepo.On("ExistsByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).
+					Return(true, nil)
 			},
 			request: dto.CreateRepositoryRequest{
 				URL: "https://github.com/golang/go",
@@ -467,7 +469,7 @@ func TestRepositoryService_ErrorHandlingConsistency(t *testing.T) {
 
 			if tt.expectedError != nil {
 				if errors.Is(tt.expectedError, domain.ErrRepositoryAlreadyExists) {
-					assert.True(t, errors.Is(err, domain.ErrRepositoryAlreadyExists))
+					assert.ErrorIs(t, err, domain.ErrRepositoryAlreadyExists)
 				} else {
 					assert.Contains(t, err.Error(), tt.expectedError.Error())
 				}

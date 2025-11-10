@@ -96,7 +96,7 @@ func (s *CreateRepositoryService) CreateRepository(
 	}
 
 	// Publish indexing job
-	if err := s.publishIndexingJob(ctx, repository, request.URL); err != nil {
+	if err := s.publishIndexingJob(ctx, repository, repositoryURL.CloneURL()); err != nil {
 		return nil, err
 	}
 

@@ -347,11 +347,44 @@ func (p *DefaultJobProcessor) parseCode(
 	workspacePath string,
 	config outbound.CodeParsingConfig,
 ) ([]outbound.CodeChunk, error) {
-	chunks, err := p.codeParser.ParseDirectory(ctx, workspacePath, config)
+	repositoryRoot, err := p.findRepositoryRoot(workspacePath)
+	if err != nil {
+		slogger.Warn(ctx, "Failed to find repository root, using workspace path", slogger.Fields{
+			"workspace_path": workspacePath,
+			"error":          err.Error(),
+		})
+		repositoryRoot = workspacePath
+	}
+
+	chunks, err := p.codeParser.ParseDirectory(ctx, repositoryRoot, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse directory: %w", err)
 	}
 	return chunks, nil
+}
+
+// findRepositoryRoot looks for the actual repository root within the workspace.
+func (p *DefaultJobProcessor) findRepositoryRoot(workspacePath string) (string, error) {
+	return findGitRepositoryRoot(workspacePath)
+}
+
+// findGitRepositoryRoot searches for a .git directory in the workspace.
+func findGitRepositoryRoot(workspacePath string) (string, error) {
+	entries, err := os.ReadDir(workspacePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read workspace directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			gitPath := filepath.Join(workspacePath, entry.Name(), ".git")
+			if _, err := os.Stat(gitPath); err == nil {
+				return filepath.Join(workspacePath, entry.Name()), nil
+			}
+		}
+	}
+
+	return workspacePath, nil
 }
 
 // generateEmbeddings creates embeddings for code chunks.

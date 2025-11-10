@@ -129,7 +129,12 @@ func (h *DefaultErrorHandler) isCustomURLValidationError(err error) bool {
 }
 
 // handleErrorWithConfig handles an error using its configuration.
-func (h *DefaultErrorHandler) handleErrorWithConfig(w http.ResponseWriter, r *http.Request, err error, config ErrorHandlingConfig) {
+func (h *DefaultErrorHandler) handleErrorWithConfig(
+	w http.ResponseWriter,
+	r *http.Request,
+	err error,
+	config ErrorHandlingConfig,
+) {
 	h.logError(r, config.LogMessage, config.ErrorType, err)
 
 	message := config.ResponseMessage
@@ -142,7 +147,11 @@ func (h *DefaultErrorHandler) handleErrorWithConfig(w http.ResponseWriter, r *ht
 }
 
 // createErrorResponse creates a standardized error response.
-func (h *DefaultErrorHandler) createErrorResponse(errorCode dto.ErrorCode, message string, details interface{}) dto.ErrorResponse {
+func (h *DefaultErrorHandler) createErrorResponse(
+	errorCode dto.ErrorCode,
+	message string,
+	details interface{},
+) dto.ErrorResponse {
 	if details != nil {
 		return dto.NewErrorResponse(errorCode, message, details)
 	}
@@ -201,7 +210,12 @@ func (h *DefaultErrorHandler) HandleServiceError(w http.ResponseWriter, r *http.
 }
 
 // writeErrorResponse writes an error response as JSON with correlation ID preservation.
-func (h *DefaultErrorHandler) writeErrorResponse(w http.ResponseWriter, r *http.Request, statusCode int, response dto.ErrorResponse) {
+func (h *DefaultErrorHandler) writeErrorResponse(
+	w http.ResponseWriter,
+	r *http.Request,
+	statusCode int,
+	response dto.ErrorResponse,
+) {
 	// Preserve correlation ID if present in request
 	if correlationID := r.Header.Get("X-Correlation-ID"); correlationID != "" {
 		w.Header().Set("X-Correlation-ID", correlationID)

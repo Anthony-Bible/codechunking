@@ -36,6 +36,18 @@ func NewSearchHandler(searchService SearchService, errorHandler ErrorHandler) *S
 }
 
 // Search handles POST /search requests for semantic code search.
+//
+//	@Summary		Semantic code search
+//	@Description	Performs semantic search across indexed code chunks using natural language queries. Returns relevant code snippets ranked by similarity score with filtering options.
+//	@Tags			Search
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		dto.SearchRequestDTO	true	"Search request"
+//	@Success		200		{object}	dto.SearchResponseDTO	"Search results"
+//	@Failure		400		{object}	dto.ErrorResponse		"Invalid search request"
+//	@Failure		422		{object}	dto.ErrorResponse		"Validation error"
+//	@Failure		500		{object}	dto.ErrorResponse		"Internal server error"
+//	@Router			/search [post]
 func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 	// Validate HTTP method
 	if r.Method != http.MethodPost {

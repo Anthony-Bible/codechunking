@@ -74,59 +74,94 @@ func (s *SearchService) Search(ctx context.Context, request dto.SearchRequestDTO
 	// Small delay to ensure measurable execution time for tests
 	time.Sleep(1 * time.Millisecond)
 
-	// Apply defaults
+	// Apply defaults and validate
 	request.ApplyDefaults()
-
-	// Validate request
 	if err := request.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid search request: %w", err)
 	}
 
 	// Generate embedding for query
-	slogger.Info(ctx, "Starting embedding generation for search query", slogger.Fields{
-		"query": request.Query,
-		"limit": request.Limit,
-	})
+	embeddingResult, err := s.generateQueryEmbedding(ctx, request.Query)
+	if err != nil {
+		return nil, err
+	}
+
+	// Perform vector similarity search
+	vectorResults, err := s.performVectorSearch(ctx, embeddingResult.Vector, request)
+	if err != nil {
+		return nil, err
+	}
+
+	// Retrieve and filter chunks
+	results, err := s.retrieveAndFilterChunks(ctx, vectorResults, request)
+	if err != nil {
+		return nil, err
+	}
+
+	// Sort and paginate results
+	s.sortResults(results, request.Sort)
+	paginatedResults, totalResults := s.paginateResults(results, request.Limit, request.Offset)
+
+	// Build and return response
+	return s.buildResponse(paginatedResults, totalResults, request, startTime), nil
+}
+
+// generateQueryEmbedding generates an embedding for the search query.
+func (s *SearchService) generateQueryEmbedding(ctx context.Context, query string) (*outbound.EmbeddingResult, error) {
+	slogger.Info(ctx, "Starting embedding generation for search query", slogger.Fields{"query": query})
+
 	embeddingOptions := outbound.EmbeddingOptions{
 		Model:    "gemini-embedding-001",
 		TaskType: outbound.TaskTypeCodeRetrievalQuery,
 		Timeout:  30 * time.Second,
 	}
 
-	embeddingResult, err := s.embeddingService.GenerateEmbedding(ctx, request.Query, embeddingOptions)
+	embeddingResult, err := s.embeddingService.GenerateEmbedding(ctx, query, embeddingOptions)
 	if err != nil {
-		// Return context cancellation error directly without wrapping
 		if errors.Is(err, context.Canceled) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to generate embedding for query: %w", err)
 	}
 
-	// Perform vector similarity search
+	return embeddingResult, nil
+}
+
+// performVectorSearch performs vector similarity search.
+func (s *SearchService) performVectorSearch(
+	ctx context.Context,
+	vector []float64,
+	request dto.SearchRequestDTO,
+) ([]outbound.VectorSimilarityResult, error) {
 	slogger.Info(ctx, "Starting vector similarity search", slogger.Fields{
-		"vector_dimensions":     len(embeddingResult.Vector),
+		"vector_dimensions":     len(vector),
 		"use_partitioned_table": true,
 		"max_results":           request.Limit + request.Offset,
 	})
+
 	searchOptions := outbound.SimilaritySearchOptions{
-		UsePartitionedTable: true,                           // Use partitioned table for better performance
-		MaxResults:          request.Limit + request.Offset, // Get enough results for pagination
+		UsePartitionedTable: true,
+		MaxResults:          request.Limit + request.Offset,
 		MinSimilarity:       request.SimilarityThreshold,
 		RepositoryIDs:       request.RepositoryIDs,
 	}
 
-	vectorResults, err := s.vectorRepo.VectorSimilaritySearch(ctx, embeddingResult.Vector, searchOptions)
+	vectorResults, err := s.vectorRepo.VectorSimilaritySearch(ctx, vector, searchOptions)
 	if err != nil {
-		slogger.Error(ctx, "Vector similarity search failed", slogger.Fields{
-			"error": err.Error(),
-		})
+		slogger.Error(ctx, "Vector similarity search failed", slogger.Fields{"error": err.Error()})
 		return nil, fmt.Errorf("vector search failed: %w", err)
 	}
 
-	slogger.Info(ctx, "Vector search completed, extracting chunk IDs", slogger.Fields{
-		"vector_results_count": len(vectorResults),
-	})
+	slogger.Info(ctx, "Vector search completed", slogger.Fields{"vector_results_count": len(vectorResults)})
+	return vectorResults, nil
+}
 
+// retrieveAndFilterChunks retrieves chunk details and applies filters.
+func (s *SearchService) retrieveAndFilterChunks(
+	ctx context.Context,
+	vectorResults []outbound.VectorSimilarityResult,
+	request dto.SearchRequestDTO,
+) ([]dto.SearchResultDTO, error) {
 	// Extract chunk IDs
 	chunkIDs := make([]uuid.UUID, len(vectorResults))
 	for i, result := range vectorResults {
@@ -134,9 +169,7 @@ func (s *SearchService) Search(ctx context.Context, request dto.SearchRequestDTO
 	}
 
 	// Retrieve chunk information
-	slogger.Info(ctx, "Starting chunk information retrieval", slogger.Fields{
-		"chunk_ids_count": len(chunkIDs),
-	})
+	slogger.Info(ctx, "Starting chunk information retrieval", slogger.Fields{"chunk_ids_count": len(chunkIDs)})
 	chunks, err := s.chunkRepo.FindChunksByIDs(ctx, chunkIDs)
 	if err != nil {
 		slogger.Error(ctx, "Failed to retrieve chunk information", slogger.Fields{
@@ -146,34 +179,56 @@ func (s *SearchService) Search(ctx context.Context, request dto.SearchRequestDTO
 		return nil, fmt.Errorf("failed to retrieve chunks: %w", err)
 	}
 
-	slogger.Info(ctx, "Chunk retrieval completed, building search results", slogger.Fields{
+	slogger.Info(ctx, "Chunk retrieval completed", slogger.Fields{
 		"chunks_retrieved": len(chunks),
 		"vector_results":   len(vectorResults),
 	})
 
-	// Build search results
+	// Build search results with filters
 	results := s.buildSearchResults(vectorResults, chunks, request)
 
-	// Sort results
-	s.sortResults(results, request.Sort)
+	slogger.Info(ctx, "Search results built after applying filters", slogger.Fields{
+		"results_before_filters": len(vectorResults),
+		"results_after_filters":  len(results),
+		"filters_applied": map[string]interface{}{
+			"types":      request.Types,
+			"languages":  request.Languages,
+			"file_types": request.FileTypes,
+		},
+	})
 
-	// Apply pagination
+	return results, nil
+}
+
+// paginateResults applies pagination to search results.
+func (s *SearchService) paginateResults(
+	results []dto.SearchResultDTO,
+	limit int,
+	offset int,
+) ([]dto.SearchResultDTO, int) {
 	totalResults := len(results)
-	if request.Offset >= totalResults {
-		results = []dto.SearchResultDTO{} // No results for this offset
-	} else {
-		endIndex := request.Offset + request.Limit
-		if endIndex > totalResults {
-			endIndex = totalResults
-		}
-		results = results[request.Offset:endIndex]
+	if offset >= totalResults {
+		return []dto.SearchResultDTO{}, totalResults
 	}
 
-	// Calculate execution time
+	endIndex := offset + limit
+	if endIndex > totalResults {
+		endIndex = totalResults
+	}
+
+	return results[offset:endIndex], totalResults
+}
+
+// buildResponse constructs the final search response.
+func (s *SearchService) buildResponse(
+	results []dto.SearchResultDTO,
+	totalResults int,
+	request dto.SearchRequestDTO,
+	startTime time.Time,
+) *dto.SearchResponseDTO {
 	executionTime := time.Since(startTime).Milliseconds()
 
-	// Build response
-	response := &dto.SearchResponseDTO{
+	return &dto.SearchResponseDTO{
 		Results: results,
 		Pagination: dto.PaginationResponse{
 			Limit:   request.Limit,
@@ -186,8 +241,6 @@ func (s *SearchService) Search(ctx context.Context, request dto.SearchRequestDTO
 			ExecutionTimeMs: executionTime,
 		},
 	}
-
-	return response, nil
 }
 
 // buildSearchResults builds search results from vector results and chunks, applying filters.

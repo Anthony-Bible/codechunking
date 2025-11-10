@@ -277,6 +277,7 @@ func (f *FunctionChunker) createSingleEnhancedChunk(
 	var allContent string
 	allLanguages := make(map[string]bool)
 
+	var allContentSb280 strings.Builder
 	for _, chunk := range group {
 		if chunk.StartByte < minStart {
 			minStart = chunk.StartByte
@@ -284,9 +285,10 @@ func (f *FunctionChunker) createSingleEnhancedChunk(
 		if chunk.EndByte > maxEnd {
 			maxEnd = chunk.EndByte
 		}
-		allContent += chunk.Content + "\n"
+		allContentSb280.WriteString(chunk.Content + "\n")
 		allLanguages[chunk.Language.Name()] = true
 	}
+	allContent += allContentSb280.String()
 
 	// Determine primary language (most common in group)
 	var primaryLanguage string

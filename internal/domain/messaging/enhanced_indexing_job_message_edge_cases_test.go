@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,9 +36,11 @@ func TestEnhancedIndexingJobMessage_EdgeCases(t *testing.T) {
 			name: "extremely_long_message_id_fails_validation",
 			setupFunc: func() EnhancedIndexingJobMessage {
 				longID := ""
+				var longIDSb38 strings.Builder
 				for range 1000 {
-					longID += "a"
+					longIDSb38.WriteString("a")
 				}
+				longID += longIDSb38.String()
 				return EnhancedIndexingJobMessage{
 					MessageID:     longID,
 					CorrelationID: "corr-67890",

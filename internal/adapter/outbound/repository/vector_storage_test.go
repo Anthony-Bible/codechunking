@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -143,12 +144,14 @@ func TestVectorOperations(t *testing.T) {
 	t.Run("insert embedding into regular table", func(t *testing.T) {
 		// Create a test vector (768 dimensions) with small values
 		testVectorStr := "["
+		var testVectorStrSb146 strings.Builder
 		for i := range 768 {
 			if i > 0 {
-				testVectorStr += ","
+				testVectorStrSb146.WriteString(",")
 			}
-			testVectorStr += "0.1"
+			testVectorStrSb146.WriteString("0.1")
 		}
+		testVectorStr += testVectorStrSb146.String()
 		testVectorStr += "]"
 
 		_, err := pool.Exec(ctx, `
@@ -170,12 +173,14 @@ func TestVectorOperations(t *testing.T) {
 	t.Run("insert embedding into partitioned table", func(t *testing.T) {
 		// Create a test vector (768 dimensions) with small values
 		testVectorStr := "["
+		var testVectorStrSb173 strings.Builder
 		for i := range 768 {
 			if i > 0 {
-				testVectorStr += ","
+				testVectorStrSb173.WriteString(",")
 			}
-			testVectorStr += "0.2"
+			testVectorStrSb173.WriteString("0.2")
 		}
+		testVectorStr += testVectorStrSb173.String()
 		testVectorStr += "]"
 
 		_, err := pool.Exec(ctx, `
@@ -197,12 +202,14 @@ func TestVectorOperations(t *testing.T) {
 	t.Run("test vector similarity search", func(t *testing.T) {
 		// Create a query vector with 768 dimensions (different from stored vectors)
 		queryVectorStr := "["
+		var queryVectorStrSb200 strings.Builder
 		for i := range 768 {
 			if i > 0 {
-				queryVectorStr += ","
+				queryVectorStrSb200.WriteString(",")
 			}
-			queryVectorStr += "0.9" // Different from stored 0.1 and 0.2 values
+			queryVectorStrSb200.WriteString("0.9") // Different from stored 0.1 and 0.2 values
 		}
+		queryVectorStr += queryVectorStrSb200.String()
 		queryVectorStr += "]"
 
 		// Test similarity search on regular table
@@ -307,12 +314,14 @@ func TestPartitionManagement(t *testing.T) {
 
 		// Test vector with proper dimensions
 		testVectorStr := "["
+		var testVectorStrSb310 strings.Builder
 		for i := range 768 {
 			if i > 0 {
-				testVectorStr += ","
+				testVectorStrSb310.WriteString(",")
 			}
-			testVectorStr += "0.1"
+			testVectorStrSb310.WriteString("0.1")
 		}
+		testVectorStr += testVectorStrSb310.String()
 		testVectorStr += "]"
 
 		_, err = pool.Exec(ctx, `

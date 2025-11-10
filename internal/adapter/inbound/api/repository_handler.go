@@ -37,6 +37,18 @@ func NewRepositoryHandler(repositoryService inbound.RepositoryService, errorHand
 }
 
 // CreateRepository handles POST /repositories with comprehensive request processing.
+//
+//	@Summary		Submit repository for indexing
+//	@Description	Submits a Git repository URL for asynchronous indexing and processing. The repository will be cloned, analyzed, and chunked into semantic units.
+//	@Tags			Repositories
+//	@Accept			json
+//	@Produce		json
+//	@Param			request	body		dto.CreateRepositoryRequest	true	"Repository creation request"
+//	@Success		202		{object}	dto.RepositoryResponse		"Repository accepted for indexing"
+//	@Failure		400		{object}	dto.ErrorResponse			"Invalid request"
+//	@Failure		409		{object}	dto.ErrorResponse			"Repository already exists"
+//	@Failure		500		{object}	dto.ErrorResponse			"Internal server error"
+//	@Router			/repositories [post]
 func (h *RepositoryHandler) CreateRepository(w http.ResponseWriter, r *http.Request) {
 	var request dto.CreateRepositoryRequest
 	if err := h.decodeAndValidateJSON(r, &request); err != nil {
@@ -59,6 +71,17 @@ func (h *RepositoryHandler) CreateRepository(w http.ResponseWriter, r *http.Requ
 }
 
 // GetRepository handles GET /repositories/{id}.
+// GetRepository handles GET /repositories/{id}.
+//
+//	@Summary		Get repository details
+//	@Description	Returns detailed information about a specific repository including its indexing status, statistics, and metadata.
+//	@Tags			Repositories
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string					true	"Repository UUID"
+//	@Success		200		{object}	dto.RepositoryResponse	"Repository details"
+//	@Failure		404		{object}	dto.ErrorResponse		"Repository not found"
+//	@Router			/repositories/{id} [get]
 func (h *RepositoryHandler) GetRepository(w http.ResponseWriter, r *http.Request) {
 	id, err := h.extractRepositoryIDFromPath(r)
 	if err != nil {
@@ -72,6 +95,19 @@ func (h *RepositoryHandler) GetRepository(w http.ResponseWriter, r *http.Request
 }
 
 // ListRepositories handles GET /repositories.
+// ListRepositories handles GET /repositories.
+//
+//	@Summary		List repositories
+//	@Description	Returns a paginated list of repositories that have been submitted for indexing. Results can be filtered by status and sorted by various fields.
+//	@Tags			Repositories
+//	@Accept			json
+//	@Produce		json
+//	@Param			status	query		string						false	"Filter repositories by status"
+//	@Param			limit	query		int							false	"Maximum number of repositories to return (1-100)"			default(20)
+//	@Param			offset	query		int							false	"Number of repositories to skip for pagination"			default(0)
+//	@Param			sort		query		string						false	"Sort field and direction"								enum(created_at:asc,created_at:desc,updated_at:asc,updated_at:desc,name:asc,name:desc)	default(created_at:desc)
+//	@Success		200		{object}	dto.RepositoryListResponse	"List of repositories"
+//	@Router			/repositories [get]
 func (h *RepositoryHandler) ListRepositories(w http.ResponseWriter, r *http.Request) {
 	slogger.Info(r.Context(), "ListRepositories endpoint called", slogger.Fields{
 		"method": r.Method,
@@ -123,6 +159,18 @@ func (h *RepositoryHandler) ListRepositories(w http.ResponseWriter, r *http.Requ
 }
 
 // DeleteRepository handles DELETE /repositories/{id}.
+// DeleteRepository handles DELETE /repositories/{id}.
+//
+//	@Summary		Delete repository
+//	@Description	Removes a repository and all its associated data including code chunks, embeddings, and indexing jobs. This operation is irreversible.
+//	@Tags			Repositories
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string			true	"Repository UUID"
+//	@Success		204		"Repository successfully deleted"
+//	@Failure		404		{object}	dto.ErrorResponse	"Repository not found"
+//	@Failure		409		{object}	dto.ErrorResponse	"Repository is currently being processed"
+//	@Router			/repositories/{id} [delete]
 func (h *RepositoryHandler) DeleteRepository(w http.ResponseWriter, r *http.Request) {
 	id, err := h.extractRepositoryIDFromPath(r)
 	if err != nil {
@@ -140,6 +188,20 @@ func (h *RepositoryHandler) DeleteRepository(w http.ResponseWriter, r *http.Requ
 }
 
 // GetRepositoryJobs handles GET /repositories/{id}/jobs.
+// GetRepositoryJobs handles GET /repositories/{id}/jobs.
+//
+//	@Summary		Get repository indexing jobs
+//	@Description	Returns a list of indexing jobs for a specific repository, including their status, progress, and error details.
+//	@Tags			Repositories
+//	@Tags			Jobs
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string						true	"Repository UUID"
+//	@Param			limit	query		int							false	"Maximum number of jobs to return (1-50)"		default(10)
+//	@Param			offset	query		int							false	"Number of jobs to skip for pagination"		default(0)
+//	@Success		200		{object}	dto.IndexingJobListResponse	"List of indexing jobs"
+//	@Failure		404		{object}	dto.ErrorResponse			"Repository not found"
+//	@Router			/repositories/{id}/jobs [get]
 func (h *RepositoryHandler) GetRepositoryJobs(w http.ResponseWriter, r *http.Request) {
 	repositoryID, err := h.extractRepositoryIDFromPath(r)
 	if err != nil {
@@ -159,6 +221,18 @@ func (h *RepositoryHandler) GetRepositoryJobs(w http.ResponseWriter, r *http.Req
 }
 
 // GetIndexingJob handles GET /repositories/{id}/jobs/{job_id}.
+// GetIndexingJob handles GET /repositories/{id}/jobs/{job_id}.
+//
+//	@Summary		Get specific indexing job details
+//	@Description	Returns detailed information about a specific indexing job including progress, error messages, and processing statistics.
+//	@Tags			Jobs
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path		string				true	"Repository UUID"
+//	@Param			job_id	path		string				true	"Job UUID"
+//	@Success		200		{object}	dto.IndexingJobResponse	"Indexing job details"
+//	@Failure		404		{object}	dto.ErrorResponse		"Repository or job not found"
+//	@Router			/repositories/{id}/jobs/{job_id} [get]
 func (h *RepositoryHandler) GetIndexingJob(w http.ResponseWriter, r *http.Request) {
 	repositoryID, err := h.extractRepositoryIDFromPath(r)
 	if err != nil {

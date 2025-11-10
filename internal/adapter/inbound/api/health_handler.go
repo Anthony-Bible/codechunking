@@ -28,6 +28,15 @@ func NewHealthHandler(healthService inbound.HealthService, errorHandler ErrorHan
 }
 
 // GetHealth handles GET /health.
+//
+//	@Summary		Health check endpoint
+//	@Description	Returns the health status of the API service
+//	@Tags			Health
+//	@Accept			json
+//	@Produce		json
+//	@Success		200		{object}	dto.HealthResponse	"Service is healthy"
+//	@Success		503		{object}	dto.HealthResponse	"Service is unhealthy"
+//	@Router			/health [get]
 func (h *HealthHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 

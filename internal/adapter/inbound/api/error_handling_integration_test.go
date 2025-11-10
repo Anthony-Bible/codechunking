@@ -1,17 +1,15 @@
 package api
 
 import (
+	"codechunking/internal/application/dto"
+	"codechunking/internal/domain/errors/domain"
+	"codechunking/internal/domain/valueobject"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
-
-	"codechunking/internal/application/dto"
-	"codechunking/internal/domain/errors/domain"
-	"codechunking/internal/domain/valueobject"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -58,14 +56,14 @@ func TestCompleteErrorHandlingFlow(t *testing.T) {
 				assert.Error(t, err, "Expected error for URL: %s", tt.url)
 
 				if tt.expectedError != nil {
-					assert.True(t, errors.Is(err, tt.expectedError),
+					assert.ErrorIs(t, err, tt.expectedError,
 						"Expected domain error %v, got %v", tt.expectedError, err)
 				}
 			} else {
 				// For valid URLs, we might still get errors (like repository exists)
 				// but we shouldn't get URL validation errors
 				if err != nil {
-					assert.False(t, errors.Is(err, domain.ErrInvalidRepositoryURL),
+					assert.NotErrorIs(t, err, domain.ErrInvalidRepositoryURL,
 						"Valid URL should not return domain error, got: %v", err)
 				}
 			}

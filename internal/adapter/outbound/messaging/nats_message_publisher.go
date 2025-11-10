@@ -111,6 +111,11 @@ func (n *NATSMessagePublisher) validateInputs(repositoryID uuid.UUID, repository
 }
 
 func (n *NATSMessagePublisher) validateRepositoryURL(repositoryURL string) error {
+	if repositoryURL == "" {
+		return errors.New("repository URL cannot be empty")
+	}
+
+	// Basic URL format validation
 	parsedURL, err := url.Parse(repositoryURL)
 	if err != nil {
 		return errors.New("invalid repository URL format")
@@ -124,6 +129,7 @@ func (n *NATSMessagePublisher) validateRepositoryURL(repositoryURL string) error
 		return errors.New("unsupported URL scheme")
 	}
 
+	// Ensure it ends with .git for git operations
 	if !strings.HasSuffix(repositoryURL, ".git") {
 		return errors.New("repository URL must end with .git")
 	}

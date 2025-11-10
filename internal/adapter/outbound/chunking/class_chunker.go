@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -192,35 +193,47 @@ func (c *ClassChunker) findParentClassForNestedClass(
 
 	// If no containment found, check for indentation-based nesting (for Python)
 	if bestParent == nil && nestedClass.Chunk.Language.Name() == valueobject.LanguagePython {
-		// Look for classes that start with indentation suggesting nesting
-		if c.isIndentedClass(nestedClass.Chunk) {
-			// Find the closest preceding class as potential parent
-			var closestParent *ClassInfo
-			minDistance := ^uint32(0)
+		bestParent = c.findPythonParentByIndentation(nestedClass, classMap)
+	}
 
-			for _, potentialParent := range classMap {
-				if potentialParent.QualifiedName == nestedClass.QualifiedName {
-					continue
-				}
+	return bestParent
+}
 
-				// Check if potential parent comes before nested class
-				if potentialParent.Chunk.EndByte <= nestedClass.Chunk.StartByte {
-					distance := nestedClass.Chunk.StartByte - potentialParent.Chunk.EndByte
-					if distance < minDistance {
-						minDistance = distance
-						closestParent = potentialParent
-					}
-				}
-			}
+// findPythonParentByIndentation finds a parent class for Python based on indentation heuristics.
+func (c *ClassChunker) findPythonParentByIndentation(
+	nestedClass *ClassInfo,
+	classMap map[string]*ClassInfo,
+) *ClassInfo {
+	// Look for classes that start with indentation suggesting nesting
+	if !c.isIndentedClass(nestedClass.Chunk) {
+		return nil
+	}
 
-			// Only consider if they're close (within 100 bytes)
-			if closestParent != nil && minDistance <= 100 {
-				bestParent = closestParent
+	// Find the closest preceding class as potential parent
+	var closestParent *ClassInfo
+	minDistance := ^uint32(0)
+
+	for _, potentialParent := range classMap {
+		if potentialParent.QualifiedName == nestedClass.QualifiedName {
+			continue
+		}
+
+		// Check if potential parent comes before nested class
+		if potentialParent.Chunk.EndByte <= nestedClass.Chunk.StartByte {
+			distance := nestedClass.Chunk.StartByte - potentialParent.Chunk.EndByte
+			if distance < minDistance {
+				minDistance = distance
+				closestParent = potentialParent
 			}
 		}
 	}
 
-	return bestParent
+	// Only consider if they're close (within 100 bytes)
+	if closestParent != nil && minDistance <= 100 {
+		return closestParent
+	}
+
+	return nil
 }
 
 // isIndentedClass checks if a class appears to be nested based on indentation.
@@ -231,6 +244,29 @@ func (c *ClassChunker) isIndentedClass(chunk outbound.SemanticCodeChunk) bool {
 		return true
 	}
 	return false
+}
+
+// findMethodParentByQualifiedName finds the parent class for a method/function by analyzing qualified names.
+func (c *ClassChunker) findMethodParentByQualifiedName(
+	chunk outbound.SemanticCodeChunk,
+	classMap map[string]*ClassInfo,
+) *ClassInfo {
+	// Extract receiver type from qualified name (e.g., "Calculator.Add" -> "Calculator")
+	for _, classInfo := range classMap {
+		// Check if the method's qualified name suggests it belongs to this class
+		if chunk.QualifiedName != "" {
+			// Look for patterns like "ClassName.MethodName" or "*ClassName.MethodName"
+			if len(chunk.QualifiedName) > len(classInfo.Name) {
+				if chunk.QualifiedName[len(chunk.QualifiedName)-len(classInfo.Name)-1:] == classInfo.Name+"."+chunk.Name ||
+					chunk.QualifiedName == classInfo.QualifiedName+"."+chunk.Name ||
+					chunk.QualifiedName == "*"+classInfo.Name+"."+chunk.Name ||
+					chunk.QualifiedName == classInfo.Name+"."+chunk.Name {
+					return classInfo
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // ClassInfo represents information about a class and its associated chunks.
@@ -267,20 +303,8 @@ func (c *ClassChunker) findParentClass(
 ) *ClassInfo {
 	// For methods/functions, check qualified name first
 	if chunk.Type == outbound.ConstructMethod || chunk.Type == outbound.ConstructFunction {
-		// Extract receiver type from qualified name (e.g., "Calculator.Add" -> "Calculator")
-		for _, classInfo := range classMap {
-			// Check if the method's qualified name suggests it belongs to this class
-			if chunk.QualifiedName != "" {
-				// Look for patterns like "ClassName.MethodName" or "*ClassName.MethodName"
-				if len(chunk.QualifiedName) > len(classInfo.Name) {
-					if chunk.QualifiedName[len(chunk.QualifiedName)-len(classInfo.Name)-1:] == classInfo.Name+"."+chunk.Name ||
-						chunk.QualifiedName == classInfo.QualifiedName+"."+chunk.Name ||
-						chunk.QualifiedName == "*"+classInfo.Name+"."+chunk.Name ||
-						chunk.QualifiedName == classInfo.Name+"."+chunk.Name {
-						return classInfo
-					}
-				}
-			}
+		if parent := c.findMethodParentByQualifiedName(chunk, classMap); parent != nil {
+			return parent
 		}
 	}
 
@@ -308,11 +332,12 @@ func (c *ClassChunker) findParentClass(
 
 		for _, classInfo := range classMap {
 			var distance uint32
-			if chunk.StartByte > classInfo.Chunk.EndByte {
+			switch {
+			case chunk.StartByte > classInfo.Chunk.EndByte:
 				distance = chunk.StartByte - classInfo.Chunk.EndByte
-			} else if classInfo.Chunk.StartByte > chunk.EndByte {
+			case classInfo.Chunk.StartByte > chunk.EndByte:
 				distance = classInfo.Chunk.StartByte - chunk.EndByte
-			} else {
+			default:
 				// Overlapping - prefer this
 				distance = 0
 			}
@@ -518,55 +543,88 @@ func (c *ClassChunker) splitLargeClassGroup(
 
 	// If we have class definitions, create chunks around them
 	if len(classChunks) > 0 {
-		for _, classChunk := range classChunks {
-			subGroup := []outbound.SemanticCodeChunk{classChunk}
-			currentSize := len(classChunk.Content)
-
-			// Add related methods/properties that fit
-			for _, otherChunk := range otherChunks {
-				if currentSize+len(otherChunk.Content) <= config.MaxChunkSize {
-					subGroup = append(subGroup, otherChunk)
-					currentSize += len(otherChunk.Content)
-				}
-			}
-
-			enhancedChunk, err := c.createSingleEnhancedChunk(ctx, subGroup, config)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create class-based split chunk: %w", err)
-			}
-			enhancedChunks = append(enhancedChunks, *enhancedChunk)
+		chunks, err := c.createClassBasedChunks(ctx, classChunks, otherChunks, config)
+		if err != nil {
+			return nil, err
 		}
+		enhancedChunks = chunks
 	} else {
-		// No class definitions, split by size
-		var currentSubGroup []outbound.SemanticCodeChunk
-		currentSize := 0
+		chunks, err := c.createSizeBasedChunks(ctx, otherChunks, config)
+		if err != nil {
+			return nil, err
+		}
+		enhancedChunks = chunks
+	}
 
-		for _, chunk := range otherChunks {
-			chunkSize := len(chunk.Content)
+	return enhancedChunks, nil
+}
 
-			if currentSize+chunkSize > config.MaxChunkSize && len(currentSubGroup) > 0 {
-				enhancedChunk, err := c.createSingleEnhancedChunk(ctx, currentSubGroup, config)
-				if err != nil {
-					return nil, fmt.Errorf("failed to create size-based split chunk: %w", err)
-				}
-				enhancedChunks = append(enhancedChunks, *enhancedChunk)
+// createClassBasedChunks creates chunks organized around class definitions.
+func (c *ClassChunker) createClassBasedChunks(
+	ctx context.Context,
+	classChunks []outbound.SemanticCodeChunk,
+	otherChunks []outbound.SemanticCodeChunk,
+	config outbound.ChunkingConfiguration,
+) ([]outbound.EnhancedCodeChunk, error) {
+	var enhancedChunks []outbound.EnhancedCodeChunk
 
-				currentSubGroup = []outbound.SemanticCodeChunk{chunk}
-				currentSize = chunkSize
-			} else {
-				currentSubGroup = append(currentSubGroup, chunk)
-				currentSize += chunkSize
+	for _, classChunk := range classChunks {
+		subGroup := []outbound.SemanticCodeChunk{classChunk}
+		currentSize := len(classChunk.Content)
+
+		// Add related methods/properties that fit
+		for _, otherChunk := range otherChunks {
+			if currentSize+len(otherChunk.Content) <= config.MaxChunkSize {
+				subGroup = append(subGroup, otherChunk)
+				currentSize += len(otherChunk.Content)
 			}
 		}
 
-		// Handle remaining subgroup
-		if len(currentSubGroup) > 0 {
+		enhancedChunk, err := c.createSingleEnhancedChunk(ctx, subGroup, config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create class-based split chunk: %w", err)
+		}
+		enhancedChunks = append(enhancedChunks, *enhancedChunk)
+	}
+
+	return enhancedChunks, nil
+}
+
+// createSizeBasedChunks creates chunks by splitting based on size limits.
+func (c *ClassChunker) createSizeBasedChunks(
+	ctx context.Context,
+	chunks []outbound.SemanticCodeChunk,
+	config outbound.ChunkingConfiguration,
+) ([]outbound.EnhancedCodeChunk, error) {
+	var enhancedChunks []outbound.EnhancedCodeChunk
+	var currentSubGroup []outbound.SemanticCodeChunk
+	currentSize := 0
+
+	for _, chunk := range chunks {
+		chunkSize := len(chunk.Content)
+
+		if currentSize+chunkSize > config.MaxChunkSize && len(currentSubGroup) > 0 {
 			enhancedChunk, err := c.createSingleEnhancedChunk(ctx, currentSubGroup, config)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create final split chunk: %w", err)
+				return nil, fmt.Errorf("failed to create size-based split chunk: %w", err)
 			}
 			enhancedChunks = append(enhancedChunks, *enhancedChunk)
+
+			currentSubGroup = []outbound.SemanticCodeChunk{chunk}
+			currentSize = chunkSize
+		} else {
+			currentSubGroup = append(currentSubGroup, chunk)
+			currentSize += chunkSize
 		}
+	}
+
+	// Handle remaining subgroup
+	if len(currentSubGroup) > 0 {
+		enhancedChunk, err := c.createSingleEnhancedChunk(ctx, currentSubGroup, config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create final split chunk: %w", err)
+		}
+		enhancedChunks = append(enhancedChunks, *enhancedChunk)
 	}
 
 	return enhancedChunks, nil
@@ -585,7 +643,7 @@ func (c *ClassChunker) createSingleEnhancedChunk(
 	// Calculate boundaries and content
 	minStart := group[0].StartByte
 	maxEnd := group[0].EndByte
-	var allContent string
+	var allContent strings.Builder
 	allLanguages := make(map[string]bool)
 
 	for _, chunk := range group {
@@ -595,9 +653,10 @@ func (c *ClassChunker) createSingleEnhancedChunk(
 		if chunk.EndByte > maxEnd {
 			maxEnd = chunk.EndByte
 		}
-		allContent += chunk.Content + "\n"
+		allContent.WriteString(chunk.Content + "\n")
 		allLanguages[chunk.Language.Name()] = true
 	}
+	allContentStr := allContent.String()
 
 	// Determine primary language
 	var primaryLanguage string
@@ -611,15 +670,15 @@ func (c *ClassChunker) createSingleEnhancedChunk(
 
 	// Create chunk metadata
 	chunkID := uuid.New().String()
-	contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(allContent)))
+	contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(allContentStr)))
 	chunkType := c.determineChunkType(group)
 	dependencies := c.extractDependencies(group)
 
 	// Calculate size metrics
 	size := outbound.ChunkSize{
-		Bytes:      len(allContent),
-		Lines:      c.countLines(allContent),
-		Characters: len(allContent),
+		Bytes:      len(allContentStr),
+		Lines:      c.countLines(allContentStr),
+		Characters: len(allContentStr),
 		Constructs: len(group),
 	}
 
@@ -635,7 +694,7 @@ func (c *ClassChunker) createSingleEnhancedChunk(
 		EndByte:            maxEnd,
 		StartPosition:      group[0].StartPosition,
 		EndPosition:        group[len(group)-1].EndPosition,
-		Content:            allContent,
+		Content:            allContentStr,
 		PreservedContext:   outbound.PreservedContext{},
 		SemanticConstructs: group,
 		Dependencies:       dependencies,

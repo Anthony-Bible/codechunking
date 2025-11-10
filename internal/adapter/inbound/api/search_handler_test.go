@@ -326,7 +326,12 @@ func TestSearchHandler(t *testing.T) {
 		handler.Search(w, req)
 
 		// Verify error handling
-		assert.Equal(t, http.StatusBadRequest, w.Code, "Should return HTTP 400 Bad Request for invalid repository name format")
+		assert.Equal(
+			t,
+			http.StatusBadRequest,
+			w.Code,
+			"Should return HTTP 400 Bad Request for invalid repository name format",
+		)
 
 		mockErrorHandler.AssertExpectations(t)
 	})
@@ -363,7 +368,12 @@ func TestSearchHandler(t *testing.T) {
 		handler.Search(w, req)
 
 		// Verify error handling
-		assert.Equal(t, http.StatusBadRequest, w.Code, "Should return HTTP 400 Bad Request for too many repository names")
+		assert.Equal(
+			t,
+			http.StatusBadRequest,
+			w.Code,
+			"Should return HTTP 400 Bad Request for too many repository names",
+		)
 
 		mockErrorHandler.AssertExpectations(t)
 	})

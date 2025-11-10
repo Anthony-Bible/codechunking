@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test end-to-end URL validation error handling in API
+// Test end-to-end URL validation error handling in API.
 func TestRepositoryHandler_CreateRepository_URLValidationErrors(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -173,7 +173,7 @@ func TestRepositoryHandler_CreateRepository_URLValidationErrors(t *testing.T) {
 	}
 }
 
-// Test successful URL validation in API
+// Test successful URL validation in API.
 func TestRepositoryHandler_CreateRepository_SuccessfulURLValidation(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -267,7 +267,7 @@ func TestRepositoryHandler_CreateRepository_SuccessfulURLValidation(t *testing.T
 	}
 }
 
-// Test correlation ID preservation in URL validation errors
+// Test correlation ID preservation in URL validation errors.
 func TestRepositoryHandler_CreateRepository_CorrelationIDPreservation(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -333,7 +333,7 @@ func TestRepositoryHandler_CreateRepository_CorrelationIDPreservation(t *testing
 	}
 }
 
-// Test error response format consistency for URL validation
+// Test error response format consistency for URL validation.
 func TestRepositoryHandler_CreateRepository_URLValidationErrorFormat(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -413,7 +413,7 @@ func TestRepositoryHandler_CreateRepository_URLValidationErrorFormat(t *testing.
 	}
 }
 
-// Test URL validation error vs other error types
+// Test URL validation error vs other error types.
 func TestRepositoryHandler_CreateRepository_ErrorTypeDistinction(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -508,7 +508,7 @@ func TestRepositoryHandler_CreateRepository_ErrorTypeDistinction(t *testing.T) {
 	}
 }
 
-// Test URL validation with complete request objects
+// Test URL validation with complete request objects.
 func TestRepositoryHandler_CreateRepository_CompleteRequestURLValidation(t *testing.T) {
 	tests := []struct {
 		name        string

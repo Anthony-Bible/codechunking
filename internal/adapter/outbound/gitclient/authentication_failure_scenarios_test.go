@@ -4,6 +4,7 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -514,12 +515,14 @@ func TestAuthenticationErrorDistinction(t *testing.T) {
 func sanitizeName(name string) string {
 	// Simple sanitization for file paths
 	result := ""
+	var resultSb517 strings.Builder
 	for _, r := range name {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			result += string(r)
+			resultSb517.WriteRune(r)
 		} else if r == ' ' {
 			result += "-"
 		}
 	}
+	result += resultSb517.String()
 	return result
 }

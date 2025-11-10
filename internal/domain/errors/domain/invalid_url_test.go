@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Test ErrInvalidRepositoryURL error definition and behavior
+// Test ErrInvalidRepositoryURL error definition and behavior.
 func TestErrInvalidRepositoryURL(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -34,13 +34,13 @@ func TestErrInvalidRepositoryURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.NotNil(t, tt.err)
+			assert.Error(t, tt.err)
 			assert.Equal(t, tt.expectedMsg, tt.err.Error())
 		})
 	}
 }
 
-// Test URL validation error creation and handling
+// Test URL validation error creation and handling.
 func TestURLValidationErrors(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -105,14 +105,14 @@ func TestURLValidationErrors(t *testing.T) {
 			err := errors.New(tt.expectedErr)
 
 			// Verify error properties
-			assert.NotNil(t, err)
+			assert.Error(t, err)
 			assert.Equal(t, tt.expectedErr, err.Error())
 			assert.Contains(t, err.Error(), "invalid repository URL:")
 		})
 	}
 }
 
-// Test error matching and wrapping behavior
+// Test error matching and wrapping behavior.
 func TestErrorMatchingBehavior(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -160,14 +160,14 @@ func TestErrorMatchingBehavior(t *testing.T) {
 			// Test error unwrapping
 			if tt.shouldUnwrap {
 				unwrapped := errors.Unwrap(tt.err)
-				assert.NotNil(t, unwrapped)
-				assert.True(t, errors.Is(unwrapped, tt.targetError))
+				assert.Error(t, unwrapped)
+				assert.ErrorIs(t, unwrapped, tt.targetError)
 			}
 		})
 	}
 }
 
-// Test error creation with different validation scenarios
+// Test error creation with different validation scenarios.
 func TestValidationErrorCreation(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -207,14 +207,14 @@ func TestValidationErrorCreation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.validationFunc()
-			assert.NotNil(t, err)
+			assert.Error(t, err)
 			assert.Equal(t, tt.expectedErr, err.Error())
 			assert.Contains(t, err.Error(), "invalid repository URL:")
 		})
 	}
 }
 
-// Test error consistency across the domain layer
+// Test error consistency across the domain layer.
 func TestDomainErrorConsistency(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -255,18 +255,18 @@ func TestDomainErrorConsistency(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.NotNil(t, tt.err)
+			assert.Error(t, tt.err)
 			assert.NotEmpty(t, tt.err.Error())
 
 			if tt.isDomain {
 				// Domain errors should be predefined constants
-				assert.True(t, errors.Is(tt.err, tt.err))
+				assert.ErrorIs(t, tt.err, tt.err)
 			}
 		})
 	}
 }
 
-// Test error message formatting
+// Test error message formatting.
 func TestErrorMessageFormatting(t *testing.T) {
 	tests := []struct {
 		name             string

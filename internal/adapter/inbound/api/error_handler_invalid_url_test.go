@@ -25,7 +25,12 @@ type ErrorResponseTestCase struct {
 }
 
 // assertErrorResponse validates common error response properties.
-func assertErrorResponse(t *testing.T, recorder *httptest.ResponseRecorder, expectedStatus int, expectedCode, expectedMsg string) {
+func assertErrorResponse(
+	t *testing.T,
+	recorder *httptest.ResponseRecorder,
+	expectedStatus int,
+	expectedCode, expectedMsg string,
+) {
 	assert.Equal(t, expectedStatus, recorder.Code)
 	assert.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
 
@@ -52,19 +57,28 @@ func createTestRequestWithHeaders(headers map[string]string) *http.Request {
 	return req
 }
 
-// Test cases for ErrInvalidRepositoryURL error handling
+// Test cases for ErrInvalidRepositoryURL error handling.
 func TestDefaultErrorHandler_HandleInvalidRepositoryURL(t *testing.T) {
 	tests := []ErrorResponseTestCase{
 		{
-			name:           "invalid_repository_url_returns_400_with_detailed_message",
-			err:            fmt.Errorf("invalid repository URL: URL must use http or https scheme: %w", domain.ErrInvalidRepositoryURL),
+			name: "invalid_repository_url_returns_400_with_detailed_message",
+			err: fmt.Errorf(
+				"invalid repository URL: URL must use http or https scheme: %w",
+				domain.ErrInvalidRepositoryURL,
+			),
 			expectedStatus: http.StatusBadRequest,
 			expectedCode:   string(dto.ErrorCodeInvalidURL),
 			expectedMsg:    "invalid repository URL: URL must use http or https scheme",
 		},
 		{
-			name:           "wrapped_invalid_repository_url_error_returns_400",
-			err:            fmt.Errorf("validation failed: %w", fmt.Errorf("invalid repository URL: URL must use http or https scheme: %w", domain.ErrInvalidRepositoryURL)),
+			name: "wrapped_invalid_repository_url_error_returns_400",
+			err: fmt.Errorf(
+				"validation failed: %w",
+				fmt.Errorf(
+					"invalid repository URL: URL must use http or https scheme: %w",
+					domain.ErrInvalidRepositoryURL,
+				),
+			),
 			expectedStatus: http.StatusBadRequest,
 			expectedCode:   string(dto.ErrorCodeInvalidURL),
 			expectedMsg:    "validation failed: invalid repository URL: URL must use http or https scheme",
@@ -120,12 +134,15 @@ type CorrelationIDTestCase struct {
 	setupHeaders   map[string]string
 }
 
-// Test correlation ID preservation in error responses
+// Test correlation ID preservation in error responses.
 func TestDefaultErrorHandler_CorrelationIDPreservation(t *testing.T) {
 	tests := []CorrelationIDTestCase{
 		{
-			name:           "correlation_id_preserved_in_invalid_url_error",
-			err:            fmt.Errorf("invalid repository URL: URL must use http or https scheme: %w", domain.ErrInvalidRepositoryURL),
+			name: "correlation_id_preserved_in_invalid_url_error",
+			err: fmt.Errorf(
+				"invalid repository URL: URL must use http or https scheme: %w",
+				domain.ErrInvalidRepositoryURL,
+			),
 			expectedStatus: http.StatusBadRequest,
 			setupHeaders:   map[string]string{"X-Correlation-ID": "test-correlation-123"},
 		},
@@ -163,7 +180,7 @@ func TestDefaultErrorHandler_CorrelationIDPreservation(t *testing.T) {
 	}
 }
 
-// Test different URL validation scenarios
+// Test different URL validation scenarios.
 func TestDefaultErrorHandler_URLValidationScenarios(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -248,7 +265,7 @@ func TestDefaultErrorHandler_URLValidationScenarios(t *testing.T) {
 	}
 }
 
-// Test error response format consistency
+// Test error response format consistency.
 func TestDefaultErrorHandler_ErrorResponseFormat(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -309,7 +326,7 @@ func TestDefaultErrorHandler_ErrorResponseFormat(t *testing.T) {
 	}
 }
 
-// Test error handler behavior with different error types
+// Test error handler behavior with different error types.
 func TestDefaultErrorHandler_ErrorTypeHandling(t *testing.T) {
 	tests := []struct {
 		name                 string
@@ -319,8 +336,11 @@ func TestDefaultErrorHandler_ErrorTypeHandling(t *testing.T) {
 		isURLValidationError bool
 	}{
 		{
-			name:                 "domain_invalid_url_error_handled_correctly",
-			err:                  fmt.Errorf("invalid repository URL: custom validation message: %w", domain.ErrInvalidRepositoryURL),
+			name: "domain_invalid_url_error_handled_correctly",
+			err: fmt.Errorf(
+				"invalid repository URL: custom validation message: %w",
+				domain.ErrInvalidRepositoryURL,
+			),
 			expectedStatus:       http.StatusBadRequest,
 			expectedErrorCode:    string(dto.ErrorCodeInvalidURL),
 			isURLValidationError: true,

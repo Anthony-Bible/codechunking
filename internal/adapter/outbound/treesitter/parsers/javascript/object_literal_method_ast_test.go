@@ -2,6 +2,7 @@ package javascriptparser
 
 import (
 	"codechunking/internal/domain/valueobject"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -84,9 +85,11 @@ func printNodeTree(t *testing.T, node *valueobject.ParseNode, tree *valueobject.
 	}
 
 	indent := ""
+	var indentSb87 strings.Builder
 	for range depth {
-		indent += "  "
+		indentSb87.WriteString("  ")
 	}
+	indent += indentSb87.String()
 
 	// Get node text (truncate if too long)
 	nodeText := tree.GetNodeText(node)

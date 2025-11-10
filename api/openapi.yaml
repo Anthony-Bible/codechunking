@@ -107,7 +107,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
-                error: "REPOSITORY_EXISTS"
+                error: "REPOSITORY_ALREADY_EXISTS"
                 message: "Repository with this URL already exists"
                 details:
                   existing_id: "456e7890-e89b-12d3-a456-426614174001"
@@ -395,8 +395,12 @@ paths:
                   query: "database connection pooling"
                   limit: 20
                   repository_ids: ["123e4567-e89b-12d3-a456-426614174000"]
+                  repository_names: ["golang/go", "gin-gonic/gin"]
                   languages: ["go", "python"]
                   file_types: [".go", ".py"]
+                  types: ["function", "method"]
+                  entity_name: "connect"
+                  visibility: ["public"]
                   similarity_threshold: 0.8
                   sort: "similarity:desc"
       responses:
@@ -419,6 +423,12 @@ paths:
                     language: "go"
                     start_line: 15
                     end_line: 25
+                    type: "function"
+                    entity_name: "authenticateUser"
+                    parent_entity: "AuthMiddleware"
+                    qualified_name: "middleware.AuthMiddleware.authenticateUser"
+                    signature: "func authenticateUser(token string) (*User, error)"
+                    visibility: "public"
                 pagination:
                   limit: 10
                   offset: 0
@@ -717,7 +727,7 @@ components:
           enum:
             - INVALID_REQUEST
             - INVALID_URL
-            - REPOSITORY_EXISTS
+            - REPOSITORY_ALREADY_EXISTS
             - REPOSITORY_NOT_FOUND
             - REPOSITORY_PROCESSING
             - JOB_NOT_FOUND
@@ -805,6 +815,40 @@ components:
           enum: ["similarity:desc", "similarity:asc", "file_path:asc", "file_path:desc"]
           default: "similarity:desc"
           description: Sort order for results
+        repository_names:
+          type: array
+          items:
+            type: string
+            pattern: '^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$'
+            minLength: 1
+            maxLength: 255
+          minItems: 0
+          maxItems: 50
+          description: Filter by repository names in org/repo format
+        types:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 50
+          minItems: 0
+          maxItems: 20
+          description: Filter by semantic construct types (function, class, method, etc.)
+        entity_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Filter by specific entity name
+        visibility:
+          type: array
+          items:
+            type: string
+            enum: ["public", "private", "protected"]
+            minLength: 1
+            maxLength: 20
+          minItems: 0
+          maxItems: 10
+          description: Filter by visibility modifiers
 
     SearchResponse:
       type: object
@@ -883,6 +927,37 @@ components:
           minimum: 1
           maximum: 1000000
           description: Ending line number in the source file
+        type:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: Semantic construct type (function, class, method, etc.)
+        entity_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Name of the entity
+        parent_entity:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Parent entity name
+        qualified_name:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Fully qualified name
+        signature:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Function/method signature
+        visibility:
+          type: string
+          enum: ["public", "private", "protected"]
+          minLength: 1
+          maxLength: 20
+          description: Visibility modifier
 
     RepositoryInfo:
       type: object

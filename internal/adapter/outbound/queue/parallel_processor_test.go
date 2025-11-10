@@ -826,8 +826,12 @@ func TestParallelBatchProcessor_ErrorHandling(t *testing.T) {
 		}
 
 		if !stats.CircuitOpen {
-			t.Errorf("Expected circuit breaker to be open after high error rate, got open=%v, total_batches=%d, total_errors=%d",
-				stats.CircuitOpen, stats.TotalBatchesProcessed, stats.TotalErrors)
+			t.Errorf(
+				"Expected circuit breaker to be open after high error rate, got open=%v, total_batches=%d, total_errors=%d",
+				stats.CircuitOpen,
+				stats.TotalBatchesProcessed,
+				stats.TotalErrors,
+			)
 		}
 
 		// Immediate retry should fail due to circuit breaker

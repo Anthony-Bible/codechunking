@@ -375,7 +375,7 @@ func TestMultipleConsumerManagement(t *testing.T) {
 
 		// Verify consumer was removed
 		consumers = service.GetConsumers()
-		assert.Len(t, consumers, 0)
+		assert.Empty(t, consumers)
 
 		// Try to remove non-existent consumer
 		err = service.RemoveConsumer("non-existent")

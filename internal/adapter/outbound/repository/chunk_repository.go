@@ -91,11 +91,11 @@ func (r *PostgreSQLChunkRepository) FindChunksByIDs(
 			c.start_line,
 			c.end_line,
 			c.chunk_type,
-			c.entity_name,
-			c.parent_entity,
-			c.qualified_name,
-			c.signature,
-			c.visibility,
+			COALESCE(c.entity_name, ''),
+			COALESCE(c.parent_entity, ''),
+			COALESCE(c.qualified_name, ''),
+			COALESCE(c.signature, ''),
+			COALESCE(c.visibility, ''),
 			r.id,
 			r.name,
 			r.url
@@ -379,7 +379,7 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 func (r *PostgreSQLChunkRepository) GetChunk(ctx context.Context, id uuid.UUID) (*outbound.CodeChunk, error) {
 	query := `
 		SELECT id, file_path, start_line, end_line, content, language, content_hash, created_at,
-		       chunk_type, entity_name, parent_entity, qualified_name, signature, visibility
+		       chunk_type, COALESCE(entity_name, ''), COALESCE(parent_entity, ''), COALESCE(qualified_name, ''), COALESCE(signature, ''), COALESCE(visibility, '')
 		FROM codechunking.code_chunks
 		WHERE id = $1 AND deleted_at IS NULL
 	`
@@ -429,7 +429,7 @@ func (r *PostgreSQLChunkRepository) GetChunksForRepository(
 ) ([]outbound.CodeChunk, error) {
 	query := `
 		SELECT id, file_path, start_line, end_line, content, language, content_hash, created_at,
-		       chunk_type, entity_name, parent_entity, qualified_name, signature, visibility
+		       chunk_type, COALESCE(entity_name, ''), COALESCE(parent_entity, ''), COALESCE(qualified_name, ''), COALESCE(signature, ''), COALESCE(visibility, '')
 		FROM codechunking.code_chunks
 		WHERE repository_id = $1 AND deleted_at IS NULL
 		ORDER BY file_path, start_line

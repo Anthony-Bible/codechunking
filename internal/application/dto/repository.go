@@ -69,10 +69,10 @@ func isValidSort(sort string) bool {
 
 // CreateRepositoryRequest represents the request to create a new repository.
 type CreateRepositoryRequest struct {
-	URL           string  `json:"url"                      validate:"required,url"`
-	Name          string  `json:"name,omitempty"           validate:"omitempty,max=255"`
-	Description   *string `json:"description,omitempty"    validate:"omitempty,max=1000"`
-	DefaultBranch *string `json:"default_branch,omitempty" validate:"omitempty,max=100"`
+	URL           string  `json:"url"                      validate:"required,url"       example:"https://github.com/golang/go"`
+	Name          string  `json:"name,omitempty"           validate:"omitempty,max=255"  example:"golang/go"`
+	Description   *string `json:"description,omitempty"    validate:"omitempty,max=1000" example:"The Go programming language"`
+	DefaultBranch *string `json:"default_branch,omitempty" validate:"omitempty,max=100"  example:"master"`
 }
 
 // RepositoryResponse represents the response containing repository information.

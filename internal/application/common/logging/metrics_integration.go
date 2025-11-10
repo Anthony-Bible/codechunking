@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -154,9 +155,11 @@ func (m *metricsApplicationLogger) LogMetric(ctx context.Context, metric Prometh
 
 	// Generate Prometheus format string
 	prometheusFormat := fmt.Sprintf("%s{", metric.Name)
+	var prometheusFormatSb157 strings.Builder
 	for key, value := range metric.Labels {
-		prometheusFormat += fmt.Sprintf(`%s="%s",`, key, value)
+		prometheusFormatSb157.WriteString(fmt.Sprintf(`%s="%s",`, key, value))
 	}
+	prometheusFormat += prometheusFormatSb157.String()
 	if len(metric.Labels) > 0 {
 		prometheusFormat = prometheusFormat[:len(prometheusFormat)-1] // Remove trailing comma
 	}

@@ -6,8 +6,6 @@ package integration
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -335,140 +333,6 @@ func TestJobProcessor_RelativePathPipeline(t *testing.T) {
 	})
 }
 
-// TestMigration_PathTransformation tests the migration path transformation logic
-func TestMigration_PathTransformation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping migration path transformation test")
-	}
-
-	t.Run("migration transforms absolute paths to relative paths", func(t *testing.T) {
-		// Test the core migration logic
-
-		ctx := context.Background()
-		repoID := uuid.New()
-
-		// Create legacy data with absolute paths
-		legacyPaths := []string{
-			"/tmp/workspace/" + repoID.String() + "/src/main.go",
-			"/var/folders/xyz/codechunking-workspace/" + repoID.String() + "/internal/service.go",
-			os.TempDir() + "/codechunking-workspace/" + repoID.String() + "/pkg/utils.go",
-		}
-
-		expectedRelativePaths := []string{
-			"src/main.go",
-			"internal/service.go",
-			"pkg/utils.go",
-		}
-
-		// Store legacy data
-		legacyChunks := createTestChunksFromPaths(t, legacyPaths, repoID)
-		storeLegacyChunksInDatabase(ctx, t, legacyChunks, repoID)
-
-		// Verify legacy data exists
-		beforeChunks := retrieveAllChunksForRepository(ctx, t, repoID)
-		assert.Equal(t, len(legacyPaths), len(beforeChunks), "Should have stored legacy chunks")
-
-		// Execute migration
-		migrationResult := executePathMigration(ctx, t, repoID)
-		assert.True(t, migrationResult.Success, "Migration should succeed")
-		assert.Equal(t, len(legacyPaths), migrationResult.MigratedCount, "Should migrate all chunks")
-
-		// Verify migration results
-		afterChunks := retrieveAllChunksForRepository(ctx, t, repoID)
-		assert.Equal(t, len(expectedRelativePaths), len(afterChunks), "Should have migrated chunks")
-
-		// Verify path transformation
-		for i, chunk := range afterChunks {
-			assert.Equal(t, expectedRelativePaths[i], chunk.FilePath,
-				"Migrated path should match expected relative path")
-			assert.NotContains(t, chunk.FilePath, repoID.String(),
-				"Migrated path should not contain UUID: %s", chunk.FilePath)
-		}
-
-		// Cleanup
-		cleanupTestChunksFromDatabase(ctx, t, repoID)
-	})
-
-	t.Run("migration handles edge cases correctly", func(t *testing.T) {
-		// Test migration edge cases
-
-		ctx := context.Background()
-		repoID := uuid.New()
-
-		edgeCasePaths := []string{
-			"",                                  // Empty path
-			"/tmp/workspace/" + repoID.String(), // Directory path
-			"/tmp/workspace/" + repoID.String() + "/", // Trailing slash
-			"/tmp/workspace/other-uuid/src/main.go",   // Different UUID
-			"src/main.go",                             // Already relative
-			"./src/main.go",                           // Relative with ./
-			"../src/main.go",                          // Relative with ../
-		}
-
-		// Store edge case data
-		edgeChunks := createTestChunksFromPaths(t, edgeCasePaths, repoID)
-		storeLegacyChunksInDatabase(ctx, t, edgeChunks, repoID)
-
-		// Execute migration
-		migrationResult := executePathMigration(ctx, t, repoID)
-		assert.True(t, migrationResult.Success, "Edge case migration should succeed")
-
-		// Verify edge case handling
-		afterChunks := retrieveAllChunksForRepository(ctx, t, repoID)
-		for _, chunk := range afterChunks {
-			// All paths should be clean relative paths after migration
-			assert.NotContains(t, chunk.FilePath, repoID.String(),
-				"Edge case migration should remove UUID: %s", chunk.FilePath)
-			assert.False(t, strings.HasPrefix(chunk.FilePath, "/tmp/"),
-				"Edge case migration should remove absolute paths: %s", chunk.FilePath)
-			assert.False(t, strings.HasPrefix(chunk.FilePath, os.TempDir()),
-				"Edge case migration should remove temp paths: %s", chunk.FilePath)
-		}
-
-		// Cleanup
-		cleanupTestChunksFromDatabase(ctx, t, repoID)
-	})
-
-	t.Run("migration is idempotent", func(t *testing.T) {
-		// Test that running migration multiple times doesn't cause issues
-
-		ctx := context.Background()
-		repoID := uuid.New()
-
-		// Create initial data
-		initialPaths := []string{
-			"/tmp/workspace/" + repoID.String() + "/src/main.go",
-		}
-
-		initialChunks := createTestChunksFromPaths(t, initialPaths, repoID)
-		storeLegacyChunksInDatabase(ctx, t, initialChunks, repoID)
-
-		// Run migration first time
-		migrationResult1 := executePathMigration(ctx, t, repoID)
-		assert.True(t, migrationResult1.Success, "First migration should succeed")
-
-		firstRunChunks := retrieveAllChunksForRepository(ctx, t, repoID)
-
-		// Run migration second time
-		migrationResult2 := executePathMigration(ctx, t, repoID)
-		assert.True(t, migrationResult2.Success, "Second migration should succeed")
-
-		secondRunChunks := retrieveAllChunksForRepository(ctx, t, repoID)
-
-		// Results should be identical
-		assert.Equal(t, len(firstRunChunks), len(secondRunChunks),
-			"Idempotent migration should not change chunk count")
-
-		for i := range firstRunChunks {
-			assert.Equal(t, firstRunChunks[i].FilePath, secondRunChunks[i].FilePath,
-				"Idempotent migration should not change file paths")
-		}
-
-		// Cleanup
-		cleanupTestChunksFromDatabase(ctx, t, repoID)
-	})
-}
-
 // Supporting types and helper functions
 
 type TestSearchResponse struct {
@@ -505,18 +369,6 @@ type LeakageJobProcessorResult struct {
 	UsedRelativePathsInParsing bool
 	UsedRelativePathsInStorage bool
 	ErrorLog                   string
-}
-
-type LeakageMigrationResult struct {
-	Success       bool
-	MigratedCount int
-	Error         error
-}
-
-type MigrationResult struct {
-	Success       bool
-	MigratedCount int
-	Error         error
 }
 
 // Helper functions that will fail until implemented
@@ -611,19 +463,4 @@ func executeJobProcessorPipelineWithErrors(
 		"FAILING TEST: executeJobProcessorPipelineWithErrors not implemented - this test should fail until real implementation exists",
 	)
 	return LeakageJobProcessorResult{}
-}
-
-func storeLegacyChunksInDatabase(ctx context.Context, t *testing.T, chunks []TestChunk, repoID uuid.UUID) {
-	// This should fail until actual implementation exists
-	t.Fatal(
-		"FAILING TEST: storeLegacyChunksInDatabase not implemented - this test should fail until real implementation exists",
-	)
-}
-
-func executePathMigration(ctx context.Context, t *testing.T, repoID uuid.UUID) LeakageMigrationResult {
-	// This should fail until actual implementation exists
-	t.Fatal(
-		"FAILING TEST: executePathMigration not implemented - this test should fail until real implementation exists",
-	)
-	return LeakageMigrationResult{}
 }

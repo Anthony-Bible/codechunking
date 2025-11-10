@@ -1,0 +1,560 @@
+basePath: /api/v1
+definitions:
+  dto.CreateRepositoryRequest:
+    properties:
+      default_branch:
+        example: master
+        maxLength: 100
+        type: string
+      description:
+        example: The Go programming language
+        maxLength: 1000
+        type: string
+      name:
+        example: golang/go
+        maxLength: 255
+        type: string
+      url:
+        example: https://github.com/golang/go
+        type: string
+    required:
+    - url
+    type: object
+  dto.DependencyStatus:
+    properties:
+      details:
+        additionalProperties: true
+        type: object
+      message:
+        type: string
+      response_time:
+        type: string
+      status:
+        type: string
+    type: object
+  dto.ErrorResponse:
+    properties:
+      details: {}
+      error:
+        type: string
+      message:
+        type: string
+      timestamp:
+        type: string
+    type: object
+  dto.HealthResponse:
+    properties:
+      dependencies:
+        additionalProperties:
+          $ref: '#/definitions/dto.DependencyStatus'
+        type: object
+      status:
+        type: string
+      timestamp:
+        type: string
+      version:
+        type: string
+    type: object
+  dto.IndexingJobListResponse:
+    properties:
+      jobs:
+        items:
+          $ref: '#/definitions/dto.IndexingJobResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/dto.PaginationResponse'
+    type: object
+  dto.IndexingJobResponse:
+    properties:
+      chunks_created:
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      duration:
+        description: Human-readable duration
+        type: string
+      error_message:
+        type: string
+      files_processed:
+        type: integer
+      id:
+        type: string
+      repository_id:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  dto.PaginationResponse:
+    properties:
+      has_more:
+        type: boolean
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  dto.RepositoryInfo:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      url:
+        type: string
+    type: object
+  dto.RepositoryListResponse:
+    properties:
+      pagination:
+        $ref: '#/definitions/dto.PaginationResponse'
+      repositories:
+        items:
+          $ref: '#/definitions/dto.RepositoryResponse'
+        type: array
+    type: object
+  dto.RepositoryResponse:
+    properties:
+      created_at:
+        type: string
+      default_branch:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      last_commit_hash:
+        type: string
+      last_indexed_at:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+      total_chunks:
+        type: integer
+      total_files:
+        type: integer
+      updated_at:
+        type: string
+      url:
+        type: string
+    type: object
+  dto.SearchMetadata:
+    properties:
+      execution_time_ms:
+        type: integer
+      query:
+        type: string
+    type: object
+  dto.SearchRequestDTO:
+    properties:
+      entity_name:
+        description: Filter by specific entity name
+        example: connect
+        type: string
+      file_types:
+        example:
+        - '[".go"'
+        - ' ".py"]'
+        items:
+          type: string
+        type: array
+      languages:
+        example:
+        - '["go"'
+        - ' "python"]'
+        items:
+          type: string
+        type: array
+      limit:
+        example: 10
+        maximum: 100
+        minimum: 1
+        type: integer
+      offset:
+        example: 0
+        minimum: 0
+        type: integer
+      query:
+        example: implement authentication middleware
+        minLength: 1
+        type: string
+      repository_ids:
+        example:
+        - '["123e4567-e89b-12d3-a456-426614174000"]'
+        items:
+          type: string
+        type: array
+      repository_names:
+        example:
+        - '["golang/go"'
+        - ' "gin-gonic/gin"]'
+        items:
+          type: string
+        type: array
+      similarity_threshold:
+        example: 0.8
+        maximum: 1
+        minimum: 0
+        type: number
+      sort:
+        enum:
+        - similarity:desc
+        - similarity:asc
+        - file_path:asc
+        - file_path:desc
+        example: similarity:desc
+        type: string
+      types:
+        description: Enhanced type filtering
+        example:
+        - '["function"'
+        - ' "method"]'
+        items:
+          type: string
+        type: array
+      visibility:
+        description: Filter by visibility (public, private, protected)
+        example:
+        - '["public"]'
+        items:
+          type: string
+        type: array
+    required:
+    - query
+    type: object
+  dto.SearchResponseDTO:
+    description: Response containing search results and metadata
+    properties:
+      pagination:
+        $ref: '#/definitions/dto.PaginationResponse'
+      results:
+        items:
+          $ref: '#/definitions/dto.SearchResultDTO'
+        type: array
+      search_metadata:
+        $ref: '#/definitions/dto.SearchMetadata'
+    type: object
+  dto.SearchResultDTO:
+    properties:
+      chunk_id:
+        example: chunk-uuid-1
+        type: string
+      content:
+        example: func authenticateUser(token string) (*User, error) {\n\t// Implementation\n}
+        type: string
+      end_line:
+        example: 25
+        type: integer
+      entity_name:
+        description: Name of the entity
+        example: authenticateUser
+        type: string
+      file_path:
+        example: /middleware/auth.go
+        type: string
+      language:
+        example: go
+        type: string
+      parent_entity:
+        description: Parent entity name
+        example: AuthMiddleware
+        type: string
+      qualified_name:
+        description: Fully qualified name
+        example: middleware.AuthMiddleware.authenticateUser
+        type: string
+      repository:
+        $ref: '#/definitions/dto.RepositoryInfo'
+      signature:
+        description: Function/method signature
+        example: func authenticateUser(token string) (*User, error)
+        type: string
+      similarity_score:
+        example: 0.95
+        type: number
+      start_line:
+        example: 15
+        type: integer
+      type:
+        description: Enhanced type information
+        example: function
+        type: string
+      visibility:
+        description: Visibility modifier
+        example: public
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@codechunking.dev
+    name: Code Chunking API Support
+  description: API for submitting code repositories for indexing, chunking, and embedding
+    generation. This service processes Git repositories, extracts code chunks using
+    AST parsing, and generates vector embeddings for semantic search capabilities.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  title: Code Chunking Repository Indexing API
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: Returns the health status of the API service
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is healthy
+          schema:
+            $ref: '#/definitions/dto.HealthResponse'
+        "503":
+          description: Service is unhealthy
+          schema:
+            $ref: '#/definitions/dto.HealthResponse'
+      summary: Health check endpoint
+      tags:
+      - Health
+  /repositories:
+    get:
+      consumes:
+      - application/json
+      description: Returns a paginated list of repositories that have been submitted
+        for indexing. Results can be filtered by status and sorted by various fields.
+      parameters:
+      - description: Filter repositories by status
+        in: query
+        name: status
+        type: string
+      - default: 20
+        description: Maximum number of repositories to return (1-100)
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Number of repositories to skip for pagination
+        in: query
+        name: offset
+        type: integer
+      - default: created_at:desc
+        description: Sort field and direction
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of repositories
+          schema:
+            $ref: '#/definitions/dto.RepositoryListResponse'
+      summary: List repositories
+      tags:
+      - Repositories
+    post:
+      consumes:
+      - application/json
+      description: Submits a Git repository URL for asynchronous indexing and processing.
+        The repository will be cloned, analyzed, and chunked into semantic units.
+      parameters:
+      - description: Repository creation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.CreateRepositoryRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Repository accepted for indexing
+          schema:
+            $ref: '#/definitions/dto.RepositoryResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+        "409":
+          description: Repository already exists
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+      summary: Submit repository for indexing
+      tags:
+      - Repositories
+  /repositories/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Removes a repository and all its associated data including code
+        chunks, embeddings, and indexing jobs. This operation is irreversible.
+      parameters:
+      - description: Repository UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Repository successfully deleted
+        "404":
+          description: Repository not found
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+        "409":
+          description: Repository is currently being processed
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+      summary: Delete repository
+      tags:
+      - Repositories
+    get:
+      consumes:
+      - application/json
+      description: Returns detailed information about a specific repository including
+        its indexing status, statistics, and metadata.
+      parameters:
+      - description: Repository UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Repository details
+          schema:
+            $ref: '#/definitions/dto.RepositoryResponse'
+        "404":
+          description: Repository not found
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+      summary: Get repository details
+      tags:
+      - Repositories
+  /repositories/{id}/jobs:
+    get:
+      consumes:
+      - application/json
+      description: Returns a list of indexing jobs for a specific repository, including
+        their status, progress, and error details.
+      parameters:
+      - description: Repository UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 10
+        description: Maximum number of jobs to return (1-50)
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Number of jobs to skip for pagination
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of indexing jobs
+          schema:
+            $ref: '#/definitions/dto.IndexingJobListResponse'
+        "404":
+          description: Repository not found
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+      summary: Get repository indexing jobs
+      tags:
+      - Repositories
+      - Jobs
+  /repositories/{id}/jobs/{job_id}:
+    get:
+      consumes:
+      - application/json
+      description: Returns detailed information about a specific indexing job including
+        progress, error messages, and processing statistics.
+      parameters:
+      - description: Repository UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Job UUID
+        in: path
+        name: job_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Indexing job details
+          schema:
+            $ref: '#/definitions/dto.IndexingJobResponse'
+        "404":
+          description: Repository or job not found
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+      summary: Get specific indexing job details
+      tags:
+      - Jobs
+  /search:
+    post:
+      consumes:
+      - application/json
+      description: Performs semantic search across indexed code chunks using natural
+        language queries. Returns relevant code snippets ranked by similarity score
+        with filtering options.
+      parameters:
+      - description: Search request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.SearchRequestDTO'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Search results
+          schema:
+            $ref: '#/definitions/dto.SearchResponseDTO'
+        "400":
+          description: Invalid search request
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+        "422":
+          description: Validation error
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
+      summary: Semantic code search
+      tags:
+      - Search
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

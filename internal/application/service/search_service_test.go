@@ -4,6 +4,8 @@ import (
 	"codechunking/internal/application/common/logging"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/dto"
+	"codechunking/internal/domain/entity"
+	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
@@ -172,7 +174,12 @@ func TestSearchService(t *testing.T) {
 		mockChunkRepo := new(MockChunkRepository)
 
 		// Create service instance
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 		require.NotNil(t, searchService, "SearchService should be created successfully")
 
 		// Setup test data
@@ -299,7 +306,12 @@ func TestSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		ctx := context.Background()
 		filterRepoID := uuid.New()
@@ -345,8 +357,14 @@ func TestSearchService(t *testing.T) {
 		mockVectorRepo := new(MockVectorStorageRepository)
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
+		mockRepoRepo := new(MockRepositoryRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			mockRepoRepo,
+		)
 
 		ctx := context.Background()
 		searchRequest := dto.SearchRequestDTO{
@@ -363,6 +381,30 @@ func TestSearchService(t *testing.T) {
 
 		// Mock repository name resolution - these should be resolved to UUIDs
 		resolvedRepoIDs := []uuid.UUID{uuid.New(), uuid.New()}
+
+		// Mock repository lookup for "golang/go"
+		goURL, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
+		goRepo := entity.RestoreRepository(
+			resolvedRepoIDs[0], goURL, "golang/go", nil, nil, nil, nil, 0, 0,
+			valueobject.RepositoryStatusPending, time.Now(), time.Now(), nil,
+		)
+		mockRepoRepo.On("FindAll", ctx, outbound.RepositoryFilters{
+			Name:   "golang/go",
+			Limit:  1,
+			Offset: 0,
+		}).Return([]*entity.Repository{goRepo}, 1, nil)
+
+		// Mock repository lookup for "facebook/react"
+		reactURL, _ := valueobject.NewRepositoryURL("https://github.com/facebook/react")
+		reactRepo := entity.RestoreRepository(
+			resolvedRepoIDs[1], reactURL, "facebook/react", nil, nil, nil, nil, 0, 0,
+			valueobject.RepositoryStatusPending, time.Now(), time.Now(), nil,
+		)
+		mockRepoRepo.On("FindAll", ctx, outbound.RepositoryFilters{
+			Name:   "facebook/react",
+			Limit:  1,
+			Offset: 0,
+		}).Return([]*entity.Repository{reactRepo}, 1, nil)
 
 		// Verify that repository names are resolved to IDs and applied to search options
 		expectedSearchOptions := outbound.SimilaritySearchOptions{
@@ -385,14 +427,21 @@ func TestSearchService(t *testing.T) {
 
 		mockVectorRepo.AssertExpectations(t)
 		mockEmbeddingService.AssertExpectations(t)
+		mockRepoRepo.AssertExpectations(t)
 	})
 
 	t.Run("Search_With_Repository_Names_And_Repository_IDs_Mixed", func(t *testing.T) {
 		mockVectorRepo := new(MockVectorStorageRepository)
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
+		mockRepoRepo := new(MockRepositoryRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			mockRepoRepo,
+		)
 
 		ctx := context.Background()
 		existingRepoID := uuid.New()
@@ -410,6 +459,19 @@ func TestSearchService(t *testing.T) {
 
 		// Both existing IDs and resolved names should be combined
 		resolvedRepoID := uuid.New()
+
+		// Mock repository lookup for "golang/go"
+		goURL, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
+		goRepo := entity.RestoreRepository(
+			resolvedRepoID, goURL, "golang/go", nil, nil, nil, nil, 0, 0,
+			valueobject.RepositoryStatusPending, time.Now(), time.Now(), nil,
+		)
+		mockRepoRepo.On("FindAll", ctx, outbound.RepositoryFilters{
+			Name:   "golang/go",
+			Limit:  1,
+			Offset: 0,
+		}).Return([]*entity.Repository{goRepo}, 1, nil)
+
 		expectedSearchOptions := outbound.SimilaritySearchOptions{
 			UsePartitionedTable: true,
 			MaxResults:          15,
@@ -430,14 +492,21 @@ func TestSearchService(t *testing.T) {
 
 		mockVectorRepo.AssertExpectations(t)
 		mockEmbeddingService.AssertExpectations(t)
+		mockRepoRepo.AssertExpectations(t)
 	})
 
 	t.Run("Search_Repository_Name_Resolution_Failure", func(t *testing.T) {
 		mockVectorRepo := new(MockVectorStorageRepository)
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
+		mockRepoRepo := new(MockRepositoryRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			mockRepoRepo,
+		)
 
 		ctx := context.Background()
 		searchRequest := dto.SearchRequestDTO{
@@ -449,6 +518,13 @@ func TestSearchService(t *testing.T) {
 		mockEmbedding := &outbound.EmbeddingResult{Vector: queryVector}
 		mockEmbeddingService.On("GenerateEmbedding", ctx, searchRequest.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
 			Return(mockEmbedding, nil)
+
+		// Mock repository lookup returning no results
+		mockRepoRepo.On("FindAll", ctx, outbound.RepositoryFilters{
+			Name:   "nonexistent/repo",
+			Limit:  1,
+			Offset: 0,
+		}).Return([]*entity.Repository{}, 0, nil)
 
 		result, err := searchService.Search(ctx, searchRequest)
 
@@ -463,6 +539,7 @@ func TestSearchService(t *testing.T) {
 		)
 
 		mockEmbeddingService.AssertExpectations(t)
+		mockRepoRepo.AssertExpectations(t)
 	})
 
 	t.Run("Search_Repository_Name_Duplicate_Handling", func(t *testing.T) {
@@ -470,7 +547,12 @@ func TestSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		ctx := context.Background()
 		searchRequest := dto.SearchRequestDTO{
@@ -478,10 +560,7 @@ func TestSearchService(t *testing.T) {
 			RepositoryNames: []string{"golang/go", "golang/go"}, // Duplicate
 		}
 
-		queryVector := []float64{0.1, 0.2, 0.3}
-		mockEmbedding := &outbound.EmbeddingResult{Vector: queryVector}
-		mockEmbeddingService.On("GenerateEmbedding", ctx, searchRequest.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
-			Return(mockEmbedding, nil)
+		// No mock expectations needed - validation should fail before any service calls
 
 		result, err := searchService.Search(ctx, searchRequest)
 
@@ -494,8 +573,6 @@ func TestSearchService(t *testing.T) {
 			"repository_names cannot contain duplicates",
 			"Error message should indicate duplicate names",
 		)
-
-		mockEmbeddingService.AssertExpectations(t)
 	})
 
 	t.Run("Search_With_Language_And_FileType_Filtering", func(t *testing.T) {
@@ -503,7 +580,12 @@ func TestSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		ctx := context.Background()
 		searchRequest := dto.SearchRequestDTO{
@@ -538,7 +620,12 @@ func TestSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		ctx := context.Background()
 		searchRequest := dto.SearchRequestDTO{
@@ -569,7 +656,12 @@ func TestSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		ctx := context.Background()
 		searchRequest := dto.SearchRequestDTO{
@@ -601,7 +693,12 @@ func TestSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		ctx := context.Background()
 		searchRequest := dto.SearchRequestDTO{
@@ -649,7 +746,12 @@ func TestSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		ctx := context.Background()
 		searchRequest := dto.SearchRequestDTO{
@@ -702,7 +804,12 @@ func TestSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		ctx := context.Background()
 		searchRequest := dto.SearchRequestDTO{
@@ -755,7 +862,12 @@ func TestSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		ctx := context.Background()
 		searchRequest := dto.SearchRequestDTO{
@@ -817,7 +929,12 @@ func TestSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		ctx := context.Background()
 		searchRequest := dto.SearchRequestDTO{
@@ -836,7 +953,12 @@ func TestSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		ctx := context.Background()
 
@@ -895,7 +1017,7 @@ func TestNewSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		service := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		service := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo, new(MockRepositoryRepository))
 
 		assert.NotNil(t, service, "SearchService should be created successfully")
 	})
@@ -903,28 +1025,41 @@ func TestNewSearchService(t *testing.T) {
 	t.Run("Nil_Vector_Repository_Panic", func(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
+		mockRepoRepo := new(MockRepositoryRepository)
 
 		assert.Panics(t, func() {
-			NewSearchService(nil, mockEmbeddingService, mockChunkRepo)
+			NewSearchService(nil, mockEmbeddingService, mockChunkRepo, mockRepoRepo)
 		}, "Should panic when vector repository is nil")
 	})
 
 	t.Run("Nil_Embedding_Service_Panic", func(t *testing.T) {
 		mockVectorRepo := new(MockVectorStorageRepository)
 		mockChunkRepo := new(MockChunkRepository)
+		mockRepoRepo := new(MockRepositoryRepository)
 
 		assert.Panics(t, func() {
-			NewSearchService(mockVectorRepo, nil, mockChunkRepo)
+			NewSearchService(mockVectorRepo, nil, mockChunkRepo, mockRepoRepo)
 		}, "Should panic when embedding service is nil")
 	})
 
 	t.Run("Nil_Chunk_Repository_Panic", func(t *testing.T) {
 		mockVectorRepo := new(MockVectorStorageRepository)
 		mockEmbeddingService := new(MockEmbeddingService)
+		mockRepoRepo := new(MockRepositoryRepository)
 
 		assert.Panics(t, func() {
-			NewSearchService(mockVectorRepo, mockEmbeddingService, nil)
+			NewSearchService(mockVectorRepo, mockEmbeddingService, nil, mockRepoRepo)
 		}, "Should panic when chunk repository is nil")
+	})
+
+	t.Run("Nil_Repository_Repository_Panic", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+
+		assert.Panics(t, func() {
+			NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo, nil)
+		}, "Should panic when repository repository is nil")
 	})
 }
 
@@ -946,7 +1081,12 @@ func TestSearchService_Performance(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		ctx := context.Background()
 		searchRequest := dto.SearchRequestDTO{
@@ -983,7 +1123,12 @@ func TestSearchService_Performance(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		searchService := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo)
+		searchService := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+		)
 
 		// Create cancelled context
 		ctx, cancel := context.WithCancel(context.Background())

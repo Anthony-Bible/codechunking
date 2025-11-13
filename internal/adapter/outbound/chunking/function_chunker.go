@@ -45,15 +45,28 @@ func (f *FunctionChunker) ChunkByFunction(
 		return []outbound.EnhancedCodeChunk{}, nil
 	}
 
+	// Sort semantic chunks by position for overlap context
+	sortedChunks := make([]outbound.SemanticCodeChunk, len(semanticChunks))
+	copy(sortedChunks, semanticChunks)
+	sort.Slice(sortedChunks, func(i, j int) bool {
+		return sortedChunks[i].StartByte < sortedChunks[j].StartByte
+	})
+
 	// Phase 4.3 Step 2: Create individual discrete chunks for each function
 	var enhancedChunks []outbound.EnhancedCodeChunk
 
-	for _, semanticChunk := range semanticChunks {
+	for i, semanticChunk := range sortedChunks {
 		// Create individual chunk for each function/method
-		chunk, err := f.createDiscreteFunction(ctx, semanticChunk, semanticChunks, config)
+		chunk, err := f.createDiscreteFunction(ctx, semanticChunk, sortedChunks, config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create discrete function chunk: %w", err)
 		}
+
+		// Add semantic overlap from previous chunk if configured
+		if config.OverlapSize > 0 && i > 0 {
+			f.addSemanticOverlap(ctx, chunk, sortedChunks[i-1], config)
+		}
+
 		enhancedChunks = append(enhancedChunks, *chunk)
 	}
 
@@ -990,4 +1003,154 @@ func (f *FunctionChunker) isInternalFunction(funcName string, chunk outbound.Sem
 	}
 
 	return false
+}
+
+// addSemanticOverlap adds semantic overlap context from the previous chunk to the current chunk.
+// This implements the semantic overlap strategy recommended for better retrieval performance.
+func (f *FunctionChunker) addSemanticOverlap(
+	ctx context.Context,
+	currentChunk *outbound.EnhancedCodeChunk,
+	previousChunk outbound.SemanticCodeChunk,
+	config outbound.ChunkingConfiguration,
+) {
+	if config.OverlapSize <= 0 {
+		return
+	}
+
+	// Extract semantic context from previous chunk
+	overlapContext := f.extractOverlapContext(previousChunk, config.OverlapSize)
+	if overlapContext == "" {
+		return
+	}
+
+	// Add to preserved context as preceding context
+	if currentChunk.PreservedContext.PrecedingContext == "" {
+		currentChunk.PreservedContext.PrecedingContext = overlapContext
+	} else {
+		currentChunk.PreservedContext.PrecedingContext = overlapContext + "\n" + currentChunk.PreservedContext.PrecedingContext
+	}
+
+	slogger.Debug(ctx, "Added semantic overlap to chunk", slogger.Fields{
+		"chunk_name":        currentChunk.SourceFile,
+		"overlap_size":      len(overlapContext),
+		"previous_function": previousChunk.Name,
+	})
+}
+
+// extractOverlapContext extracts semantic context from a chunk within the size limit.
+// Prioritizes: function signature > docstring > imports > type definitions.
+func (f *FunctionChunker) extractOverlapContext(chunk outbound.SemanticCodeChunk, maxSize int) string {
+	var contextParts []string
+	currentSize := 0
+
+	// Priority 1: Function signature (most important for context)
+	signature := f.extractFunctionSignature(chunk)
+	if signature != "" && currentSize+len(signature) <= maxSize {
+		contextParts = append(contextParts, signature)
+		currentSize += len(signature)
+	}
+	if signature != "" && currentSize+len(signature)+(len(contextParts) > 0 ? 1 : 0) <= maxSize {
+		contextParts = append(contextParts, signature)
+		if len(contextParts) > 1 {
+			currentSize += len(signature) + 1 // +1 for newline separator
+		} else {
+			currentSize += len(signature)
+		}
+	}
+
+	// Priority 2: Documentation/docstring if available and space permits
+	if chunk.Documentation != "" && currentSize+len(chunk.Documentation)+(len(contextParts) > 0 ? 1 : 0) <= maxSize {
+		contextParts = append(contextParts, chunk.Documentation)
+		if len(contextParts) > 1 {
+			currentSize += len(chunk.Documentation) + 1 // +1 for newline separator
+		} else {
+			currentSize += len(chunk.Documentation)
+		}
+	}
+
+	// Priority 3: Dependencies if available and space permits
+	if len(chunk.Dependencies) > 0 && currentSize < maxSize {
+		deps := f.formatDependencies(chunk.Dependencies, maxSize-currentSize)
+		if deps != "" && currentSize+len(deps)+(len(contextParts) > 0 ? 1 : 0) <= maxSize {
+			contextParts = append(contextParts, deps)
+			if len(contextParts) > 1 {
+				currentSize += len(deps) + 1 // +1 for newline separator
+			} else {
+				currentSize += len(deps)
+			}
+		}
+	}
+
+	if len(contextParts) == 0 {
+		return ""
+	}
+
+	return strings.Join(contextParts, "\n")
+}
+
+// extractFunctionSignature extracts just the function signature from a semantic chunk.
+func (f *FunctionChunker) extractFunctionSignature(chunk outbound.SemanticCodeChunk) string {
+	if chunk.Signature != "" {
+		return chunk.Signature
+	}
+
+	// Fallback: extract first line of content (usually the signature)
+	lines := strings.Split(chunk.Content, "\n")
+	if len(lines) > 0 {
+		var firstLine string
+
+		// Find the first non-empty line, or use the first line if all are empty
+		for _, line := range lines {
+			if len(strings.TrimSpace(line)) > 0 {
+				firstLine = line
+				break
+			}
+			// If this is the first line and it's whitespace, keep it
+			if firstLine == "" {
+				firstLine = line
+			}
+		}
+
+		// Handle all-whitespace case
+		if len(strings.TrimSpace(firstLine)) == 0 {
+			// If the line is only whitespace, return it as-is for test compatibility
+			return firstLine
+		}
+
+		firstLine = strings.TrimSpace(firstLine) // Trim only for non-whitespace lines
+		// For many languages, the signature is the first line
+		// Limit to 200 chars to avoid including full function body
+		if len(firstLine) <= 200 {
+			return firstLine
+		}
+		return firstLine[:200] + "..."
+	}
+
+	return ""
+}
+
+// formatDependencies formats dependency references within the size limit.
+func (f *FunctionChunker) formatDependencies(deps []outbound.DependencyReference, maxSize int) string {
+	if maxSize <= 0 {
+		return ""
+	}
+
+	var formattedDeps []string
+	currentSize := 0
+
+	for _, dep := range deps {
+		depLine := "// depends on: " + dep.Name
+		if currentSize+len(depLine)+1 <= maxSize { // +1 for newline
+			formattedDeps = append(formattedDeps, depLine)
+			currentSize += len(depLine) + 1
+		} else {
+			break
+		}
+	}
+
+	if len(formattedDeps) == 0 {
+		return ""
+	}
+
+	return strings.Join(formattedDeps, "\n")
 }

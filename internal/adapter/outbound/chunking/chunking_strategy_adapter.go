@@ -417,6 +417,13 @@ func (c *ChunkingStrategyAdapter) validateConfiguration(config outbound.Chunking
 	if config.QualityThreshold < 0 || config.QualityThreshold > 1 {
 		return fmt.Errorf("quality threshold must be between 0 and 1, got %f", config.QualityThreshold)
 	}
+	if config.OverlapSize < 0 {
+		return fmt.Errorf("overlap size must be non-negative, got %d", config.OverlapSize)
+	}
+	if config.OverlapSize >= config.MaxChunkSize {
+		return fmt.Errorf("overlap size (%d) must be less than max chunk size (%d)",
+			config.OverlapSize, config.MaxChunkSize)
+	}
 	return nil
 }
 

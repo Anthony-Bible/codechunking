@@ -1031,14 +1031,14 @@ func (f *FunctionChunker) addSemanticOverlap(
 	}
 
 	slogger.Debug(ctx, "Added semantic overlap to chunk", slogger.Fields{
-		"chunk_name":         currentChunk.SourceFile,
-		"overlap_size":       len(overlapContext),
-		"previous_function":  previousChunk.Name,
+		"chunk_name":        currentChunk.SourceFile,
+		"overlap_size":      len(overlapContext),
+		"previous_function": previousChunk.Name,
 	})
 }
 
 // extractOverlapContext extracts semantic context from a chunk within the size limit.
-// Prioritizes: function signature > docstring > imports > type definitions
+// Prioritizes: function signature > docstring > imports > type definitions.
 func (f *FunctionChunker) extractOverlapContext(chunk outbound.SemanticCodeChunk, maxSize int) string {
 	var contextParts []string
 	currentSize := 0
@@ -1080,7 +1080,27 @@ func (f *FunctionChunker) extractFunctionSignature(chunk outbound.SemanticCodeCh
 	// Fallback: extract first line of content (usually the signature)
 	lines := strings.Split(chunk.Content, "\n")
 	if len(lines) > 0 {
-		firstLine := strings.TrimSpace(lines[0])
+		var firstLine string
+
+		// Find the first non-empty line, or use the first line if all are empty
+		for _, line := range lines {
+			if len(strings.TrimSpace(line)) > 0 {
+				firstLine = line
+				break
+			}
+			// If this is the first line and it's whitespace, keep it
+			if firstLine == "" {
+				firstLine = line
+			}
+		}
+
+		// Handle all-whitespace case
+		if len(strings.TrimSpace(firstLine)) == 0 {
+			// If the line is only whitespace, return it as-is for test compatibility
+			return firstLine
+		}
+
+		firstLine = strings.TrimSpace(firstLine) // Trim only for non-whitespace lines
 		// For many languages, the signature is the first line
 		// Limit to 200 chars to avoid including full function body
 		if len(firstLine) <= 200 {

@@ -1049,22 +1049,35 @@ func (f *FunctionChunker) extractOverlapContext(chunk outbound.SemanticCodeChunk
 		contextParts = append(contextParts, signature)
 		currentSize += len(signature)
 	}
+	if signature != "" && currentSize+len(signature)+(len(contextParts) > 0 ? 1 : 0) <= maxSize {
+		contextParts = append(contextParts, signature)
+		if len(contextParts) > 1 {
+			currentSize += len(signature) + 1 // +1 for newline separator
+		} else {
+			currentSize += len(signature)
+		}
+	}
 
 	// Priority 2: Documentation/docstring if available and space permits
-	newlineSize := 0
-	if len(contextParts) > 0 {
-		newlineSize = 1
-	}
-	if chunk.Documentation != "" && currentSize+len(chunk.Documentation)+newlineSize <= maxSize {
+	if chunk.Documentation != "" && currentSize+len(chunk.Documentation)+(len(contextParts) > 0 ? 1 : 0) <= maxSize {
 		contextParts = append(contextParts, chunk.Documentation)
-		currentSize += len(chunk.Documentation) + newlineSize
+		if len(contextParts) > 1 {
+			currentSize += len(chunk.Documentation) + 1 // +1 for newline separator
+		} else {
+			currentSize += len(chunk.Documentation)
+		}
 	}
 
 	// Priority 3: Dependencies if available and space permits
 	if len(chunk.Dependencies) > 0 && currentSize < maxSize {
 		deps := f.formatDependencies(chunk.Dependencies, maxSize-currentSize)
-		if deps != "" {
+		if deps != "" && currentSize+len(deps)+(len(contextParts) > 0 ? 1 : 0) <= maxSize {
 			contextParts = append(contextParts, deps)
+			if len(contextParts) > 1 {
+				currentSize += len(deps) + 1 // +1 for newline separator
+			} else {
+				currentSize += len(deps)
+			}
 		}
 	}
 

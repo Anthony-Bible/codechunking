@@ -1051,9 +1051,13 @@ func (f *FunctionChunker) extractOverlapContext(chunk outbound.SemanticCodeChunk
 	}
 
 	// Priority 2: Documentation/docstring if available and space permits
-	if chunk.Documentation != "" && currentSize+len(chunk.Documentation) <= maxSize {
+	newlineSize := 0
+	if len(contextParts) > 0 {
+		newlineSize = 1
+	}
+	if chunk.Documentation != "" && currentSize+len(chunk.Documentation)+newlineSize <= maxSize {
 		contextParts = append(contextParts, chunk.Documentation)
-		currentSize += len(chunk.Documentation)
+		currentSize += len(chunk.Documentation) + newlineSize
 	}
 
 	// Priority 3: Dependencies if available and space permits

@@ -137,7 +137,7 @@ func TestCreateRepositoryService_CreateRepository_Success(t *testing.T) {
 	// Mock expectations
 	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
-	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").
+	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
 		Return(nil)
 
 	ctx := context.Background()
@@ -358,7 +358,7 @@ func TestCreateRepositoryService_CreateRepository_PublishJobFails(t *testing.T) 
 	publishError := errors.New("message queue unavailable")
 	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
-	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").
+	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
 		Return(publishError)
 
 	ctx := context.Background()
@@ -402,7 +402,7 @@ func TestCreateRepositoryService_CreateRepository_AutoGeneratesNameFromURL(t *te
 
 	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
-	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").
+	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
 		Return(nil)
 
 	ctx := context.Background()

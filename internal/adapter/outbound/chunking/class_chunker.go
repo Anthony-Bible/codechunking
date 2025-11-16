@@ -269,6 +269,10 @@ func (c *ClassChunker) findMethodParentByQualifiedName(
 	return nil
 }
 
+const (
+	UnknownSource = "unknown_source"
+)
+
 // ClassInfo represents information about a class and its associated chunks.
 type ClassInfo struct {
 	Name          string
@@ -556,6 +560,11 @@ func (c *ClassChunker) splitLargeClassGroup(
 		enhancedChunks = chunks
 	}
 
+	// Add semantic overlap between adjacent chunks if configured
+	if config.OverlapSize > 0 && len(enhancedChunks) > 1 {
+		c.addClassOverlapContext(ctx, enhancedChunks, config)
+	}
+
 	return enhancedChunks, nil
 }
 
@@ -815,7 +824,7 @@ func (c *ClassChunker) determineSourceFile(group []outbound.SemanticCodeChunk) s
 	if len(group) > 0 {
 		return "aggregated_class_chunk"
 	}
-	return "unknown_source"
+	return UnknownSource
 }
 
 func (c *ClassChunker) parseLanguage(languageStr string) valueobject.Language {
@@ -946,4 +955,227 @@ func (c *ClassChunker) hasSharedDependencies(chunk1, chunk2 outbound.SemanticCod
 	}
 
 	return false
+}
+
+// addClassOverlapContext adds semantic overlap context between adjacent class chunks.
+// This implements overlap strategy for class-based chunking to improve retrieval.
+func (c *ClassChunker) addClassOverlapContext(
+	ctx context.Context,
+	chunks []outbound.EnhancedCodeChunk,
+	config outbound.ChunkingConfiguration,
+) {
+	if len(chunks) <= 1 {
+		return
+	}
+
+	// Add overlap from previous chunk to each subsequent chunk
+	for i := 1; i < len(chunks); i++ {
+		previousChunk := &chunks[i-1]
+		currentChunk := &chunks[i]
+
+		// Extract class definition and key methods from previous chunk
+		overlapContext := c.extractClassOverlapContext(previousChunk, config.OverlapSize)
+		if overlapContext == "" {
+			continue
+		}
+
+		// Add to preserved context as preceding context
+		if currentChunk.PreservedContext.PrecedingContext == "" {
+			currentChunk.PreservedContext.PrecedingContext = overlapContext
+		} else {
+			currentChunk.PreservedContext.PrecedingContext = overlapContext + "\n" + currentChunk.PreservedContext.PrecedingContext
+		}
+
+		slogger.Debug(ctx, "Added class overlap to chunk", slogger.Fields{
+			"chunk_id":     currentChunk.ID,
+			"overlap_size": len(overlapContext),
+		})
+	}
+}
+
+// extractClassOverlapContext extracts relevant context from a class chunk for overlap.
+// Prioritizes: class definition > key methods > properties.
+func (c *ClassChunker) extractClassOverlapContext(chunk *outbound.EnhancedCodeChunk, maxSize int) string {
+	if maxSize <= 0 || chunk == nil {
+		return ""
+	}
+
+	var contextParts []string
+	currentSize := 0
+
+	// Priority 1: Extract class/struct definitions
+	for _, semantic := range chunk.SemanticConstructs {
+		if c.isClassLikeConstruct(semantic.Type) && currentSize < maxSize {
+			// Use semantic.Content if available, otherwise fall back to the chunk's main Content
+			content := semantic.Content
+			if content == "" {
+				content = chunk.Content
+			}
+			// Extract just the class definition (first few lines)
+			classDef := c.extractClassDefinition(content, maxSize-currentSize)
+			if classDef != "" {
+				contextParts = append(contextParts, classDef)
+				currentSize += len(classDef)
+			}
+		}
+	}
+
+	// Priority 2: Add key method signatures
+	for _, semantic := range chunk.SemanticConstructs {
+		if semantic.Type == outbound.ConstructMethod && currentSize < maxSize {
+			signature := c.extractMethodSignature(semantic)
+			if signature != "" && currentSize+len(signature) <= maxSize {
+				contextParts = append(contextParts, signature)
+				currentSize += len(signature)
+			}
+		}
+	}
+
+	if len(contextParts) == 0 {
+		return ""
+	}
+
+	return strings.Join(contextParts, "\n")
+}
+
+// extractClassDefinition extracts the class definition (header) from class content.
+func (c *ClassChunker) extractClassDefinition(content string, maxSize int) string {
+	if maxSize <= 0 {
+		return ""
+	}
+
+	lines := strings.Split(content, "\n")
+	var defLines []string
+	currentSize := 0
+
+	// Extract lines until we hit the opening brace or maxSize
+	for i, line := range lines {
+		// Check if adding this line would exceed maxSize
+		if currentSize+len(line)+1 > maxSize {
+			truncated := c.truncateLineToMaxSize(line, maxSize, currentSize)
+			if truncated != "" {
+				defLines = append(defLines, truncated)
+			}
+			break
+		}
+
+		defLines = append(defLines, line)
+		currentSize += len(line) + 1 // +1 for newline
+
+		// Check if we've found an opening brace
+		trimmed := strings.TrimSpace(line)
+		if !strings.Contains(trimmed, "{") {
+			continue
+		}
+
+		// Stop at opening brace if it's valid (not commented, no more class definitions)
+		if c.shouldStopAtBrace(trimmed, lines[i+1:]) {
+			c.truncateLastLineAtBrace(&defLines)
+			break
+		}
+	}
+
+	return c.finalizeDefinition(defLines)
+}
+
+// isBraceCommented checks if the opening brace in a line is inside a comment.
+func (c *ClassChunker) isBraceCommented(trimmedLine string) bool {
+	braceIndex := strings.Index(trimmedLine, "{")
+	if braceIndex < 0 {
+		return false
+	}
+
+	beforeBrace := trimmedLine[:braceIndex]
+	return strings.Contains(beforeBrace, "//")
+}
+
+// hasMoreClassDefinitions checks if remaining lines contain more class/struct/interface definitions.
+func (c *ClassChunker) hasMoreClassDefinitions(remainingLines []string) bool {
+	for _, line := range remainingLines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "class ") ||
+			strings.HasPrefix(trimmed, "struct ") ||
+			strings.HasPrefix(trimmed, "interface ") {
+			return true
+		}
+	}
+	return false
+}
+
+// truncateLineToMaxSize truncates a line to fit within maxSize budget.
+func (c *ClassChunker) truncateLineToMaxSize(line string, maxSize, currentSize int) string {
+	// Only truncate if this is the first line and we have space
+	if currentSize == 0 && maxSize > 0 && len(line) > maxSize {
+		return line[:maxSize]
+	}
+	return ""
+}
+
+// truncateLastLineAtBrace modifies the last line to include only content up to and including the opening brace.
+func (c *ClassChunker) truncateLastLineAtBrace(defLines *[]string) {
+	if len(*defLines) == 0 {
+		return
+	}
+
+	lastIndex := len(*defLines) - 1
+	originalLine := (*defLines)[lastIndex]
+	bracePosInLine := strings.Index(originalLine, "{")
+
+	if bracePosInLine >= 0 {
+		(*defLines)[lastIndex] = originalLine[:bracePosInLine+1] // Include the brace
+	}
+}
+
+// shouldStopAtBrace determines if we should stop extracting at the current opening brace.
+func (c *ClassChunker) shouldStopAtBrace(trimmedLine string, remainingLines []string) bool {
+	// Don't stop if brace is in a comment
+	if c.isBraceCommented(trimmedLine) {
+		return false
+	}
+
+	// Don't stop if there are more class definitions following
+	if c.hasMoreClassDefinitions(remainingLines) {
+		return false
+	}
+
+	return true
+}
+
+// finalizeDefinition validates and returns the final class definition.
+func (c *ClassChunker) finalizeDefinition(defLines []string) string {
+	if len(defLines) == 0 {
+		return ""
+	}
+
+	// Check if all lines are empty/whitespace only
+	for _, line := range defLines {
+		if strings.TrimSpace(line) != "" {
+			return strings.Join(defLines, "\n")
+		}
+	}
+
+	return ""
+}
+
+// extractMethodSignature extracts the method signature from a semantic chunk.
+func (c *ClassChunker) extractMethodSignature(chunk outbound.SemanticCodeChunk) string {
+	if chunk.Signature != "" {
+		return chunk.Signature
+	}
+
+	// Fallback: extract first line
+	lines := strings.Split(chunk.Content, "\n")
+	if len(lines) > 0 {
+		firstLine := lines[0] // Don't trim to preserve whitespace for tests
+		if len(strings.TrimSpace(firstLine)) == 0 {
+			// If the line is only whitespace, return it as-is for test compatibility
+			return firstLine
+		}
+		if len(firstLine) <= 200 {
+			return firstLine
+		}
+		return firstLine[:200] + "..."
+	}
+
+	return ""
 }

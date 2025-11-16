@@ -19,6 +19,7 @@ type SearchService struct {
 	vectorRepo       outbound.VectorStorageRepository
 	embeddingService outbound.EmbeddingService
 	chunkRepo        ChunkRepository
+	repoRepo         outbound.RepositoryRepository
 }
 
 // ChunkRepository defines the interface for retrieving chunk information.
@@ -49,6 +50,7 @@ func NewSearchService(
 	vectorRepo outbound.VectorStorageRepository,
 	embeddingService outbound.EmbeddingService,
 	chunkRepo ChunkRepository,
+	repoRepo outbound.RepositoryRepository,
 ) *SearchService {
 	if vectorRepo == nil {
 		panic("vectorRepo cannot be nil")
@@ -59,11 +61,15 @@ func NewSearchService(
 	if chunkRepo == nil {
 		panic("chunkRepo cannot be nil")
 	}
+	if repoRepo == nil {
+		panic("repoRepo cannot be nil")
+	}
 
 	return &SearchService{
 		vectorRepo:       vectorRepo,
 		embeddingService: embeddingService,
 		chunkRepo:        chunkRepo,
+		repoRepo:         repoRepo,
 	}
 }
 
@@ -127,7 +133,43 @@ func (s *SearchService) generateQueryEmbedding(ctx context.Context, query string
 	return embeddingResult, nil
 }
 
-// performVectorSearch performs vector similarity search.
+// resolveRepositoryNames resolves repository names to their corresponding UUIDs.
+// Returns an error if any repository name cannot be found or if a database error occurs.
+func (s *SearchService) resolveRepositoryNames(ctx context.Context, names []string) ([]uuid.UUID, error) {
+	resolvedIDs := make([]uuid.UUID, 0, len(names))
+
+	for _, name := range names {
+		repoID, err := s.findRepositoryIDByName(ctx, name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve repository names: %w", err)
+		}
+		resolvedIDs = append(resolvedIDs, repoID)
+	}
+
+	return resolvedIDs, nil
+}
+
+// findRepositoryIDByName looks up a single repository by name and returns its ID.
+func (s *SearchService) findRepositoryIDByName(ctx context.Context, name string) (uuid.UUID, error) {
+	filters := outbound.RepositoryFilters{
+		Name:   name,
+		Limit:  1,
+		Offset: 0,
+	}
+
+	repos, _, err := s.repoRepo.FindAll(ctx, filters)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	if len(repos) == 0 {
+		return uuid.Nil, fmt.Errorf("repository '%s' not found", name)
+	}
+
+	return repos[0].ID(), nil
+}
+
+// performVectorSearch performs vector similarity search with optional repository filtering.
 func (s *SearchService) performVectorSearch(
 	ctx context.Context,
 	vector []float64,
@@ -139,11 +181,17 @@ func (s *SearchService) performVectorSearch(
 		"max_results":           request.Limit + request.Offset,
 	})
 
+	// Build combined repository filter from both IDs and names
+	combinedRepositoryIDs, err := s.buildRepositoryFilter(ctx, request.RepositoryIDs, request.RepositoryNames)
+	if err != nil {
+		return nil, err
+	}
+
 	searchOptions := outbound.SimilaritySearchOptions{
 		UsePartitionedTable: true,
 		MaxResults:          request.Limit + request.Offset,
 		MinSimilarity:       request.SimilarityThreshold,
-		RepositoryIDs:       request.RepositoryIDs,
+		RepositoryIDs:       combinedRepositoryIDs,
 	}
 
 	vectorResults, err := s.vectorRepo.VectorSimilaritySearch(ctx, vector, searchOptions)
@@ -154,6 +202,37 @@ func (s *SearchService) performVectorSearch(
 
 	slogger.Info(ctx, "Vector search completed", slogger.Fields{"vector_results_count": len(vectorResults)})
 	return vectorResults, nil
+}
+
+// buildRepositoryFilter combines repository IDs and resolved repository names into a single filter list.
+// Returns nil if no repository filtering is needed (preserves nil semantics for database queries).
+func (s *SearchService) buildRepositoryFilter(
+	ctx context.Context,
+	repositoryIDs []uuid.UUID,
+	repositoryNames []string,
+) ([]uuid.UUID, error) {
+	// If no filters provided, return nil to indicate no filtering
+	if len(repositoryIDs) == 0 && len(repositoryNames) == 0 {
+		return nil, nil
+	}
+
+	// Pre-allocate capacity for efficiency
+	totalCapacity := len(repositoryIDs) + len(repositoryNames)
+	combinedIDs := make([]uuid.UUID, 0, totalCapacity)
+
+	// Start with explicitly provided repository IDs
+	combinedIDs = append(combinedIDs, repositoryIDs...)
+
+	// Resolve and append repository names to IDs if provided
+	if len(repositoryNames) > 0 {
+		resolvedIDs, err := s.resolveRepositoryNames(ctx, repositoryNames)
+		if err != nil {
+			return nil, err
+		}
+		combinedIDs = append(combinedIDs, resolvedIDs...)
+	}
+
+	return combinedIDs, nil
 }
 
 // retrieveAndFilterChunks retrieves chunk details and applies filters.

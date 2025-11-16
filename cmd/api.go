@@ -352,6 +352,9 @@ func (sf *ServiceFactory) CreateSearchService() (inbound.SearchService, error) {
 	// Create chunk repository
 	chunkRepo := repository.NewPostgreSQLChunkRepository(dbPool)
 
+	// Create repository repository
+	repoRepo := repository.NewPostgreSQLRepositoryRepository(dbPool)
+
 	// Create Gemini embedding client
 	embeddingService, err := sf.createGeminiEmbeddingClient()
 	if err != nil {
@@ -359,7 +362,7 @@ func (sf *ServiceFactory) CreateSearchService() (inbound.SearchService, error) {
 	}
 
 	// Create search service - it already implements the inbound interface
-	searchService := appservice.NewSearchService(vectorRepo, embeddingService, chunkRepo)
+	searchService := appservice.NewSearchService(vectorRepo, embeddingService, chunkRepo, repoRepo)
 
 	return searchService, nil
 }

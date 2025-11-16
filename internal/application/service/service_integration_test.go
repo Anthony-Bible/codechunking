@@ -112,7 +112,7 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 			mockRepo.On("Exists", context.Background(), mock.AnythingOfType("valueobject.RepositoryURL")).
 				Return(false, nil)
 			mockRepo.On("Save", context.Background(), mock.AnythingOfType("*entity.Repository")).Return(nil)
-			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go").
+			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
 				Return(nil)
 
 			response, err := service.CreateRepository(context.Background(), request)
@@ -141,7 +141,7 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 			response, err := service.CreateRepository(context.Background(), request)
 
 			require.NoError(t, err)
-			assert.Equal(t, "https://github.com/golang/go", response.URL) // .git should be removed
+			assert.Equal(t, "https://github.com/golang/go.git", response.URL) // Raw input URL is preserved
 		})
 
 		// Test case: Business rule validation

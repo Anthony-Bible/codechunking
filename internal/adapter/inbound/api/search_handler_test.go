@@ -198,9 +198,12 @@ func TestSearchHandler(t *testing.T) {
 
 		// Setup request with repository names
 		searchRequest := dto.SearchRequestDTO{
-			Query:           "authentication middleware",
-			Limit:           10,
-			RepositoryNames: []string{"golang/go", "facebook/react"},
+			Query:               "authentication middleware",
+			Limit:               10,
+			Offset:              0,
+			RepositoryNames:     []string{"golang/go", "facebook/react"},
+			SimilarityThreshold: 0.7,               // Default applied by handler
+			Sort:                "similarity:desc", // Default applied by handler
 		}
 
 		requestBody, err := json.Marshal(searchRequest)
@@ -253,10 +256,13 @@ func TestSearchHandler(t *testing.T) {
 		repoID1 := uuid.New()
 		repoID2 := uuid.New()
 		searchRequest := dto.SearchRequestDTO{
-			Query:           "mixed filtering",
-			Limit:           15,
-			RepositoryIDs:   []uuid.UUID{repoID1, repoID2},
-			RepositoryNames: []string{"golang/go", "microsoft/vscode"},
+			Query:               "mixed filtering",
+			Limit:               15,
+			Offset:              0,
+			RepositoryIDs:       []uuid.UUID{repoID1, repoID2},
+			RepositoryNames:     []string{"golang/go", "microsoft/vscode"},
+			SimilarityThreshold: 0.7,               // Default applied by handler
+			Sort:                "similarity:desc", // Default applied by handler
 		}
 
 		requestBody, err := json.Marshal(searchRequest)

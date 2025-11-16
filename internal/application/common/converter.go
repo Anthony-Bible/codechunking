@@ -17,7 +17,7 @@ const (
 func EntityToRepositoryResponse(repository *entity.Repository) *dto.RepositoryResponse {
 	return &dto.RepositoryResponse{
 		ID:             repository.ID(),
-		URL:            repository.URL().String(),
+		URL:            repository.URL().Raw(), // Return raw user input, not normalized URL
 		Name:           repository.Name(),
 		Description:    repository.Description(),
 		DefaultBranch:  repository.DefaultBranch(),

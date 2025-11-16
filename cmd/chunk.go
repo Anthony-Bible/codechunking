@@ -138,7 +138,7 @@ func parseAndChunkSource(
 		ContextPreservation:  outbound.PreserveMinimal,
 		MaxChunkSize:         4000,
 		MinChunkSize:         200,
-		OverlapSize:          0,
+		OverlapSize:          200, // Enable semantic overlap for better retrieval
 		IncludeDocumentation: false,
 		IncludeComments:      false,
 		PreserveDependencies: false,

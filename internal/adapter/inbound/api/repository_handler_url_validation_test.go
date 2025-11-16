@@ -436,7 +436,7 @@ func TestRepositoryHandler_CreateRepository_ErrorTypeDistinction(t *testing.T) {
 		{
 			name: "domain_invalid_url_error_returns_400_invalid_url",
 			requestBody: map[string]interface{}{
-				"url": "",
+				"url": "https://github.com/user/repo",
 			},
 			mockError:      domain.ErrInvalidRepositoryURL,
 			expectedStatus: http.StatusBadRequest,
@@ -583,7 +583,7 @@ func TestRepositoryHandler_CreateRepository_CompleteRequestURLValidation(t *test
 				require.NoError(t, err)
 
 				assert.Equal(t, tt.requestBody.URL, response.URL)
-				assert.Equal(t, tt.requestBody.Name, response.Name)
+				assert.Equal(t, "go", response.Name, "Expected auto-derived name from URL")
 			}
 
 			// Verify service was called

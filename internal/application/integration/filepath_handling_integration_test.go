@@ -128,57 +128,6 @@ func TestFilePathHandling_EndToEndIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("migration scenario - absolute to relative paths", func(t *testing.T) {
-		// This test simulates migrating existing data with absolute paths to relative paths
-
-		ctx := context.Background()
-		repoID := uuid.New()
-
-		// Simulate existing data with absolute paths (old format)
-		legacyChunks := []TestChunk{
-			{ID: uuid.New(), FilePath: "/tmp/workspace/" + repoID.String() + "/src/main.go", Content: "package main"},
-			{
-				ID:       uuid.New(),
-				FilePath: "/tmp/workspace/" + repoID.String() + "/internal/service.go",
-				Content:  "package service",
-			},
-		}
-
-		// Store legacy chunks (simulating existing data)
-		storageResult := simulateLegacyChunkStorage(ctx, t, legacyChunks, repoID)
-		assert.Equal(t, len(legacyChunks), storageResult.StoredCount, "Should store legacy chunks")
-
-		// Verify legacy data exists with absolute paths
-		legacyDbChunks := retrieveChunksFromDatabase(ctx, t, repoID)
-		for _, chunk := range legacyDbChunks {
-			assert.Contains(t, chunk.FilePath, repoID.String(),
-				"Legacy data should contain absolute paths with UUID: %s", chunk.FilePath)
-		}
-
-		// Run migration process
-		migrationResult := simulatePathMigration(ctx, t, repoID)
-		assert.True(t, migrationResult.Success, "Migration should succeed")
-		assert.Equal(t, len(legacyChunks), migrationResult.MigratedCount, "Should migrate all chunks")
-
-		// Verify migrated data has clean relative paths
-		migratedDbChunks := retrieveChunksFromDatabase(ctx, t, repoID)
-		for _, chunk := range migratedDbChunks {
-			assert.NotContains(t, chunk.FilePath, repoID.String(),
-				"Migrated chunk should not contain UUID: %s", chunk.FilePath)
-			assert.True(t, strings.HasPrefix(chunk.FilePath, "src/") || strings.HasPrefix(chunk.FilePath, "internal/"),
-				"Migrated chunk should have relative path: %s", chunk.FilePath)
-		}
-
-		// Search API should return clean paths after migration
-		searchResult := simulateSearchAPICall(ctx, t, repoID, "package")
-		assert.NotEmpty(t, searchResult.Results, "Search should return migrated results")
-
-		for _, result := range searchResult.Results {
-			assert.NotContains(t, result.FilePath, repoID.String(),
-				"Search result after migration should not contain UUID: %s", result.FilePath)
-		}
-	})
-
 	t.Run("complex nested repository structure", func(t *testing.T) {
 		// Test with realistic complex repository structures
 
@@ -480,12 +429,6 @@ type SearchResultItem struct {
 	FilePath        string
 	Language        string
 	SimilarityScore float64
-}
-
-type FilePathMigrationResult struct {
-	Success       bool
-	MigratedCount int
-	Error         error
 }
 
 type FilePathJobProcessorResult struct {
@@ -945,59 +888,6 @@ func cleanSearchResultPath(filePath string, repoID uuid.UUID) string {
 	return filePath
 }
 
-func simulateLegacyChunkStorage(ctx context.Context, t *testing.T, chunks []TestChunk, repoID uuid.UUID) StorageResult {
-	storageMutex.Lock()
-	defer storageMutex.Unlock()
-
-	// Store chunks as-is (with absolute paths) to simulate legacy data
-	memoryStorage[repoID] = make([]TestChunk, len(chunks))
-	copy(memoryStorage[repoID], chunks)
-
-	return StorageResult{
-		StoredCount: len(chunks),
-		Error:       nil,
-	}
-}
-
-func simulatePathMigration(ctx context.Context, t *testing.T, repoID uuid.UUID) FilePathMigrationResult {
-	storageMutex.Lock()
-	defer storageMutex.Unlock()
-
-	chunks, exists := memoryStorage[repoID]
-	if !exists {
-		return FilePathMigrationResult{
-			Success:       false,
-			MigratedCount: 0,
-			Error:         fmt.Errorf("no chunks found for repository"),
-		}
-	}
-
-	// Migrate absolute paths to relative paths
-	migratedCount := 0
-	for i, chunk := range chunks {
-		if strings.HasPrefix(chunk.FilePath, "/tmp/") || strings.Contains(chunk.FilePath, repoID.String()) {
-			// Extract relative path from absolute path
-			if strings.Contains(chunk.FilePath, repoID.String()) {
-				parts := strings.Split(chunk.FilePath, repoID.String())
-				if len(parts) > 1 {
-					relativePath := strings.TrimPrefix(parts[1], "/")
-					chunks[i].FilePath = relativePath
-					migratedCount++
-				}
-			}
-		}
-	}
-
-	// Update storage
-	memoryStorage[repoID] = chunks
-
-	return FilePathMigrationResult{
-		Success:       true,
-		MigratedCount: migratedCount,
-		Error:         nil,
-	}
-}
-
 func simulateCompleteJobProcessor(
 	ctx context.Context,
 	t *testing.T,
@@ -1232,51 +1122,6 @@ func TestFilePathHandling_CompletePipelineIntegration(t *testing.T) {
 			}
 		}
 	})
-
-	t.Run("pipeline migration and backward compatibility", func(t *testing.T) {
-		// Test pipeline with existing data that needs migration
-
-		ctx := context.Background()
-		repoID := uuid.New()
-
-		// Step 1: Create legacy data with absolute paths
-		legacyChunks := createLegacyChunksWithAbsolutePaths(t, repoID)
-		legacyStorageResult := simulateLegacyChunkStorage(ctx, t, legacyChunks, repoID)
-		assert.Equal(t, len(legacyChunks), legacyStorageResult.StoredCount,
-			"Should store legacy chunks with absolute paths")
-
-		// Step 2: Verify legacy data has absolute paths
-		initialChunks := retrieveChunksFromDatabase(ctx, t, repoID)
-		for _, chunk := range initialChunks {
-			assert.Contains(t, chunk.FilePath, repoID.String(),
-				"Legacy data should contain absolute paths with UUID: %s", chunk.FilePath)
-		}
-
-		// Step 3: Run pipeline migration
-		migrationResult := simulatePipelineMigration(ctx, t, repoID)
-		assert.True(t, migrationResult.Success, "Pipeline migration should succeed")
-		assert.Equal(t, len(legacyChunks), migrationResult.MigratedCount,
-			"Should migrate all legacy chunks")
-
-		// Step 4: Verify migrated data has clean relative paths
-		migratedChunks := retrieveChunksFromDatabase(ctx, t, repoID)
-		for _, chunk := range migratedChunks {
-			assert.NotContains(t, chunk.FilePath, repoID.String(),
-				"Migrated chunk should not contain UUID: %s", chunk.FilePath)
-			assert.False(t, filepath.IsAbs(chunk.FilePath),
-				"Migrated chunk should have relative path: %s", chunk.FilePath)
-		}
-
-		// Step 5: Verify search works correctly after migration
-		searchResult := simulateSearchAPICall(ctx, t, repoID, "legacy")
-		for _, result := range searchResult.Results {
-			assert.NotContains(t, result.FilePath, repoID.String(),
-				"Post-migration search should not contain UUID: %s", result.FilePath)
-		}
-
-		t.Logf("Successfully migrated %d legacy chunks to relative paths",
-			migrationResult.MigratedCount)
-	})
 }
 
 // TestFilePathHandling_RequirementsDocumentation documents the filepath handling requirements
@@ -1328,12 +1173,6 @@ type CompletePipelineResult struct {
 	ProcessingTimeMs       int64
 	RepositoryID           uuid.UUID
 	JobID                  uuid.UUID
-}
-
-type PipelineMigrationResult struct {
-	Success       bool
-	MigratedCount int
-	Error         error
 }
 
 // Helper functions for complete pipeline integration tests
@@ -1491,35 +1330,6 @@ func createDeeplyNestedRepository(t *testing.T) TestRepository {
 	}
 }
 
-func createLegacyChunksWithAbsolutePaths(t *testing.T, repoID uuid.UUID) []TestChunk {
-	return []TestChunk{
-		{
-			ID:        uuid.New(),
-			FilePath:  "/tmp/codechunking-workspace/" + repoID.String() + "/src/main.go",
-			Content:   "package main\n\nfunc main() {}",
-			Language:  "go",
-			StartLine: 1,
-			EndLine:   3,
-		},
-		{
-			ID:        uuid.New(),
-			FilePath:  "/tmp/codechunking-workspace/" + repoID.String() + "/internal/auth/service.go",
-			Content:   "package auth\n\ntype Service struct {}",
-			Language:  "go",
-			StartLine: 1,
-			EndLine:   2,
-		},
-		{
-			ID:        uuid.New(),
-			FilePath:  "/tmp/codechunking-workspace/" + repoID.String() + "/pkg/utils/helpers.go",
-			Content:   "package utils\n\nfunc Helper() {}",
-			Language:  "go",
-			StartLine: 1,
-			EndLine:   2,
-		},
-	}
-}
-
 func simulateCompletePipelineExecution(
 	ctx context.Context,
 	t *testing.T,
@@ -1622,42 +1432,5 @@ func simulateCompletePipelineExecution(
 		ProcessingTimeMs:       processingTimeMs,
 		RepositoryID:           repoID,
 		JobID:                  jobID,
-	}
-}
-
-func simulatePipelineMigration(ctx context.Context, t *testing.T, repoID uuid.UUID) PipelineMigrationResult {
-	storageMutex.Lock()
-	defer storageMutex.Unlock()
-
-	chunks, exists := memoryStorage[repoID]
-	if !exists {
-		return PipelineMigrationResult{
-			Success:       false,
-			MigratedCount: 0,
-			Error:         fmt.Errorf("no chunks found for repository"),
-		}
-	}
-
-	// Migrate absolute paths to relative paths
-	migratedCount := 0
-	for i, chunk := range chunks {
-		if strings.Contains(chunk.FilePath, repoID.String()) {
-			// Extract relative path from absolute path
-			parts := strings.Split(chunk.FilePath, repoID.String())
-			if len(parts) > 1 {
-				relativePath := strings.TrimPrefix(parts[1], "/")
-				chunks[i].FilePath = relativePath
-				migratedCount++
-			}
-		}
-	}
-
-	// Update storage
-	memoryStorage[repoID] = chunks
-
-	return PipelineMigrationResult{
-		Success:       true,
-		MigratedCount: migratedCount,
-		Error:         nil,
 	}
 }

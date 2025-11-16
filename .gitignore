@@ -59,3 +59,10 @@ configs/*.override.yaml
 
 # Air (hot reload) temporary files
 tmp/
+
+# Development artifacts and notes
+*.bak
+processed.txt
+tests.txt
+test_removal_recommendations.md
+unimplemented_tests.md

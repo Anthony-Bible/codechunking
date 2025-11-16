@@ -163,11 +163,24 @@ clean:
 	rm -rf tmp/
 	@echo "Cleaned build artifacts"
 
+## generate-openapi: Generate OpenAPI specification from code
+generate-openapi:
+	@command -v swag >/dev/null 2>&1 || { echo "swag is required but not installed. Install with: go install github.com/swaggo/swag/cmd/swag@latest"; exit 1; }
+	swag init --dir . --output docs --outputTypes yaml --generalInfo main.go --exclude "internal/adapter/outbound/treesitter/testdata"
+	@echo "OpenAPI spec generated at docs/swagger.yaml"
+
+## validate-openapi: Validate OpenAPI specification
+validate-openapi: generate-openapi
+	@echo "Comparing generated spec with api/openapi.yaml..."
+	@echo "Generated spec location: docs/swagger.yaml"
+	@echo "Current spec location: api/openapi.yaml"
+
 ## install-tools: Install development tools
 install-tools:
 	go install github.com/mattn/goreman@latest
 	go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 	go install github.com/spf13/cobra-cli@latest
+	go install github.com/swaggo/swag/cmd/swag@latest
 	@echo "Development tools installed"
 
 ## version: Show version information

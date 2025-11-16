@@ -1,11 +1,11 @@
-package service
+package retry
 
 import (
 	"codechunking/internal/application/common/slogger"
 	"context"
-	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -32,17 +32,41 @@ func DefaultRetryConfig() *RetryConfig {
 // RetryableOperation represents an operation that can be retried.
 type RetryableOperation func(ctx context.Context) error
 
-// RetryExecutor handles retry logic with exponential backoff.
-type RetryExecutor struct {
-	config *RetryConfig
+// RetryableChecker is an interface for custom retry logic.
+// Implement this to provide custom error classification.
+type RetryableChecker interface {
+	IsRetryable(err error) bool
 }
 
-// NewRetryExecutor creates a new retry executor.
+// RetryExecutor handles retry logic with exponential backoff.
+type RetryExecutor struct {
+	config           *RetryConfig
+	retryableChecker RetryableChecker
+}
+
+// NewRetryExecutor creates a new retry executor with default retry behavior.
 func NewRetryExecutor(config *RetryConfig) *RetryExecutor {
 	if config == nil {
 		config = DefaultRetryConfig()
 	}
-	return &RetryExecutor{config: config}
+	return &RetryExecutor{
+		config:           config,
+		retryableChecker: &DefaultRetryableChecker{},
+	}
+}
+
+// NewRetryExecutorWithChecker creates a new retry executor with custom retry behavior.
+func NewRetryExecutorWithChecker(config *RetryConfig, checker RetryableChecker) *RetryExecutor {
+	if config == nil {
+		config = DefaultRetryConfig()
+	}
+	if checker == nil {
+		checker = &DefaultRetryableChecker{}
+	}
+	return &RetryExecutor{
+		config:           config,
+		retryableChecker: checker,
+	}
 }
 
 // Execute executes an operation with retry logic.
@@ -79,7 +103,7 @@ func (r *RetryExecutor) Execute(ctx context.Context, operation RetryableOperatio
 		lastErr = err
 
 		// Check if error is retryable
-		if !r.isRetryableError(err) {
+		if !r.retryableChecker.IsRetryable(err) {
 			slogger.Debug(ctx, "Error is not retryable", slogger.Fields{
 				"error":   err.Error(),
 				"attempt": attempt + 1,
@@ -94,11 +118,7 @@ func (r *RetryExecutor) Execute(ctx context.Context, operation RetryableOperatio
 		))
 	}
 
-	return &MigrationError{
-		Type:    ErrorTypeRetry,
-		Message: fmt.Sprintf("operation failed after %d retries", r.config.MaxRetries),
-		Cause:   lastErr,
-	}
+	return fmt.Errorf("operation failed after %d retries: %w", r.config.MaxRetries, lastErr)
 }
 
 // calculateDelay calculates the delay for a given attempt using exponential backoff.
@@ -119,30 +139,32 @@ func (r *RetryExecutor) calculateDelay(attempt int) time.Duration {
 	return time.Duration(delay)
 }
 
-// isRetryableError checks if an error should be retried.
-func (r *RetryExecutor) isRetryableError(err error) bool {
-	migrationErr := &MigrationError{}
-	if errors.As(err, &migrationErr) {
-		return migrationErr.IsRetryable()
+// DefaultRetryableChecker implements basic retry logic for common transient errors.
+type DefaultRetryableChecker struct{}
+
+// IsRetryable checks if an error should be retried based on common patterns.
+func (d *DefaultRetryableChecker) IsRetryable(err error) bool {
+	if err == nil {
+		return false
 	}
 
-	// For non-migration errors, use some heuristics
-	errStr := err.Error()
+	errStr := strings.ToLower(err.Error())
 
 	// Database connection errors
-	if contains(errStr, []string{
+	if containsAny(errStr, []string{
 		"connection refused",
 		"connection reset",
 		"timeout",
 		"deadlock",
 		"connection lost",
 		"too many connections",
+		"database is locked",
 	}) {
 		return true
 	}
 
 	// Temporary errors
-	if contains(errStr, []string{
+	if containsAny(errStr, []string{
 		"temporary",
 		"try again",
 		"resource temporarily unavailable",
@@ -150,19 +172,23 @@ func (r *RetryExecutor) isRetryableError(err error) bool {
 		return true
 	}
 
+	// Network errors
+	if containsAny(errStr, []string{
+		"network is unreachable",
+		"no route to host",
+		"connection timed out",
+	}) {
+		return true
+	}
+
 	return false
 }
 
-// contains checks if the error string contains any of the substrings.
-func contains(s string, substrings []string) bool {
+// containsAny checks if the string contains any of the substrings.
+func containsAny(s string, substrings []string) bool {
 	for _, substr := range substrings {
-		if len(substr) > 0 && len(s) >= len(substr) {
-			// Simple substring check
-			for i := 0; i <= len(s)-len(substr); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
-				}
-			}
+		if strings.Contains(s, substr) {
+			return true
 		}
 	}
 	return false
@@ -177,5 +203,16 @@ func WithRetry(ctx context.Context, operation RetryableOperation) error {
 // WithRetryConfig executes a function with custom retry configuration.
 func WithRetryConfig(ctx context.Context, config *RetryConfig, operation RetryableOperation) error {
 	executor := NewRetryExecutor(config)
+	return executor.Execute(ctx, operation)
+}
+
+// WithRetryAndChecker executes a function with custom retry configuration and checker.
+func WithRetryAndChecker(
+	ctx context.Context,
+	config *RetryConfig,
+	checker RetryableChecker,
+	operation RetryableOperation,
+) error {
+	executor := NewRetryExecutorWithChecker(config, checker)
 	return executor.Execute(ctx, operation)
 }

@@ -163,6 +163,12 @@ func (lfc *LargeFunctionChunker) ChunkCode(
 		if err != nil {
 			return nil, fmt.Errorf("failed to process chunk %s: %w", chunk.Name, err)
 		}
+
+		// Add overlap between split chunks if configured and multiple chunks were created
+		if config.OverlapSize > 0 && len(chunksToAdd) > 1 {
+			lfc.addSplitChunkOverlap(ctx, chunksToAdd, config)
+		}
+
 		enhancedChunks = append(enhancedChunks, chunksToAdd...)
 
 		slogger.Debug(ctx, "Function processing completed", slogger.Fields{
@@ -462,53 +468,129 @@ func (lfc *LargeFunctionChunker) handleRemainingContent(
 		}
 	}
 
+	// Extract remaining content if any
+	var remainingContent string
 	if startIdx < len(content) {
-		remainingContent := content[startIdx:]
+		remainingContent = content[startIdx:]
+	}
 
-		// If remaining content is large, split it by size as well
-		maxChunkSize := config.MaxChunkSize
-		if maxChunkSize == 0 {
-			maxChunkSize = lfc.options.OptimalThreshold
-		}
+	// Process remaining content if it exists
+	if remainingContent == "" {
+		return chunks
+	}
 
-		if len(remainingContent) > maxChunkSize {
-			// Split remaining content by size
-			remainingChunkData := outbound.SemanticCodeChunk{
-				Name:          originalChunk.Name + "_remaining",
-				Type:          originalChunk.Type,
-				Language:      originalChunk.Language,
-				Content:       remainingContent,
-				StartByte:     lfc.safeIntToUint32(startIdx),
-				EndByte:       lfc.safeIntToUint32(len(content)),
-				StartPosition: originalChunk.StartPosition,
-				EndPosition:   originalChunk.EndPosition,
-				Documentation: originalChunk.Documentation,
-			}
+	// Process remaining content
+	chunkSize := lfc.getEffectiveChunkSize(config)
+	if lfc.shouldSplitBySize(remainingContent, chunkSize) {
+		return lfc.processLargeRemainingContent(
+			ctx,
+			originalChunk,
+			content,
+			startIdx,
+			validBoundaries,
+			contextElements,
+			config,
+			chunks,
+			remainingContent,
+		)
+	}
 
-			splitRemaining, err := lfc.splitBySize(ctx, remainingChunkData, config)
-			if err != nil {
-				// Fallback to single chunk if split fails
-				preservedContent := lfc.preserveContextInSplitFunctions(remainingContent, contextElements, false)
-				chunk := lfc.createEnhancedChunkFromSplit(
-					ctx, originalChunk, preservedContent,
-					lfc.safeIntToUint32(startIdx), lfc.safeIntToUint32(len(content)), len(validBoundaries), config,
-				)
-				chunks = append(chunks, *chunk)
-			} else {
-				chunks = append(chunks, splitRemaining...)
-			}
-		} else {
-			// Small remaining content, add as single chunk
-			preservedContent := lfc.preserveContextInSplitFunctions(remainingContent, contextElements, false)
-			chunk := lfc.createEnhancedChunkFromSplit(
-				ctx, originalChunk, preservedContent,
-				lfc.safeIntToUint32(startIdx), lfc.safeIntToUint32(len(content)), len(validBoundaries), config,
-			)
-			chunks = append(chunks, *chunk)
-		}
+	// Add small remaining content as single chunk
+	chunk := lfc.createRemainingContentChunk(
+		ctx,
+		originalChunk,
+		content,
+		startIdx,
+		validBoundaries,
+		contextElements,
+		config,
+		remainingContent,
+	)
+	chunks = append(chunks, *chunk)
+
+	return chunks
+}
+
+// getEffectiveChunkSize returns the effective chunk size based on config and options.
+func (lfc *LargeFunctionChunker) getEffectiveChunkSize(config outbound.ChunkingConfiguration) int {
+	maxChunkSize := config.MaxChunkSize
+	if maxChunkSize == 0 {
+		maxChunkSize = lfc.options.OptimalThreshold
+	}
+	return maxChunkSize
+}
+
+// shouldSplitBySize determines if content should be split based on its size vs chunk size.
+func (lfc *LargeFunctionChunker) shouldSplitBySize(content string, chunkSize int) bool {
+	return len(content) > chunkSize
+}
+
+// processLargeRemainingContent handles large remaining content by attempting to split it.
+func (lfc *LargeFunctionChunker) processLargeRemainingContent(
+	ctx context.Context,
+	originalChunk outbound.SemanticCodeChunk,
+	content string,
+	startIdx int,
+	validBoundaries []SemanticBoundary,
+	contextElements []ContextElement,
+	config outbound.ChunkingConfiguration,
+	chunks []outbound.EnhancedCodeChunk,
+	remainingContent string,
+) []outbound.EnhancedCodeChunk {
+	remainingChunkData := outbound.SemanticCodeChunk{
+		Name:          originalChunk.Name + "_remaining",
+		Type:          originalChunk.Type,
+		Language:      originalChunk.Language,
+		Content:       remainingContent,
+		StartByte:     lfc.safeIntToUint32(startIdx),
+		EndByte:       lfc.safeIntToUint32(len(content)),
+		StartPosition: originalChunk.StartPosition,
+		EndPosition:   originalChunk.EndPosition,
+		Documentation: originalChunk.Documentation,
+	}
+
+	splitRemaining, err := lfc.splitBySize(ctx, remainingChunkData, config)
+	if err != nil {
+		// Fallback to single chunk if split fails
+		chunk := lfc.createRemainingContentChunk(
+			ctx,
+			originalChunk,
+			content,
+			startIdx,
+			validBoundaries,
+			contextElements,
+			config,
+			remainingContent,
+		)
+		chunks = append(chunks, *chunk)
+	} else {
+		chunks = append(chunks, splitRemaining...)
 	}
 
 	return chunks
+}
+
+// createRemainingContentChunk creates a chunk from remaining content with preserved context.
+func (lfc *LargeFunctionChunker) createRemainingContentChunk(
+	ctx context.Context,
+	originalChunk outbound.SemanticCodeChunk,
+	content string,
+	startIdx int,
+	validBoundaries []SemanticBoundary,
+	contextElements []ContextElement,
+	config outbound.ChunkingConfiguration,
+	remainingContent string,
+) *outbound.EnhancedCodeChunk {
+	preservedContent := lfc.preserveContextInSplitFunctions(remainingContent, contextElements, false)
+	return lfc.createEnhancedChunkFromSplit(
+		ctx,
+		originalChunk,
+		preservedContent,
+		lfc.safeIntToUint32(startIdx),
+		lfc.safeIntToUint32(len(content)),
+		len(validBoundaries),
+		config,
+	)
 }
 
 // safeIntToUint32 safely converts int to uint32 with bounds checking.
@@ -736,6 +818,80 @@ func (lfc *LargeFunctionChunker) calculateComplexityScore(chunk outbound.Enhance
 		complexityFactor = 1.0
 	}
 	return complexityFactor * 0.5 // Scale to reasonable complexity
+}
+
+// addSplitChunkOverlap adds semantic overlap context between split chunks from a large function.
+// This helps maintain continuity and context across split boundaries.
+func (lfc *LargeFunctionChunker) addSplitChunkOverlap(
+	ctx context.Context,
+	chunks []outbound.EnhancedCodeChunk,
+	config outbound.ChunkingConfiguration,
+) {
+	if len(chunks) <= 1 {
+		return
+	}
+
+	// Add overlap from previous chunk to each subsequent chunk
+	for i := 1; i < len(chunks); i++ {
+		previousChunk := &chunks[i-1]
+		currentChunk := &chunks[i]
+
+		// Extract ending context from previous chunk
+		overlapContext := lfc.extractSplitOverlapContext(previousChunk, config.OverlapSize)
+		if overlapContext == "" {
+			continue
+		}
+
+		// Add to preserved context as preceding context
+		if currentChunk.PreservedContext.PrecedingContext == "" {
+			currentChunk.PreservedContext.PrecedingContext = overlapContext
+		} else {
+			currentChunk.PreservedContext.PrecedingContext = overlapContext + "\n" + currentChunk.PreservedContext.PrecedingContext
+		}
+
+		slogger.Debug(ctx, "Added split chunk overlap", slogger.Fields{
+			"chunk_id":     currentChunk.ID,
+			"overlap_size": len(overlapContext),
+		})
+	}
+}
+
+// extractSplitOverlapContext extracts the ending portion of a chunk for overlap context.
+// For split functions, we want to preserve the last few statements/lines as context.
+func (lfc *LargeFunctionChunker) extractSplitOverlapContext(
+	chunk *outbound.EnhancedCodeChunk,
+	maxSize int,
+) string {
+	if chunk == nil || maxSize <= 0 || chunk.Content == "" {
+		return ""
+	}
+
+	content := chunk.Content
+	lines := strings.Split(content, "\n")
+
+	// Extract last N lines that fit within maxSize
+	var overlapLines []string
+	currentSize := 0
+
+	// Work backwards from the end
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		lineSize := len(line) + 1 // +1 for newline
+
+		if currentSize+lineSize > maxSize {
+			break
+		}
+
+		// Prepend to maintain order
+		overlapLines = append([]string{line}, overlapLines...)
+		currentSize += lineSize
+	}
+
+	if len(overlapLines) == 0 {
+		return ""
+	}
+
+	return strings.Join(overlapLines, "\n")
 }
 
 // Mock implementation for basic testing.

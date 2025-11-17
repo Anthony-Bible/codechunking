@@ -1,7 +1,40 @@
+// Package worker provides job processing capabilities for the code chunking system.
+//
+// # Idempotent Job Processing
+//
+// The job processor implements idempotent message handling to safely handle NATS message
+// redelivery scenarios. This is critical for reliability in distributed systems where
+// messages may be redelivered due to:
+//   - Worker crashes or restarts
+//   - Network timeouts or connection issues
+//   - NATS server redelivery policies
+//   - Manual reprocessing of failed jobs
+//
+// # Idempotency Strategy
+//
+// The processor checks repository status before processing to determine the appropriate action:
+//
+//   - Completed: Skip reprocessing (idempotent - work already done)
+//   - Archived: Skip processing (repository no longer active)
+//   - Failed: Reset to pending and retry (allows recovery from failures)
+//   - Cloning/Processing: Resume from current state (interrupted job recovery)
+//   - Pending: Continue with normal processing flow
+//
+// # State Transitions
+//
+// Normal flow: pending → cloning → processing → completed
+// Retry flow: failed → pending → cloning → processing → completed
+// Interrupted flow: Resume from cloning or processing state
+//
+// # Thread Safety
+//
+// The processor uses mutexes and atomic operations to safely handle concurrent job execution.
+// The semaphore ensures that the maximum number of concurrent jobs is not exceeded.
 package worker
 
 import (
 	"codechunking/internal/application/common/slogger"
+	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/messaging"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/inbound"
@@ -131,7 +164,11 @@ func (p *DefaultJobProcessor) ProcessJob(ctx context.Context, message messaging.
 		return err
 	}
 
-	p.finalizeJobCompletion(jobCtx, message, execution, chunks)
+	// If chunks is nil, job was skipped (completed/archived state)
+	if chunks != nil {
+		p.finalizeJobCompletion(jobCtx, message, execution, chunks)
+	}
+
 	return nil
 }
 
@@ -176,20 +213,40 @@ func (p *DefaultJobProcessor) createJobExecution(message messaging.EnhancedIndex
 }
 
 // executeJobPipeline executes the main job processing pipeline.
+// It implements idempotent processing by checking repository status before proceeding.
+// Returns nil chunks if the repository should be skipped (completed/archived).
 func (p *DefaultJobProcessor) executeJobPipeline(
 	ctx context.Context,
 	message messaging.EnhancedIndexingJobMessage,
 	workspacePath string,
 	execution *JobExecution,
 ) ([]outbound.CodeChunk, error) {
+	// Fetch repository to check current status for idempotent processing
+	repo, err := p.repositoryRepo.FindByID(ctx, message.RepositoryID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch repository for status check: %w", err)
+	}
+
+	// Handle repository status - this enables idempotent message redelivery
+	shouldSkip, err := p.handleRepositoryStatus(ctx, repo, message.RepositoryID)
+	if err != nil {
+		return nil, err
+	}
+	if shouldSkip {
+		return nil, nil
+	}
+
 	if err := p.setupWorkspace(workspacePath); err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
 		p.markRepositoryFailed(ctx, message.RepositoryID)
 		return nil, err
 	}
 
-	if err := p.transitionToCloning(ctx, message.RepositoryID, message.MessageID); err != nil {
-		return nil, err
+	// Transition to cloning if not already in cloning or processing state
+	if p.shouldTransitionFrom(repo.Status(), valueobject.RepositoryStatusCloning) {
+		if err := p.transitionToCloning(ctx, message.RepositoryID, message.MessageID); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := p.cloneRepository(ctx, message, workspacePath); err != nil {
@@ -198,8 +255,11 @@ func (p *DefaultJobProcessor) executeJobPipeline(
 		return nil, err
 	}
 
-	if err := p.transitionToProcessing(ctx, message.RepositoryID, message.MessageID); err != nil {
-		return nil, err
+	// Transition to processing if not already in processing state
+	if p.shouldTransitionFrom(repo.Status(), valueobject.RepositoryStatusProcessing) {
+		if err := p.transitionToProcessing(ctx, message.RepositoryID, message.MessageID); err != nil {
+			return nil, err
+		}
 	}
 
 	chunkSize := p.getChunkSize(message)
@@ -221,16 +281,138 @@ func (p *DefaultJobProcessor) executeJobPipeline(
 	return chunks, nil
 }
 
+// shouldTransitionFrom determines if a repository should transition to a target status.
+// It returns true if the current status is different from the target status AND
+// the repository is not already in a more advanced state.
+// For example:
+// - shouldTransitionFrom(pending, cloning) = true (should transition)
+// - shouldTransitionFrom(cloning, cloning) = false (already there)
+// - shouldTransitionFrom(processing, cloning) = false (already past cloning).
+func (p *DefaultJobProcessor) shouldTransitionFrom(
+	currentStatus valueobject.RepositoryStatus,
+	targetStatus valueobject.RepositoryStatus,
+) bool {
+	// Don't transition if already at target status
+	if currentStatus == targetStatus {
+		return false
+	}
+
+	// Special case: don't transition to cloning if already processing
+	// (processing is further along than cloning)
+	if targetStatus == valueobject.RepositoryStatusCloning &&
+		currentStatus == valueobject.RepositoryStatusProcessing {
+		return false
+	}
+
+	return true
+}
+
+// handleRepositoryStatus checks the repository status and determines if processing should continue.
+// It implements idempotent behavior for NATS message redelivery:
+// - Completed/Archived: Skip reprocessing (idempotent)
+// - Failed: Reset to pending for retry
+// - Cloning/Processing: Resume from current state (interrupted job)
+// - Pending: Continue with normal processing
+// Returns (shouldSkip=true, nil) if processing should be skipped.
+// Returns (shouldSkip=false, nil) if processing should continue.
+// Returns (_, error) if an error occurred during status handling.
+func (p *DefaultJobProcessor) handleRepositoryStatus(
+	ctx context.Context,
+	repo *entity.Repository,
+	repositoryID uuid.UUID,
+) (bool, error) {
+	currentStatus := repo.Status()
+
+	switch currentStatus {
+	case valueobject.RepositoryStatusCompleted:
+		// Idempotent: repository already successfully indexed, skip reprocessing
+		slogger.Info(ctx, "Repository already completed, skipping reprocessing", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"status":        currentStatus.String(),
+		})
+		return true, nil
+
+	case valueobject.RepositoryStatusArchived:
+		// Archived: skip processing for archived repositories
+		slogger.Info(ctx, "Repository is archived, skipping processing", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"status":        currentStatus.String(),
+		})
+		return true, nil
+
+	case valueobject.RepositoryStatusFailed:
+		// Retry scenario: reset to pending before retrying
+		if err := p.updateRepositoryStatus(ctx, repositoryID, "pending"); err != nil {
+			return false, fmt.Errorf(
+				"failed to reset failed repository to pending for retry (status=%s): %w",
+				currentStatus.String(),
+				err,
+			)
+		}
+		slogger.Info(ctx, "Reset failed repository to pending for retry", slogger.Fields{
+			"repository_id":   repositoryID.String(),
+			"previous_status": currentStatus.String(),
+			"new_status":      "pending",
+		})
+		return false, nil
+
+	case valueobject.RepositoryStatusCloning, valueobject.RepositoryStatusProcessing:
+		// Interrupted job scenario: resume from current state
+		slogger.Info(ctx, "Resuming interrupted job from current state", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"status":        currentStatus.String(),
+		})
+		return false, nil
+
+	case valueobject.RepositoryStatusPending:
+		// Normal flow: continue with processing
+		slogger.Debug(ctx, "Repository in pending state, starting normal processing", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"status":        currentStatus.String(),
+		})
+		return false, nil
+
+	default:
+		// Unknown status: log warning but allow processing to continue
+		slogger.Warn(ctx, "Repository has unknown status, attempting to process", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"status":        currentStatus.String(),
+		})
+		return false, nil
+	}
+}
+
+// handleTransitionFailure handles common error handling when a status transition fails.
+// It logs the error, updates the job status to failed, and marks the repository as failed
+// (only if it's not already in failed state to avoid redundant operations).
+func (p *DefaultJobProcessor) handleTransitionFailure(
+	ctx context.Context,
+	repoID uuid.UUID,
+	jobID string,
+	targetStatus string,
+	err error,
+) error {
+	slogger.Error(ctx, "Failed to update repository status", slogger.Fields{
+		"repository_id": repoID.String(),
+		"target_status": targetStatus,
+		"error":         err.Error(),
+	})
+
+	p.updateJobStatus(jobID, jobStatusFailed)
+
+	// Avoid redundant database fetch if repository is already failed
+	repo, fetchErr := p.repositoryRepo.FindByID(ctx, repoID)
+	if fetchErr == nil && repo != nil && repo.Status() != valueobject.RepositoryStatusFailed {
+		p.markRepositoryFailed(ctx, repoID)
+	}
+
+	return fmt.Errorf("failed to update repository status to %s: %w", targetStatus, err)
+}
+
 // transitionToCloning updates repository status to cloning.
 func (p *DefaultJobProcessor) transitionToCloning(ctx context.Context, repoID uuid.UUID, jobID string) error {
 	if err := p.updateRepositoryStatus(ctx, repoID, "cloning"); err != nil {
-		slogger.Error(ctx, "Failed to update repository status to cloning", slogger.Fields{
-			"repository_id": repoID.String(),
-			"error":         err.Error(),
-		})
-		p.updateJobStatus(jobID, jobStatusFailed)
-		p.markRepositoryFailed(ctx, repoID)
-		return fmt.Errorf("failed to update repository status to cloning: %w", err)
+		return p.handleTransitionFailure(ctx, repoID, jobID, "cloning", err)
 	}
 	return nil
 }
@@ -238,13 +420,7 @@ func (p *DefaultJobProcessor) transitionToCloning(ctx context.Context, repoID uu
 // transitionToProcessing updates repository status to processing.
 func (p *DefaultJobProcessor) transitionToProcessing(ctx context.Context, repoID uuid.UUID, jobID string) error {
 	if err := p.updateRepositoryStatus(ctx, repoID, "processing"); err != nil {
-		slogger.Error(ctx, "Failed to update repository status to processing", slogger.Fields{
-			"repository_id": repoID.String(),
-			"error":         err.Error(),
-		})
-		p.updateJobStatus(jobID, jobStatusFailed)
-		p.markRepositoryFailed(ctx, repoID)
-		return fmt.Errorf("failed to update repository status to processing: %w", err)
+		return p.handleTransitionFailure(ctx, repoID, jobID, "processing", err)
 	}
 	return nil
 }

@@ -2035,3 +2035,114 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_IdempotentRedelivery_
 	// Verify embedding generation was called only once (first delivery)
 	mockEmbedding.AssertNumberOfCalls(suite.T(), "GenerateEmbedding", 1)
 }
+
+// TestExecuteJobPipeline_RepositoryNotFound_ReturnsError tests the scenario where
+// FindByID returns (nil, nil) - indicating the repository does not exist in the database.
+// This test reproduces the production panic that occurs when handleRepositoryStatus
+// attempts to call repo.Status() on a nil repository pointer.
+//
+// PRODUCTION BUG:
+// - Line 225: repo, err := p.repositoryRepo.FindByID(ctx, message.RepositoryID)
+// - Line 226-228: Only checks if err != nil
+// - Line 231: Calls handleRepositoryStatus(ctx, repo, ...) where repo is nil
+// - Line 324: handleRepositoryStatus calls repo.Status() → PANIC!
+//
+// EXPECTED BEHAVIOR:
+// The job processor should detect the nil repository and return a descriptive error
+// instead of panicking. The error should clearly indicate that the repository was not found.
+//
+// TEST SPECIFICATION:
+// 1. Setup: Mock FindByID to return (nil, nil) - simulating repository not in database
+// 2. Execute: Call ProcessJob with a valid message containing repository ID
+// 3. Assert: Should return error (not panic) with message "repository not found"
+// 4. Assert: No git, parsing, or embedding operations should be attempted
+//
+// This test will FAIL (panic) until the bug is fixed by adding a nil check:
+//
+//	if repo == nil {
+//	    return nil, fmt.Errorf("repository not found: %s", message.RepositoryID.String())
+//	}
+func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryNotFound_ReturnsError() {
+	// Setup: Create a valid repository ID and message
+	repoID := uuid.New()
+
+	// Setup mock repository repository to return (nil, nil) - repository not found
+	// This simulates the case where FindByID successfully queries the database
+	// but finds no matching repository record
+	mockRepoRepo := &MockRepositoryRepository{}
+	mockRepoRepo.On("FindByID", mock.Anything, repoID).Return(nil, nil)
+
+	// Setup other mocks (should not be called since we fail early)
+	mockGitClient := &MockEnhancedGitClient{}
+	mockCodeParser := &MockCodeParser{}
+	mockEmbedding := &MockEmbeddingService{}
+	mockChunkStorage := &MockChunkStorageRepository{}
+
+	// Create processor with standard config
+	config := JobProcessorConfig{
+		WorkspaceDir:      "/tmp/workspace-notfound-test",
+		MaxConcurrentJobs: 5,
+		JobTimeout:        5 * time.Minute,
+		MaxMemoryMB:       0, // Disable limits
+		MaxDiskUsageMB:    0,
+		CleanupInterval:   1 * time.Hour,
+		RetryAttempts:     3,
+		RetryBackoff:      5 * time.Second,
+	}
+
+	processor := NewDefaultJobProcessor(
+		config,
+		&MockIndexingJobRepository{},
+		mockRepoRepo,
+		mockGitClient,
+		mockCodeParser,
+		mockEmbedding,
+		mockChunkStorage,
+	).(*DefaultJobProcessor)
+
+	// Create message with repository ID that doesn't exist in database
+	message := messaging.EnhancedIndexingJobMessage{
+		MessageID:     "repository-not-found-test",
+		RepositoryID:  repoID,
+		RepositoryURL: "https://github.com/example/nonexistent-repo.git",
+	}
+
+	ctx := context.Background()
+
+	// Execute: This should return an error (not panic)
+	err := processor.ProcessJob(ctx, message)
+
+	// ASSERTION: Should return a descriptive error
+	// Currently this will PANIC with:
+	// "panic: runtime error: invalid memory address or nil pointer dereference"
+	// at line 324: repo.Status() in handleRepositoryStatus
+	suite.Require().Error(err, "ProcessJob should return error when repository not found")
+	suite.Require().ErrorContains(err, "repository not found",
+		"Error message should clearly indicate repository was not found")
+
+	// Verify FindByID was called to check for repository
+	mockRepoRepo.AssertCalled(suite.T(), "FindByID", mock.Anything, repoID)
+
+	// Verify no git operations were attempted (fail fast on missing repository)
+	mockGitClient.AssertNotCalled(suite.T(), "Clone", mock.Anything, mock.Anything, mock.Anything)
+	mockGitClient.AssertNotCalled(
+		suite.T(),
+		"CloneWithOptions",
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+		mock.Anything,
+	)
+
+	// Verify no code parsing was attempted
+	mockCodeParser.AssertNotCalled(suite.T(), "ParseDirectory", mock.Anything, mock.Anything, mock.Anything)
+
+	// Verify no embedding generation was attempted
+	mockEmbedding.AssertNotCalled(suite.T(), "GenerateEmbedding", mock.Anything, mock.Anything, mock.Anything)
+
+	// Verify no chunk storage was attempted
+	mockChunkStorage.AssertNotCalled(suite.T(), "SaveChunkWithEmbedding", mock.Anything, mock.Anything, mock.Anything)
+
+	// Verify repository was not updated (no state transitions on non-existent repository)
+	mockRepoRepo.AssertNotCalled(suite.T(), "Update", mock.Anything, mock.Anything)
+}

@@ -226,6 +226,9 @@ func (p *DefaultJobProcessor) executeJobPipeline(
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch repository for status check: %w", err)
 	}
+	if repo == nil {
+		return nil, fmt.Errorf("repository not found: %s", message.RepositoryID.String())
+	}
 
 	// Handle repository status - this enables idempotent message redelivery
 	shouldSkip, err := p.handleRepositoryStatus(ctx, repo, message.RepositoryID)

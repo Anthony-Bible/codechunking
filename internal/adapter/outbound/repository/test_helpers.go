@@ -18,7 +18,7 @@ func setupTestDB(t *testing.T) *pgxpool.Pool {
 		Database: "codechunking",
 		Username: "dev",
 		Password: "dev",
-		Schema:   "public",
+		Schema:   "codechunking", // Changed from "public" to match pgvector extension schema
 	}
 	// This will fail because NewDatabaseConnection doesn't exist yet
 	pool, err := NewDatabaseConnection(config)

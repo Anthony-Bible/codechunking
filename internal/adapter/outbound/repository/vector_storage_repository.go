@@ -34,6 +34,82 @@ func NewPostgreSQLVectorStorageRepository(pool *pgxpool.Pool) *PostgreSQLVectorS
 	}
 }
 
+// buildInClause constructs a SQL IN clause with placeholders and appends values to args.
+// Returns the formatted IN clause string (e.g., "column IN ($2, $3, $4)").
+// This helper eliminates duplication in filter construction for repository IDs, languages, chunk types, etc.
+func buildInClause(columnName string, values []interface{}, args *[]interface{}, argIndex *int) string {
+	if len(values) == 0 {
+		return ""
+	}
+
+	placeholders := make([]string, len(values))
+	for i, value := range values {
+		placeholders[i] = fmt.Sprintf("$%d", *argIndex)
+		*args = append(*args, value)
+		*argIndex++
+	}
+
+	return fmt.Sprintf("%s IN (%s)", columnName, strings.Join(placeholders, ","))
+}
+
+// scanVectorSimilarityRow scans a single row from a vector similarity search query.
+// Handles both partitioned and non-partitioned table schemas.
+// The partitioned table includes metadata fields (language, chunk_type, file_path) for SQL-level filtering.
+func scanVectorSimilarityRow(rows pgx.Rows, usePartitionedTable bool) (*outbound.VectorSimilarityResult, error) {
+	var result outbound.VectorSimilarityResult
+	var deletedAt *time.Time
+	var vectorStr string
+	var err error
+
+	if usePartitionedTable {
+		// Partitioned table includes metadata fields for SQL-level filtering
+		err = rows.Scan(
+			&result.Embedding.ID,
+			&result.Embedding.ChunkID,
+			&result.Embedding.RepositoryID,
+			&vectorStr,
+			&result.Embedding.ModelVersion,
+			&result.Embedding.CreatedAt,
+			&deletedAt,
+			&result.Embedding.Language,  // Metadata for pgvector iterative scanning
+			&result.Embedding.ChunkType, // Metadata for pgvector iterative scanning
+			&result.Embedding.FilePath,  // Metadata for pgvector iterative scanning
+			&result.Similarity,
+			&result.Distance,
+			&result.Rank,
+		)
+	} else {
+		// Non-partitioned table (legacy schema without metadata)
+		err = rows.Scan(
+			&result.Embedding.ID,
+			&result.Embedding.ChunkID,
+			&result.Embedding.RepositoryID,
+			&vectorStr,
+			&result.Embedding.ModelVersion,
+			&result.Embedding.CreatedAt,
+			&deletedAt,
+			&result.Similarity,
+			&result.Distance,
+			&result.Rank,
+		)
+	}
+
+	if err != nil {
+		return nil, WrapError(err, "scan similarity search result")
+	}
+
+	// Parse the vector string back to float64 slice
+	vector, err := StringToVector(vectorStr)
+	if err != nil {
+		return nil, WrapError(err, "parse vector from similarity search")
+	}
+
+	result.Embedding.Embedding = vector
+	result.Embedding.DeletedAt = deletedAt
+
+	return &result, nil
+}
+
 // BulkInsertEmbeddings inserts multiple embeddings efficiently using batch operations.
 func (r *PostgreSQLVectorStorageRepository) BulkInsertEmbeddings(
 	ctx context.Context,
@@ -157,8 +233,11 @@ func (r *PostgreSQLVectorStorageRepository) processBatch(
 	var placeholders string
 
 	if options.UsePartitionedTable {
-		columns = "(id, chunk_id, repository_id, embedding, model_version, created_at)"
-		placeholders = "($1, $2, $3, $4, $5, $6)"
+		// Partitioned table includes metadata columns for SQL-level filtering.
+		// These enable pgvector 0.8.0+ iterative scanning to work effectively
+		// by allowing WHERE clause filters on language, chunk_type, and file_path.
+		columns = "(id, chunk_id, repository_id, embedding, model_version, created_at, language, chunk_type, file_path)"
+		placeholders = "($1, $2, $3, $4, $5, $6, $7, $8, $9)"
 	} else {
 		columns = "(id, chunk_id, embedding, model_version, created_at)"
 		placeholders = "($1, $2, $3, $4, $5)"
@@ -205,6 +284,9 @@ func (r *PostgreSQLVectorStorageRepository) processBatch(
 				vectorStr,
 				embedding.ModelVersion,
 				embedding.CreatedAt,
+				embedding.Language,  // Metadata field
+				embedding.ChunkType, // Metadata field
+				embedding.FilePath,  // Metadata field
 			}
 		} else {
 			args = []interface{}{
@@ -726,14 +808,42 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 
 	qi := GetQueryInterface(ctx, r.pool)
 
+	// Enable pgvector 0.8.0+ iterative scanning if requested
+	if options.IterativeScanMode != "" && options.IterativeScanMode != outbound.IterativeScanOff {
+		setCmd := fmt.Sprintf("SET LOCAL hnsw.iterative_scan = '%s'", options.IterativeScanMode)
+		_, err := qi.Exec(ctx, setCmd)
+		if err != nil {
+			// Log warning but continue - iterative scan is an optimization, not critical
+			slogger.Warn(ctx, "Failed to set iterative scan mode", slogger.Fields{
+				"mode":  string(options.IterativeScanMode),
+				"error": err.Error(),
+			})
+		}
+	}
+
+	// Metadata filtering strategy for pgvector 0.8.0+ iterative scanning:
+	//
+	// The partitioned table (embeddings_partitioned) includes denormalized metadata columns:
+	// - language: Programming language of the code chunk (e.g., "go", "python")
+	// - chunk_type: Type of chunk (e.g., "function", "class")
+	// - file_path: Path to the source file (used for extension filtering)
+	//
+	// These columns enable SQL-level WHERE clause filtering, which is critical for pgvector's
+	// iterative scanning optimization. Without SQL-level filtering, pgvector would scan the
+	// entire HNSW index before application-level filters could be applied, defeating the
+	// optimization's purpose.
+	//
+	// The legacy non-partitioned table (embeddings) doesn't have these columns and requires
+	// joining with code_chunks table for repository_id. It doesn't support metadata filtering
+	// at the SQL level.
 	tableName := "codechunking.embeddings e"
-	selectClause := "SELECT e.id, e.chunk_id, e.embedding, e.model_version, e.created_at, e.deleted_at"
+	selectClause := "SELECT e.id, e.chunk_id, c.repository_id, e.embedding, e.model_version, e.created_at, e.deleted_at"
 	joinClause := "JOIN codechunking.code_chunks c ON e.chunk_id = c.id"
 
 	if options.UsePartitionedTable {
 		tableName = "codechunking.embeddings_partitioned e"
-		selectClause = "SELECT e.id, e.chunk_id, e.repository_id, e.embedding, e.model_version, e.created_at, e.deleted_at"
-		joinClause = ""
+		selectClause = "SELECT e.id, e.chunk_id, e.repository_id, e.embedding, e.model_version, e.created_at, e.deleted_at, e.language, e.chunk_type, e.file_path"
+		joinClause = "" // No join needed - metadata is denormalized in the partitioned table
 	}
 
 	// Convert query vector to pgvector format
@@ -747,35 +857,70 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 	args := []interface{}{queryVectorStr}
 	argIndex := 2
 
+	// Repository ID filter - column name varies based on table type
 	if len(options.RepositoryIDs) > 0 {
-		placeholders := make([]string, len(options.RepositoryIDs))
-		for i, repoID := range options.RepositoryIDs {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
-			args = append(args, repoID)
-			argIndex++
+		repoIDsInterface := make([]interface{}, len(options.RepositoryIDs))
+		for i, id := range options.RepositoryIDs {
+			repoIDsInterface[i] = id
 		}
 
-		if options.UsePartitionedTable {
-			whereConditions = append(
-				whereConditions,
-				fmt.Sprintf("e.repository_id IN (%s)", strings.Join(placeholders, ",")),
-			)
-		} else {
-			whereConditions = append(whereConditions, fmt.Sprintf("c.repository_id IN (%s)", strings.Join(placeholders, ",")))
+		columnName := "e.repository_id"
+		if !options.UsePartitionedTable {
+			columnName = "c.repository_id"
+		}
+
+		if clause := buildInClause(columnName, repoIDsInterface, &args, &argIndex); clause != "" {
+			whereConditions = append(whereConditions, clause)
 		}
 	}
 
+	// Model version filter
 	if len(options.ModelVersions) > 0 {
-		placeholders := make([]string, len(options.ModelVersions))
-		for i, version := range options.ModelVersions {
-			placeholders[i] = fmt.Sprintf("$%d", argIndex)
-			args = append(args, version)
+		versionsInterface := make([]interface{}, len(options.ModelVersions))
+		for i, v := range options.ModelVersions {
+			versionsInterface[i] = v
+		}
+
+		if clause := buildInClause("e.model_version", versionsInterface, &args, &argIndex); clause != "" {
+			whereConditions = append(whereConditions, clause)
+		}
+	}
+
+	// Language filter (metadata filtering for pgvector iterative scanning)
+	if len(options.Languages) > 0 {
+		languagesInterface := make([]interface{}, len(options.Languages))
+		for i, lang := range options.Languages {
+			languagesInterface[i] = lang
+		}
+
+		if clause := buildInClause("e.language", languagesInterface, &args, &argIndex); clause != "" {
+			whereConditions = append(whereConditions, clause)
+		}
+	}
+
+	// Chunk type filter (metadata filtering for pgvector iterative scanning)
+	if len(options.ChunkTypes) > 0 {
+		chunkTypesInterface := make([]interface{}, len(options.ChunkTypes))
+		for i, ct := range options.ChunkTypes {
+			chunkTypesInterface[i] = ct
+		}
+
+		if clause := buildInClause("e.chunk_type", chunkTypesInterface, &args, &argIndex); clause != "" {
+			whereConditions = append(whereConditions, clause)
+		}
+	}
+
+	// File extension filter (using LIKE for suffix matching)
+	if len(options.FileExtensions) > 0 {
+		extConditions := make([]string, len(options.FileExtensions))
+		for i, ext := range options.FileExtensions {
+			extConditions[i] = fmt.Sprintf("e.file_path LIKE $%d", argIndex)
+			// Add wildcard for suffix matching (e.g., "%.go")
+			args = append(args, "%"+ext)
 			argIndex++
 		}
-		whereConditions = append(
-			whereConditions,
-			fmt.Sprintf("e.model_version IN (%s)", strings.Join(placeholders, ",")),
-		)
+		whereConditions = append(whereConditions,
+			fmt.Sprintf("(%s)", strings.Join(extConditions, " OR ")))
 	}
 
 	if options.MinSimilarity > 0 {
@@ -787,24 +932,20 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 
 	whereClause := strings.Join(whereConditions, " AND ")
 
-	var query string
-	if options.UsePartitionedTable {
-		query = fmt.Sprintf(`
-			%s, %s, %s, ROW_NUMBER() OVER (ORDER BY (1 - (e.embedding <=> $1::vector)) DESC) as rank
-			FROM %s
-			WHERE %s
-			ORDER BY (1 - (e.embedding <=> $1::vector)) DESC
-			LIMIT %d`,
-			selectClause, similarityClause, distanceClause, tableName, whereClause, options.MaxResults)
-	} else {
-		query = fmt.Sprintf(`
-			%s, %s, %s, ROW_NUMBER() OVER (ORDER BY (1 - (e.embedding <=> $1::vector)) DESC) as rank
-			FROM %s %s
-			WHERE %s
-			ORDER BY (1 - (e.embedding <=> $1::vector)) DESC
-			LIMIT %d`,
-			selectClause, similarityClause, distanceClause, tableName, joinClause, whereClause, options.MaxResults)
+	// Build the FROM clause - partitioned table doesn't need a join
+	fromClause := tableName
+	if joinClause != "" {
+		fromClause = fmt.Sprintf("%s %s", tableName, joinClause)
 	}
+
+	// Construct the query - identical structure for both table types
+	query := fmt.Sprintf(`
+		%s, %s, %s, ROW_NUMBER() OVER (ORDER BY (1 - (e.embedding <=> $1::vector)) DESC) as rank
+		FROM %s
+		WHERE %s
+		ORDER BY (1 - (e.embedding <=> $1::vector)) DESC
+		LIMIT %d`,
+		selectClause, similarityClause, distanceClause, fromClause, whereClause, options.MaxResults)
 
 	rows, err := qi.Query(ctx, query, args...)
 	if err != nil {
@@ -814,49 +955,11 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 
 	var results []outbound.VectorSimilarityResult
 	for rows.Next() {
-		var result outbound.VectorSimilarityResult
-		var deletedAt *time.Time
-		var vectorStr string
-
-		if options.UsePartitionedTable {
-			err = rows.Scan(
-				&result.Embedding.ID,
-				&result.Embedding.ChunkID,
-				&result.Embedding.RepositoryID,
-				&vectorStr,
-				&result.Embedding.ModelVersion,
-				&result.Embedding.CreatedAt,
-				&deletedAt,
-				&result.Similarity,
-				&result.Distance,
-				&result.Rank,
-			)
-		} else {
-			err = rows.Scan(
-				&result.Embedding.ID,
-				&result.Embedding.ChunkID,
-				&vectorStr,
-				&result.Embedding.ModelVersion,
-				&result.Embedding.CreatedAt,
-				&deletedAt,
-				&result.Similarity,
-				&result.Distance,
-				&result.Rank,
-			)
-		}
-
+		result, err := scanVectorSimilarityRow(rows, options.UsePartitionedTable)
 		if err != nil {
-			return nil, WrapError(err, "scan similarity search result")
+			return nil, err
 		}
-
-		// Parse the vector string back to float64 slice
-		vector, err := StringToVector(vectorStr)
-		if err != nil {
-			return nil, WrapError(err, "parse vector from similarity search")
-		}
-		result.Embedding.Embedding = vector
-		result.Embedding.DeletedAt = deletedAt
-		results = append(results, result)
+		results = append(results, *result)
 	}
 
 	if err = rows.Err(); err != nil {

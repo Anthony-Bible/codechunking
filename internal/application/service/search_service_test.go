@@ -231,6 +231,10 @@ func TestSearchService(t *testing.T) {
 			UsePartitionedTable: true,
 			MaxResults:          10,
 			MinSimilarity:       0.7,
+			IterativeScanMode:   outbound.IterativeScanRelaxedOrder,
+			Languages:           nil,
+			ChunkTypes:          nil,
+			FileExtensions:      nil,
 		}
 
 		mockVectorRepo.On("VectorSimilaritySearch", ctx, expectedVector, expectedSearchOptions).
@@ -336,6 +340,10 @@ func TestSearchService(t *testing.T) {
 			MaxResults:          5,
 			MinSimilarity:       0.8,
 			RepositoryIDs:       []uuid.UUID{filterRepoID},
+			IterativeScanMode:   outbound.IterativeScanRelaxedOrder,
+			Languages:           nil,
+			ChunkTypes:          nil,
+			FileExtensions:      nil,
 		}
 
 		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, expectedSearchOptions).
@@ -412,6 +420,10 @@ func TestSearchService(t *testing.T) {
 			MaxResults:          10,
 			MinSimilarity:       0.7, // Default threshold
 			RepositoryIDs:       resolvedRepoIDs,
+			IterativeScanMode:   outbound.IterativeScanRelaxedOrder,
+			Languages:           nil,
+			ChunkTypes:          nil,
+			FileExtensions:      nil,
 		}
 
 		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, expectedSearchOptions).
@@ -477,6 +489,10 @@ func TestSearchService(t *testing.T) {
 			MaxResults:          15,
 			MinSimilarity:       0.7,
 			RepositoryIDs:       []uuid.UUID{existingRepoID, resolvedRepoID}, // Combined
+			IterativeScanMode:   outbound.IterativeScanRelaxedOrder,
+			Languages:           nil,
+			ChunkTypes:          nil,
+			FileExtensions:      nil,
 		}
 
 		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, expectedSearchOptions).

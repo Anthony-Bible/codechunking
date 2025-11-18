@@ -179,6 +179,11 @@ func (s *SearchService) performVectorSearch(
 		"vector_dimensions":     len(vector),
 		"use_partitioned_table": true,
 		"max_results":           request.Limit + request.Offset,
+		"sql_filters": map[string]interface{}{
+			"languages":       request.Languages,
+			"chunk_types":     request.Types,
+			"file_extensions": request.FileTypes,
+		},
 	})
 
 	// Build combined repository filter from both IDs and names
@@ -187,11 +192,25 @@ func (s *SearchService) performVectorSearch(
 		return nil, err
 	}
 
+	// Configure search options with SQL-level metadata filtering for pgvector 0.8.0+ optimization.
+	//
+	// IMPORTANT: Language, chunk type, and file extension filters are applied at the SQL level
+	// (in the WHERE clause) rather than in application code. This is critical for pgvector's
+	// iterative scanning to work efficiently. If these filters were applied after the vector
+	// search, pgvector would scan the entire HNSW index before filtering, defeating the
+	// optimization's purpose.
+	//
+	// The partitioned table schema includes denormalized metadata columns (language, chunk_type,
+	// file_path) specifically to enable this SQL-level filtering strategy.
 	searchOptions := outbound.SimilaritySearchOptions{
 		UsePartitionedTable: true,
 		MaxResults:          request.Limit + request.Offset,
 		MinSimilarity:       request.SimilarityThreshold,
 		RepositoryIDs:       combinedRepositoryIDs,
+		IterativeScanMode:   outbound.IterativeScanRelaxedOrder,         // Enable pgvector 0.8.0+ iterative scanning
+		Languages:           request.Languages,                          // SQL-level language filtering
+		ChunkTypes:          request.Types,                              // SQL-level chunk type filtering
+		FileExtensions:      s.extractFileExtensions(request.FileTypes), // SQL-level file extension filtering
 	}
 
 	vectorResults, err := s.vectorRepo.VectorSimilaritySearch(ctx, vector, searchOptions)
@@ -235,6 +254,32 @@ func (s *SearchService) buildRepositoryFilter(
 	return combinedIDs, nil
 }
 
+// extractFileExtensions converts file type filters (e.g., ".go", "go", ".py") to normalized extensions.
+// Returns nil if no file types provided (preserves nil semantics for database queries).
+func (s *SearchService) extractFileExtensions(fileTypes []string) []string {
+	if len(fileTypes) == 0 {
+		return nil
+	}
+
+	extensions := make([]string, 0, len(fileTypes))
+	for _, ft := range fileTypes {
+		// Normalize extension format (ensure it starts with a dot)
+		ext := strings.TrimSpace(ft)
+		if ext == "" {
+			continue
+		}
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		extensions = append(extensions, ext)
+	}
+
+	if len(extensions) == 0 {
+		return nil
+	}
+	return extensions
+}
+
 // retrieveAndFilterChunks retrieves chunk details and applies filters.
 func (s *SearchService) retrieveAndFilterChunks(
 	ctx context.Context,
@@ -266,13 +311,12 @@ func (s *SearchService) retrieveAndFilterChunks(
 	// Build search results with filters
 	results := s.buildSearchResults(vectorResults, chunks, request)
 
-	slogger.Info(ctx, "Search results built after applying filters", slogger.Fields{
+	slogger.Info(ctx, "Search results built after applying post-processing filters", slogger.Fields{
 		"results_before_filters": len(vectorResults),
 		"results_after_filters":  len(results),
-		"filters_applied": map[string]interface{}{
-			"types":      request.Types,
-			"languages":  request.Languages,
-			"file_types": request.FileTypes,
+		"post_process_filters": map[string]interface{}{
+			"entity_name": request.EntityName,
+			"visibility":  request.Visibility,
 		},
 	})
 
@@ -371,57 +415,18 @@ func (s *SearchService) buildSearchResults(
 }
 
 // matchesFilters checks if a chunk matches all the specified filters.
+// Note: Language, chunk type, and file extension filters are now applied at the SQL level
+// in VectorSimilaritySearch. This method only handles filters that cannot be applied in SQL
+// (entity_name and visibility), which are stored in code_chunks but not in embeddings_partitioned.
 func (s *SearchService) matchesFilters(chunk ChunkInfo, request dto.SearchRequestDTO) bool {
-	// Check language filter
-	if len(request.Languages) > 0 {
-		languageMatches := false
-		for _, lang := range request.Languages {
-			if strings.EqualFold(chunk.Language, lang) {
-				languageMatches = true
-				break
-			}
-		}
-		if !languageMatches {
-			return false
-		}
-	}
-
-	// Check file type filter
-	if len(request.FileTypes) > 0 {
-		fileTypeMatches := false
-		for _, fileType := range request.FileTypes {
-			if strings.HasSuffix(strings.ToLower(chunk.FilePath), strings.ToLower(fileType)) {
-				fileTypeMatches = true
-				break
-			}
-		}
-		if !fileTypeMatches {
-			return false
-		}
-	}
-
-	// Check type filter
-	if len(request.Types) > 0 {
-		typeMatches := false
-		for _, typeFilter := range request.Types {
-			if strings.EqualFold(chunk.Type, typeFilter) {
-				typeMatches = true
-				break
-			}
-		}
-		if !typeMatches {
-			return false
-		}
-	}
-
-	// Check entity name filter
+	// Check entity name filter (not in embeddings_partitioned, must be post-processed)
 	if request.EntityName != "" {
 		if !strings.Contains(strings.ToLower(chunk.EntityName), strings.ToLower(request.EntityName)) {
 			return false
 		}
 	}
 
-	// Check visibility filter
+	// Check visibility filter (not in embeddings_partitioned, must be post-processed)
 	if len(request.Visibility) > 0 {
 		visibilityMatches := false
 		for _, visibilityFilter := range request.Visibility {

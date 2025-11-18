@@ -101,6 +101,10 @@ type VectorEmbedding struct {
 	ModelVersion string     `json:"model_version"` // e.g., "gemini-embedding-001"
 	CreatedAt    time.Time  `json:"created_at"`
 	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
+	// Metadata fields populated from code_chunks table join (optional)
+	Language  string `json:"language,omitempty"`   // Programming language (e.g., "go", "python")
+	ChunkType string `json:"chunk_type,omitempty"` // Type of code chunk (e.g., "function", "class")
+	FilePath  string `json:"file_path,omitempty"`  // File path where chunk is located
 }
 
 // BulkInsertOptions configures bulk insertion behavior.
@@ -146,15 +150,19 @@ type DeleteOptions struct {
 
 // SimilaritySearchOptions configures vector similarity search.
 type SimilaritySearchOptions struct {
-	UsePartitionedTable bool             `json:"use_partitioned_table"` // Whether to use partitioned table
-	SimilarityMetric    SimilarityMetric `json:"similarity_metric"`     // Similarity metric to use
-	MaxResults          int              `json:"max_results"`           // Maximum number of results
-	MinSimilarity       float64          `json:"min_similarity"`        // Minimum similarity threshold
-	RepositoryIDs       []uuid.UUID      `json:"repository_ids"`        // Filter by specific repositories
-	ModelVersions       []string         `json:"model_versions"`        // Filter by model versions
-	EfSearch            int              `json:"ef_search"`             // HNSW search parameter for recall/speed tradeoff
-	IncludeDeleted      bool             `json:"include_deleted"`       // Include soft-deleted embeddings
-	Timeout             time.Duration    `json:"timeout"`               // Search timeout
+	UsePartitionedTable bool              `json:"use_partitioned_table"`     // Whether to use partitioned table
+	SimilarityMetric    SimilarityMetric  `json:"similarity_metric"`         // Similarity metric to use
+	MaxResults          int               `json:"max_results"`               // Maximum number of results
+	MinSimilarity       float64           `json:"min_similarity"`            // Minimum similarity threshold
+	RepositoryIDs       []uuid.UUID       `json:"repository_ids"`            // Filter by specific repositories
+	ModelVersions       []string          `json:"model_versions"`            // Filter by model versions
+	Languages           []string          `json:"languages,omitempty"`       // Filter by programming languages (requires metadata columns)
+	ChunkTypes          []string          `json:"chunk_types,omitempty"`     // Filter by chunk types (requires metadata columns)
+	FileExtensions      []string          `json:"file_extensions,omitempty"` // Filter by file extensions (requires metadata columns)
+	EfSearch            int               `json:"ef_search"`                 // HNSW search parameter for recall/speed tradeoff
+	IncludeDeleted      bool              `json:"include_deleted"`           // Include soft-deleted embeddings
+	IterativeScanMode   IterativeScanMode `json:"iterative_scan_mode"`       // pgvector 0.8.0+ iterative scan mode
+	Timeout             time.Duration     `json:"timeout"`                   // Search timeout
 }
 
 // StatisticsOptions configures storage statistics retrieval.
@@ -273,4 +281,24 @@ const (
 	SimilarityMetricCosine     SimilarityMetric = "cosine"    // Cosine similarity
 	SimilarityMetricEuclidean  SimilarityMetric = "euclidean" // Euclidean distance
 	SimilarityMetricDotProduct SimilarityMetric = "dot"       // Dot product similarity
+)
+
+// IterativeScanMode defines pgvector 0.8.0+ iterative scan modes for HNSW indexes.
+// Iterative scanning automatically expands search scope when filters reduce result count,
+// ensuring the requested number of results are returned even with selective filters.
+type IterativeScanMode string
+
+const (
+	// IterativeScanOff disables iterative scanning (default pgvector behavior).
+	// May return fewer results than requested when filters are highly selective.
+	IterativeScanOff IterativeScanMode = "off"
+
+	// IterativeScanStrictOrder enables iterative scanning with strict distance ordering.
+	// Guarantees exact ordering but may be slower for highly selective filters.
+	IterativeScanStrictOrder IterativeScanMode = "strict_order"
+
+	// IterativeScanRelaxedOrder enables iterative scanning with relaxed ordering.
+	// Better performance and recall than strict_order, with approximate ordering.
+	// Recommended for most use cases where slight ordering differences are acceptable.
+	IterativeScanRelaxedOrder IterativeScanMode = "relaxed_order"
 )

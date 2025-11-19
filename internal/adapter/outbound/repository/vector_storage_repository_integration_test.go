@@ -6,6 +6,7 @@ import (
 	"codechunking/internal/port/outbound"
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -2073,19 +2074,6 @@ func getLanguageForExtension(extension string) string {
 	}
 }
 
-func contains(str, substr string) bool {
-	return len(str) > 0 && len(substr) > 0 && (str == substr || len(str) >= len(substr) && findSubstring(str, substr))
-}
-
-func findSubstring(str, substr string) bool {
-	for i := 0; i <= len(str)-len(substr); i++ {
-		if str[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
 func hasExtension(filePath, extension string) bool {
 	return len(filePath) >= len(extension) && filePath[len(filePath)-len(extension):] == extension
 }
@@ -2373,7 +2361,7 @@ func TestVectorStorageRepository_IterativeScanWithLanguageFilter(t *testing.T) {
 		if err != nil {
 			// Expected to fail with error about missing language column
 			t.Logf("Expected failure: %v", err)
-			if !contains(err.Error(), "language") && !contains(err.Error(), "column") {
+			if !strings.Contains(err.Error(), "language") && !strings.Contains(err.Error(), "column") {
 				t.Errorf("Expected error about missing 'language' column, got: %v", err)
 			}
 			return
@@ -2454,7 +2442,7 @@ func TestVectorStorageRepository_IterativeScanWithChunkTypeFilter(t *testing.T) 
 		if err != nil {
 			// Expected to fail with error about missing chunk_type column
 			t.Logf("Expected failure: %v", err)
-			if !contains(err.Error(), "chunk_type") && !contains(err.Error(), "column") {
+			if !strings.Contains(err.Error(), "chunk_type") && !strings.Contains(err.Error(), "column") {
 				t.Errorf("Expected error about missing 'chunk_type' column, got: %v", err)
 			}
 			return
@@ -2529,7 +2517,7 @@ func TestVectorStorageRepository_IterativeScanWithFilePathFilter(t *testing.T) {
 		if err != nil {
 			// Expected to fail with error about missing file_path column
 			t.Logf("Expected failure: %v", err)
-			if !contains(err.Error(), "file_path") && !contains(err.Error(), "column") {
+			if !strings.Contains(err.Error(), "file_path") && !strings.Contains(err.Error(), "column") {
 				t.Errorf("Expected error about missing 'file_path' column, got: %v", err)
 			}
 			return
@@ -2608,8 +2596,8 @@ func TestVectorStorageRepository_IterativeScanWithCombinedFilters(t *testing.T) 
 		if err != nil {
 			// Expected to fail with error about missing columns
 			t.Logf("Expected failure: %v", err)
-			if !contains(err.Error(), "language") && !contains(err.Error(), "chunk_type") &&
-				!contains(err.Error(), "column") {
+			if !strings.Contains(err.Error(), "language") && !strings.Contains(err.Error(), "chunk_type") &&
+				!strings.Contains(err.Error(), "column") {
 				t.Errorf("Expected error about missing metadata columns, got: %v", err)
 			}
 			return

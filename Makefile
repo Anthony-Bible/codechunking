@@ -110,11 +110,12 @@ run-prod: build
 ## lint: Run linter
 lint:
 	@command -v golangci-lint >/dev/null 2>&1 || { echo "golangci-lint is required but not installed. Install from https://golangci-lint.run/usage/install/"; exit 1; }
-	golangci-lint run ./...
+	golangci-lint run ./... --fix
 
 ## fmt: Format code
 fmt:
 	$(GO_CMD) fmt ./...
+	golangci-lint fmt ./...
 	$(GO_CMD) mod tidy
 
 ## vet: Run go vet

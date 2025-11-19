@@ -809,7 +809,10 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 	qi := GetQueryInterface(ctx, r.pool)
 
 	// Enable pgvector 0.8.0+ iterative scanning if requested
-	if options.IterativeScanMode != "" && options.IterativeScanMode != outbound.IterativeScanOff {
+	// Validate the iterative scan mode value to prevent SQL injection
+	// and reduce static analysis false positives
+	switch options.IterativeScanMode {
+	case outbound.IterativeScanStrictOrder, outbound.IterativeScanRelaxedOrder:
 		setCmd := fmt.Sprintf("SET LOCAL hnsw.iterative_scan = '%s'", options.IterativeScanMode)
 		_, err := qi.Exec(ctx, setCmd)
 		if err != nil {
@@ -819,6 +822,13 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 				"error": err.Error(),
 			})
 		}
+	case outbound.IterativeScanOff, "":
+		// Iterative scanning disabled - no action needed
+	default:
+		// Log warning for unexpected values (defensive programming)
+		slogger.Warn(ctx, "Invalid iterative scan mode ignored", slogger.Fields{
+			"mode": string(options.IterativeScanMode),
+		})
 	}
 
 	// Metadata filtering strategy for pgvector 0.8.0+ iterative scanning:
@@ -886,6 +896,13 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 		}
 	}
 
+	// Metadata filters only work with partitioned table which has denormalized columns
+	// The legacy non-partitioned table lacks language, chunk_type, and file_path columns
+	if !options.UsePartitionedTable {
+		// Skip metadata filters for non-partitioned table
+		goto skipMetadataFilters
+	}
+
 	// Language filter (metadata filtering for pgvector iterative scanning)
 	if len(options.Languages) > 0 {
 		languagesInterface := make([]interface{}, len(options.Languages))
@@ -922,6 +939,8 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 		whereConditions = append(whereConditions,
 			fmt.Sprintf("(%s)", strings.Join(extConditions, " OR ")))
 	}
+
+skipMetadataFilters:
 
 	if options.MinSimilarity > 0 {
 		whereConditions = append(

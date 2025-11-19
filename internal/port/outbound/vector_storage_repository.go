@@ -102,9 +102,9 @@ type VectorEmbedding struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	DeletedAt    *time.Time `json:"deleted_at,omitempty"`
 	// Metadata fields populated from code_chunks table join (optional)
-	Language  string `json:"language,omitempty"`   // Programming language (e.g., "go", "python")
-	ChunkType string `json:"chunk_type,omitempty"` // Type of code chunk (e.g., "function", "class")
-	FilePath  string `json:"file_path,omitempty"`  // File path where chunk is located
+	Language  *string `json:"language,omitempty"`   // Programming language (e.g., "go", "python")
+	ChunkType *string `json:"chunk_type,omitempty"` // Type of code chunk (e.g., "function", "class")
+	FilePath  *string `json:"file_path,omitempty"`  // File path where chunk is located
 }
 
 // BulkInsertOptions configures bulk insertion behavior.

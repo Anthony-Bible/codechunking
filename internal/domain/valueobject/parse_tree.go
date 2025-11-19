@@ -291,17 +291,21 @@ func (pt *ParseTree) GetNodeText(node *ParseNode) string {
 		return ""
 	}
 
+	var content string
+
 	// Use Content() method if tree-sitter node is available
 	if tsNode := node.TreeSitterNode(); tsNode != nil && !tsNode.IsNull() {
-		return tsNode.Content(pt.source)
+		content = tsNode.Content(pt.source)
+	} else {
+		// Fallback to byte slicing
+		if int64(node.EndByte) > int64(len(pt.source)) {
+			return ""
+		}
+		content = string(pt.source[node.StartByte:node.EndByte])
 	}
 
-	// Fallback to byte slicing
-	if int64(node.EndByte) > int64(len(pt.source)) {
-		return ""
-	}
-
-	return string(pt.source[node.StartByte:node.EndByte])
+	// Remove null bytes for PostgreSQL UTF-8 compatibility
+	return strings.ReplaceAll(content, "\x00", "")
 }
 
 // GetTreeDepth returns the maximum depth of the parse tree.

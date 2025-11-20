@@ -287,6 +287,11 @@ func (pt *ParseTree) findNodeAtByteOffset(node *ParseNode, offset uint32) *Parse
 
 // GetNodeText returns the text content of a node.
 func (pt *ParseTree) GetNodeText(node *ParseNode) string {
+	return pt.GetNodeTextWithContext(context.Background(), node)
+}
+
+// GetNodeTextWithContext returns the text content of a node with context for logging.
+func (pt *ParseTree) GetNodeTextWithContext(ctx context.Context, node *ParseNode) string {
 	if pt.isCleanedUp || node == nil {
 		return ""
 	}
@@ -302,6 +307,18 @@ func (pt *ParseTree) GetNodeText(node *ParseNode) string {
 			return ""
 		}
 		content = string(pt.source[node.StartByte:node.EndByte])
+	}
+
+	// Check for null bytes and log if found (for monitoring)
+	nullCount := strings.Count(content, "\x00")
+	if nullCount > 0 {
+		slogger.Warn(ctx, "Null bytes detected in node content, removing for PostgreSQL compatibility", slogger.Fields{
+			"null_byte_count": nullCount,
+			"language":        pt.language.Name(),
+			"node_type":       node.Type,
+			"start_byte":      node.StartByte,
+			"end_byte":        node.EndByte,
+		})
 	}
 
 	// Remove null bytes for PostgreSQL UTF-8 compatibility

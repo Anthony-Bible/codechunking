@@ -132,9 +132,12 @@ func validateTaskTypeValue(taskType string) error {
 // concurrent access. While genai.Client itself is thread-safe, we use RWMutex to
 // prevent race conditions during initialization and to provide clear ownership semantics.
 type Client struct {
-	config      *ClientConfig // Client configuration
-	genaiClient *genai.Client // Cached Gemini API client (created once, reused for all requests)
-	genaiMu     sync.RWMutex  // Protects concurrent access to genaiClient field
+	config           *ClientConfig         // Client configuration
+	genaiClient      *genai.Client         // Cached Gemini API client (created once, reused for all requests)
+	genaiMu          sync.RWMutex          // Protects concurrent access to genaiClient field
+	batchClient      *BatchEmbeddingClient // Optional batch embedding client for async batch processing
+	useBatchAPI      bool                  // Whether to use async batch API for GenerateBatchEmbeddings
+	batchPollInterval time.Duration        // Poll interval for batch job status checks
 }
 
 // NewClient creates a new Gemini API client with the provided configuration.
@@ -257,6 +260,39 @@ func (c *Client) GetConfig() *ClientConfig {
 	return &configCopy
 }
 
+// EnableBatchProcessing enables async batch processing for GenerateBatchEmbeddings.
+// This method initializes the BatchEmbeddingClient with the specified directories.
+// If inputDir or outputDir are empty, default temporary directories will be used.
+// The pollInterval specifies how often to check batch job status (default: 5 seconds).
+func (c *Client) EnableBatchProcessing(inputDir, outputDir string, pollInterval time.Duration) error {
+	if pollInterval <= 0 {
+		pollInterval = 5 * time.Second // Default poll interval
+	}
+
+	batchClient, err := NewBatchEmbeddingClient(c, inputDir, outputDir)
+	if err != nil {
+		return fmt.Errorf("failed to create batch embedding client: %w", err)
+	}
+
+	c.batchClient = batchClient
+	c.useBatchAPI = true
+	c.batchPollInterval = pollInterval
+
+	return nil
+}
+
+// DisableBatchProcessing disables async batch processing.
+// After calling this, GenerateBatchEmbeddings will use sequential processing.
+func (c *Client) DisableBatchProcessing() {
+	c.useBatchAPI = false
+	c.batchClient = nil
+}
+
+// IsBatchProcessingEnabled returns whether async batch processing is enabled.
+func (c *Client) IsBatchProcessingEnabled() bool {
+	return c.useBatchAPI && c.batchClient != nil
+}
+
 // EmbeddingService interface implementation (stubs for GREEN phase)
 
 // GenerateEmbedding generates an embedding vector for a given text content.
@@ -362,15 +398,27 @@ func (c *Client) GenerateEmbedding(
 	return embeddingResult, nil
 }
 
-// GenerateBatchEmbeddings generates embeddings for multiple texts in a single request.
+// GenerateBatchEmbeddings generates embeddings for multiple texts.
+//
+// This method supports two modes:
+// 1. Async Batch API (when enabled via EnableBatchProcessing):
+//    - Submits a batch job to Google GenAI Batches API
+//    - Waits for completion with configurable polling
+//    - Suitable for large batches (100+ items) where async processing is beneficial
+// 2. Sequential Processing (default):
+//    - Processes texts one-by-one using GenerateEmbedding
+//    - Suitable for small batches or when immediate results are needed
+//
+// Use EnableBatchProcessing to configure which mode to use.
 func (c *Client) GenerateBatchEmbeddings(
 	ctx context.Context,
 	texts []string,
 	options outbound.EmbeddingOptions,
 ) ([]*outbound.EmbeddingResult, error) {
 	slogger.Info(ctx, "GenerateBatchEmbeddings called", slogger.Fields{
-		"text_count": len(texts),
-		"model":      c.config.Model,
+		"text_count":      len(texts),
+		"model":           c.config.Model,
+		"batch_api_enabled": c.IsBatchProcessingEnabled(),
 	})
 
 	// Input validation
@@ -383,8 +431,76 @@ func (c *Client) GenerateBatchEmbeddings(
 		}
 	}
 
-	// For now, implement batch as sequential calls to GenerateEmbedding
-	// TODO: Replace with actual batch API when SDK supports it
+	// Use async batch API if enabled
+	if c.IsBatchProcessingEnabled() {
+		return c.generateBatchEmbeddingsAsync(ctx, texts, options)
+	}
+
+	// Fall back to sequential processing
+	return c.generateBatchEmbeddingsSequential(ctx, texts, options)
+}
+
+// generateBatchEmbeddingsAsync uses the Google GenAI Batches API for async processing.
+func (c *Client) generateBatchEmbeddingsAsync(
+	ctx context.Context,
+	texts []string,
+	options outbound.EmbeddingOptions,
+) ([]*outbound.EmbeddingResult, error) {
+	slogger.Info(ctx, "Using async batch API for embeddings", slogger.Fields{
+		"text_count": len(texts),
+	})
+
+	// Create batch job
+	job, err := c.batchClient.CreateBatchEmbeddingJob(ctx, texts, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create batch embedding job: %w", err)
+	}
+
+	slogger.Info(ctx, "Batch job created, waiting for completion", slogger.Fields{
+		"job_id": job.JobID,
+		"poll_interval": c.batchPollInterval,
+	})
+
+	// Wait for job to complete
+	completedJob, err := c.batchClient.WaitForBatchJob(ctx, job.JobID, c.batchPollInterval)
+	if err != nil {
+		return nil, fmt.Errorf("batch job failed: %w", err)
+	}
+
+	// Check final state
+	if completedJob.State != outbound.BatchJobStateCompleted {
+		return nil, &outbound.EmbeddingError{
+			Code:      "batch_job_failed",
+			Type:      "server",
+			Message:   fmt.Sprintf("batch job ended in state %s: %s", completedJob.State, completedJob.ErrorMessage),
+			Retryable: completedJob.State != outbound.BatchJobStateCancelled,
+		}
+	}
+
+	// Get results
+	results, err := c.batchClient.GetBatchJobResults(ctx, job.JobID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get batch results: %w", err)
+	}
+
+	slogger.Info(ctx, "Batch embeddings completed successfully", slogger.Fields{
+		"job_id":       job.JobID,
+		"result_count": len(results),
+	})
+
+	return results, nil
+}
+
+// generateBatchEmbeddingsSequential processes texts one-by-one sequentially.
+func (c *Client) generateBatchEmbeddingsSequential(
+	ctx context.Context,
+	texts []string,
+	options outbound.EmbeddingOptions,
+) ([]*outbound.EmbeddingResult, error) {
+	slogger.Info(ctx, "Using sequential processing for embeddings", slogger.Fields{
+		"text_count": len(texts),
+	})
+
 	results := make([]*outbound.EmbeddingResult, 0, len(texts))
 
 	for i, text := range texts {

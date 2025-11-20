@@ -257,8 +257,35 @@ func createEmbeddingService(cfg *config.Config) outbound.EmbeddingService {
 		os.Exit(1)
 	}
 
+	// Enable batch processing if configured
+	if cfg.Gemini.Batch.Enabled {
+		slogger.InfoNoCtx("Batch embeddings enabled", slogger.Fields{
+			"input_dir":     cfg.Gemini.Batch.InputDir,
+			"output_dir":    cfg.Gemini.Batch.OutputDir,
+			"poll_interval": cfg.Gemini.Batch.PollInterval,
+		})
+
+		err := client.EnableBatchProcessing(
+			cfg.Gemini.Batch.InputDir,
+			cfg.Gemini.Batch.OutputDir,
+			cfg.Gemini.Batch.PollInterval,
+		)
+		if err != nil {
+			slogger.ErrorNoCtx("Failed to enable batch processing", slogger.Fields{
+				"error": err.Error(),
+			})
+			// Don't exit - fall back to sequential processing
+			slogger.InfoNoCtx("Falling back to sequential embedding processing", nil)
+		} else {
+			slogger.InfoNoCtx("Batch embeddings successfully enabled", slogger.Fields{
+				"mode": "async_batch_api",
+			})
+		}
+	}
+
 	slogger.InfoNoCtx("Using Gemini embedding service", slogger.Fields{
-		"model": config.Model,
+		"model":               config.Model,
+		"batch_api_enabled":   client.IsBatchProcessingEnabled(),
 	})
 	return client
 }

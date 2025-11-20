@@ -813,7 +813,7 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 	// and reduce static analysis false positives
 	switch options.IterativeScanMode {
 	case outbound.IterativeScanStrictOrder, outbound.IterativeScanRelaxedOrder:
-		setCmd := fmt.Sprintf("SET LOCAL hnsw.iterative_scan = '%s'", options.IterativeScanMode)
+		setCmd := fmt.Sprintf("SET hnsw.iterative_scan = '%s'", options.IterativeScanMode)
 		_, err := qi.Exec(ctx, setCmd)
 		if err != nil {
 			// Log warning but continue - iterative scan is an optimization, not critical

@@ -1,8 +1,14 @@
 -- Migration: Backfill metadata columns in embeddings_partitioned
 -- Purpose: Populate language, chunk_type, and file_path for existing embeddings
 -- Note: This is a data migration and may take time for large datasets
+--
+-- ⚠️  IMPORTANT: For large production datasets, consider running during a maintenance window
+-- or using the batched approach described at the bottom of this file.
 
 BEGIN;
+
+-- Set isolation level to prevent anomalies during backfill
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
 
 -- Backfill metadata from code_chunks table
 -- Uses WHERE clause to only update rows that haven't been backfilled yet

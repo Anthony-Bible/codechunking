@@ -21,6 +21,15 @@ CREATE INDEX idx_embeddings_partitioned_chunk_type
   ON codechunking.embeddings_partitioned (chunk_type)
   WHERE deleted_at IS NULL;
 
+-- Enable pg_trgm extension for GIN index on file_path (supports LIKE queries for file extensions)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- GIN index for file_path to support efficient LIKE '%extension' queries
+-- Note: Regular B-tree indexes cannot efficiently handle LIKE queries with leading wildcards
+CREATE INDEX idx_embeddings_partitioned_file_path_trgm
+  ON codechunking.embeddings_partitioned USING gin (file_path gin_trgm_ops)
+  WHERE deleted_at IS NULL;
+
 -- Composite indexes for combined filter queries (most common patterns)
 -- Repository + Language (e.g., "Go code in auth-service repo")
 CREATE INDEX idx_embeddings_partitioned_repo_lang

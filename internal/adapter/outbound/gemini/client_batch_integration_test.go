@@ -3,6 +3,7 @@ package gemini
 import (
 	"codechunking/internal/port/outbound"
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -81,7 +82,11 @@ func TestClient_DisableBatchProcessing(t *testing.T) {
 		require.NoError(t, err)
 
 		tempDir := t.TempDir()
-		err = client.EnableBatchProcessing(filepath.Join(tempDir, "input"), filepath.Join(tempDir, "output"), 2*time.Second)
+		err = client.EnableBatchProcessing(
+			filepath.Join(tempDir, "input"),
+			filepath.Join(tempDir, "output"),
+			2*time.Second,
+		)
 		require.NoError(t, err)
 		assert.True(t, client.IsBatchProcessingEnabled())
 
@@ -129,7 +134,8 @@ func TestClient_GenerateBatchEmbeddings_ModeSelection(t *testing.T) {
 		_, err = client.GenerateBatchEmbeddings(ctx, []string{}, outbound.EmbeddingOptions{})
 
 		assert.Error(t, err)
-		embErr, ok := err.(*outbound.EmbeddingError)
+		embErr := &outbound.EmbeddingError{}
+		ok := errors.As(err, &embErr)
 		require.True(t, ok)
 		assert.Equal(t, "empty_texts", embErr.Code)
 		assert.Equal(t, "validation", embErr.Type)
@@ -151,7 +157,11 @@ func TestClient_IsBatchProcessingEnabled(t *testing.T) {
 			name: "enabled after EnableBatchProcessing",
 			setup: func(c *Client) {
 				tempDir := filepath.Join(t.TempDir(), "batch")
-				_ = c.EnableBatchProcessing(filepath.Join(tempDir, "input"), filepath.Join(tempDir, "output"), 1*time.Second)
+				_ = c.EnableBatchProcessing(
+					filepath.Join(tempDir, "input"),
+					filepath.Join(tempDir, "output"),
+					1*time.Second,
+				)
 			},
 			expected: true,
 		},
@@ -159,7 +169,11 @@ func TestClient_IsBatchProcessingEnabled(t *testing.T) {
 			name: "disabled after DisableBatchProcessing",
 			setup: func(c *Client) {
 				tempDir := filepath.Join(t.TempDir(), "batch")
-				_ = c.EnableBatchProcessing(filepath.Join(tempDir, "input"), filepath.Join(tempDir, "output"), 1*time.Second)
+				_ = c.EnableBatchProcessing(
+					filepath.Join(tempDir, "input"),
+					filepath.Join(tempDir, "output"),
+					1*time.Second,
+				)
 				c.DisableBatchProcessing()
 			},
 			expected: false,
@@ -176,7 +190,11 @@ func TestClient_IsBatchProcessingEnabled(t *testing.T) {
 			name: "false when batchClient exists but useBatchAPI is false",
 			setup: func(c *Client) {
 				tempDir := filepath.Join(t.TempDir(), "batch")
-				_ = c.EnableBatchProcessing(filepath.Join(tempDir, "input"), filepath.Join(tempDir, "output"), 1*time.Second)
+				_ = c.EnableBatchProcessing(
+					filepath.Join(tempDir, "input"),
+					filepath.Join(tempDir, "output"),
+					1*time.Second,
+				)
 				c.useBatchAPI = false
 			},
 			expected: false,
@@ -235,14 +253,14 @@ func TestClient_BatchProcessing_ConfigPersistence(t *testing.T) {
 		require.NoError(t, err)
 
 		// Make multiple calls to IsBatchProcessingEnabled
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			assert.True(t, client.IsBatchProcessingEnabled())
 			assert.Equal(t, pollInterval, client.batchPollInterval)
 		}
 
 		// Disable and check again
 		client.DisableBatchProcessing()
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			assert.False(t, client.IsBatchProcessingEnabled())
 		}
 	})
@@ -257,14 +275,22 @@ func TestClient_BatchProcessing_ConfigPersistence(t *testing.T) {
 		tempDir := t.TempDir()
 
 		// Enable, disable, enable again
-		err = client.EnableBatchProcessing(filepath.Join(tempDir, "input1"), filepath.Join(tempDir, "output1"), 1*time.Second)
+		err = client.EnableBatchProcessing(
+			filepath.Join(tempDir, "input1"),
+			filepath.Join(tempDir, "output1"),
+			1*time.Second,
+		)
 		require.NoError(t, err)
 		assert.True(t, client.IsBatchProcessingEnabled())
 
 		client.DisableBatchProcessing()
 		assert.False(t, client.IsBatchProcessingEnabled())
 
-		err = client.EnableBatchProcessing(filepath.Join(tempDir, "input2"), filepath.Join(tempDir, "output2"), 2*time.Second)
+		err = client.EnableBatchProcessing(
+			filepath.Join(tempDir, "input2"),
+			filepath.Join(tempDir, "output2"),
+			2*time.Second,
+		)
 		require.NoError(t, err)
 		assert.True(t, client.IsBatchProcessingEnabled())
 		assert.Equal(t, 2*time.Second, client.batchPollInterval)

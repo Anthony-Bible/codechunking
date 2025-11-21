@@ -362,7 +362,7 @@ func (sf *ServiceFactory) CreateSearchService() (inbound.SearchService, error) {
 	}
 
 	// Create search service - it already implements the inbound interface
-	searchService := appservice.NewSearchService(vectorRepo, embeddingService, chunkRepo, repoRepo)
+	searchService := appservice.NewSearchService(vectorRepo, embeddingService, chunkRepo, repoRepo, sf.config)
 
 	return searchService, nil
 }

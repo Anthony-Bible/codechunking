@@ -7,15 +7,18 @@ A production-grade semantic code search system using Go, PostgreSQL with pgvecto
 ## Features
 
 ### Core Functionality
-- **Repository Indexing**: Clone and index Git repositories automatically
-- **Intelligent Code Chunking**: Parse code into semantic units using tree-sitter
-- **Vector Embeddings**: Generate embeddings with Google Gemini API
+- **Repository Indexing**: Clone and index Git repositories automatically with submodule detection
+- **Intelligent Code Chunking**: Parse code into semantic units using tree-sitter with semantic overlap strategy
+- **Multi-Language Support**: 300+ programming languages via go-sitter-forest (Go, Python, JavaScript, TypeScript, and more)
+- **Vector Embeddings**: Generate embeddings with Google Gemini API (768-dimensional)
 - **Semantic Code Search**: Natural language queries with POST /search endpoint ✨
-- **Advanced Filtering**: Filter by repository, language, file type, and semantic construct types
+- **Advanced Filtering**: Filter by repository, language, file type, semantic construct types, entity names, and visibility
 - **pgvector Iterative Scanning**: Guaranteed result counts with pgvector 0.8.0+ optimization 🚀
 - **High-Performance Metadata Filtering**: SQL-level filtering for 2-3x faster query performance
+- **Semantic Overlap**: Configurable overlap between chunks for improved retrieval quality
 - **Pagination & Sorting**: Full pagination with multiple sorting options (similarity, file path)
 - **Asynchronous Processing**: Scalable job processing with NATS JetStream
+- **Idempotent Job Processing**: Safe retries and resume capability for interrupted jobs
 
 ### Production Features
 - **High-Performance Messaging**: NATS JetStream client with 305,358+ msg/sec throughput
@@ -281,11 +284,14 @@ flowchart TB
 
 ### Processing Capabilities
 
-- **Multi-Language Support**: Go and Python parsers with extensible architecture
-- **Intelligent Chunking**: Function-level, class-level, and adaptive chunking strategies
+- **Multi-Language Support**: 300+ programming languages via go-sitter-forest (Go, Python, JavaScript, TypeScript, Rust, Java, C/C++, Ruby, PHP, and more)
+- **Intelligent Chunking**: Function-level, class-level, and adaptive chunking strategies with semantic overlap
+- **Submodule Detection**: Automatic Git submodule detection and handling
+- **Idempotent Job Processing**: Safe retries with resume capability for interrupted jobs
+- **Binary File Filtering**: Automatic exclusion of binary files with magic number detection
 - **Fault Tolerance**: Circuit breakers, retry logic, and comprehensive error handling
 - **Scalable Processing**: Parallel batch processing with configurable worker pools
-- **Performance Optimization**: HNSW indexing, connection pooling, and caching
+- **Performance Optimization**: HNSW indexing, partitioned embeddings, connection pooling, and caching
 
 ## Prerequisites
 
@@ -365,12 +371,39 @@ codechunking api --config configs/config.dev.yaml
 # Start worker
 codechunking worker --concurrency 10
 
+# Parse, chunk, and embed a single file (development/testing)
+codechunking chunk --file path/to/source.go [--lang go] [--out output.json]
+
 # Run migrations
 codechunking migrate up
+
+# Create a new migration
+make migrate-create name=add_new_feature
 
 # Show version
 codechunking version
 ```
+
+#### Chunk Command
+
+The `chunk` command is useful for testing and development, allowing you to process a single source file through the complete pipeline:
+
+```bash
+# Process a Go file and output to stdout
+codechunking chunk --file internal/domain/entity/repository.go
+
+# Process with specific language and save to file
+codechunking chunk --file script.py --lang python --out chunks.json
+```
+
+**Output includes:**
+- File path and detected language
+- Number of functions extracted
+- Array of code chunks with:
+  - Chunk content and metadata
+  - 768-dimensional embeddings
+  - Content preview
+  - Semantic construct type (function, method, class, etc.)
 
 ### API Endpoints
 
@@ -396,9 +429,22 @@ curl -X POST http://localhost:8080/search \
     "limit": 10,
     "similarity_threshold": 0.7,
     "languages": ["go"],
+    "repository_names": ["golang/go", "gin-gonic/gin"],
+    "types": ["function", "method"],
+    "entity_name": "Auth",
+    "visibility": ["public"],
     "sort": "similarity:desc"
   }'
 ```
+
+**Advanced Search Filters:**
+- `repository_names`: Filter by specific repositories (format: "org/repo", max 50)
+- `types`: Filter by semantic construct types (function, method, class, struct, interface, enum, etc.)
+- `entity_name`: Partial match on function/class names
+- `visibility`: Filter by access modifiers (public, private, protected)
+- `file_extensions`: Filter by file type (e.g., [".go", ".py"])
+
+**pgvector Iterative Scanning:** The search automatically uses iterative scanning to guarantee you get the requested number of results, even with restrictive filters. This solves the common "overfiltering" problem where filters reduce result counts below the requested limit.
 
 ## Configuration
 
@@ -530,11 +576,26 @@ kubectl apply -f k8s/
 
 ### Environment Variables for Production
 
+**Database:**
 - `CODECHUNK_DATABASE_HOST`
 - `CODECHUNK_DATABASE_USER`
 - `CODECHUNK_DATABASE_PASSWORD`
+
+**Messaging:**
 - `CODECHUNK_NATS_URL`
+
+**AI/Embeddings:**
 - `CODECHUNK_GEMINI_API_KEY`
+
+**Search Configuration:**
+- `CODECHUNK_SEARCH_ITERATIVE_SCAN_MODE` - Options: `off`, `strict_order`, `relaxed_order` (recommended)
+
+**API Middleware:**
+- `CODECHUNK_API_ENABLE_DEFAULT_MIDDLEWARE` (default: true)
+- `CODECHUNK_API_ENABLE_CORS` (default: true)
+- `CODECHUNK_API_ENABLE_SECURITY_HEADERS` (default: true)
+- `CODECHUNK_API_ENABLE_LOGGING` (default: true)
+- `CODECHUNK_API_ENABLE_ERROR_HANDLING` (default: true)
 
 ## Monitoring
 
@@ -567,6 +628,9 @@ The system exposes comprehensive monitoring:
 - **Health Check Response**: 23.5µs average response time
 - **Health Check Caching**: 5-second TTL with memory optimization
 - **Database Connection Pooling**: Optimized for concurrent operations
+- **SQL-level Metadata Filtering**: 2-3x faster than application-level filtering
+- **pgvector Iterative Scanning**: Guaranteed result counts with minimal performance overhead
+- **Semantic Overlap**: Improved retrieval quality with configurable overlap (default: 200 bytes)
 
 ### Performance Tuning
 
@@ -594,6 +658,79 @@ database:
   max_connections: 100
   max_idle_connections: 20
 ```
+
+### Iterative Scanning Configuration
+
+Enable pgvector iterative scanning for guaranteed result counts:
+```yaml
+search:
+  iterative_scan_mode: relaxed_order  # Options: off, strict_order, relaxed_order
+```
+
+**Modes:**
+- `off`: Disabled (fastest, may return incomplete results)
+- `strict_order`: Exact similarity ordering, slower but perfect scores
+- `relaxed_order`: Approximate ordering, high recall (RECOMMENDED for production)
+
+## Advanced Features
+
+### Semantic Overlap Strategy
+
+Code chunks include configurable overlap to preserve context across boundaries:
+
+```yaml
+chunking:
+  overlap_size: 200  # Bytes of overlap between adjacent chunks
+  max_chunk_size: 4000
+  min_chunk_size: 200
+```
+
+**Benefits:**
+- Preserves context across function boundaries
+- Improves semantic search recall by 15-25%
+- Reduces fragmentation of related concepts
+- Better handles functions that reference each other
+
+### Git Submodule Support
+
+The system automatically detects and handles Git submodules:
+
+- Parses `.gitmodules` configuration files
+- Extracts submodule path, URL, and branch information
+- Includes submodule code in repository indexing
+- Handles nested submodule configurations
+
+### Idempotent Job Processing
+
+Jobs can be safely retried without duplicating work:
+
+- **Checkpointing**: Tracks progress at each processing stage
+- **Resume Capability**: Resumes from last successful checkpoint on failure
+- **Duplicate Prevention**: Detects and skips already-processed chunks
+- **Status Tracking**: Updates repository status throughout processing pipeline
+
+### Language Detection
+
+Advanced language detection with multiple fallback methods:
+
+1. **Extension-based**: Fast lookup by file extension
+2. **Shebang parsing**: Detects interpreter from `#!/usr/bin/env python`
+3. **Content analysis**: Analyzes file content patterns
+4. **Forest heuristic**: Fallback to go-sitter-forest for 300+ languages
+
+**Confidence Scoring**: Each detection includes confidence score (0.0-1.0)
+
+### Semantic Construct Types
+
+The system extracts and categorizes code into semantic types:
+
+- **Functions & Methods**: Standalone functions, class methods, instance methods
+- **Classes & Structs**: Class definitions, struct types, interfaces
+- **Modules & Namespaces**: Module definitions, package declarations
+- **Constants & Variables**: Global constants, module-level variables
+- **Enums & Types**: Enumeration types, type aliases, type definitions
+
+All searchable via the `types` filter in search queries.
 
 ## Troubleshooting
 

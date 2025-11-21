@@ -898,6 +898,7 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 
 	// Metadata filters only work with partitioned table which has denormalized columns
 	// The legacy non-partitioned table lacks language, chunk_type, and file_path columns
+	// Note: Using goto here to avoid nesting complexity while maintaining clear control flow
 	if !options.UsePartitionedTable {
 		// Skip metadata filters for non-partitioned table
 		goto skipMetadataFilters
@@ -937,7 +938,7 @@ func (r *PostgreSQLVectorStorageRepository) VectorSimilaritySearch(
 			argIndex++
 		}
 		whereConditions = append(whereConditions,
-			fmt.Sprintf("(%s)", strings.Join(extConditions, " OR ")))
+			fmt.Sprintf("(%s)", strings.Join(extConditions, " OR")))
 	}
 
 skipMetadataFilters:

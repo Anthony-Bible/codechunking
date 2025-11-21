@@ -2114,7 +2114,7 @@ func getLanguageForExtension(extension string) string {
 }
 
 func hasExtension(filePath, extension string) bool {
-	return len(filePath) >= len(extension) && filePath[len(filePath)-len(extension):] == extension
+	return strings.HasSuffix(filePath, extension)
 }
 
 // TestVectorStorageRepository_IterativeScan tests pgvector 0.8.0 iterative scanning feature.

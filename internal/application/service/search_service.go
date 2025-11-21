@@ -3,6 +3,7 @@ package service
 import (
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/dto"
+	"codechunking/internal/config"
 	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
@@ -20,6 +21,7 @@ type SearchService struct {
 	embeddingService outbound.EmbeddingService
 	chunkRepo        ChunkRepository
 	repoRepo         outbound.RepositoryRepository
+	config           *config.Config
 }
 
 // ChunkRepository defines the interface for retrieving chunk information.
@@ -51,6 +53,7 @@ func NewSearchService(
 	embeddingService outbound.EmbeddingService,
 	chunkRepo ChunkRepository,
 	repoRepo outbound.RepositoryRepository,
+	cfg *config.Config,
 ) *SearchService {
 	if vectorRepo == nil {
 		panic("vectorRepo cannot be nil")
@@ -64,12 +67,16 @@ func NewSearchService(
 	if repoRepo == nil {
 		panic("repoRepo cannot be nil")
 	}
+	if cfg == nil {
+		panic("cfg cannot be nil")
+	}
 
 	return &SearchService{
 		vectorRepo:       vectorRepo,
 		embeddingService: embeddingService,
 		chunkRepo:        chunkRepo,
 		repoRepo:         repoRepo,
+		config:           cfg,
 	}
 }
 
@@ -207,7 +214,7 @@ func (s *SearchService) performVectorSearch(
 		MaxResults:          request.Limit + request.Offset,
 		MinSimilarity:       request.SimilarityThreshold,
 		RepositoryIDs:       combinedRepositoryIDs,
-		IterativeScanMode:   s.config.Search.IterativeScanMode,           // Read from config for pgvector 0.8.0+ iterative scanning
+		IterativeScanMode:   s.getIterativeScanMode(),                   // Enable pgvector 0.8.0+ iterative scanning from config
 		Languages:           request.Languages,                          // SQL-level language filtering
 		ChunkTypes:          request.Types,                              // SQL-level chunk type filtering
 		FileExtensions:      s.extractFileExtensions(request.FileTypes), // SQL-level file extension filtering
@@ -467,5 +474,21 @@ func (s *SearchService) sortResults(results []dto.SearchResultDTO, sortOption st
 		sort.Slice(results, func(i, j int) bool {
 			return results[i].SimilarityScore > results[j].SimilarityScore
 		})
+	}
+}
+
+// getIterativeScanMode converts the config string to the IterativeScanMode enum.
+// Defaults to IterativeScanRelaxedOrder if the config value is invalid or empty.
+func (s *SearchService) getIterativeScanMode() outbound.IterativeScanMode {
+	switch s.config.Search.IterativeScanMode {
+	case "off":
+		return outbound.IterativeScanOff
+	case "strict_order":
+		return outbound.IterativeScanStrictOrder
+	case "relaxed_order":
+		return outbound.IterativeScanRelaxedOrder
+	default:
+		// Default to relaxed_order for best recall/performance
+		return outbound.IterativeScanRelaxedOrder
 	}
 }

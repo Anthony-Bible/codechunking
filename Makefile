@@ -115,7 +115,6 @@ lint:
 ## fmt: Format code
 fmt:
 	$(GO_CMD) fmt ./...
-	golangci-lint fmt ./...
 	$(GO_CMD) mod tidy
 
 ## vet: Run go vet

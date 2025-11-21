@@ -4,6 +4,7 @@ import (
 	"codechunking/internal/application/common/logging"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/dto"
+	"codechunking/internal/config"
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
@@ -154,6 +155,15 @@ func (m *MockChunkRepository) FindChunksByIDs(ctx context.Context, chunkIDs []uu
 	return args.Get(0).([]ChunkInfo), args.Error(1)
 }
 
+// testConfig creates a minimal test configuration with default values.
+func testConfig() *config.Config {
+	return &config.Config{
+		Search: config.SearchConfig{
+			IterativeScanMode: "relaxed_order",
+		},
+	}
+}
+
 // TestSearchService exercises the main search orchestration path and error branches.
 func TestSearchService(t *testing.T) {
 	// Set up silent logger for tests to avoid logging side effects
@@ -179,6 +189,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 		require.NotNil(t, searchService, "SearchService should be created successfully")
 
@@ -315,6 +326,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -372,6 +384,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			mockRepoRepo,
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -453,6 +466,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			mockRepoRepo,
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -522,6 +536,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			mockRepoRepo,
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -568,6 +583,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -601,6 +617,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -641,6 +658,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -677,6 +695,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -714,6 +733,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -767,6 +787,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -825,6 +846,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -883,6 +905,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -950,6 +973,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -974,6 +998,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -1033,7 +1058,13 @@ func TestNewSearchService(t *testing.T) {
 		mockEmbeddingService := new(MockEmbeddingService)
 		mockChunkRepo := new(MockChunkRepository)
 
-		service := NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo, new(MockRepositoryRepository))
+		service := NewSearchService(
+			mockVectorRepo,
+			mockEmbeddingService,
+			mockChunkRepo,
+			new(MockRepositoryRepository),
+			testConfig(),
+		)
 
 		assert.NotNil(t, service, "SearchService should be created successfully")
 	})
@@ -1044,7 +1075,7 @@ func TestNewSearchService(t *testing.T) {
 		mockRepoRepo := new(MockRepositoryRepository)
 
 		assert.Panics(t, func() {
-			NewSearchService(nil, mockEmbeddingService, mockChunkRepo, mockRepoRepo)
+			NewSearchService(nil, mockEmbeddingService, mockChunkRepo, mockRepoRepo, testConfig())
 		}, "Should panic when vector repository is nil")
 	})
 
@@ -1054,7 +1085,7 @@ func TestNewSearchService(t *testing.T) {
 		mockRepoRepo := new(MockRepositoryRepository)
 
 		assert.Panics(t, func() {
-			NewSearchService(mockVectorRepo, nil, mockChunkRepo, mockRepoRepo)
+			NewSearchService(mockVectorRepo, nil, mockChunkRepo, mockRepoRepo, testConfig())
 		}, "Should panic when embedding service is nil")
 	})
 
@@ -1064,7 +1095,7 @@ func TestNewSearchService(t *testing.T) {
 		mockRepoRepo := new(MockRepositoryRepository)
 
 		assert.Panics(t, func() {
-			NewSearchService(mockVectorRepo, mockEmbeddingService, nil, mockRepoRepo)
+			NewSearchService(mockVectorRepo, mockEmbeddingService, nil, mockRepoRepo, testConfig())
 		}, "Should panic when chunk repository is nil")
 	})
 
@@ -1074,7 +1105,7 @@ func TestNewSearchService(t *testing.T) {
 		mockChunkRepo := new(MockChunkRepository)
 
 		assert.Panics(t, func() {
-			NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo, nil)
+			NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo, nil, testConfig())
 		}, "Should panic when repository repository is nil")
 	})
 }
@@ -1102,6 +1133,7 @@ func TestSearchService_Performance(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		ctx := context.Background()
@@ -1144,6 +1176,7 @@ func TestSearchService_Performance(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
+			testConfig(),
 		)
 
 		// Create cancelled context

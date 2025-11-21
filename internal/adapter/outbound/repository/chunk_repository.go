@@ -753,16 +753,52 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingsBatchToPartitioned(
 	tx pgx.Tx,
 	embeddings []outbound.Embedding,
 ) error {
-	for _, embedding := range embeddings {
-		// Query chunk metadata for denormalization
+	// Batch fetch all chunk metadata to avoid N+1 queries
+	chunkIDs := make([]uuid.UUID, len(embeddings))
+	for i, emb := range embeddings {
+		chunkIDs[i] = emb.ChunkID
+	}
+
+	// Build map of chunk metadata for fast lookup
+	chunkMetadata := make(map[uuid.UUID]struct {
+		language  string
+		chunkType string
+		filePath  string
+	})
+
+	rows, err := tx.Query(ctx, `
+		SELECT id, language, chunk_type, file_path
+		FROM codechunking.code_chunks
+		WHERE id = ANY($1) AND deleted_at IS NULL
+	`, chunkIDs)
+	if err != nil {
+		return fmt.Errorf("failed to batch query chunk metadata: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id uuid.UUID
 		var language, chunkType, filePath string
-		err := tx.QueryRow(ctx, `
-			SELECT language, chunk_type, file_path
-			FROM codechunking.code_chunks
-			WHERE id = $1 AND deleted_at IS NULL
-		`, embedding.ChunkID).Scan(&language, &chunkType, &filePath)
-		if err != nil {
-			return fmt.Errorf("failed to query chunk metadata for embedding %s: %w", embedding.ID.String(), err)
+		if err := rows.Scan(&id, &language, &chunkType, &filePath); err != nil {
+			return fmt.Errorf("failed to scan chunk metadata: %w", err)
+		}
+		chunkMetadata[id] = struct {
+			language  string
+			chunkType string
+			filePath  string
+		}{language, chunkType, filePath}
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating chunk metadata rows: %w", err)
+	}
+
+	// Now insert embeddings using the pre-fetched metadata
+	for _, embedding := range embeddings {
+		metadata, found := chunkMetadata[embedding.ChunkID]
+		if !found {
+			return fmt.Errorf("chunk metadata not found for embedding %s (chunk_id: %s)",
+				embedding.ID.String(), embedding.ChunkID.String())
 		}
 
 		_, err = tx.Exec(ctx, insertPartitionedEmbeddingQuery,
@@ -771,9 +807,9 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingsBatchToPartitioned(
 			embedding.RepositoryID,
 			VectorToString(embedding.Vector),
 			embedding.ModelVersion,
-			language,
-			chunkType,
-			filePath,
+			metadata.language,
+			metadata.chunkType,
+			metadata.filePath,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to save embedding in batch to partitioned table: %w", err)
@@ -1285,15 +1321,16 @@ func prepareChunkFields(chunk *outbound.CodeChunk, embedding *outbound.Embedding
 		return fields, errors.New("repository_id is required on chunk")
 	}
 
-	// Force embedding to use the EXACT same repository ID as the chunk
-	// This ensures they route to the same partition and prevents foreign key violations
-	embedding.RepositoryID = fields.RepositoryID
-
-	// Additional validation to ensure consistency before insertion
-	if embedding.RepositoryID != fields.RepositoryID {
+	// Validate repository ID consistency before forcing
+	// If embedding has a different non-nil repository ID, that's an error
+	if embedding.RepositoryID != uuid.Nil && embedding.RepositoryID != fields.RepositoryID {
 		return fields, fmt.Errorf("repository ID mismatch for chunk %s: chunk=%s, embedding=%s",
 			chunk.ID, fields.RepositoryID.String(), embedding.RepositoryID.String())
 	}
+
+	// Force embedding to use the EXACT same repository ID as the chunk
+	// This ensures they route to the same partition and prevents foreign key violations
+	embedding.RepositoryID = fields.RepositoryID
 
 	return fields, nil
 }
@@ -1537,12 +1574,9 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			return errors.New("repository_id is required to save chunk in batch transaction")
 		}
 
-		// Force embedding to use the EXACT same repository ID as the chunk
-		// This ensures they route to the same partition and prevents foreign key violations
-		embeddings[i].RepositoryID = repositoryID
-
-		// Additional validation to ensure consistency before insertion
-		if embeddings[i].RepositoryID != repositoryID {
+		// Validate repository ID consistency before forcing
+		// If embedding has a different non-nil repository ID, that's an error
+		if embeddings[i].RepositoryID != uuid.Nil && embeddings[i].RepositoryID != repositoryID {
 			slogger.Error(ctx, "Repository ID mismatch detected", slogger.Fields3(
 				"chunk_id", chunk.ID,
 				"chunk_repository_id", repositoryID.String(),
@@ -1551,6 +1585,10 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			return fmt.Errorf("repository ID mismatch for chunk %s: chunk=%s, embedding=%s",
 				chunk.ID, repositoryID.String(), embeddings[i].RepositoryID.String())
 		}
+
+		// Force embedding to use the EXACT same repository ID as the chunk
+		// This ensures they route to the same partition and prevents foreign key violations
+		embeddings[i].RepositoryID = repositoryID
 
 		// Sanitize content for PostgreSQL UTF-8 compatibility
 		sanitizedContent := sanitizeContentWithLogging(ctx, chunk.Content, chunk.ID, chunk.FilePath)

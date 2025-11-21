@@ -8,6 +8,7 @@ DROP INDEX IF EXISTS codechunking.idx_embeddings_partitioned_repo_lang_type;
 DROP INDEX IF EXISTS codechunking.idx_embeddings_partitioned_lang_type;
 DROP INDEX IF EXISTS codechunking.idx_embeddings_partitioned_repo_type;
 DROP INDEX IF EXISTS codechunking.idx_embeddings_partitioned_repo_lang;
+DROP INDEX IF EXISTS codechunking.idx_embeddings_partitioned_file_path_trgm;
 DROP INDEX IF EXISTS codechunking.idx_embeddings_partitioned_chunk_type;
 DROP INDEX IF EXISTS codechunking.idx_embeddings_partitioned_language;
 

@@ -6,9 +6,10 @@ SET search_path TO codechunking, public;
 
 -- Clean up orphaned data first (embeddings that reference non-existent chunks or repositories)
 -- This ensures data integrity before adding constraints
-DELETE FROM embeddings_partitioned
-WHERE chunk_id NOT IN (SELECT id FROM code_chunks)
-   OR repository_id NOT IN (SELECT id FROM repositories);
+-- Using NOT EXISTS for better performance on large datasets compared to NOT IN
+DELETE FROM embeddings_partitioned ep
+WHERE NOT EXISTS (SELECT 1 FROM code_chunks cc WHERE cc.id = ep.chunk_id)
+   OR NOT EXISTS (SELECT 1 FROM repositories r WHERE r.id = ep.repository_id);
 
 -- Add chunk_id foreign key (was missing from previous migration)
 -- This ensures all embeddings belong to valid code chunks

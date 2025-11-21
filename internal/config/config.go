@@ -75,11 +75,11 @@ type GeminiConfig struct {
 
 // BatchConfig holds batch embedding configuration.
 type BatchConfig struct {
-	InputDir     string        `mapstructure:"input_dir"`      // Directory for batch input files
-	OutputDir    string        `mapstructure:"output_dir"`     // Directory for batch output files
-	PollInterval time.Duration `mapstructure:"poll_interval"`  // Polling interval for job status
-	MaxWaitTime  time.Duration `mapstructure:"max_wait_time"`  // Maximum time to wait for job completion
-	Enabled      bool          `mapstructure:"enabled"`        // Whether batch embeddings are enabled
+	InputDir     string        `mapstructure:"input_dir"`     // Directory for batch input files
+	OutputDir    string        `mapstructure:"output_dir"`    // Directory for batch output files
+	PollInterval time.Duration `mapstructure:"poll_interval"` // Polling interval for job status
+	MaxWaitTime  time.Duration `mapstructure:"max_wait_time"` // Maximum time to wait for job completion
+	Enabled      bool          `mapstructure:"enabled"`       // Whether batch embeddings are enabled
 }
 
 // LogConfig holds logging configuration.

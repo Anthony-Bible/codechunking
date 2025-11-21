@@ -225,25 +225,25 @@ func (e *EmbeddingError) IsValidationError() bool {
 
 // BatchEmbeddingJob represents a file-based batch embedding job.
 type BatchEmbeddingJob struct {
-	JobID          string               `json:"job_id"`                     // Unique job identifier
-	JobName        string               `json:"job_name"`                   // Human-readable job name
-	Model          string               `json:"model"`                      // Model used for embeddings
-	State          BatchJobState        `json:"state"`                      // Current job state
-	InputFileURI   string               `json:"input_file_uri,omitempty"`   // URI of input file
-	OutputFileURI  string               `json:"output_file_uri,omitempty"`  // URI of output file (when complete)
-	ErrorFileURI   string               `json:"error_file_uri,omitempty"`   // URI of error file (if errors occurred)
-	TotalCount     int                  `json:"total_count"`                // Total number of items to process
-	ProcessedCount int                  `json:"processed_count"`            // Number of items processed
-	SuccessCount   int                  `json:"success_count"`              // Number of successful items
-	ErrorCount     int                  `json:"error_count"`                // Number of failed items
-	CreatedAt      time.Time            `json:"created_at"`                 // Job creation timestamp
-	UpdatedAt      time.Time            `json:"updated_at"`                 // Last update timestamp
-	CompletedAt    *time.Time           `json:"completed_at,omitempty"`     // Completion timestamp
-	ErrorMessage   string               `json:"error_message,omitempty"`    // Error message if job failed
-	Metadata       map[string]string    `json:"metadata,omitempty"`         // Additional metadata
-	Options        EmbeddingOptions     `json:"options"`                    // Embedding options used
-	Progress       *BatchJobProgress    `json:"progress,omitempty"`         // Detailed progress information
-	EstimatedCost  *BatchJobCostEst     `json:"estimated_cost,omitempty"`   // Estimated cost information
+	JobID          string            `json:"job_id"`                    // Unique job identifier
+	JobName        string            `json:"job_name"`                  // Human-readable job name
+	Model          string            `json:"model"`                     // Model used for embeddings
+	State          BatchJobState     `json:"state"`                     // Current job state
+	InputFileURI   string            `json:"input_file_uri,omitempty"`  // URI of input file
+	OutputFileURI  string            `json:"output_file_uri,omitempty"` // URI of output file (when complete)
+	ErrorFileURI   string            `json:"error_file_uri,omitempty"`  // URI of error file (if errors occurred)
+	TotalCount     int               `json:"total_count"`               // Total number of items to process
+	ProcessedCount int               `json:"processed_count"`           // Number of items processed
+	SuccessCount   int               `json:"success_count"`             // Number of successful items
+	ErrorCount     int               `json:"error_count"`               // Number of failed items
+	CreatedAt      time.Time         `json:"created_at"`                // Job creation timestamp
+	UpdatedAt      time.Time         `json:"updated_at"`                // Last update timestamp
+	CompletedAt    *time.Time        `json:"completed_at,omitempty"`    // Completion timestamp
+	ErrorMessage   string            `json:"error_message,omitempty"`   // Error message if job failed
+	Metadata       map[string]string `json:"metadata,omitempty"`        // Additional metadata
+	Options        EmbeddingOptions  `json:"options"`                   // Embedding options used
+	Progress       *BatchJobProgress `json:"progress,omitempty"`        // Detailed progress information
+	EstimatedCost  *BatchJobCostEst  `json:"estimated_cost,omitempty"`  // Estimated cost information
 }
 
 // BatchJobState represents the state of a batch job.
@@ -264,11 +264,11 @@ func (s BatchJobState) IsTerminal() bool {
 
 // BatchJobProgress provides detailed progress information for a batch job.
 type BatchJobProgress struct {
-	PercentComplete float64       `json:"percent_complete"`        // Percentage complete (0-100)
-	ItemsRemaining  int           `json:"items_remaining"`         // Number of items remaining
+	PercentComplete        float64        `json:"percent_complete"`                   // Percentage complete (0-100)
+	ItemsRemaining         int            `json:"items_remaining"`                    // Number of items remaining
 	EstimatedTimeRemaining *time.Duration `json:"estimated_time_remaining,omitempty"` // Estimated time to completion
-	ProcessingRate  float64       `json:"processing_rate"`         // Items per second
-	StartedAt       *time.Time    `json:"started_at,omitempty"`    // When processing started
+	ProcessingRate         float64        `json:"processing_rate"`                    // Items per second
+	StartedAt              *time.Time     `json:"started_at,omitempty"`               // When processing started
 }
 
 // BatchJobCostEst provides cost estimation for a batch job.
@@ -281,24 +281,23 @@ type BatchJobCostEst struct {
 
 // BatchJobFilter provides filtering options for listing batch jobs.
 type BatchJobFilter struct {
-	States     []BatchJobState `json:"states,omitempty"`      // Filter by job states
-	Model      string          `json:"model,omitempty"`       // Filter by model
-	CreatedAfter  *time.Time   `json:"created_after,omitempty"`  // Filter by creation time (after)
-	CreatedBefore *time.Time   `json:"created_before,omitempty"` // Filter by creation time (before)
-	Limit      int             `json:"limit,omitempty"`       // Maximum number of results
-	Offset     int             `json:"offset,omitempty"`      // Offset for pagination
+	States        []BatchJobState `json:"states,omitempty"`         // Filter by job states
+	Model         string          `json:"model,omitempty"`          // Filter by model
+	CreatedAfter  *time.Time      `json:"created_after,omitempty"`  // Filter by creation time (after)
+	CreatedBefore *time.Time      `json:"created_before,omitempty"` // Filter by creation time (before)
+	Limit         int             `json:"limit,omitempty"`          // Maximum number of results
 }
 
 // BatchEmbeddingRequest represents a single embedding request in a batch.
 type BatchEmbeddingRequest struct {
-	RequestID string `json:"request_id"` // Unique request identifier
-	Text      string `json:"text"`       // Text to embed
+	RequestID string                 `json:"request_id"`         // Unique request identifier
+	Text      string                 `json:"text"`               // Text to embed
 	Metadata  map[string]interface{} `json:"metadata,omitempty"` // Optional metadata
 }
 
 // BatchEmbeddingResponse represents a single embedding response from a batch.
 type BatchEmbeddingResponse struct {
-	RequestID string           `json:"request_id"`        // Request identifier matching the request
-	Result    *EmbeddingResult `json:"result,omitempty"`  // Embedding result (if successful)
-	Error     *EmbeddingError  `json:"error,omitempty"`   // Error (if failed)
+	RequestID string           `json:"request_id"`       // Request identifier matching the request
+	Result    *EmbeddingResult `json:"result,omitempty"` // Embedding result (if successful)
+	Error     *EmbeddingError  `json:"error,omitempty"`  // Error (if failed)
 }

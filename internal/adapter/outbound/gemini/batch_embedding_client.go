@@ -40,10 +40,10 @@ func NewBatchEmbeddingClient(baseClient *Client, inputDir, outputDir string) (*B
 	}
 
 	// Create directories if they don't exist
-	if err := os.MkdirAll(inputDir, 0750); err != nil {
+	if err := os.MkdirAll(inputDir, 0o750); err != nil {
 		return nil, fmt.Errorf("failed to create input directory: %w", err)
 	}
-	if err := os.MkdirAll(outputDir, 0750); err != nil {
+	if err := os.MkdirAll(outputDir, 0o750); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -362,6 +362,15 @@ func (c *BatchEmbeddingClient) WaitForBatchJob(
 	})
 
 	// Validate input
+	if strings.TrimSpace(jobID) == "" {
+		return nil, &outbound.EmbeddingError{
+			Code:      "empty_job_id",
+			Type:      "validation",
+			Message:   "job ID cannot be empty",
+			Retryable: false,
+		}
+	}
+
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second // Default poll interval
 	}
@@ -398,7 +407,7 @@ func (c *BatchEmbeddingClient) WaitForBatchJob(
 			// Log progress
 			if job.Progress != nil {
 				slogger.Info(ctx, "Batch job progress", slogger.Fields{
-					"job_id":          jobID,
+					"job_id":           jobID,
 					"percent_complete": job.Progress.PercentComplete,
 					"items_remaining":  job.Progress.ItemsRemaining,
 				})
@@ -456,7 +465,9 @@ func (c *BatchEmbeddingClient) writeRequestsToFile(
 
 		// Add output dimensionality if specified
 		if c.config.Dimensions > 0 {
-			embeddingReq["body"].(map[string]interface{})["output_dimensionality"] = c.config.Dimensions
+			if body, ok := embeddingReq["body"].(map[string]interface{}); ok {
+				body["output_dimensionality"] = c.config.Dimensions
+			}
 		}
 
 		// Marshal to JSON and write
@@ -530,7 +541,9 @@ func (c *BatchEmbeddingClient) downloadAndParseResults(
 }
 
 // parseEmbeddingResponse parses an embedding response from the batch output.
-func (c *BatchEmbeddingClient) parseEmbeddingResponse(response map[string]interface{}) (*outbound.EmbeddingResult, error) {
+func (c *BatchEmbeddingClient) parseEmbeddingResponse(
+	response map[string]interface{},
+) (*outbound.EmbeddingResult, error) {
 	// Extract custom_id (request ID)
 	requestID, _ := response["custom_id"].(string)
 

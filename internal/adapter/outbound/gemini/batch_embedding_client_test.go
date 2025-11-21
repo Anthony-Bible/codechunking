@@ -3,6 +3,7 @@ package gemini
 import (
 	"codechunking/internal/port/outbound"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -86,7 +87,8 @@ func TestBatchEmbeddingClient_CreateBatchEmbeddingJob(t *testing.T) {
 		assert.Nil(t, job)
 
 		// Check error type
-		embErr, ok := err.(*outbound.EmbeddingError)
+		embErr := &outbound.EmbeddingError{}
+		ok := errors.As(err, &embErr)
 		assert.True(t, ok)
 		assert.Equal(t, "empty_texts", embErr.Code)
 		assert.Equal(t, "validation", embErr.Type)
@@ -118,7 +120,8 @@ func TestBatchEmbeddingClient_GetBatchJobStatus(t *testing.T) {
 		assert.Nil(t, job)
 
 		// Check error type
-		embErr, ok := err.(*outbound.EmbeddingError)
+		embErr := &outbound.EmbeddingError{}
+		ok := errors.As(err, &embErr)
 		assert.True(t, ok)
 		assert.Equal(t, "empty_job_id", embErr.Code)
 		assert.Equal(t, "validation", embErr.Type)
@@ -149,7 +152,8 @@ func TestBatchEmbeddingClient_CancelBatchJob(t *testing.T) {
 		assert.Error(t, err)
 
 		// Check error type
-		embErr, ok := err.(*outbound.EmbeddingError)
+		embErr := &outbound.EmbeddingError{}
+		ok := errors.As(err, &embErr)
 		assert.True(t, ok)
 		assert.Equal(t, "empty_job_id", embErr.Code)
 		assert.Equal(t, "validation", embErr.Type)
@@ -180,7 +184,8 @@ func TestBatchEmbeddingClient_DeleteBatchJob(t *testing.T) {
 		assert.Error(t, err)
 
 		// Check error type
-		embErr, ok := err.(*outbound.EmbeddingError)
+		embErr := &outbound.EmbeddingError{}
+		ok := errors.As(err, &embErr)
 		assert.True(t, ok)
 		assert.Equal(t, "empty_job_id", embErr.Code)
 		assert.Equal(t, "validation", embErr.Type)
@@ -363,7 +368,8 @@ func TestBatchEmbeddingClient_WaitForBatchJob(t *testing.T) {
 		assert.Nil(t, job)
 
 		// Check error type
-		embErr, ok := err.(*outbound.EmbeddingError)
+		embErr := &outbound.EmbeddingError{}
+		ok := errors.As(err, &embErr)
 		assert.True(t, ok)
 		assert.Equal(t, "context_cancelled", embErr.Code)
 		assert.Equal(t, "timeout", embErr.Type)

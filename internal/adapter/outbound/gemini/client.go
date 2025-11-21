@@ -132,12 +132,12 @@ func validateTaskTypeValue(taskType string) error {
 // concurrent access. While genai.Client itself is thread-safe, we use RWMutex to
 // prevent race conditions during initialization and to provide clear ownership semantics.
 type Client struct {
-	config           *ClientConfig         // Client configuration
-	genaiClient      *genai.Client         // Cached Gemini API client (created once, reused for all requests)
-	genaiMu          sync.RWMutex          // Protects concurrent access to genaiClient field
-	batchClient      *BatchEmbeddingClient // Optional batch embedding client for async batch processing
-	useBatchAPI      bool                  // Whether to use async batch API for GenerateBatchEmbeddings
-	batchPollInterval time.Duration        // Poll interval for batch job status checks
+	config            *ClientConfig         // Client configuration
+	genaiClient       *genai.Client         // Cached Gemini API client (created once, reused for all requests)
+	genaiMu           sync.RWMutex          // Protects concurrent access to genaiClient field
+	batchClient       *BatchEmbeddingClient // Optional batch embedding client for async batch processing
+	useBatchAPI       bool                  // Whether to use async batch API for GenerateBatchEmbeddings
+	batchPollInterval time.Duration         // Poll interval for batch job status checks
 }
 
 // NewClient creates a new Gemini API client with the provided configuration.
@@ -402,12 +402,13 @@ func (c *Client) GenerateEmbedding(
 //
 // This method supports two modes:
 // 1. Async Batch API (when enabled via EnableBatchProcessing):
-//    - Submits a batch job to Google GenAI Batches API
-//    - Waits for completion with configurable polling
-//    - Suitable for large batches (100+ items) where async processing is beneficial
+//   - Submits a batch job to Google GenAI Batches API
+//   - Waits for completion with configurable polling
+//   - Suitable for large batches (100+ items) where async processing is beneficial
+//
 // 2. Sequential Processing (default):
-//    - Processes texts one-by-one using GenerateEmbedding
-//    - Suitable for small batches or when immediate results are needed
+//   - Processes texts one-by-one using GenerateEmbedding
+//   - Suitable for small batches or when immediate results are needed
 //
 // Use EnableBatchProcessing to configure which mode to use.
 func (c *Client) GenerateBatchEmbeddings(
@@ -416,8 +417,8 @@ func (c *Client) GenerateBatchEmbeddings(
 	options outbound.EmbeddingOptions,
 ) ([]*outbound.EmbeddingResult, error) {
 	slogger.Info(ctx, "GenerateBatchEmbeddings called", slogger.Fields{
-		"text_count":      len(texts),
-		"model":           c.config.Model,
+		"text_count":        len(texts),
+		"model":             c.config.Model,
 		"batch_api_enabled": c.IsBatchProcessingEnabled(),
 	})
 
@@ -457,7 +458,7 @@ func (c *Client) generateBatchEmbeddingsAsync(
 	}
 
 	slogger.Info(ctx, "Batch job created, waiting for completion", slogger.Fields{
-		"job_id": job.JobID,
+		"job_id":        job.JobID,
 		"poll_interval": c.batchPollInterval,
 	})
 

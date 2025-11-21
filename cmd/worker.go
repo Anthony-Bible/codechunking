@@ -284,8 +284,8 @@ func createEmbeddingService(cfg *config.Config) outbound.EmbeddingService {
 	}
 
 	slogger.InfoNoCtx("Using Gemini embedding service", slogger.Fields{
-		"model":               config.Model,
-		"batch_api_enabled":   client.IsBatchProcessingEnabled(),
+		"model":             config.Model,
+		"batch_api_enabled": client.IsBatchProcessingEnabled(),
 	})
 	return client
 }

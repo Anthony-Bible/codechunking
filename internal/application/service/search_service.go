@@ -207,7 +207,7 @@ func (s *SearchService) performVectorSearch(
 		MaxResults:          request.Limit + request.Offset,
 		MinSimilarity:       request.SimilarityThreshold,
 		RepositoryIDs:       combinedRepositoryIDs,
-		IterativeScanMode:   outbound.IterativeScanRelaxedOrder,         // Enable pgvector 0.8.0+ iterative scanning
+		IterativeScanMode:   s.config.Search.IterativeScanMode,           // Read from config for pgvector 0.8.0+ iterative scanning
 		Languages:           request.Languages,                          // SQL-level language filtering
 		ChunkTypes:          request.Types,                              // SQL-level chunk type filtering
 		FileExtensions:      s.extractFileExtensions(request.FileTypes), // SQL-level file extension filtering

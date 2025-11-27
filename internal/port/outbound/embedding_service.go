@@ -42,6 +42,14 @@ type EmbeddingService interface {
 
 	// EstimateTokenCount estimates the number of tokens in the given text
 	EstimateTokenCount(ctx context.Context, text string) (int, error)
+
+	// CountTokens counts the exact number of tokens in the given text using the embedding model
+	// Returns a TokenCountResult containing the token count, model used, and optional cache timestamp
+	CountTokens(ctx context.Context, text string, model string) (*TokenCountResult, error)
+
+	// CountTokensBatch counts tokens for multiple texts in a single batch request
+	// Returns a slice of TokenCountResult matching the input texts order
+	CountTokensBatch(ctx context.Context, texts []string, model string) ([]*TokenCountResult, error)
 }
 
 // BatchEmbeddingService defines the interface for file-based batch embedding operations.
@@ -314,6 +322,13 @@ type BatchEmbeddingRequest struct {
 	RequestID string                 `json:"request_id"`         // Unique request identifier
 	Text      string                 `json:"text"`               // Text to embed
 	Metadata  map[string]interface{} `json:"metadata,omitempty"` // Optional metadata
+}
+
+// TokenCountResult represents the result of a token counting operation.
+type TokenCountResult struct {
+	TotalTokens int        `json:"total_tokens"`        // Total number of tokens counted
+	Model       string     `json:"model"`               // Model used for token counting
+	CachedAt    *time.Time `json:"cached_at,omitempty"` // Optional timestamp if result was cached
 }
 
 // BatchEmbeddingResponse represents a single embedding response from a batch.

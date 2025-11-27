@@ -236,6 +236,7 @@ func TestManualAcknowledgment(t *testing.T) {
 		correlationID := "test-corr-456"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     messageID,
 			CorrelationID: correlationID,
 			SchemaVersion: "2.0",
@@ -315,8 +316,9 @@ func TestManualAcknowledgment(t *testing.T) {
 		messageID := "test-msg-timeout-def"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
-			MessageID:    messageID,
-			RepositoryID: uuid.New(),
+			IndexingJobID: uuid.New(),
+			MessageID:     messageID,
+			RepositoryID:  uuid.New(),
 		}
 		_ = jobMessage // Used in GREEN phase
 
@@ -355,6 +357,7 @@ func TestNegativeAcknowledgment(t *testing.T) {
 		correlationID := "test-corr-nack-456"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     messageID,
 			CorrelationID: correlationID,
 			RepositoryID:  uuid.New(),
@@ -403,10 +406,11 @@ func TestNegativeAcknowledgment(t *testing.T) {
 		messageID := "test-msg-nack-context-789"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
-			MessageID:    messageID,
-			RepositoryID: uuid.New(),
-			RetryAttempt: 2,
-			MaxRetries:   3,
+			IndexingJobID: uuid.New(),
+			MessageID:     messageID,
+			RepositoryID:  uuid.New(),
+			RetryAttempt:  2,
+			MaxRetries:    3,
 		}
 		_ = jobMessage // Used in GREEN phase
 
@@ -518,6 +522,7 @@ func TestDuplicateMessageDetection(t *testing.T) {
 		correlationID := "test-corr-duplicate-456"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     messageID,
 			CorrelationID: correlationID,
 			RepositoryID:  uuid.New(),
@@ -565,6 +570,7 @@ func TestDuplicateMessageDetection(t *testing.T) {
 		correlationID := "test-corr-dup-error-abc"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     messageID,
 			CorrelationID: correlationID,
 			RepositoryID:  uuid.New(),
@@ -628,6 +634,7 @@ func TestAcknowledgmentIntegration(t *testing.T) {
 		correlationID := "test-corr-lifecycle-456"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     messageID,
 			CorrelationID: correlationID,
 			RepositoryID:  uuid.New(),
@@ -686,8 +693,9 @@ func TestAcknowledgmentIntegration(t *testing.T) {
 		messageID := "test-msg-transaction-789"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
-			MessageID:    messageID,
-			RepositoryID: uuid.New(),
+			IndexingJobID: uuid.New(),
+			MessageID:     messageID,
+			RepositoryID:  uuid.New(),
 		}
 
 		mockNATSMsg := &MockNATSMessage{
@@ -726,8 +734,9 @@ func TestAcknowledgmentIntegration(t *testing.T) {
 		messageID := "test-msg-ack-recovery-abc"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
-			MessageID:    messageID,
-			RepositoryID: uuid.New(),
+			IndexingJobID: uuid.New(),
+			MessageID:     messageID,
+			RepositoryID:  uuid.New(),
 		}
 
 		mockNATSMsg := &MockNATSMessage{
@@ -769,8 +778,9 @@ func TestAcknowledgmentErrorHandling(t *testing.T) {
 		messageID := "test-msg-ack-fail-123"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
-			MessageID:    messageID,
-			RepositoryID: uuid.New(),
+			IndexingJobID: uuid.New(),
+			MessageID:     messageID,
+			RepositoryID:  uuid.New(),
 		}
 
 		mockNATSMsg := &MockNATSMessage{
@@ -814,8 +824,9 @@ func TestAcknowledgmentErrorHandling(t *testing.T) {
 		messageID := "test-msg-nack-fail-456"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
-			MessageID:    messageID,
-			RepositoryID: uuid.New(),
+			IndexingJobID: uuid.New(),
+			MessageID:     messageID,
+			RepositoryID:  uuid.New(),
 		}
 
 		mockNATSMsg := &MockNATSMessage{
@@ -853,10 +864,11 @@ func TestAcknowledgmentErrorHandling(t *testing.T) {
 		messageID := "test-msg-term-789"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
-			MessageID:    messageID,
-			RepositoryID: uuid.New(),
-			RetryAttempt: 3,
-			MaxRetries:   3, // Max retries reached
+			IndexingJobID: uuid.New(),
+			MessageID:     messageID,
+			RepositoryID:  uuid.New(),
+			RetryAttempt:  3,
+			MaxRetries:    3, // Max retries reached
 		}
 
 		mockNATSMsg := &MockNATSMessage{

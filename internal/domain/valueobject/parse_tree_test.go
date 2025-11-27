@@ -1144,3 +1144,268 @@ func main() {
 		}
 	})
 }
+
+// TestSanitizeContent tests the SanitizeContent function for null byte removal.
+// This is a RED PHASE test that defines expected behavior for PostgreSQL UTF-8 compatibility.
+func TestSanitizeContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "no null bytes - content unchanged",
+			input:    "package main\nfunc main() {}",
+			expected: "package main\nfunc main() {}",
+		},
+		{
+			name:     "single null byte at start",
+			input:    "\x00package main",
+			expected: "package main",
+		},
+		{
+			name:     "single null byte at end",
+			input:    "package main\x00",
+			expected: "package main",
+		},
+		{
+			name:     "single null byte in middle",
+			input:    "package\x00main",
+			expected: "packagemain",
+		},
+		{
+			name:     "multiple null bytes",
+			input:    "\x00pack\x00age\x00 main\x00",
+			expected: "package main",
+		},
+		{
+			name:     "only null bytes",
+			input:    "\x00\x00\x00",
+			expected: "",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "binary content with null bytes",
+			input:    "ELF\x00\x00\x00binary\x00data",
+			expected: "ELFbinarydata",
+		},
+		{
+			name:     "unicode with null bytes",
+			input:    "Hello\x00世界\x00",
+			expected: "Hello世界",
+		},
+		{
+			name:     "null bytes between valid UTF-8",
+			input:    "func\x00test()\x00{\x00}",
+			expected: "functest(){}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SanitizeContent(tt.input)
+			assert.Equal(t, tt.expected, result,
+				"SanitizeContent should remove all null bytes while preserving other content")
+		})
+	}
+}
+
+// TestParseTree_GetNodeTextWithNullBytes tests GetNodeText sanitization of null bytes.
+// This is a RED PHASE test ensuring PostgreSQL UTF-8 compatibility.
+func TestParseTree_GetNodeTextWithNullBytes(t *testing.T) {
+	tests := []struct {
+		name          string
+		source        []byte
+		nodeStartByte uint32
+		nodeEndByte   uint32
+		expectedText  string
+		description   string
+	}{
+		{
+			name:          "source with null byte in middle",
+			source:        []byte("package\x00main"),
+			nodeStartByte: 0,
+			nodeEndByte:   12,
+			expectedText:  "packagemain",
+			description:   "Null byte in middle should be removed",
+		},
+		{
+			name:          "source with null byte at start",
+			source:        []byte("\x00package main"),
+			nodeStartByte: 0,
+			nodeEndByte:   13,
+			expectedText:  "package main",
+			description:   "Null byte at start should be removed",
+		},
+		{
+			name:          "source with null byte at end",
+			source:        []byte("package main\x00"),
+			nodeStartByte: 0,
+			nodeEndByte:   13,
+			expectedText:  "package main",
+			description:   "Null byte at end should be removed",
+		},
+		{
+			name:          "source with multiple null bytes",
+			source:        []byte("pack\x00age\x00 \x00main"),
+			nodeStartByte: 0,
+			nodeEndByte:   15,
+			expectedText:  "package main",
+			description:   "Multiple null bytes should be removed",
+		},
+		{
+			name:          "binary file content",
+			source:        []byte("\x7fELF\x00\x00\x00binary\x00content"),
+			nodeStartByte: 0,
+			nodeEndByte:   21, // Total length including null bytes
+			expectedText:  "\x7fELFbinarycontent",
+			description:   "Binary content null bytes should be removed",
+		},
+		{
+			name:          "partial node extraction with null bytes",
+			source:        []byte("package\x00main\x00func\x00test()"),
+			nodeStartByte: 8,  // After "package\x00"
+			nodeEndByte:   17, // Up to and including "func\x00"
+			expectedText:  "mainfunc",
+			description:   "Null bytes in partial extraction should be removed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			language, _ := NewLanguage(LanguageGo)
+			rootNode := &ParseNode{
+				Type:      "source_file",
+				StartByte: tt.nodeStartByte,
+				EndByte:   tt.nodeEndByte,
+				StartPos:  Position{Row: 0, Column: 0},
+				EndPos:    Position{Row: 0, Column: uint32(tt.nodeEndByte)},
+				Children:  []*ParseNode{},
+			}
+
+			metadata := ParseMetadata{NodeCount: 1, MaxDepth: 1}
+			parseTree, err := NewParseTree(context.Background(), language, rootNode, tt.source, metadata)
+			require.NoError(t, err)
+
+			text := parseTree.GetNodeText(rootNode)
+			assert.Equal(t, tt.expectedText, text, tt.description)
+			assert.NotContains(t, text, "\x00", "Result should not contain null bytes")
+		})
+	}
+}
+
+// TestParseTree_GetNodeTextNullByteEdgeCases tests edge cases for null byte handling.
+// This is a RED PHASE test for comprehensive null byte coverage.
+func TestParseTree_GetNodeTextNullByteEdgeCases(t *testing.T) {
+	t.Run("consecutive null bytes should all be removed", func(t *testing.T) {
+		source := []byte("test\x00\x00\x00content")
+		language, _ := NewLanguage(LanguageGo)
+		rootNode := &ParseNode{
+			Type:      "source_file",
+			StartByte: 0,
+			EndByte:   uint32(len(source)),
+			StartPos:  Position{Row: 0, Column: 0},
+			EndPos:    Position{Row: 0, Column: 20},
+			Children:  []*ParseNode{},
+		}
+
+		metadata := ParseMetadata{NodeCount: 1, MaxDepth: 1}
+		parseTree, err := NewParseTree(context.Background(), language, rootNode, source, metadata)
+		require.NoError(t, err)
+
+		text := parseTree.GetNodeText(rootNode)
+		assert.Equal(t, "testcontent", text)
+		assert.NotContains(t, text, "\x00")
+	})
+
+	t.Run("null bytes with unicode characters", func(t *testing.T) {
+		source := []byte("Hello\x00世界\x00!")
+		language, _ := NewLanguage(LanguageGo)
+		rootNode := &ParseNode{
+			Type:      "source_file",
+			StartByte: 0,
+			EndByte:   uint32(len(source)),
+			StartPos:  Position{Row: 0, Column: 0},
+			EndPos:    Position{Row: 0, Column: 20},
+			Children:  []*ParseNode{},
+		}
+
+		metadata := ParseMetadata{NodeCount: 1, MaxDepth: 1}
+		parseTree, err := NewParseTree(context.Background(), language, rootNode, source, metadata)
+		require.NoError(t, err)
+
+		text := parseTree.GetNodeText(rootNode)
+		assert.Equal(t, "Hello世界!", text)
+		assert.NotContains(t, text, "\x00")
+		assert.Contains(t, text, "世界")
+	})
+
+	t.Run("empty content after null byte removal", func(t *testing.T) {
+		source := []byte("\x00\x00\x00")
+		language, _ := NewLanguage(LanguageGo)
+		rootNode := &ParseNode{
+			Type:      "source_file",
+			StartByte: 0,
+			EndByte:   uint32(len(source)),
+			StartPos:  Position{Row: 0, Column: 0},
+			EndPos:    Position{Row: 0, Column: 3},
+			Children:  []*ParseNode{},
+		}
+
+		metadata := ParseMetadata{NodeCount: 1, MaxDepth: 1}
+		parseTree, err := NewParseTree(context.Background(), language, rootNode, source, metadata)
+		require.NoError(t, err)
+
+		text := parseTree.GetNodeText(rootNode)
+		assert.Empty(t, text)
+	})
+
+	t.Run("cleaned up tree returns empty string", func(t *testing.T) {
+		source := []byte("test\x00content")
+		language, _ := NewLanguage(LanguageGo)
+		rootNode := &ParseNode{
+			Type:      "source_file",
+			StartByte: 0,
+			EndByte:   uint32(len(source)),
+			StartPos:  Position{Row: 0, Column: 0},
+			EndPos:    Position{Row: 0, Column: 20},
+			Children:  []*ParseNode{},
+		}
+
+		metadata := ParseMetadata{NodeCount: 1, MaxDepth: 1}
+		parseTree, err := NewParseTree(context.Background(), language, rootNode, source, metadata)
+		require.NoError(t, err)
+
+		// Clean up the tree
+		err = parseTree.Cleanup(context.Background())
+		require.NoError(t, err)
+
+		// After cleanup, GetNodeText should return empty string
+		text := parseTree.GetNodeText(rootNode)
+		assert.Empty(t, text)
+	})
+
+	t.Run("nil node returns empty string", func(t *testing.T) {
+		source := []byte("test\x00content")
+		language, _ := NewLanguage(LanguageGo)
+		rootNode := &ParseNode{
+			Type:      "source_file",
+			StartByte: 0,
+			EndByte:   uint32(len(source)),
+			StartPos:  Position{Row: 0, Column: 0},
+			EndPos:    Position{Row: 0, Column: 20},
+			Children:  []*ParseNode{},
+		}
+
+		metadata := ParseMetadata{NodeCount: 1, MaxDepth: 1}
+		parseTree, err := NewParseTree(context.Background(), language, rootNode, source, metadata)
+		require.NoError(t, err)
+
+		text := parseTree.GetNodeText(nil)
+		assert.Empty(t, text)
+	})
+}

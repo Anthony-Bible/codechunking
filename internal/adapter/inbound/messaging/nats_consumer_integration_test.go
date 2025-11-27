@@ -291,6 +291,7 @@ func TestNATSConsumerIntegration_MessageSubscriptionAndProcessing(t *testing.T) 
 
 		// Create test message
 		testMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "test-msg-" + uuid.New().String()[:8],
 			CorrelationID: "test-corr-" + uuid.New().String()[:8],
 			SchemaVersion: "2.0",
@@ -379,6 +380,7 @@ func TestNATSConsumerIntegration_MessageSubscriptionAndProcessing(t *testing.T) 
 		firstConsumerJS := consumers[0].jsContext
 		for msgNum := range numMessages {
 			testMessage := messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     fmt.Sprintf("load-test-msg-%d", msgNum),
 				CorrelationID: "load-test-correlation",
 				SchemaVersion: "2.0",
@@ -442,6 +444,7 @@ func TestNATSConsumerIntegration_MessageSubscriptionAndProcessing(t *testing.T) 
 
 		// Create and publish test message
 		testMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "error-test-msg",
 			CorrelationID: "error-test-corr",
 			SchemaVersion: "2.0",
@@ -626,6 +629,7 @@ func TestNATSConsumerIntegration_MessageAcknowledgment(t *testing.T) {
 
 		// Create and publish test message
 		testMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "ack-test-msg",
 			CorrelationID: "ack-test-corr",
 			SchemaVersion: "2.0",
@@ -689,6 +693,7 @@ func TestNATSConsumerIntegration_MessageAcknowledgment(t *testing.T) {
 
 		// Create and publish test message
 		testMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "nack-test-msg",
 			CorrelationID: "nack-test-corr",
 			SchemaVersion: "2.0",
@@ -751,6 +756,7 @@ func TestNATSConsumerIntegration_MessageAcknowledgment(t *testing.T) {
 
 		// Create and publish test message
 		testMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "timeout-test-msg",
 			CorrelationID: "timeout-test-corr",
 			SchemaVersion: "2.0",
@@ -823,6 +829,7 @@ func TestNATSConsumerIntegration_GracefulShutdown(t *testing.T) {
 		const numMessages = 5
 		for i := range numMessages {
 			testMessage := messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     fmt.Sprintf("drain-test-msg-%d", i),
 				CorrelationID: "drain-test-corr",
 				SchemaVersion: "2.0",
@@ -886,6 +893,7 @@ func TestNATSConsumerIntegration_GracefulShutdown(t *testing.T) {
 
 		// Publish message that will be slow to process
 		testMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "drain-timeout-test-msg",
 			CorrelationID: "drain-timeout-test-corr",
 			SchemaVersion: "2.0",

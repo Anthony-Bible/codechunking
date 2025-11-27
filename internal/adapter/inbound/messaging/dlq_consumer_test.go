@@ -273,6 +273,7 @@ func TestDLQConsumerSubscription(t *testing.T) {
 	t.Run("should process DLQ message correctly", func(t *testing.T) {
 		// Create a valid DLQ message
 		originalMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "msg-123",
 			CorrelationID: "corr-456",
 			RepositoryID:  uuid.New(),
@@ -359,6 +360,7 @@ func TestDLQMessageAnalysis(t *testing.T) {
 		dlqMessage := messaging.DLQMessage{
 			DLQMessageID: "dlq-msg-002",
 			OriginalMessage: messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "msg-456",
 				RepositoryURL: "https://github.com/example/repo.git",
 			},
@@ -405,7 +407,8 @@ func TestDLQMessageAnalysis(t *testing.T) {
 			{
 				DLQMessageID: "dlq-msg-003",
 				OriginalMessage: messaging.EnhancedIndexingJobMessage{
-					MessageID: "msg-789",
+					IndexingJobID: uuid.New(),
+					MessageID:     "msg-789",
 				},
 				FailureType:   messaging.FailureTypeNetworkError,
 				TotalFailures: 1,
@@ -414,7 +417,8 @@ func TestDLQMessageAnalysis(t *testing.T) {
 			{
 				DLQMessageID: "dlq-msg-004",
 				OriginalMessage: messaging.EnhancedIndexingJobMessage{
-					MessageID: "msg-789",
+					IndexingJobID: uuid.New(),
+					MessageID:     "msg-789",
 				},
 				FailureType:   messaging.FailureTypeNetworkError,
 				TotalFailures: 2,
@@ -471,6 +475,7 @@ func TestDLQMessageRetry(t *testing.T) {
 		dlqMessage := messaging.DLQMessage{
 			DLQMessageID: "dlq-msg-retry",
 			OriginalMessage: messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "msg-retry",
 				RepositoryURL: "https://github.com/example/repo.git",
 				RetryAttempt:  3,

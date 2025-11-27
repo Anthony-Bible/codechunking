@@ -50,6 +50,9 @@ func extractMainModule(
 	// Get full source content
 	source := parseTree.Source()
 
+	// Sanitize content for PostgreSQL UTF-8 compatibility
+	sanitizedContent := valueobject.SanitizeContent(string(source))
+
 	return &outbound.SemanticCodeChunk{
 		ChunkID:       utils.GenerateID("module", moduleName, nil),
 		Type:          outbound.ConstructModule,
@@ -58,13 +61,13 @@ func extractMainModule(
 		Language:      parseTree.Language(),
 		StartByte:     0,
 		EndByte:       utils.SafeUint32(len(source)),
-		Content:       string(source),
+		Content:       sanitizedContent,
 		Documentation: documentation,
 		Visibility:    outbound.Public,
 		IsStatic:      true,
 		Metadata:      metadata,
 		ExtractedAt:   now,
-		Hash:          utils.GenerateHash(string(source)),
+		Hash:          utils.GenerateHash(sanitizedContent),
 	}
 }
 

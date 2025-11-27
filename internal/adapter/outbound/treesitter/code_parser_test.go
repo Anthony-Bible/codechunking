@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -444,4 +445,71 @@ func Func%d() { return %d }`, i%10, i, i)
 
 		t.Logf("Processed %d files with relative path calculation in %v", len(chunks), elapsed)
 	})
+}
+
+// TestTreeSitterCodeParser_EmptyChunkFiltering tests that chunks with empty content
+// are filtered out during parsing and logged appropriately.
+func TestTreeSitterCodeParser_EmptyChunkFiltering(t *testing.T) {
+	// Create a temporary directory structure
+	tempDir := t.TempDir()
+
+	// Create test files including one that might produce empty chunks
+	files := map[string]string{
+		"valid.go": `package test
+
+func ValidFunction() {
+	fmt.Println("Hello")
+}
+
+func AnotherFunction() int {
+	return 42
+}
+`,
+		"empty_interface.go": `package test
+
+// This might produce an empty chunk depending on tree-sitter behavior
+type EmptyInterface interface{}
+`,
+		"minimal.go": `package empty
+
+// File with minimal content
+`,
+	}
+
+	for filename, content := range files {
+		path := filepath.Join(tempDir, filename)
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	}
+
+	ctx := context.Background()
+	parser, err := NewTreeSitterCodeParser(ctx)
+	require.NoError(t, err)
+
+	config := outbound.CodeParsingConfig{
+		ChunkSizeBytes: 1024,
+		IncludeTests:   false,
+		ExcludeVendor:  true,
+	}
+
+	chunks, err := parser.ParseDirectory(ctx, tempDir, config)
+	require.NoError(t, err)
+
+	// Verify all returned chunks have non-empty content
+	for i, chunk := range chunks {
+		assert.NotEmpty(t, strings.TrimSpace(chunk.Content),
+			"Chunk %d should not have empty content [file=%s, type=%s, entity=%s]",
+			i, chunk.FilePath, chunk.Type, chunk.EntityName)
+	}
+
+	// Verify basic chunk structure
+	assert.NotEmpty(t, chunks, "Should have at least some valid chunks")
+
+	// Verify all chunks have required fields
+	for _, chunk := range chunks {
+		assert.NotEmpty(t, chunk.ID, "Chunk should have an ID")
+		assert.NotEmpty(t, chunk.FilePath, "Chunk should have a file path")
+		assert.NotEmpty(t, chunk.Language, "Chunk should have a language")
+		assert.NotZero(t, chunk.Size, "Chunk should have a size")
+		assert.NotEmpty(t, chunk.Hash, "Chunk should have a hash")
+	}
 }

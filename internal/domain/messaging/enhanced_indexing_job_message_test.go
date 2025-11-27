@@ -24,6 +24,7 @@ func TestEnhancedIndexingJobMessage_SchemaDefinition(t *testing.T) {
 				return EnhancedIndexingJobMessage{
 					// Core identification
 					MessageID:     "msg-12345",
+					IndexingJobID: uuid.New(),
 					CorrelationID: "corr-67890",
 					SchemaVersion: "2.0",
 					Timestamp:     time.Now(),
@@ -222,6 +223,7 @@ func TestEnhancedIndexingJobMessage_Validation(t *testing.T) {
 			setupMessage: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
 					MessageID:     "msg-valid-12345",
+					IndexingJobID: uuid.New(),
 					CorrelationID: "corr-valid-67890",
 					SchemaVersion: "2.0",
 					Timestamp:     time.Now(),
@@ -247,6 +249,7 @@ func TestEnhancedIndexingJobMessage_Validation(t *testing.T) {
 			name: "missing_message_id_fails_validation",
 			setupMessage: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					CorrelationID: "corr-67890",
 					SchemaVersion: "2.0",
 					RepositoryID:  uuid.New(),
@@ -262,6 +265,7 @@ func TestEnhancedIndexingJobMessage_Validation(t *testing.T) {
 			setupMessage: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
 					MessageID:     "msg-12345",
+					IndexingJobID: uuid.New(),
 					CorrelationID: "corr-67890",
 					SchemaVersion: "2.0",
 					RepositoryID:  uuid.New(),
@@ -277,6 +281,7 @@ func TestEnhancedIndexingJobMessage_Validation(t *testing.T) {
 			setupMessage: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
 					MessageID:     "msg-12345",
+					IndexingJobID: uuid.New(),
 					CorrelationID: "corr-67890",
 					RepositoryID:  uuid.New(),
 					RepositoryURL: "https://github.com/user/repo.git",
@@ -293,6 +298,7 @@ func TestEnhancedIndexingJobMessage_Validation(t *testing.T) {
 			setupMessage: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
 					MessageID:     "msg-12345",
+					IndexingJobID: uuid.New(),
 					CorrelationID: "corr-67890",
 					RepositoryID:  uuid.New(),
 					RepositoryURL: "https://github.com/user/repo.git",
@@ -339,6 +345,7 @@ func TestEnhancedIndexingJobMessage_JSONSerialization(t *testing.T) {
 			name: "complete_message_serializes_correctly",
 			message: EnhancedIndexingJobMessage{
 				MessageID:     "msg-12345",
+				IndexingJobID: uuid.MustParse("123e4567-e89b-12d3-a456-426614174001"),
 				CorrelationID: "corr-67890",
 				SchemaVersion: "2.0",
 				Timestamp:     time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC),

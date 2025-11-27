@@ -142,7 +142,31 @@ func (p *TreeSitterCodeParser) ParseDirectory(
 		"directory":       dirPath,
 	})
 
-	return allChunks, nil
+	// Filter out chunks with empty content to prevent validation errors later
+	validChunks := make([]outbound.CodeChunk, 0, len(allChunks))
+	for _, chunk := range allChunks {
+		if strings.TrimSpace(chunk.Content) != "" {
+			validChunks = append(validChunks, chunk)
+		} else {
+			slogger.Warn(ctx, "Empty chunk filtered out during parsing", slogger.Fields{
+				"file":       chunk.FilePath,
+				"start_line": chunk.StartLine,
+				"end_line":   chunk.EndLine,
+				"type":       chunk.Type,
+				"entity":     chunk.EntityName,
+			})
+		}
+	}
+
+	if len(validChunks) < len(allChunks) {
+		slogger.Warn(ctx, "Filtered out empty chunks", slogger.Fields{
+			"original_count": len(allChunks),
+			"filtered_count": len(validChunks),
+			"empty_chunks":   len(allChunks) - len(validChunks),
+		})
+	}
+
+	return validChunks, nil
 }
 
 // getCleanBasePath returns a cleaned base path, using cache for performance.

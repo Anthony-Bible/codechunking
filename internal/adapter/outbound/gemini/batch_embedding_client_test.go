@@ -4,8 +4,10 @@ import (
 	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,6 +95,264 @@ func TestBatchEmbeddingClient_CreateBatchEmbeddingJob(t *testing.T) {
 		assert.Equal(t, "empty_texts", embErr.Code)
 		assert.Equal(t, "validation", embErr.Type)
 		assert.False(t, embErr.Retryable)
+	})
+
+	t.Run("error when batch size exceeds maximum", func(t *testing.T) {
+		// Create base client
+		baseClient, err := NewClient(&ClientConfig{
+			APIKey: "test-api-key",
+			Model:  DefaultModel,
+		})
+		require.NoError(t, err)
+
+		// Create batch client
+		tempDir := t.TempDir()
+		batchClient, err := NewBatchEmbeddingClient(baseClient,
+			filepath.Join(tempDir, "input"),
+			filepath.Join(tempDir, "output"))
+		require.NoError(t, err)
+
+		// Create 501 chunks (exceeds max of 500)
+		texts := make([]string, 501)
+		for i := range texts {
+			texts[i] = fmt.Sprintf("test chunk %d", i)
+		}
+
+		// Try to create job with too many chunks
+		ctx := context.Background()
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{})
+
+		// Should return error
+		assert.Error(t, err)
+		assert.Nil(t, job)
+
+		// Check error type
+		embErr := &outbound.EmbeddingError{}
+		ok := errors.As(err, &embErr)
+		assert.True(t, ok)
+		assert.Equal(t, "batch_size_exceeded", embErr.Code)
+		assert.Equal(t, "validation", embErr.Type)
+		assert.False(t, embErr.Retryable)
+
+		// Error message should contain actual count
+		assert.Contains(t, embErr.Message, "501")
+		assert.Contains(t, embErr.Message, "exceeds maximum batch size of 500")
+	})
+
+	t.Run("success with exactly maximum batch size", func(t *testing.T) {
+		// Create base client
+		baseClient, err := NewClient(&ClientConfig{
+			APIKey: "test-api-key",
+			Model:  DefaultModel,
+		})
+		require.NoError(t, err)
+
+		// Create batch client
+		tempDir := t.TempDir()
+		batchClient, err := NewBatchEmbeddingClient(baseClient,
+			filepath.Join(tempDir, "input"),
+			filepath.Join(tempDir, "output"))
+		require.NoError(t, err)
+
+		// Create exactly 500 chunks (at the limit)
+		texts := make([]string, 500)
+		for i := range texts {
+			texts[i] = fmt.Sprintf("test chunk %d", i)
+		}
+
+		// Try to create job with exactly max chunks
+		ctx := context.Background()
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{})
+
+		// Should succeed (no error about batch size)
+		// Note: This test will fail because the implementation doesn't exist yet,
+		// but it might fail for other reasons (e.g., API call failures).
+		// The important validation is that it should NOT fail due to batch size.
+		if err != nil {
+			// If there's an error, it should NOT be about batch size
+			embErr := &outbound.EmbeddingError{}
+			if errors.As(err, &embErr) {
+				assert.NotEqual(t, "batch_size_exceeded", embErr.Code,
+					"Should not fail with batch_size_exceeded error for exactly 500 chunks")
+			}
+		} else {
+			// If successful, verify job was created
+			assert.NotNil(t, job)
+		}
+	})
+
+	t.Run("warning logged when batch size approaches limit", func(t *testing.T) {
+		// Create base client
+		baseClient, err := NewClient(&ClientConfig{
+			APIKey: "test-api-key",
+			Model:  DefaultModel,
+		})
+		require.NoError(t, err)
+
+		// Create batch client
+		tempDir := t.TempDir()
+		batchClient, err := NewBatchEmbeddingClient(baseClient,
+			filepath.Join(tempDir, "input"),
+			filepath.Join(tempDir, "output"))
+		require.NoError(t, err)
+
+		// Create 450 chunks (>400, <500 - should trigger warning)
+		texts := make([]string, 450)
+		for i := range texts {
+			texts[i] = fmt.Sprintf("test chunk %d", i)
+		}
+
+		// Try to create job
+		ctx := context.Background()
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{})
+
+		// Should succeed but log warning
+		// Note: We can't easily test log output without a log capture mechanism,
+		// but this test documents the expected behavior.
+		// The implementation should log a warning for batch sizes > 400.
+		if err != nil {
+			// If there's an error, it should NOT be about batch size
+			embErr := &outbound.EmbeddingError{}
+			if errors.As(err, &embErr) {
+				assert.NotEqual(t, "batch_size_exceeded", embErr.Code,
+					"Should not fail with batch_size_exceeded error for 450 chunks")
+			}
+		} else {
+			// If successful, verify job was created
+			assert.NotNil(t, job)
+		}
+
+		// TODO: Add log capture to verify warning message contains:
+		// - "batch size approaching limit"
+		// - "450"
+		// - recommendation to split into multiple batches
+	})
+
+	t.Run("error with large batch and descriptive message", func(t *testing.T) {
+		// Create base client
+		baseClient, err := NewClient(&ClientConfig{
+			APIKey: "test-api-key",
+			Model:  DefaultModel,
+		})
+		require.NoError(t, err)
+
+		// Create batch client
+		tempDir := t.TempDir()
+		batchClient, err := NewBatchEmbeddingClient(baseClient,
+			filepath.Join(tempDir, "input"),
+			filepath.Join(tempDir, "output"))
+		require.NoError(t, err)
+
+		// Create 1000 chunks (significantly exceeds max)
+		texts := make([]string, 1000)
+		for i := range texts {
+			texts[i] = fmt.Sprintf("test chunk %d", i)
+		}
+
+		// Try to create job with too many chunks
+		ctx := context.Background()
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{})
+
+		// Should return error
+		assert.Error(t, err)
+		assert.Nil(t, job)
+
+		// Check error type
+		embErr := &outbound.EmbeddingError{}
+		ok := errors.As(err, &embErr)
+		assert.True(t, ok)
+		assert.Equal(t, "batch_size_exceeded", embErr.Code)
+		assert.Equal(t, "validation", embErr.Type)
+		assert.False(t, embErr.Retryable)
+
+		// Error message should contain actual count and maximum
+		assert.Contains(t, embErr.Message, "1000")
+		assert.Contains(t, embErr.Message, "500")
+		assert.Contains(t, embErr.Message, "exceeds maximum batch size")
+
+		// Error message should suggest splitting into multiple batches
+		messageLower := strings.ToLower(embErr.Message)
+		assert.True(t,
+			strings.Contains(messageLower, "split") || strings.Contains(messageLower, "multiple"),
+			"Error message should suggest splitting into multiple batches")
+	})
+
+	t.Run("boundary test with 401 chunks", func(t *testing.T) {
+		// Create base client
+		baseClient, err := NewClient(&ClientConfig{
+			APIKey: "test-api-key",
+			Model:  DefaultModel,
+		})
+		require.NoError(t, err)
+
+		// Create batch client
+		tempDir := t.TempDir()
+		batchClient, err := NewBatchEmbeddingClient(baseClient,
+			filepath.Join(tempDir, "input"),
+			filepath.Join(tempDir, "output"))
+		require.NoError(t, err)
+
+		// Create 401 chunks (just above warning threshold of 400)
+		texts := make([]string, 401)
+		for i := range texts {
+			texts[i] = fmt.Sprintf("test chunk %d", i)
+		}
+
+		// Try to create job
+		ctx := context.Background()
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{})
+
+		// Should succeed (not at limit yet) but may log warning
+		if err != nil {
+			// If there's an error, it should NOT be about batch size
+			embErr := &outbound.EmbeddingError{}
+			if errors.As(err, &embErr) {
+				assert.NotEqual(t, "batch_size_exceeded", embErr.Code,
+					"Should not fail with batch_size_exceeded error for 401 chunks")
+			}
+		} else {
+			// If successful, verify job was created
+			assert.NotNil(t, job)
+		}
+	})
+
+	t.Run("boundary test with 499 chunks", func(t *testing.T) {
+		// Create base client
+		baseClient, err := NewClient(&ClientConfig{
+			APIKey: "test-api-key",
+			Model:  DefaultModel,
+		})
+		require.NoError(t, err)
+
+		// Create batch client
+		tempDir := t.TempDir()
+		batchClient, err := NewBatchEmbeddingClient(baseClient,
+			filepath.Join(tempDir, "input"),
+			filepath.Join(tempDir, "output"))
+		require.NoError(t, err)
+
+		// Create 499 chunks (just below maximum)
+		texts := make([]string, 499)
+		for i := range texts {
+			texts[i] = fmt.Sprintf("test chunk %d", i)
+		}
+
+		// Try to create job
+		ctx := context.Background()
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{})
+
+		// Should succeed (not exceeding limit)
+		if err != nil {
+			// If there's an error, it should NOT be about batch size
+			embErr := &outbound.EmbeddingError{}
+			if errors.As(err, &embErr) {
+				assert.NotEqual(t, "batch_size_exceeded", embErr.Code,
+					"Should not fail with batch_size_exceeded error for 499 chunks")
+			}
+		} else {
+			// If successful, verify job was created
+			assert.NotNil(t, job)
+		}
 	})
 }
 
@@ -217,20 +477,43 @@ func TestBatchEmbeddingClient_writeRequestsToFile(t *testing.T) {
 
 		// Write requests to file
 		ctx := context.Background()
-		filepath, err := batchClient.writeRequestsToFile(ctx, requests, outbound.EmbeddingOptions{})
+		fullPath, filename, err := batchClient.writeRequestsToFile(ctx, requests, outbound.EmbeddingOptions{})
 
 		require.NoError(t, err)
-		assert.NotEmpty(t, filepath)
-		assert.FileExists(t, filepath)
+		assert.NotEmpty(t, fullPath)
+		assert.NotEmpty(t, filename)
+		assert.FileExists(t, fullPath)
 
-		// Verify file content
-		content, err := os.ReadFile(filepath)
+		// Verify filename is base name only (not full path)
+		assert.Equal(t, filepath.Base(fullPath), filename, "filename should be base name only")
+
+		// Verify filename meets Google Gemini API requirement (max 40 characters)
+		assert.LessOrEqual(t, len(filename), 40, "filename must not exceed 40 characters for Google Gemini API")
+
+		// Verify file content uses Google Gemini format (NOT OpenAI format)
+		content, err := os.ReadFile(fullPath)
 		require.NoError(t, err)
 		assert.NotEmpty(t, content)
-		assert.Contains(t, string(content), "req_1")
+
+		// Should use Google Gemini format with "key" and "request" fields
+		assert.Contains(t, string(content), `"key":"req_1"`, "should use 'key' field (Google Gemini format)")
+		assert.Contains(t, string(content), `"key":"req_2"`, "should use 'key' field (Google Gemini format)")
 		assert.Contains(t, string(content), "Hello world")
-		assert.Contains(t, string(content), "req_2")
 		assert.Contains(t, string(content), "Test embedding")
+		assert.Contains(t, string(content), `"request"`, "should use 'request' field (Google Gemini format)")
+		assert.Contains(t, string(content), `"content"`, "should use 'content' field (singular, not plural)")
+		assert.Contains(t, string(content), `"parts"`, "should use 'parts' field")
+
+		// Should NOT use plural "contents" or nested "config"
+		assert.NotContains(t, string(content), `"contents"`, "should use 'content' (singular), not 'contents' (plural)")
+		assert.NotContains(t, string(content), `"config"`, "should not nest output_dimensionality in config object")
+
+		// Should NOT use OpenAI batch format
+		assert.NotContains(t, string(content), `"custom_id"`, "should NOT use OpenAI 'custom_id' field")
+		assert.NotContains(t, string(content), `"method"`, "should NOT use OpenAI 'method' field")
+		assert.NotContains(t, string(content), `"url"`, "should NOT use OpenAI 'url' field")
+		assert.NotContains(t, string(content), `"body"`, "should NOT use OpenAI 'body' field")
+		assert.NotContains(t, string(content), `:embedContent`, "should NOT include endpoint URL in JSONL")
 	})
 }
 

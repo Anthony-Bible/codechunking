@@ -15,6 +15,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"google.golang.org/genai"
 )
 
@@ -451,8 +452,9 @@ func (c *Client) generateBatchEmbeddingsAsync(
 		"text_count": len(texts),
 	})
 
-	// Create batch job
-	job, err := c.batchClient.CreateBatchEmbeddingJob(ctx, texts, options)
+	// Create batch job with generated UUID for file tracking
+	batchID := uuid.New()
+	job, err := c.batchClient.CreateBatchEmbeddingJob(ctx, texts, options, batchID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create batch embedding job: %w", err)
 	}

@@ -271,6 +271,7 @@ func TestContextAwareAcknowledgment(t *testing.T) {
 		correlationID := "test-corr-ctx-456"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     messageID,
 			CorrelationID: correlationID,
 			RepositoryID:  uuid.New(),
@@ -409,6 +410,7 @@ func TestAcknowledgmentFailureRecovery(t *testing.T) {
 		correlationID := "test-corr-ack-retry-456"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     messageID,
 			CorrelationID: correlationID,
 			RepositoryID:  uuid.New(),
@@ -467,8 +469,9 @@ func TestAcknowledgmentFailureRecovery(t *testing.T) {
 		messageID := "test-msg-ack-timeout-789"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
-			MessageID:    messageID,
-			RepositoryID: uuid.New(),
+			IndexingJobID: uuid.New(),
+			MessageID:     messageID,
+			RepositoryID:  uuid.New(),
 		}
 
 		mockNATSMsg := &MockNATSAckMessage{
@@ -513,8 +516,9 @@ func TestAcknowledgmentFailureRecovery(t *testing.T) {
 		messageID := "test-msg-perm-fail-abc"
 
 		jobMessage := messaging.EnhancedIndexingJobMessage{
-			MessageID:    messageID,
-			RepositoryID: uuid.New(),
+			IndexingJobID: uuid.New(),
+			MessageID:     messageID,
+			RepositoryID:  uuid.New(),
 		}
 
 		mockNATSMsg := &MockNATSAckMessage{

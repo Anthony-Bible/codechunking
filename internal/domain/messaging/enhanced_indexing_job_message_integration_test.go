@@ -92,6 +92,7 @@ func TestEnhancedIndexingJobMessage_MessageQueue(t *testing.T) {
 			name: "messages_can_be_queued_and_ordered_by_priority",
 			messages: []EnhancedIndexingJobMessage{
 				{
+					IndexingJobID: uuid.New(),
 					MessageID:     "msg-low-1",
 					CorrelationID: "corr-1",
 					RepositoryID:  uuid.New(),
@@ -151,6 +152,7 @@ func TestEnhancedIndexingJobMessage_RetryScenarios(t *testing.T) {
 		{
 			name: "message_can_be_incremented_for_retry",
 			originalMessage: EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "msg-retry-test",
 				CorrelationID: "corr-retry-test",
 				RepositoryID:  uuid.New(),
@@ -167,6 +169,7 @@ func TestEnhancedIndexingJobMessage_RetryScenarios(t *testing.T) {
 		{
 			name: "message_retry_fails_when_exceeding_max_retries",
 			originalMessage: EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "msg-retry-exceed",
 				CorrelationID: "corr-retry-exceed",
 				RepositoryID:  uuid.New(),
@@ -221,6 +224,7 @@ func TestEnhancedIndexingJobMessage_WorkerProcessing(t *testing.T) {
 		{
 			name: "message_provides_all_data_needed_for_worker_processing",
 			message: EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "msg-worker-test",
 				CorrelationID: "corr-worker-test",
 				SchemaVersion: "2.0",
@@ -289,6 +293,7 @@ func TestEnhancedIndexingJobMessage_DistributedTracing(t *testing.T) {
 
 			for i := range tt.relatedMessages {
 				messages[i] = EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					MessageID:     generateUniqueMessageID(),
 					CorrelationID: tt.correlationID,
 					RepositoryID:  uuid.New(),
@@ -332,6 +337,7 @@ func TestEnhancedIndexingJobMessage_MessageSizeConstraints(t *testing.T) {
 			name: "normal_message_fits_within_size_constraints",
 			setupMessage: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					MessageID:     "msg-normal-size",
 					CorrelationID: "corr-normal-size",
 					RepositoryID:  uuid.New(),
@@ -353,6 +359,7 @@ func TestEnhancedIndexingJobMessage_MessageSizeConstraints(t *testing.T) {
 				}
 
 				return EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					MessageID:     "msg-large-filters",
 					CorrelationID: "corr-large-filters",
 					RepositoryID:  uuid.New(),

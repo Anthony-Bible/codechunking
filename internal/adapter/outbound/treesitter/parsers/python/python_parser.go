@@ -536,7 +536,7 @@ func extractErrorContext(source []byte, errorNode *valueobject.ParseNode) string
 		contextEnd = sourceLen
 	}
 
-	context := string(source[contextStart:contextEnd])
+	context := valueobject.SanitizeContent(string(source[contextStart:contextEnd]))
 	return strings.TrimSpace(context)
 }
 
@@ -546,9 +546,9 @@ func classifySyntaxErrorByAST(rootNode, errorNode *valueobject.ParseNode, source
 		return "unknown error"
 	}
 
-	// Extract error text and full source
-	errorText := string(source[errorNode.StartByte:errorNode.EndByte])
-	fullSource := string(source)
+	// Extract error text and full source (sanitized for PostgreSQL compatibility)
+	errorText := valueobject.SanitizeContent(string(source[errorNode.StartByte:errorNode.EndByte]))
+	fullSource := valueobject.SanitizeContent(string(source))
 
 	// Check if ERROR is inside assignment node (for unclosed strings, invalid assignments)
 	if errMsg := checkAssignmentError(rootNode, errorNode, source); errMsg != "" {
@@ -588,8 +588,8 @@ func checkAssignmentError(rootNode, errorNode *valueobject.ParseNode, source []b
 			continue
 		}
 
-		// Extract error text to check for string literals
-		errorText := string(source[errorNode.StartByte:errorNode.EndByte])
+		// Extract error text to check for string literals (sanitized for PostgreSQL compatibility)
+		errorText := valueobject.SanitizeContent(string(source[errorNode.StartByte:errorNode.EndByte]))
 
 		// Check if ERROR node contains string_start (unclosed string)
 		// Either by checking children or by checking if error text starts with quote

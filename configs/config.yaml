@@ -25,6 +25,11 @@ nats:
   max_reconnects: 5
   reconnect_wait: 2s
 
+search:
+  iterative_scan_mode: relaxed_order  # pgvector 0.8.0+ iterative scanning mode
+                                       # Options: "off", "strict_order", "relaxed_order"
+                                       # relaxed_order recommended for best recall/performance
+
 gemini:
   model: gemini-embedding-001
   max_retries: 3

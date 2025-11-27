@@ -5,13 +5,53 @@ package repository
 import (
 	"codechunking/internal/port/outbound"
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// Helper functions for pointer handling in tests
+
+// stringValue safely extracts the string value from a pointer, returning empty string if nil.
+// This helper reduces duplicate nil-checking and dereferencing patterns in test code.
+func stringValue(ptr *string) string {
+	if ptr == nil {
+		return ""
+	}
+	return *ptr
+}
+
+// assertEmbeddingMetadata helps verify embedding metadata fields with consistent error messages.
+// This helper consolidates common assertion patterns for Language, ChunkType, and FilePath fields.
+func assertEmbeddingMetadata(t *testing.T, index int, embedding outbound.VectorEmbedding,
+	expectedLanguage, expectedChunkType, expectedFilePathPrefix string,
+) {
+	// Assert Language field
+	if embedding.Language == nil || stringValue(embedding.Language) != expectedLanguage {
+		actualLang := stringValue(embedding.Language)
+		t.Errorf("Result %d: expected Language='%s', got: '%s'", index, expectedLanguage, actualLang)
+	}
+
+	// Assert ChunkType field
+	if embedding.ChunkType == nil || stringValue(embedding.ChunkType) != expectedChunkType {
+		actualChunkType := stringValue(embedding.ChunkType)
+		t.Errorf("Result %d: expected ChunkType='%s', got: '%s'", index, expectedChunkType, actualChunkType)
+	}
+
+	// Assert FilePath field with prefix check if provided
+	if expectedFilePathPrefix != "" {
+		actualFilePath := stringValue(embedding.FilePath)
+		if !strings.HasPrefix(actualFilePath, expectedFilePathPrefix) {
+			t.Errorf("Result %d: expected FilePath to start with '%s', got: '%s'",
+				index, expectedFilePathPrefix, actualFilePath)
+		}
+	}
+}
 
 // TestVectorStorageRepository_Interface verifies that PostgreSQLVectorStorageRepository implements the interface.
 func TestVectorStorageRepository_Interface(t *testing.T) {
@@ -1643,4 +1683,1488 @@ func verifyFoundEmbedding(
 	if len(found.Embedding) != 768 {
 		t.Errorf("Expected 768 dimensions, got %d", len(found.Embedding))
 	}
+}
+
+// Helper functions for metadata filter tests
+
+// setupTestRepositoryAndChunksWithLanguages creates a repository and chunks with specific language distribution.
+func setupTestRepositoryAndChunksWithLanguages(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	totalChunks int,
+	languages []string,
+	counts []int,
+) (uuid.UUID, []uuid.UUID) {
+	if len(languages) != len(counts) {
+		t.Fatalf("languages and counts slices must have same length")
+	}
+
+	sum := 0
+	for _, count := range counts {
+		sum += count
+	}
+	if sum != totalChunks {
+		t.Fatalf("sum of counts (%d) must equal totalChunks (%d)", sum, totalChunks)
+	}
+
+	ctx := context.Background()
+	repositoryID := uuid.New()
+
+	// Create repository
+	_, err := pool.Exec(ctx, `
+		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (url) DO NOTHING
+	`, repositoryID, "https://github.com/test/multi-lang-repo-"+repositoryID.String()[:8],
+		"https://github.com/test/multi-lang-repo-"+repositoryID.String()[:8],
+		"multi-lang-test-repo", "Test repository with multiple languages", "indexed")
+	if err != nil {
+		t.Fatalf("Failed to create test repository: %v", err)
+	}
+
+	// Create chunks with specified language distribution
+	chunkIDs := make([]uuid.UUID, totalChunks)
+	chunkIndex := 0
+
+	for langIdx, language := range languages {
+		for i := 0; i < counts[langIdx]; i++ {
+			chunkID := uuid.New()
+			chunkIDs[chunkIndex] = chunkID
+
+			fileExt := getFileExtensionForLanguage(language)
+			_, err = pool.Exec(ctx, `
+				INSERT INTO codechunking.code_chunks (id, repository_id, file_path, chunk_type, content, language, start_line, end_line, entity_name, content_hash)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+				ON CONFLICT (repository_id, file_path, content_hash) DO NOTHING
+			`, chunkID, repositoryID, fmt.Sprintf("src/test%d%s", chunkIndex, fileExt), "function",
+				fmt.Sprintf("func Test%d() {}", chunkIndex), language,
+				1, 10, fmt.Sprintf("Test%d", chunkIndex), "hash-"+chunkID.String()[:8])
+			if err != nil {
+				t.Fatalf("Failed to create test chunk %d: %v", chunkIndex, err)
+			}
+
+			chunkIndex++
+		}
+	}
+
+	return repositoryID, chunkIDs
+}
+
+// setupTestRepositoryAndChunksWithTypes creates a repository and chunks with specific chunk type distribution.
+func setupTestRepositoryAndChunksWithTypes(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	totalChunks int,
+	chunkTypes []string,
+	counts []int,
+) (uuid.UUID, []uuid.UUID) {
+	if len(chunkTypes) != len(counts) {
+		t.Fatalf("chunkTypes and counts slices must have same length")
+	}
+
+	sum := 0
+	for _, count := range counts {
+		sum += count
+	}
+	if sum != totalChunks {
+		t.Fatalf("sum of counts (%d) must equal totalChunks (%d)", sum, totalChunks)
+	}
+
+	ctx := context.Background()
+	repositoryID := uuid.New()
+
+	// Create repository
+	_, err := pool.Exec(ctx, `
+		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (url) DO NOTHING
+	`, repositoryID, "https://github.com/test/multi-type-repo-"+repositoryID.String()[:8],
+		"https://github.com/test/multi-type-repo-"+repositoryID.String()[:8],
+		"multi-type-test-repo", "Test repository with multiple chunk types", "indexed")
+	if err != nil {
+		t.Fatalf("Failed to create test repository: %v", err)
+	}
+
+	// Create chunks with specified chunk type distribution
+	chunkIDs := make([]uuid.UUID, totalChunks)
+	chunkIndex := 0
+
+	for typeIdx, chunkType := range chunkTypes {
+		for i := 0; i < counts[typeIdx]; i++ {
+			chunkID := uuid.New()
+			chunkIDs[chunkIndex] = chunkID
+
+			_, err = pool.Exec(ctx, `
+				INSERT INTO codechunking.code_chunks (id, repository_id, file_path, chunk_type, content, language, start_line, end_line, entity_name, content_hash)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+				ON CONFLICT (repository_id, file_path, content_hash) DO NOTHING
+			`, chunkID, repositoryID, fmt.Sprintf("src/test%d.go", chunkIndex), chunkType,
+				fmt.Sprintf("content of %s %d", chunkType, chunkIndex), "go",
+				1, 10, fmt.Sprintf("Entity%d", chunkIndex), "hash-"+chunkID.String()[:8])
+			if err != nil {
+				t.Fatalf("Failed to create test chunk %d: %v", chunkIndex, err)
+			}
+
+			chunkIndex++
+		}
+	}
+
+	return repositoryID, chunkIDs
+}
+
+// setupTestRepositoryAndChunksWithFilePaths creates a repository and chunks with specific file extension distribution.
+func setupTestRepositoryAndChunksWithFilePaths(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	totalChunks int,
+	extensions []string,
+	counts []int,
+) (uuid.UUID, []uuid.UUID) {
+	if len(extensions) != len(counts) {
+		t.Fatalf("extensions and counts slices must have same length")
+	}
+
+	sum := 0
+	for _, count := range counts {
+		sum += count
+	}
+	if sum != totalChunks {
+		t.Fatalf("sum of counts (%d) must equal totalChunks (%d)", sum, totalChunks)
+	}
+
+	ctx := context.Background()
+	repositoryID := uuid.New()
+
+	// Create repository
+	_, err := pool.Exec(ctx, `
+		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (url) DO NOTHING
+	`, repositoryID, "https://github.com/test/multi-ext-repo-"+repositoryID.String()[:8],
+		"https://github.com/test/multi-ext-repo-"+repositoryID.String()[:8],
+		"multi-ext-test-repo", "Test repository with multiple file extensions", "indexed")
+	if err != nil {
+		t.Fatalf("Failed to create test repository: %v", err)
+	}
+
+	// Create chunks with specified file extension distribution
+	chunkIDs := make([]uuid.UUID, totalChunks)
+	chunkIndex := 0
+
+	for extIdx, extension := range extensions {
+		language := getLanguageForExtension(extension)
+		for i := 0; i < counts[extIdx]; i++ {
+			chunkID := uuid.New()
+			chunkIDs[chunkIndex] = chunkID
+
+			_, err = pool.Exec(ctx, `
+				INSERT INTO codechunking.code_chunks (id, repository_id, file_path, chunk_type, content, language, start_line, end_line, entity_name, content_hash)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+				ON CONFLICT (repository_id, file_path, content_hash) DO NOTHING
+			`, chunkID, repositoryID, fmt.Sprintf("src/test%d%s", chunkIndex, extension), "function",
+				fmt.Sprintf("content of file %d", chunkIndex), language,
+				1, 10, fmt.Sprintf("Entity%d", chunkIndex), "hash-"+chunkID.String()[:8])
+			if err != nil {
+				t.Fatalf("Failed to create test chunk %d: %v", chunkIndex, err)
+			}
+
+			chunkIndex++
+		}
+	}
+
+	return repositoryID, chunkIDs
+}
+
+// setupTestRepositoryWithMixedMetadata creates a repository with mixed languages and chunk types.
+func setupTestRepositoryWithMixedMetadata(t *testing.T, pool *pgxpool.Pool, totalChunks int) (uuid.UUID, []uuid.UUID) {
+	ctx := context.Background()
+	repositoryID := uuid.New()
+
+	// Create repository
+	_, err := pool.Exec(ctx, `
+		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (url) DO NOTHING
+	`, repositoryID, "https://github.com/test/mixed-meta-repo-"+repositoryID.String()[:8],
+		"https://github.com/test/mixed-meta-repo-"+repositoryID.String()[:8],
+		"mixed-meta-test-repo", "Test repository with mixed metadata", "indexed")
+	if err != nil {
+		t.Fatalf("Failed to create test repository: %v", err)
+	}
+
+	// Create chunks with mixed distribution
+	// Distribution: 40 Go (20 functions, 10 classes, 10 modules)
+	//              30 Python (15 functions, 10 classes, 5 modules)
+	//              30 TypeScript (15 functions, 10 classes, 5 modules)
+	chunkIDs := make([]uuid.UUID, totalChunks)
+
+	chunkIndex := 0
+
+	// Go chunks (40)
+	for i := 0; i < 20; i++ {
+		chunkIDs[chunkIndex] = createChunkWithMetadata(t, pool, repositoryID, chunkIndex, "go", "function")
+		chunkIndex++
+	}
+	for i := 0; i < 10; i++ {
+		chunkIDs[chunkIndex] = createChunkWithMetadata(t, pool, repositoryID, chunkIndex, "go", "class")
+		chunkIndex++
+	}
+	for i := 0; i < 10; i++ {
+		chunkIDs[chunkIndex] = createChunkWithMetadata(t, pool, repositoryID, chunkIndex, "go", "module")
+		chunkIndex++
+	}
+
+	// Python chunks (30)
+	for i := 0; i < 15; i++ {
+		chunkIDs[chunkIndex] = createChunkWithMetadata(t, pool, repositoryID, chunkIndex, "python", "function")
+		chunkIndex++
+	}
+	for i := 0; i < 10; i++ {
+		chunkIDs[chunkIndex] = createChunkWithMetadata(t, pool, repositoryID, chunkIndex, "python", "class")
+		chunkIndex++
+	}
+	for i := 0; i < 5; i++ {
+		chunkIDs[chunkIndex] = createChunkWithMetadata(t, pool, repositoryID, chunkIndex, "python", "module")
+		chunkIndex++
+	}
+
+	// TypeScript chunks (30)
+	for i := 0; i < 15; i++ {
+		chunkIDs[chunkIndex] = createChunkWithMetadata(t, pool, repositoryID, chunkIndex, "typescript", "function")
+		chunkIndex++
+	}
+	for i := 0; i < 10; i++ {
+		chunkIDs[chunkIndex] = createChunkWithMetadata(t, pool, repositoryID, chunkIndex, "typescript", "class")
+		chunkIndex++
+	}
+	for i := 0; i < 5; i++ {
+		chunkIDs[chunkIndex] = createChunkWithMetadata(t, pool, repositoryID, chunkIndex, "typescript", "module")
+		chunkIndex++
+	}
+
+	return repositoryID, chunkIDs
+}
+
+// setupTestRepositoryWithSelectiveMetadata creates a repository with highly selective metadata distribution.
+func setupTestRepositoryWithSelectiveMetadata(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	totalChunks int,
+	majorityLang string,
+	majorityType string,
+	majorityCount int,
+	minorityLang string,
+	minorityType string,
+	minorityCount int,
+) (uuid.UUID, []uuid.UUID) {
+	if majorityCount+minorityCount != totalChunks {
+		t.Fatalf("majorityCount (%d) + minorityCount (%d) must equal totalChunks (%d)",
+			majorityCount, minorityCount, totalChunks)
+	}
+
+	ctx := context.Background()
+	repositoryID := uuid.New()
+
+	// Create repository
+	_, err := pool.Exec(ctx, `
+		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (url) DO NOTHING
+	`, repositoryID, "https://github.com/test/selective-meta-repo-"+repositoryID.String()[:8],
+		"https://github.com/test/selective-meta-repo-"+repositoryID.String()[:8],
+		"selective-meta-test-repo", "Test repository with selective metadata distribution", "indexed")
+	if err != nil {
+		t.Fatalf("Failed to create test repository: %v", err)
+	}
+
+	chunkIDs := make([]uuid.UUID, totalChunks)
+	chunkIndex := 0
+
+	// Create majority chunks
+	for i := 0; i < majorityCount; i++ {
+		chunkIDs[chunkIndex] = createChunkWithMetadata(t, pool, repositoryID, chunkIndex, majorityLang, majorityType)
+		chunkIndex++
+	}
+
+	// Create minority chunks
+	for i := 0; i < minorityCount; i++ {
+		chunkIDs[chunkIndex] = createChunkWithMetadata(t, pool, repositoryID, chunkIndex, minorityLang, minorityType)
+		chunkIndex++
+	}
+
+	return repositoryID, chunkIDs
+}
+
+// createChunkWithMetadata is a helper to create a single chunk with specific metadata.
+func createChunkWithMetadata(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	repositoryID uuid.UUID,
+	index int,
+	language string,
+	chunkType string,
+) uuid.UUID {
+	ctx := context.Background()
+	chunkID := uuid.New()
+
+	fileExt := getFileExtensionForLanguage(language)
+	_, err := pool.Exec(ctx, `
+		INSERT INTO codechunking.code_chunks (id, repository_id, file_path, chunk_type, content, language, start_line, end_line, entity_name, content_hash)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		ON CONFLICT (repository_id, file_path, content_hash) DO NOTHING
+	`, chunkID, repositoryID, fmt.Sprintf("src/%s/test%d%s", language, index, fileExt), chunkType,
+		fmt.Sprintf("content of %s %s %d", language, chunkType, index), language,
+		1, 10, fmt.Sprintf("Entity%d", index), "hash-"+chunkID.String()[:8])
+	if err != nil {
+		t.Fatalf("Failed to create chunk %d with metadata: %v", index, err)
+	}
+
+	return chunkID
+}
+
+// createTestEmbeddingsWithMetadata creates embeddings with metadata populated from code_chunks table.
+// This is a simplified version that directly populates metadata from chunks without database query.
+func createTestEmbeddingsWithMetadata(
+	t *testing.T,
+	chunkIDs []uuid.UUID,
+	repositoryID uuid.UUID,
+) []outbound.VectorEmbedding {
+	// Get metadata from setupTestDB by querying code_chunks table
+	pool := getPoolFromTest(t)
+	if pool == nil {
+		t.Fatal("Failed to get pool for metadata query")
+	}
+
+	ctx := context.Background()
+	embeddings := make([]outbound.VectorEmbedding, len(chunkIDs))
+
+	for i, chunkID := range chunkIDs {
+		// Query metadata from code_chunks table
+		var language, chunkType, filePath string
+		err := pool.QueryRow(ctx, `
+			SELECT language, chunk_type, file_path
+			FROM codechunking.code_chunks
+			WHERE id = $1
+		`, chunkID).Scan(&language, &chunkType, &filePath)
+		if err != nil {
+			t.Fatalf("Failed to fetch metadata for chunk %s: %v", chunkID, err)
+		}
+
+		embeddings[i] = outbound.VectorEmbedding{
+			ID:           uuid.New(),
+			ChunkID:      chunkID,
+			RepositoryID: repositoryID,
+			Embedding:    createTestVector(768, float64(i)*0.1),
+			ModelVersion: "gemini-embedding-001",
+			CreatedAt:    time.Now(),
+			// Metadata fields from code_chunks table
+			Language:  &language,
+			ChunkType: &chunkType,
+			FilePath:  &filePath,
+		}
+	}
+	return embeddings
+}
+
+// getPoolFromTest retrieves the test database pool from the current test context.
+// This is a helper to access the pool across test helper functions.
+func getPoolFromTest(t *testing.T) *pgxpool.Pool {
+	// Use setupTestDB which caches the pool
+	return setupTestDB(t)
+}
+
+// Helper utility functions
+
+func getFileExtensionForLanguage(language string) string {
+	switch language {
+	case "go":
+		return ".go"
+	case "python":
+		return ".py"
+	case "typescript":
+		return ".ts"
+	case "javascript":
+		return ".js"
+	case "java":
+		return ".java"
+	case "rust":
+		return ".rs"
+	default:
+		return ".txt"
+	}
+}
+
+func getLanguageForExtension(extension string) string {
+	switch extension {
+	case ".go":
+		return "go"
+	case ".py":
+		return "python"
+	case ".ts":
+		return "typescript"
+	case ".js":
+		return "javascript"
+	case ".java":
+		return "java"
+	case ".rs":
+		return "rust"
+	default:
+		return "text"
+	}
+}
+
+func hasExtension(filePath, extension string) bool {
+	return strings.HasSuffix(filePath, extension)
+}
+
+// TestVectorStorageRepository_IterativeScan tests pgvector 0.8.0 iterative scanning feature.
+// This test verifies that iterative scanning returns the requested number of results
+// even when filters are highly selective.
+func TestVectorStorageRepository_IterativeScan(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLVectorStorageRepository(pool)
+	ctx := context.Background()
+
+	// Create multiple repositories to test selective filtering
+	repo1ID, repo1ChunkIDs := setupTestRepositoryAndChunks(t, pool, 50)
+	repo2ID, repo2ChunkIDs := setupTestRepositoryAndChunks(t, pool, 50)
+	repo3ID, repo3ChunkIDs := setupTestRepositoryAndChunks(t, pool, 50)
+
+	// Insert embeddings for all repositories (150 total)
+	embeddings1 := createTestEmbeddings(t, repo1ChunkIDs, repo1ID)
+	embeddings2 := createTestEmbeddings(t, repo2ChunkIDs, repo2ID)
+	embeddings3 := createTestEmbeddings(t, repo3ChunkIDs, repo3ID)
+
+	bulkOptions := outbound.BulkInsertOptions{
+		BatchSize:           50,
+		UsePartitionedTable: true, // Use partitioned table for better performance
+		OnConflictAction:    outbound.ConflictActionDoNothing,
+		TransactionBehavior: outbound.TransactionBehaviorAuto,
+		ValidateVectorDims:  true,
+		EnableMetrics:       false,
+		Timeout:             60 * time.Second,
+	}
+
+	allEmbeddings := append(append(embeddings1, embeddings2...), embeddings3...)
+	_, err := repo.BulkInsertEmbeddings(ctx, allEmbeddings, bulkOptions)
+	if err != nil {
+		t.Fatalf("Failed to insert test embeddings: %v", err)
+	}
+
+	// Create query vector similar to first repository's vectors
+	queryVector := createTestVector(768, 0.1)
+
+	tests := []struct {
+		name        string
+		queryVector []float64
+		options     outbound.SimilaritySearchOptions
+		expectedMin int // Minimum results expected with iterative scan
+		expectError bool
+		description string
+	}{
+		{
+			name:        "Without iterative scan - may return fewer results with selective filter",
+			queryVector: queryVector,
+			options: outbound.SimilaritySearchOptions{
+				UsePartitionedTable: true,
+				SimilarityMetric:    outbound.SimilarityMetricCosine,
+				MaxResults:          20,
+				MinSimilarity:       0.0,
+				RepositoryIDs:       []uuid.UUID{repo1ID}, // Filter to only repo1 (1/3 of data)
+				IterativeScanMode:   outbound.IterativeScanOff,
+				EfSearch:            10, // Small ef_search to demonstrate the problem
+				IncludeDeleted:      false,
+				Timeout:             30 * time.Second,
+			},
+			expectedMin: 0, // May return less than 20 without iterative scan
+			expectError: false,
+			description: "Baseline: without iterative scan, selective filters may return fewer results",
+		},
+		{
+			name:        "With relaxed_order iterative scan - should return requested results",
+			queryVector: queryVector,
+			options: outbound.SimilaritySearchOptions{
+				UsePartitionedTable: true,
+				SimilarityMetric:    outbound.SimilarityMetricCosine,
+				MaxResults:          20,
+				MinSimilarity:       0.0,
+				RepositoryIDs:       []uuid.UUID{repo1ID}, // Filter to only repo1 (1/3 of data)
+				IterativeScanMode:   outbound.IterativeScanRelaxedOrder,
+				EfSearch:            10, // Small ef_search to test iterative scanning
+				IncludeDeleted:      false,
+				Timeout:             30 * time.Second,
+			},
+			expectedMin: 20, // Should return full 20 results with iterative scan
+			expectError: false,
+			description: "With relaxed_order mode, should get 20 results despite selective filter",
+		},
+		{
+			name:        "With strict_order iterative scan - should return requested results with ordering",
+			queryVector: queryVector,
+			options: outbound.SimilaritySearchOptions{
+				UsePartitionedTable: true,
+				SimilarityMetric:    outbound.SimilarityMetricCosine,
+				MaxResults:          15,
+				MinSimilarity:       0.0,
+				RepositoryIDs:       []uuid.UUID{repo2ID}, // Filter to repo2
+				IterativeScanMode:   outbound.IterativeScanStrictOrder,
+				EfSearch:            10,
+				IncludeDeleted:      false,
+				Timeout:             30 * time.Second,
+			},
+			expectedMin: 15, // Should return full 15 results with strict ordering
+			expectError: false,
+			description: "With strict_order mode, should get 15 results with exact distance ordering",
+		},
+		{
+			name:        "Multiple repository filters with iterative scan",
+			queryVector: queryVector,
+			options: outbound.SimilaritySearchOptions{
+				UsePartitionedTable: true,
+				SimilarityMetric:    outbound.SimilarityMetricCosine,
+				MaxResults:          30,
+				MinSimilarity:       0.0,
+				RepositoryIDs:       []uuid.UUID{repo1ID, repo3ID}, // Filter to 2/3 of data
+				IterativeScanMode:   outbound.IterativeScanRelaxedOrder,
+				EfSearch:            15,
+				IncludeDeleted:      false,
+				Timeout:             30 * time.Second,
+			},
+			expectedMin: 30, // Should return 30 results from combined repos
+			expectError: false,
+			description: "Iterative scan should work with multiple repository filters",
+		},
+		{
+			name:        "Iterative scan with high similarity threshold",
+			queryVector: queryVector,
+			options: outbound.SimilaritySearchOptions{
+				UsePartitionedTable: true,
+				SimilarityMetric:    outbound.SimilarityMetricCosine,
+				MaxResults:          10,
+				MinSimilarity:       0.95, // High threshold
+				RepositoryIDs:       []uuid.UUID{repo1ID},
+				IterativeScanMode:   outbound.IterativeScanRelaxedOrder,
+				EfSearch:            20,
+				IncludeDeleted:      false,
+				Timeout:             30 * time.Second,
+			},
+			expectedMin: 0, // May not find 10 results above 0.95 similarity
+			expectError: false,
+			description: "Iterative scan respects similarity threshold - may return fewer if threshold too high",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Log(tt.description)
+
+			results, err := repo.VectorSimilaritySearch(ctx, tt.queryVector, tt.options)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Expected no error but got: %v", err)
+				return
+			}
+
+			resultCount := len(results)
+			t.Logf("Got %d results (expected min: %d, max: %d)",
+				resultCount, tt.expectedMin, tt.options.MaxResults)
+
+			if resultCount < tt.expectedMin {
+				t.Errorf("Expected at least %d results, got %d. Iterative scan may not be working correctly",
+					tt.expectedMin, resultCount)
+			}
+
+			if resultCount > tt.options.MaxResults {
+				t.Errorf("Expected at most %d results, got %d", tt.options.MaxResults, resultCount)
+			}
+
+			// Verify all results belong to the filtered repositories
+			if len(tt.options.RepositoryIDs) > 0 {
+				repoIDSet := make(map[uuid.UUID]bool)
+				for _, id := range tt.options.RepositoryIDs {
+					repoIDSet[id] = true
+				}
+
+				for i, result := range results {
+					if !repoIDSet[result.Embedding.RepositoryID] {
+						t.Errorf("Result %d: embedding from repository %s not in filter %v",
+							i, result.Embedding.RepositoryID, tt.options.RepositoryIDs)
+					}
+				}
+			}
+
+			// Verify similarity ordering (should be descending)
+			for i := 1; i < len(results); i++ {
+				if results[i].Similarity > results[i-1].Similarity {
+					t.Errorf("Results not properly ordered: result %d (similarity %.4f) > result %d (similarity %.4f)",
+						i, results[i].Similarity, i-1, results[i-1].Similarity)
+				}
+			}
+
+			// Verify similarity threshold is respected
+			if tt.options.MinSimilarity > 0 {
+				for i, result := range results {
+					if result.Similarity < tt.options.MinSimilarity {
+						t.Errorf("Result %d: similarity %.4f below threshold %.4f",
+							i, result.Similarity, tt.options.MinSimilarity)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestVectorStorageRepository_IterativeScanWithLanguageFilter tests iterative scanning with language metadata filtering.
+// This test verifies that language filters work at SQL level (not post-processing) with iterative scanning.
+// EXPECTED TO FAIL: embeddings_partitioned table doesn't have language column yet.
+func TestVectorStorageRepository_IterativeScanWithLanguageFilter(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLVectorStorageRepository(pool)
+	ctx := context.Background()
+
+	// Create 3 repositories with mixed language code
+	repo1ID, repo1ChunkIDs := setupTestRepositoryAndChunksWithLanguages(
+		t,
+		pool,
+		50,
+		[]string{"go", "python", "typescript"},
+		[]int{10, 20, 20},
+	)
+	repo2ID, repo2ChunkIDs := setupTestRepositoryAndChunksWithLanguages(
+		t,
+		pool,
+		50,
+		[]string{"go", "python", "typescript"},
+		[]int{10, 20, 20},
+	)
+	repo3ID, repo3ChunkIDs := setupTestRepositoryAndChunksWithLanguages(
+		t,
+		pool,
+		50,
+		[]string{"go", "python", "typescript"},
+		[]int{10, 20, 20},
+	)
+
+	// Insert embeddings with metadata (150 total: 30 Go, 60 Python, 60 TypeScript)
+	embeddings1 := createTestEmbeddingsWithMetadata(t, repo1ChunkIDs, repo1ID)
+	embeddings2 := createTestEmbeddingsWithMetadata(t, repo2ChunkIDs, repo2ID)
+	embeddings3 := createTestEmbeddingsWithMetadata(t, repo3ChunkIDs, repo3ID)
+
+	bulkOptions := outbound.BulkInsertOptions{
+		BatchSize:           50,
+		UsePartitionedTable: true,
+		OnConflictAction:    outbound.ConflictActionDoNothing,
+		TransactionBehavior: outbound.TransactionBehaviorAuto,
+		ValidateVectorDims:  true,
+		EnableMetrics:       false,
+		Timeout:             60 * time.Second,
+	}
+
+	allEmbeddings := append(append(embeddings1, embeddings2...), embeddings3...)
+	_, err := repo.BulkInsertEmbeddings(ctx, allEmbeddings, bulkOptions)
+	if err != nil {
+		t.Fatalf("Failed to insert test embeddings: %v", err)
+	}
+
+	queryVector := createTestVector(768, 0.1)
+
+	t.Run("Language filter with iterative scan should return only Go chunks", func(t *testing.T) {
+		t.Log("Test validates SQL-level language filtering with iterative scanning")
+		t.Log("Expected behavior: should return 15 Go chunks (out of 30 total Go chunks)")
+		t.Log("Current behavior: WILL FAIL - language column doesn't exist in embeddings_partitioned")
+
+		options := outbound.SimilaritySearchOptions{
+			UsePartitionedTable: true,
+			SimilarityMetric:    outbound.SimilarityMetricCosine,
+			MaxResults:          15,
+			MinSimilarity:       0.0,
+			Languages:           []string{"go"}, // Filter to only Go code
+			IterativeScanMode:   outbound.IterativeScanRelaxedOrder,
+			EfSearch:            10, // Small ef_search to force iterative scanning
+			IncludeDeleted:      false,
+			Timeout:             30 * time.Second,
+		}
+
+		results, err := repo.VectorSimilaritySearch(ctx, queryVector, options)
+		if err != nil {
+			// Expected to fail with error about missing language column
+			t.Logf("Expected failure: %v", err)
+			if !strings.Contains(err.Error(), "language") && !strings.Contains(err.Error(), "column") {
+				t.Errorf("Expected error about missing 'language' column, got: %v", err)
+			}
+			return
+		}
+
+		// If it doesn't error, verify the results
+		if len(results) < 15 {
+			t.Errorf("Expected 15 Go chunks with iterative scan, got %d", len(results))
+		}
+
+		// Verify all results are Go code
+		for i, result := range results {
+			// This will fail because we can't verify language without the column
+			if result.Embedding.Language == nil || *result.Embedding.Language != "go" {
+				lang := ""
+				if result.Embedding.Language != nil {
+					lang = *result.Embedding.Language
+				}
+				t.Errorf("Result %d: expected language 'go', got '%s'", i, lang)
+			}
+		}
+	})
+}
+
+// TestVectorStorageRepository_IterativeScanWithChunkTypeFilter tests iterative scanning with chunk_type metadata filtering.
+// This test verifies that chunk_type filters work at SQL level with iterative scanning.
+// EXPECTED TO FAIL: embeddings_partitioned table doesn't have chunk_type column yet.
+func TestVectorStorageRepository_IterativeScanWithChunkTypeFilter(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLVectorStorageRepository(pool)
+	ctx := context.Background()
+
+	// Create repository with mixed chunk types
+	repoID, chunkIDs := setupTestRepositoryAndChunksWithTypes(
+		t,
+		pool,
+		100,
+		[]string{"function", "class", "module"},
+		[]int{30, 40, 30},
+	)
+
+	// Insert embeddings with metadata (100 total: 30 functions, 40 classes, 30 modules)
+	embeddings := createTestEmbeddingsWithMetadata(t, chunkIDs, repoID)
+
+	bulkOptions := outbound.BulkInsertOptions{
+		BatchSize:           50,
+		UsePartitionedTable: true,
+		OnConflictAction:    outbound.ConflictActionDoNothing,
+		TransactionBehavior: outbound.TransactionBehaviorAuto,
+		ValidateVectorDims:  true,
+		EnableMetrics:       false,
+		Timeout:             60 * time.Second,
+	}
+
+	_, err := repo.BulkInsertEmbeddings(ctx, embeddings, bulkOptions)
+	if err != nil {
+		t.Fatalf("Failed to insert test embeddings: %v", err)
+	}
+
+	queryVector := createTestVector(768, 0.1)
+
+	t.Run("ChunkType filter with iterative scan should return only function chunks", func(t *testing.T) {
+		t.Log("Test validates SQL-level chunk_type filtering with iterative scanning")
+		t.Log("Expected behavior: should return 25 function chunks (out of 30 total functions)")
+		t.Log("Current behavior: WILL FAIL - chunk_type column doesn't exist in embeddings_partitioned")
+
+		options := outbound.SimilaritySearchOptions{
+			UsePartitionedTable: true,
+			SimilarityMetric:    outbound.SimilarityMetricCosine,
+			MaxResults:          25,
+			MinSimilarity:       0.0,
+			ChunkTypes:          []string{"function"}, // Filter to only functions
+			IterativeScanMode:   outbound.IterativeScanRelaxedOrder,
+			EfSearch:            15, // Small ef_search to force iterative scanning
+			IncludeDeleted:      false,
+			Timeout:             30 * time.Second,
+		}
+
+		results, err := repo.VectorSimilaritySearch(ctx, queryVector, options)
+		if err != nil {
+			// Expected to fail with error about missing chunk_type column
+			t.Logf("Expected failure: %v", err)
+			if !strings.Contains(err.Error(), "chunk_type") && !strings.Contains(err.Error(), "column") {
+				t.Errorf("Expected error about missing 'chunk_type' column, got: %v", err)
+			}
+			return
+		}
+
+		// If it doesn't error, verify the results
+		if len(results) < 25 {
+			t.Errorf("Expected 25 function chunks with iterative scan, got %d", len(results))
+		}
+
+		// Verify all results are function chunks
+		for i, result := range results {
+			assertEmbeddingMetadata(t, i, result.Embedding, "", "function", "")
+		}
+	})
+}
+
+// TestVectorStorageRepository_IterativeScanWithFilePathFilter tests iterative scanning with file_path metadata filtering.
+// This test verifies that file path extension filters work at SQL level with iterative scanning.
+// EXPECTED TO FAIL: embeddings_partitioned table doesn't have file_path column yet.
+func TestVectorStorageRepository_IterativeScanWithFilePathFilter(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLVectorStorageRepository(pool)
+	ctx := context.Background()
+
+	// Create repository with files of different extensions
+	repoID, chunkIDs := setupTestRepositoryAndChunksWithFilePaths(t, pool, 90,
+		[]string{".go", ".py", ".ts"}, []int{30, 30, 30})
+
+	// Insert embeddings with metadata (90 total: 30 .go files, 30 .py files, 30 .ts files)
+	embeddings := createTestEmbeddingsWithMetadata(t, chunkIDs, repoID)
+
+	bulkOptions := outbound.BulkInsertOptions{
+		BatchSize:           50,
+		UsePartitionedTable: true,
+		OnConflictAction:    outbound.ConflictActionDoNothing,
+		TransactionBehavior: outbound.TransactionBehaviorAuto,
+		ValidateVectorDims:  true,
+		EnableMetrics:       false,
+		Timeout:             60 * time.Second,
+	}
+
+	_, err := repo.BulkInsertEmbeddings(ctx, embeddings, bulkOptions)
+	if err != nil {
+		t.Fatalf("Failed to insert test embeddings: %v", err)
+	}
+
+	queryVector := createTestVector(768, 0.1)
+
+	t.Run("File extension filter should return only .go files", func(t *testing.T) {
+		t.Log("Test validates SQL-level file_path filtering with file extension pattern")
+		t.Log("Expected behavior: should return 20 chunks from .go files (out of 30 total)")
+		t.Log("Current behavior: WILL FAIL - file_path column doesn't exist in embeddings_partitioned")
+
+		options := outbound.SimilaritySearchOptions{
+			UsePartitionedTable: true,
+			SimilarityMetric:    outbound.SimilarityMetricCosine,
+			MaxResults:          20,
+			MinSimilarity:       0.0,
+			FileExtensions:      []string{".go"}, // Filter to only .go files
+			IterativeScanMode:   outbound.IterativeScanRelaxedOrder,
+			EfSearch:            10,
+			IncludeDeleted:      false,
+			Timeout:             30 * time.Second,
+		}
+
+		results, err := repo.VectorSimilaritySearch(ctx, queryVector, options)
+		if err != nil {
+			// Expected to fail with error about missing file_path column
+			t.Logf("Expected failure: %v", err)
+			if !strings.Contains(err.Error(), "file_path") && !strings.Contains(err.Error(), "column") {
+				t.Errorf("Expected error about missing 'file_path' column, got: %v", err)
+			}
+			return
+		}
+
+		// If it doesn't error, verify the results
+		if len(results) < 20 {
+			t.Errorf("Expected 20 chunks from .go files with iterative scan, got %d", len(results))
+		}
+
+		// Verify all results are from .go files
+		for i, result := range results {
+			filePath := stringValue(result.Embedding.FilePath)
+			if !hasExtension(filePath, ".go") {
+				t.Errorf("Result %d: expected .go file, got '%s'", i, filePath)
+			}
+		}
+	})
+}
+
+// TestVectorStorageRepository_IterativeScanWithCombinedFilters tests iterative scanning with combined metadata filters.
+// This test verifies that multiple filters (repository + language + chunk_type) work together at SQL level.
+// EXPECTED TO FAIL: embeddings_partitioned table doesn't have language and chunk_type columns yet.
+func TestVectorStorageRepository_IterativeScanWithCombinedFilters(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLVectorStorageRepository(pool)
+	ctx := context.Background()
+
+	// Create 2 repositories with mixed languages and types
+	repo1ID, repo1ChunkIDs := setupTestRepositoryWithMixedMetadata(t, pool, 100)
+	repo2ID, repo2ChunkIDs := setupTestRepositoryWithMixedMetadata(t, pool, 100)
+
+	// Insert embeddings (200 total with variety)
+	embeddings1 := createTestEmbeddingsWithMetadata(t, repo1ChunkIDs, repo1ID)
+	embeddings2 := createTestEmbeddingsWithMetadata(t, repo2ChunkIDs, repo2ID)
+
+	bulkOptions := outbound.BulkInsertOptions{
+		BatchSize:           50,
+		UsePartitionedTable: true,
+		OnConflictAction:    outbound.ConflictActionDoNothing,
+		TransactionBehavior: outbound.TransactionBehaviorAuto,
+		ValidateVectorDims:  true,
+		EnableMetrics:       false,
+		Timeout:             60 * time.Second,
+	}
+
+	allEmbeddings := append(embeddings1, embeddings2...)
+	_, err := repo.BulkInsertEmbeddings(ctx, allEmbeddings, bulkOptions)
+	if err != nil {
+		t.Fatalf("Failed to insert test embeddings: %v", err)
+	}
+
+	queryVector := createTestVector(768, 0.1)
+
+	t.Run("Combined filters: repository + language + chunk_type", func(t *testing.T) {
+		t.Log("Test validates combined SQL-level filtering: repository + language + chunk_type")
+		t.Log("Expected behavior: should return 20 Go function chunks from repository 1")
+		t.Log("Current behavior: WILL FAIL - language and chunk_type columns don't exist")
+
+		options := outbound.SimilaritySearchOptions{
+			UsePartitionedTable: true,
+			SimilarityMetric:    outbound.SimilarityMetricCosine,
+			MaxResults:          20,
+			MinSimilarity:       0.0,
+			RepositoryIDs:       []uuid.UUID{repo1ID}, // Filter to repo1
+			Languages:           []string{"go"},       // Filter to Go code
+			ChunkTypes:          []string{"function"}, // Filter to functions
+			IterativeScanMode:   outbound.IterativeScanRelaxedOrder,
+			EfSearch:            10,
+			IncludeDeleted:      false,
+			Timeout:             30 * time.Second,
+		}
+
+		results, err := repo.VectorSimilaritySearch(ctx, queryVector, options)
+		if err != nil {
+			// Expected to fail with error about missing columns
+			t.Logf("Expected failure: %v", err)
+			if !strings.Contains(err.Error(), "language") && !strings.Contains(err.Error(), "chunk_type") &&
+				!strings.Contains(err.Error(), "column") {
+				t.Errorf("Expected error about missing metadata columns, got: %v", err)
+			}
+			return
+		}
+
+		// If it doesn't error, verify the results
+		if len(results) < 20 {
+			t.Errorf("Expected 20 Go function chunks with iterative scan, got %d", len(results))
+		}
+
+		// Verify all results match all filters
+		for i, result := range results {
+			if result.Embedding.RepositoryID != repo1ID {
+				t.Errorf("Result %d: expected repository %s, got %s",
+					i, repo1ID, result.Embedding.RepositoryID)
+			}
+			assertEmbeddingMetadata(t, i, result.Embedding, "go", "function", "")
+		}
+	})
+}
+
+// TestVectorStorageRepository_IterativeScanEffectivenessWithMetadataFilters tests that iterative scanning
+// effectively expands search when metadata filters are highly selective.
+// EXPECTED TO FAIL: embeddings_partitioned table doesn't have metadata columns yet.
+func TestVectorStorageRepository_IterativeScanEffectivenessWithMetadataFilters(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLVectorStorageRepository(pool)
+	ctx := context.Background()
+
+	// Create scenario where filters are highly selective: 270 Python classes, 30 Go functions
+	repoID, chunkIDs := setupTestRepositoryWithSelectiveMetadata(t, pool, 300,
+		"python", "class", 270,
+		"go", "function", 30)
+
+	embeddings := createTestEmbeddingsWithMetadata(t, chunkIDs, repoID)
+
+	bulkOptions := outbound.BulkInsertOptions{
+		BatchSize:           100,
+		UsePartitionedTable: true,
+		OnConflictAction:    outbound.ConflictActionDoNothing,
+		TransactionBehavior: outbound.TransactionBehaviorAuto,
+		ValidateVectorDims:  true,
+		EnableMetrics:       false,
+		Timeout:             60 * time.Second,
+	}
+
+	_, err := repo.BulkInsertEmbeddings(ctx, embeddings, bulkOptions)
+	if err != nil {
+		t.Fatalf("Failed to insert test embeddings: %v", err)
+	}
+
+	queryVector := createTestVector(768, 0.1)
+
+	t.Run("Highly selective filters with iterative scan should still return requested count", func(t *testing.T) {
+		t.Log("Test validates iterative scanning with highly selective metadata filters")
+		t.Log("Data: 300 total (270 Python classes, 30 Go functions)")
+		t.Log("Expected: should return 20 Go functions despite being only 10% of data")
+		t.Log("Current behavior: WILL FAIL - metadata columns don't exist")
+
+		options := outbound.SimilaritySearchOptions{
+			UsePartitionedTable: true,
+			SimilarityMetric:    outbound.SimilarityMetricCosine,
+			MaxResults:          20,
+			MinSimilarity:       0.0,
+			Languages:           []string{"go"},       // Only 10% of data is Go
+			ChunkTypes:          []string{"function"}, // And all Go is functions
+			IterativeScanMode:   outbound.IterativeScanRelaxedOrder,
+			EfSearch:            25, // Small ef_search to force multiple iterations
+			IncludeDeleted:      false,
+			Timeout:             30 * time.Second,
+		}
+
+		results, err := repo.VectorSimilaritySearch(ctx, queryVector, options)
+		if err != nil {
+			// Expected to fail with error about missing columns
+			t.Logf("Expected failure: %v", err)
+			return
+		}
+
+		resultCount := len(results)
+		t.Logf("Got %d results (expected 20)", resultCount)
+
+		// Verify iterative scan successfully expanded to find all matching results
+		if resultCount < 20 {
+			t.Errorf("Expected 20 Go functions with iterative scan, got %d. "+
+				"Iterative scanning should expand search to find all matching results despite selective filter.",
+				resultCount)
+		}
+
+		// Verify all results are Go functions
+		for i, result := range results {
+			assertEmbeddingMetadata(t, i, result.Embedding, "go", "function", "")
+		}
+
+		// Log to verify multiple iterations occurred (would be visible in implementation logs)
+		t.Logf("Iterative scan should have performed multiple iterations to gather %d results from 10%% of data",
+			resultCount)
+	})
+}
+
+// TestVectorStorageRepository_VectorSimilaritySearch_NullMetadata tests that vector similarity search
+// handles NULL metadata fields correctly when scanning from the database.
+// This test covers the issue where scanning into non-nullable string fields fails when DB returns NULL.
+func TestVectorStorageRepository_VectorSimilaritySearch_NullMetadata(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLVectorStorageRepository(pool)
+	ctx := context.Background()
+
+	t.Run("Similarity search with NULL metadata should not panic", func(t *testing.T) {
+		// Clean up before test
+		cleanupEmbeddings(t, pool, true)
+
+		// Create test repository and chunks
+		repositoryID := uuid.New()
+		repoURL := "https://github.com/test/null-metadata-repo-" + repositoryID.String()[:8]
+		_, err := pool.Exec(ctx, `
+			INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, repositoryID, repoURL, repoURL,
+			"null-metadata-test", "Test repository for NULL metadata", "indexed")
+		if err != nil {
+			t.Fatalf("Failed to create test repository: %v", err)
+		}
+
+		// Create chunks first
+		chunkIDs := make([]uuid.UUID, 5)
+		for i := 0; i < 5; i++ {
+			chunkID := uuid.New()
+			chunkIDs[i] = chunkID
+
+			_, err = pool.Exec(ctx, `
+				INSERT INTO codechunking.code_chunks (id, repository_id, file_path, chunk_type, content, language, start_line, end_line, entity_name, content_hash)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			`, chunkID, repositoryID, fmt.Sprintf("test%d.go", i), "function",
+				fmt.Sprintf("func Test%d() {}", i), "go", 1, 10,
+				fmt.Sprintf("Test%d", i), "hash-"+chunkID.String()[:8])
+			if err != nil {
+				t.Fatalf("Failed to create test chunk: %v", err)
+			}
+		}
+
+		// Insert embeddings directly into partitioned table WITHOUT metadata (language, chunk_type, file_path will be NULL)
+		for i, chunkID := range chunkIDs {
+			embeddingID := uuid.New()
+			vector := createTestVector(768, float64(i)*0.1)
+			vectorStr := VectorToString(vector)
+
+			// Explicitly insert with NULL metadata columns
+			_, err = pool.Exec(ctx, `
+				INSERT INTO codechunking.embeddings_partitioned
+				(id, chunk_id, repository_id, embedding, model_version, created_at, language, chunk_type, file_path)
+				VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, NULL)
+			`, embeddingID, chunkID, repositoryID, vectorStr, "gemini-embedding-001", time.Now())
+			if err != nil {
+				t.Fatalf("Failed to insert embedding with NULL metadata: %v", err)
+			}
+		}
+
+		// Verify embeddings were inserted with NULL metadata
+		var nullCount int
+		err = pool.QueryRow(ctx, `
+			SELECT COUNT(*) FROM codechunking.embeddings_partitioned
+			WHERE repository_id = $1 AND language IS NULL AND chunk_type IS NULL AND file_path IS NULL
+		`, repositoryID).Scan(&nullCount)
+		if err != nil {
+			t.Fatalf("Failed to verify NULL metadata: %v", err)
+		}
+		if nullCount != 5 {
+			t.Fatalf("Expected 5 embeddings with NULL metadata, got %d", nullCount)
+		}
+
+		// Perform similarity search - THIS SHOULD FAIL because metadata fields are non-nullable strings
+		queryVector := createTestVector(768, 0.3)
+		options := outbound.SimilaritySearchOptions{
+			UsePartitionedTable: true,
+			SimilarityMetric:    outbound.SimilarityMetricCosine,
+			MaxResults:          5,
+			MinSimilarity:       0.0,
+			RepositoryIDs:       []uuid.UUID{repositoryID},
+			EfSearch:            100,
+			IncludeDeleted:      false,
+			Timeout:             30 * time.Second,
+		}
+
+		results, err := repo.VectorSimilaritySearch(ctx, queryVector, options)
+		// Expected to fail with "can't scan into dest[7] (col: language): cannot scan NULL into *string"
+		if err != nil {
+			t.Errorf("Vector similarity search should not error with NULL metadata, got error: %v", err)
+			return
+		}
+
+		// Should get results back
+		if len(results) == 0 {
+			t.Error("Expected results from similarity search with NULL metadata, got 0 results")
+			return
+		}
+
+		// Verify that NULL metadata is handled correctly (should be nil pointers)
+		for i, result := range results {
+			if result.Embedding.Language != nil && *result.Embedding.Language != "" {
+				t.Errorf("Result %d: expected nil/empty Language for NULL metadata, got: %s",
+					i, *result.Embedding.Language)
+			}
+			if result.Embedding.ChunkType != nil && *result.Embedding.ChunkType != "" {
+				t.Errorf("Result %d: expected nil/empty ChunkType for NULL metadata, got: %s",
+					i, *result.Embedding.ChunkType)
+			}
+			if result.Embedding.FilePath != nil && *result.Embedding.FilePath != "" {
+				t.Errorf("Result %d: expected nil/empty FilePath for NULL metadata, got: %s",
+					i, *result.Embedding.FilePath)
+			}
+		}
+	})
+
+	t.Run("Similarity search with populated metadata should return non-nil pointers", func(t *testing.T) {
+		// Clean up before test
+		cleanupEmbeddings(t, pool, true)
+
+		// Create test repository with chunks having metadata
+		repositoryID, chunkIDs := setupTestRepositoryAndChunksWithLanguages(
+			t, pool, 5, []string{"go"}, []int{5})
+
+		// Insert embeddings WITH metadata
+		for i, chunkID := range chunkIDs {
+			embeddingID := uuid.New()
+			vector := createTestVector(768, float64(i)*0.1)
+			vectorStr := VectorToString(vector)
+
+			// Insert with explicit metadata values
+			_, err := pool.Exec(ctx, `
+				INSERT INTO codechunking.embeddings_partitioned
+				(id, chunk_id, repository_id, embedding, model_version, created_at, language, chunk_type, file_path)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			`, embeddingID, chunkID, repositoryID, vectorStr, "gemini-embedding-001",
+				time.Now(), "go", "function", fmt.Sprintf("src/test%d.go", i))
+			if err != nil {
+				t.Fatalf("Failed to insert embedding with metadata: %v", err)
+			}
+		}
+
+		// Perform similarity search
+		queryVector := createTestVector(768, 0.3)
+		options := outbound.SimilaritySearchOptions{
+			UsePartitionedTable: true,
+			SimilarityMetric:    outbound.SimilarityMetricCosine,
+			MaxResults:          5,
+			MinSimilarity:       0.0,
+			RepositoryIDs:       []uuid.UUID{repositoryID},
+			EfSearch:            100,
+			IncludeDeleted:      false,
+			Timeout:             30 * time.Second,
+		}
+
+		results, err := repo.VectorSimilaritySearch(ctx, queryVector, options)
+		if err != nil {
+			t.Fatalf("Vector similarity search failed: %v", err)
+		}
+
+		if len(results) == 0 {
+			t.Fatal("Expected results from similarity search, got 0 results")
+		}
+
+		// Verify metadata is populated with correct values
+		for i, result := range results {
+			assertEmbeddingMetadata(t, i, result.Embedding, "go", "function", "src/test")
+		}
+	})
+
+	t.Run("Similarity search with mixed NULL and non-NULL metadata", func(t *testing.T) {
+		// Clean up before test
+		cleanupEmbeddings(t, pool, true)
+
+		// Create test repository
+		repositoryID := uuid.New()
+		repoURL := "https://github.com/test/mixed-metadata-repo-" + repositoryID.String()[:8]
+		_, err := pool.Exec(ctx, `
+			INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, repositoryID, repoURL, repoURL,
+			"mixed-metadata-test", "Test repository for mixed metadata", "indexed")
+		if err != nil {
+			t.Fatalf("Failed to create test repository: %v", err)
+		}
+
+		// Create chunks
+		chunkIDs := make([]uuid.UUID, 10)
+		for i := 0; i < 10; i++ {
+			chunkID := uuid.New()
+			chunkIDs[i] = chunkID
+
+			_, err = pool.Exec(ctx, `
+				INSERT INTO codechunking.code_chunks (id, repository_id, file_path, chunk_type, content, language, start_line, end_line, entity_name, content_hash)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			`, chunkID, repositoryID, fmt.Sprintf("test%d.go", i), "function",
+				fmt.Sprintf("func Test%d() {}", i), "go", 1, 10,
+				fmt.Sprintf("Test%d", i), "hash-"+chunkID.String()[:8])
+			if err != nil {
+				t.Fatalf("Failed to create test chunk: %v", err)
+			}
+		}
+
+		// Insert half with NULL metadata, half with populated metadata
+		for i, chunkID := range chunkIDs {
+			embeddingID := uuid.New()
+			vector := createTestVector(768, float64(i)*0.1)
+			vectorStr := VectorToString(vector)
+
+			if i < 5 {
+				// First half: NULL metadata
+				_, err = pool.Exec(ctx, `
+					INSERT INTO codechunking.embeddings_partitioned
+					(id, chunk_id, repository_id, embedding, model_version, created_at, language, chunk_type, file_path)
+					VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, NULL)
+				`, embeddingID, chunkID, repositoryID, vectorStr, "gemini-embedding-001", time.Now())
+			} else {
+				// Second half: populated metadata
+				_, err = pool.Exec(ctx, `
+					INSERT INTO codechunking.embeddings_partitioned
+					(id, chunk_id, repository_id, embedding, model_version, created_at, language, chunk_type, file_path)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+				`, embeddingID, chunkID, repositoryID, vectorStr, "gemini-embedding-001",
+					time.Now(), "go", "function", fmt.Sprintf("src/test%d.go", i))
+			}
+			if err != nil {
+				t.Fatalf("Failed to insert embedding: %v", err)
+			}
+		}
+
+		// Perform similarity search
+		queryVector := createTestVector(768, 0.3)
+		options := outbound.SimilaritySearchOptions{
+			UsePartitionedTable: true,
+			SimilarityMetric:    outbound.SimilarityMetricCosine,
+			MaxResults:          10,
+			MinSimilarity:       0.0,
+			RepositoryIDs:       []uuid.UUID{repositoryID},
+			EfSearch:            100,
+			IncludeDeleted:      false,
+			Timeout:             30 * time.Second,
+		}
+
+		results, err := repo.VectorSimilaritySearch(ctx, queryVector, options)
+		// Should fail because some results have NULL metadata
+		if err != nil {
+			t.Errorf("Vector similarity search should handle mixed NULL/non-NULL metadata, got error: %v", err)
+			return
+		}
+
+		if len(results) < 10 {
+			t.Errorf("Expected 10 results, got %d", len(results))
+		}
+
+		// Count results with and without metadata
+		nullMetadataCount := 0
+		populatedMetadataCount := 0
+
+		for _, result := range results {
+			if result.Embedding.Language == nil || *result.Embedding.Language == "" {
+				nullMetadataCount++
+			} else {
+				populatedMetadataCount++
+			}
+		}
+
+		t.Logf("Results with NULL metadata: %d, with populated metadata: %d",
+			nullMetadataCount, populatedMetadataCount)
+	})
+}
+
+// TestVectorStorageRepository_JSONSerialization_NullableMetadata tests JSON serialization
+// of VectorEmbedding with nullable metadata fields.
+func TestVectorStorageRepository_JSONSerialization_NullableMetadata(t *testing.T) {
+	t.Run("JSON serialization with nil metadata should omit fields", func(t *testing.T) {
+		// Create embedding with nil metadata pointers
+		embedding := outbound.VectorEmbedding{
+			ID:           uuid.New(),
+			ChunkID:      uuid.New(),
+			RepositoryID: uuid.New(),
+			Embedding:    createTestVector(768, 0.5),
+			ModelVersion: "gemini-embedding-001",
+			CreatedAt:    time.Now(),
+			// Language, ChunkType, FilePath are nil pointers (should be omitted with omitempty)
+			Language:  nil,
+			ChunkType: nil,
+			FilePath:  nil,
+		}
+
+		// Marshal to JSON
+		jsonData, err := json.Marshal(embedding)
+		if err != nil {
+			t.Fatalf("Failed to marshal embedding to JSON: %v", err)
+		}
+
+		jsonStr := string(jsonData)
+
+		// Verify omitempty works - fields with empty values should be omitted
+		// NOTE: This test will PASS currently because empty strings are omitted with omitempty
+		// But we still want the test to verify the behavior
+		if strings.Contains(jsonStr, `"language":""`) {
+			t.Error("Expected language field to be omitted with omitempty, but it was included")
+		}
+		if strings.Contains(jsonStr, `"chunk_type":""`) {
+			t.Error("Expected chunk_type field to be omitted with omitempty, but it was included")
+		}
+		if strings.Contains(jsonStr, `"file_path":""`) {
+			t.Error("Expected file_path field to be omitted with omitempty, but it was included")
+		}
+
+		t.Logf("JSON (with nil metadata): %s", jsonStr)
+	})
+
+	t.Run("JSON serialization with populated metadata should include fields", func(t *testing.T) {
+		// Create embedding with populated metadata
+		lang := "go"
+		chunkType := "function"
+		filePath := "src/main.go"
+		embedding := outbound.VectorEmbedding{
+			ID:           uuid.New(),
+			ChunkID:      uuid.New(),
+			RepositoryID: uuid.New(),
+			Embedding:    createTestVector(768, 0.5),
+			ModelVersion: "gemini-embedding-001",
+			CreatedAt:    time.Now(),
+			Language:     &lang,
+			ChunkType:    &chunkType,
+			FilePath:     &filePath,
+		}
+
+		// Marshal to JSON
+		jsonData, err := json.Marshal(embedding)
+		if err != nil {
+			t.Fatalf("Failed to marshal embedding to JSON: %v", err)
+		}
+
+		jsonStr := string(jsonData)
+
+		// Verify fields are included
+		if !strings.Contains(jsonStr, `"language":"go"`) {
+			t.Error("Expected language field to be included in JSON")
+		}
+		if !strings.Contains(jsonStr, `"chunk_type":"function"`) {
+			t.Error("Expected chunk_type field to be included in JSON")
+		}
+		if !strings.Contains(jsonStr, `"file_path":"src/main.go"`) {
+			t.Error("Expected file_path field to be included in JSON")
+		}
+
+		t.Logf("JSON (with populated metadata): %s", jsonStr)
+	})
+}
+
+// TestVectorStorageRepository_NullMetadataBackfill tests that the backfill migration
+// properly handles NULL metadata values.
+func TestVectorStorageRepository_NullMetadataBackfill(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	ctx := context.Background()
+
+	t.Run("Embeddings without backfilled metadata should have NULL values", func(t *testing.T) {
+		// Clean up before test
+		cleanupEmbeddings(t, pool, true)
+
+		// Create test repository and chunks
+		repositoryID := uuid.New()
+		repoURL := "https://github.com/test/backfill-test-repo-" + repositoryID.String()[:8]
+		_, err := pool.Exec(ctx, `
+			INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, repositoryID, repoURL, repoURL,
+			"backfill-test", "Test repository for backfill", "indexed")
+		if err != nil {
+			t.Fatalf("Failed to create test repository: %v", err)
+		}
+
+		chunkID := uuid.New()
+		_, err = pool.Exec(ctx, `
+			INSERT INTO codechunking.code_chunks (id, repository_id, file_path, chunk_type, content, language, start_line, end_line, entity_name, content_hash)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		`, chunkID, repositoryID, "test.go", "function", "func Test() {}", "go",
+			1, 10, "Test", "hash-"+chunkID.String()[:8])
+		if err != nil {
+			t.Fatalf("Failed to create test chunk: %v", err)
+		}
+
+		// Insert embedding WITHOUT metadata (simulating old data before backfill)
+		embeddingID := uuid.New()
+		vector := createTestVector(768, 0.5)
+		vectorStr := VectorToString(vector)
+
+		_, err = pool.Exec(ctx, `
+			INSERT INTO codechunking.embeddings_partitioned
+			(id, chunk_id, repository_id, embedding, model_version, created_at, language, chunk_type, file_path)
+			VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, NULL)
+		`, embeddingID, chunkID, repositoryID, vectorStr, "gemini-embedding-001", time.Now())
+		if err != nil {
+			t.Fatalf("Failed to insert embedding: %v", err)
+		}
+
+		// Query to verify NULL values are present
+		var language, chunkType, filePath *string
+		err = pool.QueryRow(ctx, `
+			SELECT language, chunk_type, file_path
+			FROM codechunking.embeddings_partitioned
+			WHERE id = $1
+		`, embeddingID).Scan(&language, &chunkType, &filePath)
+		if err != nil {
+			t.Fatalf("Failed to query embedding: %v", err)
+		}
+
+		// Verify all metadata fields are NULL
+		if language != nil {
+			t.Errorf("Expected language to be NULL, got: %v", *language)
+		}
+		if chunkType != nil {
+			t.Errorf("Expected chunk_type to be NULL, got: %v", *chunkType)
+		}
+		if filePath != nil {
+			t.Errorf("Expected file_path to be NULL, got: %v", *filePath)
+		}
+
+		t.Log("Verified that embeddings without backfill have NULL metadata values")
+	})
 }

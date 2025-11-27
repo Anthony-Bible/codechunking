@@ -37,16 +37,21 @@ const (
 			start_line, end_line, entity_name, parent_entity, content_hash, metadata,
 			qualified_name, signature, visibility
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-		ON CONFLICT (repository_id, file_path, content_hash) DO NOTHING
+		ON CONFLICT (repository_id, file_path, content_hash)
+		DO UPDATE SET id = code_chunks.id
+		RETURNING id
 	`
 
 	insertPartitionedEmbeddingQuery = `
 		INSERT INTO codechunking.embeddings_partitioned (
-			id, chunk_id, repository_id, embedding, model_version
-		) VALUES ($1, $2, $3, $4, $5)
+			id, chunk_id, repository_id, embedding, model_version, language, chunk_type, file_path
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (chunk_id, model_version, repository_id)
 		DO UPDATE SET
 			embedding = EXCLUDED.embedding,
+			language = EXCLUDED.language,
+			chunk_type = EXCLUDED.chunk_type,
+			file_path = EXCLUDED.file_path,
 			created_at = CURRENT_TIMESTAMP
 	`
 
@@ -68,6 +73,24 @@ func validateEmbeddingDimensions(embedding *outbound.Embedding) error {
 			expectedEmbeddingDimensions, len(embedding.Vector), embedding.ModelVersion, embedding.ChunkID.String())
 	}
 	return nil
+}
+
+// sanitizeContentWithLogging removes null bytes from content and logs when detected.
+func sanitizeContentWithLogging(ctx context.Context, content string, chunkID string, filePath string) string {
+	nullCount := strings.Count(content, "\x00")
+	if nullCount > 0 {
+		slogger.Warn(
+			ctx,
+			"Null bytes detected in chunk content during repository save, removing for PostgreSQL compatibility",
+			slogger.Fields{
+				"null_byte_count": nullCount,
+				"chunk_id":        chunkID,
+				"file_path":       filePath,
+			},
+		)
+		return strings.ReplaceAll(content, "\x00", "")
+	}
+	return content
 }
 
 // PostgreSQLChunkRepository implements the ChunkStorageRepository interface.
@@ -231,6 +254,9 @@ func (r *PostgreSQLChunkRepository) SaveChunk(ctx context.Context, chunk *outbou
 		visibility = defaultVisibility
 	}
 
+	// Sanitize content for PostgreSQL UTF-8 compatibility
+	sanitizedContent := sanitizeContentWithLogging(ctx, chunk.Content, chunk.ID, chunk.FilePath)
+
 	// Validate repository ID is provided
 	repositoryID := chunk.RepositoryID
 	if repositoryID == uuid.Nil {
@@ -241,19 +267,9 @@ func (r *PostgreSQLChunkRepository) SaveChunk(ctx context.Context, chunk *outbou
 		return errors.New("repository_id is required to save chunk")
 	}
 
-	// Defensive sanitization: Remove null bytes for PostgreSQL UTF-8 compatibility
-	sanitizedContent := valueobject.SanitizeContent(chunk.Content)
-	if len(sanitizedContent) != len(chunk.Content) {
-		slogger.Warn(ctx, "Null bytes detected and removed from chunk content", slogger.Fields{
-			"chunk_id":           chunk.ID,
-			"file_path":          chunk.FilePath,
-			"original_len":       len(chunk.Content),
-			"sanitized_len":      len(sanitizedContent),
-			"null_bytes_removed": len(chunk.Content) - len(sanitizedContent),
-		})
-	}
-
-	_, err = r.pool.Exec(ctx, query,
+	// Save chunk and get the actual chunk ID (could be existing if conflict occurs)
+	var actualChunkID uuid.UUID
+	err = r.pool.QueryRow(ctx, query,
 		chunkID,
 		repositoryID,
 		chunk.FilePath,
@@ -269,7 +285,7 @@ func (r *PostgreSQLChunkRepository) SaveChunk(ctx context.Context, chunk *outbou
 		qualifiedName,
 		signature,
 		visibility,
-	)
+	).Scan(&actualChunkID)
 	if err != nil {
 		slogger.Error(ctx, "Failed to save chunk", slogger.Fields{
 			"chunk_id":      chunk.ID,
@@ -278,6 +294,16 @@ func (r *PostgreSQLChunkRepository) SaveChunk(ctx context.Context, chunk *outbou
 			"error":         err.Error(),
 		})
 		return fmt.Errorf("failed to save chunk: %w", err)
+	}
+
+	// Update the in-memory chunk ID with the actual ID
+	if actualChunkID != chunkID {
+		slogger.Info(ctx, "Chunk already exists, using existing chunk ID", slogger.Fields{
+			"generated_chunk_id": chunkID.String(),
+			"actual_chunk_id":    actualChunkID.String(),
+			"file_path":          chunk.FilePath,
+		})
+		chunk.ID = actualChunkID.String()
 	}
 
 	slogger.Debug(ctx, "Chunk saved successfully", slogger.Fields2(
@@ -307,7 +333,7 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 
 	query := insertChunkQuery
 
-	for _, chunk := range chunks {
+	for i, chunk := range chunks {
 		chunkID, err := uuid.Parse(chunk.ID)
 		if err != nil {
 			slogger.Error(ctx, "Invalid chunk ID in batch", slogger.Fields2(
@@ -357,19 +383,12 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 			return errors.New("repository_id is required to save chunk in batch")
 		}
 
-		// Defensive sanitization: Remove null bytes for PostgreSQL UTF-8 compatibility
-		sanitizedContent := valueobject.SanitizeContent(chunk.Content)
-		if len(sanitizedContent) != len(chunk.Content) {
-			slogger.Warn(ctx, "Null bytes detected and removed from chunk content in batch", slogger.Fields{
-				"chunk_id":           chunk.ID,
-				"file_path":          chunk.FilePath,
-				"original_len":       len(chunk.Content),
-				"sanitized_len":      len(sanitizedContent),
-				"null_bytes_removed": len(chunk.Content) - len(sanitizedContent),
-			})
-		}
+		// Sanitize content for PostgreSQL UTF-8 compatibility
+		sanitizedContent := sanitizeContentWithLogging(ctx, chunk.Content, chunk.ID, chunk.FilePath)
 
-		_, err = tx.Exec(ctx, query,
+		// Save chunk and get the actual chunk ID (could be existing if conflict occurs)
+		var actualChunkID uuid.UUID
+		err = tx.QueryRow(ctx, query,
 			chunkID,
 			repositoryID,
 			chunk.FilePath,
@@ -385,7 +404,7 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 			qualifiedName,
 			signature,
 			visibility,
-		)
+		).Scan(&actualChunkID)
 		if err != nil {
 			slogger.Error(ctx, "Failed to save chunk in batch", slogger.Fields{
 				"chunk_id":      chunk.ID,
@@ -394,6 +413,16 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 				"error":         err.Error(),
 			})
 			return fmt.Errorf("failed to save chunk in batch: %w", err)
+		}
+
+		// Update the in-memory chunk ID with the actual ID
+		if actualChunkID != chunkID {
+			slogger.Info(ctx, "Chunk already exists in batch, using existing chunk ID", slogger.Fields{
+				"generated_chunk_id": chunkID.String(),
+				"actual_chunk_id":    actualChunkID.String(),
+				"file_path":          chunk.FilePath,
+			})
+			chunks[i].ID = actualChunkID.String()
 		}
 	}
 
@@ -765,14 +794,31 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingToPartitioned(
 	ctx context.Context,
 	embedding *outbound.Embedding,
 ) error {
-	query := insertPartitionedEmbeddingQuery
+	// Query chunk metadata for denormalization
+	var language, chunkType, filePath string
+	err := r.pool.QueryRow(ctx, `
+		SELECT language, chunk_type, file_path
+		FROM codechunking.code_chunks
+		WHERE id = $1 AND deleted_at IS NULL
+	`, embedding.ChunkID).Scan(&language, &chunkType, &filePath)
+	if err != nil {
+		slogger.Error(ctx, "Failed to query chunk metadata for embedding", slogger.Fields3(
+			"embedding_id", embedding.ID.String(),
+			"chunk_id", embedding.ChunkID.String(),
+			"error", err.Error(),
+		))
+		return fmt.Errorf("failed to query chunk metadata: %w", err)
+	}
 
-	_, err := r.pool.Exec(ctx, query,
+	_, err = r.pool.Exec(ctx, insertPartitionedEmbeddingQuery,
 		embedding.ID,
 		embedding.ChunkID,
 		embedding.RepositoryID,
 		VectorToString(embedding.Vector),
 		embedding.ModelVersion,
+		language,
+		chunkType,
+		filePath,
 	)
 	if err != nil {
 		slogger.Error(ctx, "Failed to save embedding to partitioned table", slogger.Fields3(
@@ -888,15 +934,63 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingsBatchToPartitioned(
 	tx pgx.Tx,
 	embeddings []outbound.Embedding,
 ) error {
-	query := insertPartitionedEmbeddingQuery
+	// Batch fetch all chunk metadata to avoid N+1 queries
+	chunkIDs := make([]uuid.UUID, len(embeddings))
+	for i, emb := range embeddings {
+		chunkIDs[i] = emb.ChunkID
+	}
 
+	// Build map of chunk metadata for fast lookup
+	chunkMetadata := make(map[uuid.UUID]struct {
+		language  string
+		chunkType string
+		filePath  string
+	})
+
+	rows, err := tx.Query(ctx, `
+		SELECT id, language, chunk_type, file_path
+		FROM codechunking.code_chunks
+		WHERE id = ANY($1) AND deleted_at IS NULL
+	`, chunkIDs)
+	if err != nil {
+		return fmt.Errorf("failed to batch query chunk metadata: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id uuid.UUID
+		var language, chunkType, filePath string
+		if err := rows.Scan(&id, &language, &chunkType, &filePath); err != nil {
+			return fmt.Errorf("failed to scan chunk metadata: %w", err)
+		}
+		chunkMetadata[id] = struct {
+			language  string
+			chunkType string
+			filePath  string
+		}{language, chunkType, filePath}
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating chunk metadata rows: %w", err)
+	}
+
+	// Now insert embeddings using the pre-fetched metadata
 	for _, embedding := range embeddings {
-		_, err := tx.Exec(ctx, query,
+		metadata, found := chunkMetadata[embedding.ChunkID]
+		if !found {
+			return fmt.Errorf("chunk metadata not found for embedding %s (chunk_id: %s)",
+				embedding.ID.String(), embedding.ChunkID.String())
+		}
+
+		_, err = tx.Exec(ctx, insertPartitionedEmbeddingQuery,
 			embedding.ID,
 			embedding.ChunkID,
 			embedding.RepositoryID,
 			VectorToString(embedding.Vector),
 			embedding.ModelVersion,
+			metadata.language,
+			metadata.chunkType,
+			metadata.filePath,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to save embedding in batch to partitioned table: %w", err)
@@ -1401,19 +1495,23 @@ func prepareChunkFields(chunk *outbound.CodeChunk, embedding *outbound.Embedding
 		fields.Visibility = defaultVisibility
 	}
 
-	// Determine repository ID
+	// CRITICAL: Determine repository ID and ensure consistency
+	// This prevents partition routing foreign key violations
 	fields.RepositoryID = chunk.RepositoryID
 	if fields.RepositoryID == uuid.Nil {
-		fields.RepositoryID = embedding.RepositoryID
-	}
-	if fields.RepositoryID == uuid.Nil {
-		return fields, errors.New("repository_id is required")
+		return fields, errors.New("repository_id is required on chunk")
 	}
 
-	// Ensure embedding has repository ID for partitioned table
-	if embedding.RepositoryID == uuid.Nil {
-		embedding.RepositoryID = fields.RepositoryID
+	// Validate repository ID consistency before forcing
+	// If embedding has a different non-nil repository ID, that's an error
+	if embedding.RepositoryID != uuid.Nil && embedding.RepositoryID != fields.RepositoryID {
+		return fields, fmt.Errorf("repository ID mismatch for chunk %s: chunk=%s, embedding=%s",
+			chunk.ID, fields.RepositoryID.String(), embedding.RepositoryID.String())
 	}
+
+	// Force embedding to use the EXACT same repository ID as the chunk
+	// This ensures they route to the same partition and prevents foreign key violations
+	embedding.RepositoryID = fields.RepositoryID
 
 	return fields, nil
 }
@@ -1462,34 +1560,12 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 		return fmt.Errorf("failed to prepare chunk fields: %w", err)
 	}
 
-	// Defensive sanitization: Remove null bytes for PostgreSQL UTF-8 compatibility
-	sanitizedContent := valueobject.SanitizeContent(chunk.Content)
-	if len(sanitizedContent) != len(chunk.Content) {
-		slogger.Warn(ctx, "Null bytes detected and removed from chunk content in transaction", slogger.Fields{
-			"chunk_id":           chunk.ID,
-			"embedding_id":       embedding.ID.String(),
-			"file_path":          chunk.FilePath,
-			"original_len":       len(chunk.Content),
-			"sanitized_len":      len(sanitizedContent),
-			"null_bytes_removed": len(chunk.Content) - len(sanitizedContent),
-		})
-	}
+	// Sanitize content for PostgreSQL UTF-8 compatibility
+	sanitizedContent := sanitizeContentWithLogging(ctx, chunk.Content, chunk.ID, chunk.FilePath)
 
-	// Save chunk - use a modified query for transactional context that returns the ID
-	// This ensures we have the chunk ID even if ON CONFLICT DO NOTHING is triggered
-	chunkInsertQuery := `
-		INSERT INTO codechunking.code_chunks (
-			id, repository_id, file_path, chunk_type, content, language,
-			start_line, end_line, entity_name, parent_entity, content_hash, metadata,
-			qualified_name, signature, visibility
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-		ON CONFLICT (repository_id, file_path, content_hash) DO UPDATE
-		SET updated_at = CURRENT_TIMESTAMP
-		RETURNING id
-	`
-
-	var returnedChunkID uuid.UUID
-	err = tx.QueryRow(ctx, chunkInsertQuery,
+	// Save chunk and get the actual chunk ID (could be existing if conflict occurs)
+	var actualChunkID uuid.UUID
+	err = tx.QueryRow(ctx, insertChunkQuery,
 		chunkID,
 		fields.RepositoryID,
 		chunk.FilePath,
@@ -1505,7 +1581,7 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 		fields.QualifiedName,
 		fields.Signature,
 		fields.Visibility,
-	).Scan(&returnedChunkID)
+	).Scan(&actualChunkID)
 	if err != nil {
 		slogger.Error(ctx, "Failed to save chunk in transaction", slogger.Fields{
 			"chunk_id":      chunk.ID,
@@ -1515,11 +1591,20 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 		return fmt.Errorf("failed to save chunk in transaction: %w", err)
 	}
 
-	// Use the returned chunk ID for the embedding (handles both insert and conflict cases)
-	embedding.ChunkID = returnedChunkID
+	// Update the in-memory chunk ID and embedding's chunk reference with the actual ID
+	// This is critical when ON CONFLICT occurs - we need to use the existing chunk's ID
+	if actualChunkID != chunkID {
+		slogger.Info(ctx, "Chunk already exists, using existing chunk ID", slogger.Fields{
+			"generated_chunk_id": chunkID.String(),
+			"actual_chunk_id":    actualChunkID.String(),
+			"file_path":          chunk.FilePath,
+		})
+		chunk.ID = actualChunkID.String()
+		embedding.ChunkID = actualChunkID
+	}
 
 	// Save embedding (try partitioned, fallback to regular)
-	if err := r.saveEmbeddingInTx(ctx, tx, embedding, chunk.ID, fields.RepositoryID); err != nil {
+	if err := r.saveEmbeddingInTx(ctx, tx, embedding, chunk.ID, fields.RepositoryID, chunk.Language, fields.ChunkType, chunk.FilePath); err != nil {
 		return err
 	}
 
@@ -1545,6 +1630,9 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingInTx(
 	embedding *outbound.Embedding,
 	chunkID string,
 	repositoryID uuid.UUID,
+	language string,
+	chunkType string,
+	filePath string,
 ) error {
 	// Pre-validation: double-check dimensions before database operations
 	if err := validateEmbeddingDimensions(embedding); err != nil {
@@ -1562,6 +1650,9 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingInTx(
 		embedding.RepositoryID,
 		VectorToString(embedding.Vector),
 		embedding.ModelVersion,
+		language,
+		chunkType,
+		filePath,
 	)
 	if err == nil {
 		return nil
@@ -1711,11 +1802,11 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			visibility = defaultVisibility
 		}
 
-		// Prefer chunk.RepositoryID; fallback to embedding.RepositoryID
+		// CRITICAL: Ensure consistent repository ID between chunk and embedding
+		// This prevents partition routing foreign key violations
 		repositoryID := chunks[i].RepositoryID
-		if repositoryID == uuid.Nil {
-			repositoryID = embeddings[i].RepositoryID
-		}
+
+		// Validate that we have a repository ID
 		if repositoryID == uuid.Nil {
 			slogger.Error(ctx, "Missing repository_id for batch transactional chunk save", slogger.Fields{
 				"chunk_id":    chunk.ID,
@@ -1723,25 +1814,29 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			})
 			return errors.New("repository_id is required to save chunk in batch transaction")
 		}
-		// Ensure embedding has repository id for partitioned table path
-		if embeddings[i].RepositoryID == uuid.Nil {
-			embeddings[i].RepositoryID = repositoryID
+
+		// Validate repository ID consistency before forcing
+		// If embedding has a different non-nil repository ID, that's an error
+		if embeddings[i].RepositoryID != uuid.Nil && embeddings[i].RepositoryID != repositoryID {
+			slogger.Error(ctx, "Repository ID mismatch detected", slogger.Fields3(
+				"chunk_id", chunk.ID,
+				"chunk_repository_id", repositoryID.String(),
+				"embedding_repository_id", embeddings[i].RepositoryID.String(),
+			))
+			return fmt.Errorf("repository ID mismatch for chunk %s: chunk=%s, embedding=%s",
+				chunk.ID, repositoryID.String(), embeddings[i].RepositoryID.String())
 		}
 
-		// Defensive sanitization: Remove null bytes for PostgreSQL UTF-8 compatibility
-		sanitizedContent := valueobject.SanitizeContent(chunk.Content)
-		if len(sanitizedContent) != len(chunk.Content) {
-			slogger.Warn(ctx, "Null bytes detected and removed from chunk content in batch transaction", slogger.Fields{
-				"chunk_id":           chunk.ID,
-				"batch_index":        i,
-				"file_path":          chunk.FilePath,
-				"original_len":       len(chunk.Content),
-				"sanitized_len":      len(sanitizedContent),
-				"null_bytes_removed": len(chunk.Content) - len(sanitizedContent),
-			})
-		}
+		// Force embedding to use the EXACT same repository ID as the chunk
+		// This ensures they route to the same partition and prevents foreign key violations
+		embeddings[i].RepositoryID = repositoryID
 
-		_, err = tx.Exec(ctx, chunkQuery,
+		// Sanitize content for PostgreSQL UTF-8 compatibility
+		sanitizedContent := sanitizeContentWithLogging(ctx, chunk.Content, chunk.ID, chunk.FilePath)
+
+		// Save chunk and get the actual chunk ID (could be existing if conflict occurs)
+		var actualChunkID uuid.UUID
+		err = tx.QueryRow(ctx, chunkQuery,
 			chunkID,
 			repositoryID,
 			chunk.FilePath,
@@ -1757,7 +1852,7 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			qualifiedName,
 			signature,
 			visibility,
-		)
+		).Scan(&actualChunkID)
 		if err != nil {
 			slogger.Error(ctx, "Failed to save chunk in batch transaction", slogger.Fields{
 				"chunk_id":      chunk.ID,
@@ -1767,27 +1862,34 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			})
 			return fmt.Errorf("failed to save chunk in batch transaction: %w", err)
 		}
+
+		// Update the in-memory chunk ID and embedding's chunk reference with the actual ID
+		// This is critical when ON CONFLICT occurs - we need to use the existing chunk's ID
+		if actualChunkID != chunkID {
+			slogger.Info(ctx, "Chunk already exists in batch, using existing chunk ID", slogger.Fields{
+				"generated_chunk_id": chunkID.String(),
+				"actual_chunk_id":    actualChunkID.String(),
+				"file_path":          chunk.FilePath,
+				"batch_index":        i,
+			})
+			chunks[i].ID = actualChunkID.String()
+			embeddings[i].ChunkID = actualChunkID
+		}
 	}
 
 	// Try to save all embeddings to partitioned table
 	usePartitioned := true
-	embeddingQuery := `
-		INSERT INTO codechunking.embeddings_partitioned (
-			id, chunk_id, repository_id, embedding, model_version
-		) VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (chunk_id, model_version, repository_id)
-		DO UPDATE SET
-			embedding = EXCLUDED.embedding,
-			created_at = CURRENT_TIMESTAMP
-	`
 
 	for i, embedding := range embeddings {
-		_, err = tx.Exec(ctx, embeddingQuery,
+		_, err = tx.Exec(ctx, insertPartitionedEmbeddingQuery,
 			embedding.ID,
 			embedding.ChunkID,
 			embedding.RepositoryID,
 			VectorToString(embedding.Vector),
 			embedding.ModelVersion,
+			chunks[i].Language,
+			chunks[i].Type,
+			chunks[i].FilePath,
 		)
 		if err != nil {
 			usePartitioned = false

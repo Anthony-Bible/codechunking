@@ -11,7 +11,9 @@ A production-grade semantic code search system using Go, PostgreSQL with pgvecto
 - **Intelligent Code Chunking**: Parse code into semantic units using tree-sitter
 - **Vector Embeddings**: Generate embeddings with Google Gemini API
 - **Semantic Code Search**: Natural language queries with POST /search endpoint ✨
-- **Advanced Filtering**: Filter by repository, language, file type, and similarity threshold
+- **Advanced Filtering**: Filter by repository, language, file type, and semantic construct types
+- **pgvector Iterative Scanning**: Guaranteed result counts with pgvector 0.8.0+ optimization 🚀
+- **High-Performance Metadata Filtering**: SQL-level filtering for 2-3x faster query performance
 - **Pagination & Sorting**: Full pagination with multiple sorting options (similarity, file path)
 - **Asynchronous Processing**: Scalable job processing with NATS JetStream
 

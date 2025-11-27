@@ -34,6 +34,7 @@ func TestJobProcessorRetry_BasicRetryScenarios(t *testing.T) {
 		{
 			name: "successful job on first attempt",
 			jobMessage: messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "test-001",
 				RepositoryID:  uuid.New(),
 				RepositoryURL: "https://github.com/test/repo.git",
@@ -46,6 +47,7 @@ func TestJobProcessorRetry_BasicRetryScenarios(t *testing.T) {
 		{
 			name: "network failure then success",
 			jobMessage: messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "test-002",
 				RepositoryID:  uuid.New(),
 				RepositoryURL: "https://github.com/test/network-repo.git",
@@ -63,6 +65,7 @@ func TestJobProcessorRetry_BasicRetryScenarios(t *testing.T) {
 		{
 			name: "authentication failure with exponential backoff",
 			jobMessage: messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "test-003",
 				RepositoryID:  uuid.New(),
 				RepositoryURL: "https://github.com/private/auth-repo.git",
@@ -79,6 +82,7 @@ func TestJobProcessorRetry_BasicRetryScenarios(t *testing.T) {
 		{
 			name: "persistent disk space failure - no retry",
 			jobMessage: messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "test-004",
 				RepositoryID:  uuid.New(),
 				RepositoryURL: "https://github.com/test/large-repo.git",
@@ -94,6 +98,7 @@ func TestJobProcessorRetry_BasicRetryScenarios(t *testing.T) {
 		{
 			name: "retry exhaustion after multiple attempts",
 			jobMessage: messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "test-005",
 				RepositoryID:  uuid.New(),
 				RepositoryURL: "https://github.com/test/problematic-repo.git",
@@ -240,6 +245,7 @@ func TestJobProcessorRetry_CircuitBreakerIntegration(t *testing.T) {
 		{MessageID: "cb-test-4", RepositoryID: uuid.New(), RepositoryURL: "https://github.com/test/fail4.git"},
 		{MessageID: "cb-test-5", RepositoryID: uuid.New(), RepositoryURL: "https://github.com/test/fail5.git"},
 		{
+			IndexingJobID: uuid.New(),
 			MessageID:     "cb-test-6",
 			RepositoryID:  uuid.New(),
 			RepositoryURL: "https://github.com/test/success.git",
@@ -334,6 +340,7 @@ func TestJobProcessorRetry_AdaptivePolicyBehavior(t *testing.T) {
 	for _, scenario := range testScenarios {
 		t.Run(scenario.name, func(t *testing.T) {
 			job := messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "adaptive-test",
 				RepositoryID:  uuid.New(),
 				RepositoryURL: "https://github.com/test/adaptive.git",
@@ -375,6 +382,7 @@ func TestJobProcessorRetry_ContextCancellationAndTimeouts(t *testing.T) {
 	require.NotNil(t, processor)
 
 	job := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "timeout-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/test/timeout.git",
@@ -450,6 +458,7 @@ func TestJobProcessorRetry_ConcurrentJobProcessing(t *testing.T) {
 	jobs := make([]messaging.EnhancedIndexingJobMessage, numJobs)
 	for i := range numJobs {
 		jobs[i] = messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     fmt.Sprintf("concurrent-job-%d", i),
 			RepositoryID:  uuid.New(),
 			RepositoryURL: fmt.Sprintf("https://github.com/test/concurrent-%d.git", i),

@@ -129,6 +129,7 @@ func TestDLQHandlerCreation(t *testing.T) {
 func TestFailureDetection(t *testing.T) {
 	t.Run("should detect retry limit exceeded", func(t *testing.T) {
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "msg-123",
 			CorrelationID: "corr-456",
 			RepositoryID:  uuid.New(),
@@ -151,6 +152,7 @@ func TestFailureDetection(t *testing.T) {
 
 	t.Run("should not route to DLQ when retries available", func(t *testing.T) {
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "msg-123",
 			CorrelationID: "corr-456",
 			RepositoryID:  uuid.New(),
@@ -179,6 +181,7 @@ func TestFailureDetection(t *testing.T) {
 
 	t.Run("should route permanent failures to DLQ immediately", func(t *testing.T) {
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "msg-123",
 			CorrelationID: "corr-456",
 			RepositoryID:  uuid.New(),
@@ -210,6 +213,7 @@ func TestFailureDetection(t *testing.T) {
 func TestMessageEnrichment(t *testing.T) {
 	t.Run("should enrich message with failure context", func(t *testing.T) {
 		originalMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "msg-123",
 			CorrelationID: "corr-456",
 			RepositoryID:  uuid.New(),
@@ -264,6 +268,7 @@ func TestMessageEnrichment(t *testing.T) {
 
 	t.Run("should include processing metadata in DLQ message", func(t *testing.T) {
 		originalMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "msg-456",
 			CorrelationID: "corr-789",
 			RepositoryID:  uuid.New(),
@@ -414,6 +419,7 @@ func TestFailureClassification(t *testing.T) {
 func TestDLQPublishing(t *testing.T) {
 	t.Run("should publish DLQ message successfully", func(t *testing.T) {
 		originalMessage := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "msg-789",
 			CorrelationID: "corr-abc",
 			RepositoryID:  uuid.New(),
@@ -460,10 +466,11 @@ func TestDLQPublishing(t *testing.T) {
 
 	t.Run("should handle DLQ publishing failures", func(t *testing.T) {
 		originalMessage := messaging.EnhancedIndexingJobMessage{
-			MessageID:    "msg-failed",
-			RepositoryID: uuid.New(),
-			RetryAttempt: 3,
-			MaxRetries:   3,
+			IndexingJobID: uuid.New(),
+			MessageID:     "msg-failed",
+			RepositoryID:  uuid.New(),
+			RetryAttempt:  3,
+			MaxRetries:    3,
 		}
 
 		config := DLQHandlerConfig{
@@ -501,10 +508,11 @@ func TestDLQPublishing(t *testing.T) {
 
 	t.Run("should timeout DLQ operations", func(t *testing.T) {
 		originalMessage := messaging.EnhancedIndexingJobMessage{
-			MessageID:    "msg-timeout",
-			RepositoryID: uuid.New(),
-			RetryAttempt: 3,
-			MaxRetries:   3,
+			IndexingJobID: uuid.New(),
+			MessageID:     "msg-timeout",
+			RepositoryID:  uuid.New(),
+			RetryAttempt:  3,
+			MaxRetries:    3,
 		}
 
 		config := DLQHandlerConfig{
@@ -543,6 +551,7 @@ func TestDLQHandlerIntegration(t *testing.T) {
 		// Simulate job processor calling DLQ handler
 		messages := []messaging.EnhancedIndexingJobMessage{
 			{
+				IndexingJobID: uuid.New(),
 				MessageID:     "msg-1",
 				RetryAttempt:  3,
 				MaxRetries:    3,

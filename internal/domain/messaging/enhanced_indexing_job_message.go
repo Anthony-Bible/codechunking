@@ -136,6 +136,7 @@ type EnhancedIndexingJobMessage struct {
 	SchemaVersion string    `json:"schema_version"`
 	Timestamp     time.Time `json:"timestamp"`
 
+	IndexingJobID uuid.UUID `json:"indexing_job_id"`
 	RepositoryID  uuid.UUID `json:"repository_id"`
 	RepositoryURL string    `json:"repository_url"`
 	BranchName    string    `json:"branch_name,omitempty"`

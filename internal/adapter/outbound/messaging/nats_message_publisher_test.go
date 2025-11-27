@@ -360,8 +360,7 @@ func TestNATSMessagePublisher_EnsureStream_Failures(t *testing.T) {
 	}
 
 	config := config.NATSConfig{
-		URL:      "nats://localhost:4222",
-		TestMode: true,
+		URL: "nats://localhost:4222",
 	}
 
 	for _, tt := range tests {
@@ -376,7 +375,7 @@ func TestNATSMessagePublisher_EnsureStream_Failures(t *testing.T) {
 
 			// This test will fail because EnsureStream is not implemented
 			err = publisher.(*NATSMessagePublisher).EnsureStream()
-			require.Error(t, err)
+			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
 		})
 	}
@@ -723,9 +722,9 @@ func TestNATSMessagePublisher_PublishIndexingJob_Concurrency(t *testing.T) {
 		errChan := make(chan error, numGoroutines*numMessagesPerGoroutine)
 
 		// Launch multiple goroutines to publish concurrently
-		for i := range numGoroutines {
+		for i := 0; i < numGoroutines; i++ {
 			go func(routineID int) {
-				for j := range numMessagesPerGoroutine {
+				for j := 0; j < numMessagesPerGoroutine; j++ {
 					repositoryID := uuid.New()
 					repositoryURL := fmt.Sprintf("https://github.com/user/repo%d-%d.git", routineID, j)
 
@@ -737,7 +736,7 @@ func TestNATSMessagePublisher_PublishIndexingJob_Concurrency(t *testing.T) {
 		}
 
 		// Collect all results
-		for range numGoroutines * numMessagesPerGoroutine {
+		for i := 0; i < numGoroutines*numMessagesPerGoroutine; i++ {
 			err := <-errChan
 			assert.NoError(t, err)
 		}
@@ -947,7 +946,7 @@ func TestNATSMessagePublisher_ErrorHandling_CircuitBreaker(t *testing.T) {
 		repositoryURL := "https://github.com/user/repo.git"
 
 		// Simulate multiple failures to trigger circuit breaker
-		for i := range 5 {
+		for i := 0; i < 5; i++ {
 			err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
 			if i < 3 {
 				// First few should attempt and fail
@@ -973,8 +972,7 @@ func TestNATSMessagePublisher_ErrorHandling_CircuitBreaker(t *testing.T) {
 
 func TestNATSMessagePublisher_ErrorHandling_JetStreamErrors(t *testing.T) {
 	config := config.NATSConfig{
-		URL:      "nats://localhost:4222",
-		TestMode: true,
+		URL: "nats://localhost:4222",
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -1046,7 +1044,7 @@ func TestNATSMessagePublisher_ErrorHandling_JetStreamErrors(t *testing.T) {
 
 			// This test will fail because JetStream error handling is not implemented
 			err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
-			require.Error(t, err)
+			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
 		})
 	}

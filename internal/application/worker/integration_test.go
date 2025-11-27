@@ -337,6 +337,7 @@ func TestEndToEndMessageFlow(t *testing.T) {
 		// Create different types of messages
 		messages := []messaging.EnhancedIndexingJobMessage{
 			{
+				IndexingJobID: uuid.New(),
 				MessageID:     "high-priority-msg",
 				CorrelationID: "test-corr-1",
 				RepositoryID:  uuid.New(),
@@ -379,6 +380,7 @@ func TestEndToEndMessageFlow(t *testing.T) {
 		require.Error(t, err) // Should fail in RED phase
 
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "status-tracking-msg",
 			CorrelationID: "status-test-corr",
 			RepositoryID:  uuid.New(),
@@ -416,6 +418,7 @@ func TestConsumerGroupLoadBalancing(t *testing.T) {
 		messageCount := 50
 		for range messageCount {
 			message := messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     uuid.New().String(),
 				CorrelationID: uuid.New().String(),
 				RepositoryID:  uuid.New(),
@@ -461,6 +464,7 @@ func TestConsumerGroupLoadBalancing(t *testing.T) {
 		// Send messages and verify redistribution
 		for range 20 {
 			message := messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     uuid.New().String(),
 				RepositoryID:  uuid.New(),
 				RepositoryURL: "https://github.com/example/failover-test.git",
@@ -505,6 +509,7 @@ func TestConsumerGroupLoadBalancing(t *testing.T) {
 
 		// Send messages to both systems
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "isolation-test",
 			RepositoryID:  uuid.New(),
 			RepositoryURL: "https://github.com/example/isolation-test.git",
@@ -532,6 +537,7 @@ func TestMessageAcknowledgmentScenarios(t *testing.T) {
 		require.Error(t, err) // Should fail in RED phase
 
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "ack-success-test",
 			CorrelationID: "ack-test-corr",
 			RepositoryID:  uuid.New(),
@@ -562,6 +568,7 @@ func TestMessageAcknowledgmentScenarios(t *testing.T) {
 		require.Error(t, err) // Should fail in RED phase
 
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "retry-test-msg",
 			CorrelationID: "retry-test-corr",
 			RepositoryID:  uuid.New(),
@@ -593,6 +600,7 @@ func TestMessageAcknowledgmentScenarios(t *testing.T) {
 		require.Error(t, err) // Should fail in RED phase
 
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "timeout-test-msg",
 			RepositoryID:  uuid.New(),
 			RepositoryURL: "https://github.com/example/slow-repo.git",
@@ -627,6 +635,7 @@ func TestDeadLetterHandling(t *testing.T) {
 
 		// Create a message that will fail repeatedly
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "dead-letter-test",
 			CorrelationID: "dead-letter-corr",
 			RepositoryID:  uuid.New(),
@@ -659,6 +668,7 @@ func TestDeadLetterHandling(t *testing.T) {
 		require.Error(t, err) // Should fail in RED phase
 
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "metadata-test",
 			RepositoryID:  uuid.New(),
 			RepositoryURL: "https://github.com/example/metadata-test.git",
@@ -686,6 +696,7 @@ func TestDeadLetterHandling(t *testing.T) {
 		// Send many failing messages
 		for range 100 {
 			message := messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     uuid.New().String(),
 				RepositoryID:  uuid.New(),
 				RepositoryURL: "https://github.com/invalid/overflow-test.git",
@@ -727,6 +738,7 @@ func TestPerformanceScenarios(t *testing.T) {
 
 		for range messageCount {
 			message := messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     uuid.New().String(),
 				CorrelationID: uuid.New().String(),
 				RepositoryID:  uuid.New(),
@@ -778,6 +790,7 @@ func TestPerformanceScenarios(t *testing.T) {
 
 				for range messagesPerPublisher {
 					message := messaging.EnhancedIndexingJobMessage{
+						IndexingJobID: uuid.New(),
 						MessageID:     uuid.New().String(),
 						CorrelationID: uuid.New().String(),
 						RepositoryID:  uuid.New(),
@@ -819,6 +832,7 @@ func TestPerformanceScenarios(t *testing.T) {
 		// Send messages with large processing contexts
 		for range 50 {
 			message := messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     uuid.New().String(),
 				RepositoryID:  uuid.New(),
 				RepositoryURL: "https://github.com/example/large-repo.git",
@@ -860,6 +874,7 @@ func TestErrorRecoveryScenarios(t *testing.T) {
 
 		// Try to send messages during disconnection
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "connection-test",
 			RepositoryID:  uuid.New(),
 			RepositoryURL: "https://github.com/example/connection-test.git",
@@ -889,6 +904,7 @@ func TestErrorRecoveryScenarios(t *testing.T) {
 		require.Error(t, err) // Should fail in RED phase
 
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "db-failure-test",
 			RepositoryID:  uuid.New(),
 			RepositoryURL: "https://github.com/example/db-test.git",
@@ -922,6 +938,7 @@ func TestErrorRecoveryScenarios(t *testing.T) {
 
 		// System should continue with remaining consumers
 		message := messaging.EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "partial-failure-test",
 			RepositoryID:  uuid.New(),
 			RepositoryURL: "https://github.com/example/partial-failure.git",

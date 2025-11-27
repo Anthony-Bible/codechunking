@@ -339,6 +339,23 @@ func (m *MockChunkStorageRepository) SaveChunks(ctx context.Context, chunks []ou
 	return args.Error(0)
 }
 
+func (m *MockChunkStorageRepository) FindOrCreateChunks(
+	ctx context.Context,
+	chunks []outbound.CodeChunk,
+) ([]outbound.CodeChunk, error) {
+	args := m.Called(ctx, chunks)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	// Handle function return for dynamic mocking
+	if fn, ok := args.Get(0).(func(context.Context, []outbound.CodeChunk) []outbound.CodeChunk); ok {
+		return fn(ctx, chunks), args.Error(1)
+	}
+
+	return args.Get(0).([]outbound.CodeChunk), args.Error(1)
+}
+
 func (m *MockChunkStorageRepository) GetChunk(ctx context.Context, id uuid.UUID) (*outbound.CodeChunk, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
@@ -436,6 +453,186 @@ func (m *MockChunkStorageRepository) SaveChunksWithEmbeddings(
 	return args.Error(0)
 }
 
+// MockBatchQueueManager mocks the BatchQueueManager interface for testing.
+type MockBatchQueueManager struct {
+	mock.Mock
+}
+
+func (m *MockBatchQueueManager) QueueEmbeddingRequest(ctx context.Context, request *outbound.EmbeddingRequest) error {
+	args := m.Called(ctx, request)
+	return args.Error(0)
+}
+
+func (m *MockBatchQueueManager) QueueBulkEmbeddingRequests(
+	ctx context.Context,
+	requests []*outbound.EmbeddingRequest,
+) error {
+	args := m.Called(ctx, requests)
+	return args.Error(0)
+}
+
+func (m *MockBatchQueueManager) ProcessQueue(ctx context.Context) (int, error) {
+	args := m.Called(ctx)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *MockBatchQueueManager) FlushQueue(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+func (m *MockBatchQueueManager) GetQueueStats(ctx context.Context) (*outbound.QueueStats, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.QueueStats), args.Error(1)
+}
+
+func (m *MockBatchQueueManager) GetQueueHealth(ctx context.Context) (*outbound.QueueHealth, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.QueueHealth), args.Error(1)
+}
+
+func (m *MockBatchQueueManager) UpdateBatchConfiguration(ctx context.Context, config *outbound.BatchConfig) error {
+	args := m.Called(ctx, config)
+	return args.Error(0)
+}
+
+func (m *MockBatchQueueManager) DrainQueue(ctx context.Context, timeout time.Duration) error {
+	args := m.Called(ctx, timeout)
+	return args.Error(0)
+}
+
+func (m *MockBatchQueueManager) Start(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+func (m *MockBatchQueueManager) Stop(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
+// MockBatchEmbeddingService mocks the BatchEmbeddingService interface for testing.
+type MockBatchEmbeddingService struct {
+	mock.Mock
+}
+
+func (m *MockBatchEmbeddingService) CreateBatchEmbeddingJob(
+	ctx context.Context,
+	texts []string,
+	options outbound.EmbeddingOptions,
+	batchID uuid.UUID,
+) (*outbound.BatchEmbeddingJob, error) {
+	args := m.Called(ctx, texts, options, batchID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.BatchEmbeddingJob), args.Error(1)
+}
+
+func (m *MockBatchEmbeddingService) CreateBatchEmbeddingJobWithRequests(
+	ctx context.Context,
+	requests []*outbound.BatchEmbeddingRequest,
+	options outbound.EmbeddingOptions,
+	batchID uuid.UUID,
+) (*outbound.BatchEmbeddingJob, error) {
+	args := m.Called(ctx, requests, options, batchID)
+
+	// Handle nil return
+	if args.Get(0) == nil {
+		if args.Get(1) == nil {
+			return nil, nil
+		}
+		// Try to get as function first
+		if fn, ok := args.Get(1).(func(context.Context, []*outbound.BatchEmbeddingRequest, outbound.EmbeddingOptions, uuid.UUID) error); ok {
+			return nil, fn(ctx, requests, options, batchID)
+		}
+		return nil, args.Error(1)
+	}
+
+	// Handle function return
+	if fn, ok := args.Get(0).(func(context.Context, []*outbound.BatchEmbeddingRequest, outbound.EmbeddingOptions, uuid.UUID) *outbound.BatchEmbeddingJob); ok {
+		result := fn(ctx, requests, options, batchID)
+		// Check second return value
+		if args.Get(1) == nil {
+			return result, nil
+		}
+		if errFn, ok := args.Get(1).(func(context.Context, []*outbound.BatchEmbeddingRequest, outbound.EmbeddingOptions, uuid.UUID) error); ok {
+			return result, errFn(ctx, requests, options, batchID)
+		}
+		return result, args.Error(1)
+	}
+
+	// Handle direct value return
+	return args.Get(0).(*outbound.BatchEmbeddingJob), args.Error(1)
+}
+
+func (m *MockBatchEmbeddingService) GetBatchJobStatus(
+	ctx context.Context,
+	jobID string,
+) (*outbound.BatchEmbeddingJob, error) {
+	args := m.Called(ctx, jobID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.BatchEmbeddingJob), args.Error(1)
+}
+
+func (m *MockBatchEmbeddingService) ListBatchJobs(
+	ctx context.Context,
+	filter *outbound.BatchJobFilter,
+) ([]*outbound.BatchEmbeddingJob, error) {
+	args := m.Called(ctx, filter)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*outbound.BatchEmbeddingJob), args.Error(1)
+}
+
+func (m *MockBatchEmbeddingService) GetBatchJobResults(
+	ctx context.Context,
+	jobID string,
+) ([]*outbound.EmbeddingResult, error) {
+	args := m.Called(ctx, jobID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*outbound.EmbeddingResult), args.Error(1)
+}
+
+func (m *MockBatchEmbeddingService) CancelBatchJob(
+	ctx context.Context,
+	jobID string,
+) error {
+	args := m.Called(ctx, jobID)
+	return args.Error(0)
+}
+
+func (m *MockBatchEmbeddingService) DeleteBatchJob(
+	ctx context.Context,
+	jobID string,
+) error {
+	args := m.Called(ctx, jobID)
+	return args.Error(0)
+}
+
+func (m *MockBatchEmbeddingService) WaitForBatchJob(
+	ctx context.Context,
+	jobID string,
+	pollInterval time.Duration,
+) (*outbound.BatchEmbeddingJob, error) {
+	args := m.Called(ctx, jobID, pollInterval)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.BatchEmbeddingJob), args.Error(1)
+}
+
 // StreamingProcessingConfig holds configuration for streaming processing.
 type StreamingProcessingConfig struct {
 	MaxConcurrency     int
@@ -518,6 +715,7 @@ func TestJobProcessorTestSuite(t *testing.T) {
 // TestProcessJob_CompleteWorkflow_SmallRepository tests complete workflow for small repository.
 func (suite *JobProcessorTestSuite) TestProcessJob_CompleteWorkflow_SmallRepository() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "small-repo-test",
 		CorrelationID: "corr-small-repo",
 		SchemaVersion: "2.0",
@@ -546,6 +744,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_CompleteWorkflow_SmallReposit
 // TestProcessJob_CompleteWorkflow_LargeRepository tests streaming processing for large repository.
 func (suite *JobProcessorTestSuite) TestProcessJob_CompleteWorkflow_LargeRepository() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "large-repo-test",
 		CorrelationID: "corr-large-repo",
 		SchemaVersion: "2.0",
@@ -575,6 +774,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_CompleteWorkflow_LargeReposit
 // TestProcessJob_CompleteWorkflow_MultiLanguageRepository tests processing mixed language repository.
 func (suite *JobProcessorTestSuite) TestProcessJob_CompleteWorkflow_MultiLanguageRepository() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "multi-lang-test",
 		CorrelationID: "corr-multi-lang",
 		SchemaVersion: "2.0",
@@ -605,6 +805,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_CompleteWorkflow_MultiLanguag
 func (suite *JobProcessorTestSuite) TestProcessJob_ConcurrentJobs_WithinLimit() {
 	messages := []messaging.EnhancedIndexingJobMessage{
 		{
+			IndexingJobID: uuid.New(),
 			MessageID:     "concurrent-1",
 			RepositoryID:  uuid.New(),
 			RepositoryURL: "https://github.com/example/repo1.git",
@@ -659,6 +860,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_ConcurrentJobs_ExceedsLimit()
 
 	messages := []messaging.EnhancedIndexingJobMessage{
 		{
+			IndexingJobID: uuid.New(),
 			MessageID:     "exceeds-1",
 			RepositoryID:  uuid.New(),
 			RepositoryURL: "https://github.com/example/repo1.git",
@@ -686,6 +888,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_ConcurrentJobs_ExceedsLimit()
 // TestProcessJob_JobTimeout_Enforcement tests job timeout handling.
 func (suite *JobProcessorTestSuite) TestProcessJob_JobTimeout_Enforcement() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "timeout-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/slow-repo.git",
@@ -727,6 +930,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_JobTimeout_Enforcement() {
 // TestProcessJob_ProgressTracking_ThroughoutWorkflow tests JobProgress updates.
 func (suite *JobProcessorTestSuite) TestProcessJob_ProgressTracking_ThroughoutWorkflow() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "progress-test",
 		CorrelationID: "corr-progress",
 		RepositoryID:  uuid.New(),
@@ -748,6 +952,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_ProgressTracking_ThroughoutWo
 // TestProcessJob_MemoryPressure_AdaptiveProcessing tests adaptive processing under memory pressure.
 func (suite *JobProcessorTestSuite) TestProcessJob_MemoryPressure_AdaptiveProcessing() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "memory-pressure-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/large-repo.git",
@@ -788,6 +993,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_MemoryLimit_Enforcement() {
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "memory-limit-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/memory-heavy-repo.git",
@@ -805,6 +1011,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_MemoryLimit_Enforcement() {
 func (suite *JobProcessorTestSuite) TestProcessJob_MemoryCleanup_BetweenJobs() {
 	messages := []messaging.EnhancedIndexingJobMessage{
 		{
+			IndexingJobID: uuid.New(),
 			MessageID:     "cleanup-1",
 			RepositoryID:  uuid.New(),
 			RepositoryURL: "https://github.com/example/repo1.git",
@@ -831,6 +1038,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_MemoryCleanup_BetweenJobs() {
 // TestProcessJob_LargeRepository_MemoryOptimization tests memory optimization.
 func (suite *JobProcessorTestSuite) TestProcessJob_LargeRepository_MemoryOptimization() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "memory-opt-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/huge-repo.git",
@@ -875,6 +1083,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_EnhancedGitClient_Integration
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "enhanced-git-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/repo.git",
@@ -901,6 +1110,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_StreamingCodeProcessor_Integr
 // TestProcessJob_TreeSitterParser_MultiLanguage tests tree-sitter parser integration.
 func (suite *JobProcessorTestSuite) TestProcessJob_TreeSitterParser_MultiLanguage() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "tree-sitter-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/multi-lang-repo.git",
@@ -943,6 +1153,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_EmbeddingService_Integration(
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "embedding-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/embedding-repo.git",
@@ -973,6 +1184,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_IntegrationFailure_ErrorPropa
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "error-propagation-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/nonexistent/repo.git",
@@ -989,6 +1201,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_IntegrationFailure_ErrorPropa
 // TestProcessJob_Authentication_GitClient tests git client authentication.
 func (suite *JobProcessorTestSuite) TestProcessJob_Authentication_GitClient() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "auth-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/private/repo.git",
@@ -1029,6 +1242,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_FileSizeThresholds_StrategySe
 // TestProcessJob_JobExecution_Tracking tests JobExecution tracking.
 func (suite *JobProcessorTestSuite) TestProcessJob_JobExecution_Tracking() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "execution-tracking-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/tracking-repo.git",
@@ -1049,6 +1263,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_JobExecution_Tracking() {
 // TestProcessJob_ActiveJobs_Management tests active jobs management.
 func (suite *JobProcessorTestSuite) TestProcessJob_ActiveJobs_Management() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "active-jobs-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/active-repo.git",
@@ -1068,6 +1283,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_ActiveJobs_Management() {
 // TestProcessJob_JobProgress_Updates tests JobProgress updates.
 func (suite *JobProcessorTestSuite) TestProcessJob_JobProgress_Updates() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "progress-updates-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/progress-repo.git",
@@ -1089,6 +1305,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_JobProgress_Updates() {
 // TestProcessJob_JobStatus_Transitions tests job status transitions.
 func (suite *JobProcessorTestSuite) TestProcessJob_JobStatus_Transitions() {
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "status-transition-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/status-repo.git",
@@ -1141,6 +1358,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_RetryLogic_WithBackoff() {
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "retry-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/retry-repo.git",
@@ -1174,6 +1392,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_JobCancellation_AndCleanup() 
 	cancel() // Cancel immediately
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "cancellation-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/cancel-repo.git",
@@ -1209,6 +1428,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_IndexingJobRepo_PersistenceOp
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "persistence-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/persistence-repo.git",
@@ -1241,6 +1461,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_RepositoryRepo_MetadataUpdate
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "metadata-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/metadata-repo.git",
@@ -1282,6 +1503,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_DatabaseFailure_Handling() {
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "db-failure-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/db-failure-repo.git",
@@ -1354,6 +1576,7 @@ func (suite *JobProcessorTestSuite) TestJobProcessor_ResourceLimits_Enforcement(
 	)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "resource-limit-test",
 		RepositoryID:  uuid.New(),
 		RepositoryURL: "https://github.com/example/resource-heavy-repo.git",
@@ -1501,6 +1724,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInFailedSta
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "failed-repo-retry-test",
 		RepositoryID:  repoID,
 		RepositoryURL: "https://github.com/example/failed-repo.git",
@@ -1573,6 +1797,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInCompleted
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "completed-repo-redelivery-test",
 		RepositoryID:  repoID,
 		RepositoryURL: "https://github.com/example/completed-repo.git",
@@ -1649,6 +1874,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInArchivedS
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "archived-repo-redelivery-test",
 		RepositoryID:  repoID,
 		RepositoryURL: "https://github.com/example/archived-repo.git",
@@ -1744,6 +1970,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInCloningSt
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "cloning-resume-test",
 		RepositoryID:  repoID,
 		RepositoryURL: "https://github.com/example/cloning-repo.git",
@@ -1825,6 +2052,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInProcessin
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "processing-resume-test",
 		RepositoryID:  repoID,
 		RepositoryURL: "https://github.com/example/processing-repo.git",
@@ -1899,6 +2127,7 @@ func (suite *JobProcessorTestSuite) TestTransitionToCloning_AlreadyFailed_DoesNo
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "failed-no-double-fail-test",
 		RepositoryID:  repoID,
 		RepositoryURL: "https://github.com/example/failed-repo.git",
@@ -2007,6 +2236,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_IdempotentRedelivery_
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "idempotent-message-id",
 		RepositoryID:  repoID,
 		RepositoryURL: "https://github.com/example/idempotent-repo.git",
@@ -2102,6 +2332,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryNotFound_Re
 
 	// Create message with repository ID that doesn't exist in database
 	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: uuid.New(),
 		MessageID:     "repository-not-found-test",
 		RepositoryID:  repoID,
 		RepositoryURL: "https://github.com/example/nonexistent-repo.git",

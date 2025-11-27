@@ -696,8 +696,8 @@ func (s *SemanticTraverserAdapter) getContentWithInlineComment(
 		lineEnd++
 	}
 
-	// Get the text from node start to end of line
-	fullLineText := string(source[startByte:lineEnd])
+	// Get the text from node start to end of line (sanitized for PostgreSQL compatibility)
+	fullLineText := valueobject.SanitizeContent(string(source[startByte:lineEnd]))
 
 	// Trim any trailing whitespace but preserve inline comments
 	return strings.TrimRight(fullLineText, " \t\r")

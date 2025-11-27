@@ -35,8 +35,9 @@ func generateOperationID() string {
 // It manages the complete lifecycle of creating a new repository including
 // validation, persistence, and publishing indexing jobs.
 type CreateRepositoryService struct {
-	repositoryRepo   outbound.RepositoryRepository // Repository for persistence operations
-	messagePublisher outbound.MessagePublisher     // Publisher for async indexing jobs
+	repositoryRepo   outbound.RepositoryRepository  // Repository for persistence operations
+	indexingJobRepo  outbound.IndexingJobRepository // Repository for indexing job persistence
+	messagePublisher outbound.MessagePublisher      // Publisher for async indexing jobs
 }
 
 // NewCreateRepositoryService creates a new instance of CreateRepositoryService.
@@ -44,16 +45,21 @@ type CreateRepositoryService struct {
 // for publishing indexing jobs to the message queue.
 func NewCreateRepositoryService(
 	repositoryRepo outbound.RepositoryRepository,
+	indexingJobRepo outbound.IndexingJobRepository,
 	messagePublisher outbound.MessagePublisher,
 ) *CreateRepositoryService {
 	if repositoryRepo == nil {
 		panic("repositoryRepo cannot be nil")
+	}
+	if indexingJobRepo == nil {
+		panic("indexingJobRepo cannot be nil")
 	}
 	if messagePublisher == nil {
 		panic("messagePublisher cannot be nil")
 	}
 	return &CreateRepositoryService{
 		repositoryRepo:   repositoryRepo,
+		indexingJobRepo:  indexingJobRepo,
 		messagePublisher: messagePublisher,
 	}
 }
@@ -62,9 +68,10 @@ func NewCreateRepositoryService(
 // This is an alias to NewCreateRepositoryService since all services now use normalized duplicate detection by default.
 func NewCreateRepositoryServiceWithNormalizedDuplicateDetection(
 	repositoryRepo outbound.RepositoryRepository,
+	indexingJobRepo outbound.IndexingJobRepository,
 	messagePublisher outbound.MessagePublisher,
 ) *CreateRepositoryService {
-	return NewCreateRepositoryService(repositoryRepo, messagePublisher)
+	return NewCreateRepositoryService(repositoryRepo, indexingJobRepo, messagePublisher)
 }
 
 // CreateRepository creates a new repository and publishes an indexing job.
@@ -186,17 +193,30 @@ func (s *CreateRepositoryService) publishIndexingJob(
 	repository *entity.Repository,
 	originalURL string,
 ) error {
-	slogger.Info(ctx, "DEBUG: Publishing indexing job", slogger.Fields{
+	slogger.Info(ctx, "DEBUG: Creating and publishing indexing job", slogger.Fields{
 		"repository_id": repository.ID().String(), "original_url": originalURL,
 	})
-	if err := s.messagePublisher.PublishIndexingJob(ctx, repository.ID(), originalURL); err != nil {
-		slogger.Error(ctx, "DEBUG: Failed to publish indexing job", slogger.Fields{
+
+	// Create indexing job entity
+	job := entity.NewIndexingJob(repository.ID())
+
+	// Save indexing job to database
+	if err := s.indexingJobRepo.Save(ctx, job); err != nil {
+		slogger.Error(ctx, "DEBUG: Failed to save indexing job", slogger.Fields{
 			"repository_id": repository.ID().String(), "error": err.Error(),
+		})
+		return common.WrapServiceError(common.OpSaveIndexingJob, err)
+	}
+
+	// Publish indexing job message with job ID
+	if err := s.messagePublisher.PublishIndexingJob(ctx, job.ID(), repository.ID(), originalURL); err != nil {
+		slogger.Error(ctx, "DEBUG: Failed to publish indexing job", slogger.Fields{
+			"repository_id": repository.ID().String(), "indexing_job_id": job.ID().String(), "error": err.Error(),
 		})
 		return common.WrapServiceError(common.OpPublishJob, err)
 	}
-	slogger.Info(ctx, "DEBUG: Indexing job published successfully", slogger.Fields{
-		"repository_id": repository.ID().String(),
+	slogger.Info(ctx, "DEBUG: Indexing job created and published successfully", slogger.Fields{
+		"repository_id": repository.ID().String(), "indexing_job_id": job.ID().String(),
 	})
 	return nil
 }

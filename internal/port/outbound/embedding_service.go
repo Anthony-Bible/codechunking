@@ -3,6 +3,8 @@ package outbound
 import (
 	"context"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // EmbeddingService defines the interface for generating embeddings from code chunks.
@@ -50,6 +52,25 @@ type BatchEmbeddingService interface {
 		ctx context.Context,
 		texts []string,
 		options EmbeddingOptions,
+		batchID uuid.UUID,
+	) (*BatchEmbeddingJob, error)
+
+	// CreateBatchEmbeddingJobWithRequests creates a batch job from pre-formed requests with custom RequestIDs
+	CreateBatchEmbeddingJobWithRequests(
+		ctx context.Context,
+		requests []*BatchEmbeddingRequest,
+		options EmbeddingOptions,
+		batchID uuid.UUID,
+	) (*BatchEmbeddingJob, error)
+
+	// CreateBatchEmbeddingJobWithFile creates a batch job using a pre-uploaded file URI
+	// This method is used when resuming batch submission after the file was already uploaded
+	CreateBatchEmbeddingJobWithFile(
+		ctx context.Context,
+		requests []*BatchEmbeddingRequest,
+		options EmbeddingOptions,
+		batchID uuid.UUID,
+		fileURI string,
 	) (*BatchEmbeddingJob, error)
 
 	// GetBatchJobStatus retrieves the current status of a batch embedding job

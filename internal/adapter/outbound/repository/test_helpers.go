@@ -32,6 +32,7 @@ func setupTestDB(t *testing.T) *pgxpool.Pool {
 func cleanupTestData(t *testing.T, pool *pgxpool.Pool) {
 	ctx := context.Background()
 	queries := []string{
+		"DELETE FROM codechunking.batch_job_progress WHERE 1=1",
 		"DELETE FROM codechunking.embeddings WHERE 1=1",
 		"DELETE FROM codechunking.code_chunks WHERE 1=1",
 		"DELETE FROM codechunking.indexing_jobs WHERE 1=1",

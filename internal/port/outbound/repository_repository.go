@@ -40,7 +40,7 @@ type IndexingJobRepository interface {
 
 // MessagePublisher defines the outbound port for publishing messages to the job queue.
 type MessagePublisher interface {
-	PublishIndexingJob(ctx context.Context, repositoryID uuid.UUID, repositoryURL string) error
+	PublishIndexingJob(ctx context.Context, indexingJobID, repositoryID uuid.UUID, repositoryURL string) error
 }
 
 // MessagePublisherHealth defines health monitoring capabilities for message publishers.

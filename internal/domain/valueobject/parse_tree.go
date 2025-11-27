@@ -301,21 +301,42 @@ func SanitizeContent(content string) string {
 // GetNodeText returns the text content of a node with null byte sanitization.
 // Content is sanitized to ensure PostgreSQL UTF-8 compatibility by removing null bytes.
 func (pt *ParseTree) GetNodeText(node *ParseNode) string {
+	return pt.GetNodeTextWithContext(context.Background(), node)
+}
+
+// GetNodeTextWithContext returns the text content of a node with context for logging.
+func (pt *ParseTree) GetNodeTextWithContext(ctx context.Context, node *ParseNode) string {
 	if pt.isCleanedUp || node == nil {
 		return ""
 	}
 
+	var content string
+
 	// Use Content() method if tree-sitter node is available
 	if tsNode := node.TreeSitterNode(); tsNode != nil && !tsNode.IsNull() {
-		return SanitizeContent(tsNode.Content(pt.source))
+		content = tsNode.Content(pt.source)
+	} else {
+		// Fallback to byte slicing
+		if int64(node.EndByte) > int64(len(pt.source)) {
+			return ""
+		}
+		content = string(pt.source[node.StartByte:node.EndByte])
 	}
 
-	// Fallback to byte slicing
-	if int64(node.EndByte) > int64(len(pt.source)) {
-		return ""
+	// Check for null bytes and log if found (for monitoring)
+	nullCount := strings.Count(content, "\x00")
+	if nullCount > 0 {
+		slogger.Warn(ctx, "Null bytes detected in node content, removing for PostgreSQL compatibility", slogger.Fields{
+			"null_byte_count": nullCount,
+			"language":        pt.language.Name(),
+			"node_type":       node.Type,
+			"start_byte":      node.StartByte,
+			"end_byte":        node.EndByte,
+		})
 	}
 
-	return SanitizeContent(string(pt.source[node.StartByte:node.EndByte]))
+	// Remove null bytes for PostgreSQL UTF-8 compatibility
+	return strings.ReplaceAll(content, "\x00", "")
 }
 
 // GetTreeDepth returns the maximum depth of the parse tree.

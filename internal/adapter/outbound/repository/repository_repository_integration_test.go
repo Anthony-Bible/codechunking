@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 )
 
+// Note: setupTestDB, cleanupTestData, and createTestRepository are defined in test_helpers.go
+
 // TestRepositoryRepository_Save tests saving repositories to database.
 func TestRepositoryRepository_Save(t *testing.T) {
 	pool := setupTestDB(t)

@@ -14,6 +14,7 @@ type Config struct {
 	Worker          WorkerConfig          `mapstructure:"worker"`
 	Database        DatabaseConfig        `mapstructure:"database"`
 	NATS            NATSConfig            `mapstructure:"nats"`
+	Search          SearchConfig          `mapstructure:"search"`
 	Gemini          GeminiConfig          `mapstructure:"gemini"`
 	BatchProcessing BatchProcessingConfig `mapstructure:"batch_processing"`
 	Log             LogConfig             `mapstructure:"log"`
@@ -63,6 +64,11 @@ type NATSConfig struct {
 	MaxReconnects int           `mapstructure:"max_reconnects"`
 	ReconnectWait time.Duration `mapstructure:"reconnect_wait"`
 	TestMode      bool          `mapstructure:"test_mode"`
+}
+
+// SearchConfig holds search configuration.
+type SearchConfig struct {
+	IterativeScanMode string `mapstructure:"iterative_scan_mode"`
 }
 
 // GeminiConfig holds Gemini API configuration.

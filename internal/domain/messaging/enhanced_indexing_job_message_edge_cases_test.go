@@ -23,6 +23,7 @@ func TestEnhancedIndexingJobMessage_EdgeCases(t *testing.T) {
 			name: "nil_uuid_fails_validation",
 			setupFunc: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					MessageID:     "msg-12345",
 					CorrelationID: "corr-67890",
 					RepositoryID:  uuid.Nil, // This should fail validation
@@ -42,6 +43,7 @@ func TestEnhancedIndexingJobMessage_EdgeCases(t *testing.T) {
 				}
 				longID += longIDSb38.String()
 				return EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					MessageID:     longID,
 					CorrelationID: "corr-67890",
 					RepositoryID:  uuid.New(),
@@ -55,6 +57,7 @@ func TestEnhancedIndexingJobMessage_EdgeCases(t *testing.T) {
 			name: "future_timestamp_handles_correctly",
 			setupFunc: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					MessageID:     "msg-12345",
 					CorrelationID: "corr-67890",
 					RepositoryID:  uuid.New(),
@@ -70,6 +73,7 @@ func TestEnhancedIndexingJobMessage_EdgeCases(t *testing.T) {
 			name: "very_old_timestamp_fails_validation",
 			setupFunc: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					MessageID:     "msg-12345",
 					CorrelationID: "corr-67890",
 					RepositoryID:  uuid.New(),
@@ -84,6 +88,7 @@ func TestEnhancedIndexingJobMessage_EdgeCases(t *testing.T) {
 			name: "empty_branch_name_is_valid",
 			setupFunc: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					MessageID:     "msg-12345",
 					CorrelationID: "corr-67890",
 					RepositoryID:  uuid.New(),
@@ -99,6 +104,7 @@ func TestEnhancedIndexingJobMessage_EdgeCases(t *testing.T) {
 			name: "special_characters_in_branch_name_are_valid",
 			setupFunc: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					MessageID:     "msg-12345",
 					CorrelationID: "corr-67890",
 					RepositoryID:  uuid.New(),
@@ -242,6 +248,7 @@ func TestRetryTracking_EdgeCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			msg := EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "msg-12345",
 				CorrelationID: "corr-67890",
 				RepositoryID:  uuid.New(),
@@ -473,6 +480,7 @@ func TestJSONSerializationEdgeCases(t *testing.T) {
 			name: "message_with_unicode_characters_serializes_correctly",
 			setupFunc: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					MessageID:     "msg-unicode-测试",
 					CorrelationID: "corr-unicode-тест",
 					RepositoryID:  uuid.New(),
@@ -487,6 +495,7 @@ func TestJSONSerializationEdgeCases(t *testing.T) {
 			name: "message_with_special_json_characters_escapes_correctly",
 			setupFunc: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					MessageID:     `msg-with-"quotes"-and-\backslashes`,
 					CorrelationID: "corr-with-newlines\nand-tabs\t",
 					RepositoryID:  uuid.New(),
@@ -501,6 +510,7 @@ func TestJSONSerializationEdgeCases(t *testing.T) {
 			name: "message_with_empty_optional_fields_serializes_correctly",
 			setupFunc: func() EnhancedIndexingJobMessage {
 				return EnhancedIndexingJobMessage{
+					IndexingJobID: uuid.New(),
 					MessageID:     "msg-minimal",
 					CorrelationID: "corr-minimal",
 					RepositoryID:  uuid.New(),

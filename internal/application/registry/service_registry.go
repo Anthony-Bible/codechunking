@@ -43,7 +43,7 @@ func NewServiceRegistry(
 
 // CreateRepositoryService returns a configured CreateRepositoryService instance.
 func (r *ServiceRegistry) CreateRepositoryService() *service.CreateRepositoryService {
-	return service.NewCreateRepositoryService(r.repositoryRepo, r.messagePublisher)
+	return service.NewCreateRepositoryService(r.repositoryRepo, r.indexingJobRepo, r.messagePublisher)
 }
 
 // GetRepositoryService returns a configured GetRepositoryService instance.

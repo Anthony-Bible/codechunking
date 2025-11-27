@@ -141,6 +141,7 @@ func TestFailureContext(t *testing.T) {
 func TestDLQMessage(t *testing.T) {
 	t.Run("should create valid DLQ message", func(t *testing.T) {
 		originalMessage := EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "msg-123",
 			CorrelationID: "corr-456",
 			RepositoryID:  uuid.New(),
@@ -181,7 +182,8 @@ func TestDLQMessage(t *testing.T) {
 		dlqMessage := DLQMessage{
 			DLQMessageID: "", // Missing required field
 			OriginalMessage: EnhancedIndexingJobMessage{
-				MessageID: "msg-123",
+				IndexingJobID: uuid.New(),
+				MessageID:     "msg-123",
 			},
 			FailureType: FailureTypeNetworkError,
 		}
@@ -196,7 +198,8 @@ func TestDLQMessage(t *testing.T) {
 			DLQMessageID: "dlq-msg-001",
 			OriginalMessage: EnhancedIndexingJobMessage{
 				// Missing required fields to make validation fail
-				MessageID: "",
+				IndexingJobID: uuid.New(),
+				MessageID:     "",
 			},
 			FailureType: FailureTypeNetworkError,
 		}
@@ -210,6 +213,7 @@ func TestDLQMessage(t *testing.T) {
 		dlqMessage := DLQMessage{
 			DLQMessageID: "dlq-msg-001",
 			OriginalMessage: EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "msg-123",
 				CorrelationID: "corr-456",
 				RepositoryID:  uuid.New(),
@@ -227,6 +231,7 @@ func TestDLQMessage(t *testing.T) {
 		dlqMessage := DLQMessage{
 			DLQMessageID: "dlq-msg-001",
 			OriginalMessage: EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "msg-123",
 				CorrelationID: "corr-456",
 				RepositoryID:  uuid.New(),
@@ -246,6 +251,7 @@ func TestDLQMessage(t *testing.T) {
 		dlqMessage := DLQMessage{
 			DLQMessageID: "dlq-msg-001",
 			OriginalMessage: EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "msg-123",
 				CorrelationID: "corr-456",
 				RepositoryID:  uuid.New(),
@@ -291,6 +297,7 @@ func TestDLQMessageOperations(t *testing.T) {
 
 	t.Run("should generate retry message from DLQ", func(t *testing.T) {
 		originalMessage := EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "msg-123",
 			CorrelationID: "corr-456",
 			RepositoryID:  uuid.New(),
@@ -319,7 +326,8 @@ func TestDLQMessageOperations(t *testing.T) {
 		dlqMessage := DLQMessage{
 			FailureType: FailureTypeValidationError, // Permanent failure
 			OriginalMessage: EnhancedIndexingJobMessage{
-				MessageID: "msg-123",
+				IndexingJobID: uuid.New(),
+				MessageID:     "msg-123",
 			},
 		}
 
@@ -504,6 +512,7 @@ func TestDLQMessageUtilities(t *testing.T) {
 
 	t.Run("should transform message to DLQ format", func(t *testing.T) {
 		originalMessage := EnhancedIndexingJobMessage{
+			IndexingJobID: uuid.New(),
 			MessageID:     "msg-123",
 			CorrelationID: "corr-456",
 			RepositoryID:  uuid.New(),

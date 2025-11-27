@@ -285,7 +285,21 @@ func (pt *ParseTree) findNodeAtByteOffset(node *ParseNode, offset uint32) *Parse
 	return nil
 }
 
-// GetNodeText returns the text content of a node.
+// SanitizeContent removes null bytes (0x00) from content to ensure PostgreSQL UTF-8 compatibility.
+// PostgreSQL's TEXT columns with UTF-8 encoding cannot store null bytes, which may be present in
+// binary files or certain source code files. This function removes all null bytes while preserving
+// all other content, including valid UTF-8 sequences.
+func SanitizeContent(content string) string {
+	// Fast path: if no null bytes, return unchanged
+	if !strings.Contains(content, "\x00") {
+		return content
+	}
+	// Remove all null bytes
+	return strings.ReplaceAll(content, "\x00", "")
+}
+
+// GetNodeText returns the text content of a node with null byte sanitization.
+// Content is sanitized to ensure PostgreSQL UTF-8 compatibility by removing null bytes.
 func (pt *ParseTree) GetNodeText(node *ParseNode) string {
 	return pt.GetNodeTextWithContext(context.Background(), node)
 }

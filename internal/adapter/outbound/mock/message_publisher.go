@@ -18,6 +18,7 @@ type MessagePublisher struct {
 
 // PublishedJob represents a job that was published.
 type PublishedJob struct {
+	IndexingJobID uuid.UUID
 	RepositoryID  uuid.UUID
 	RepositoryURL string
 }
@@ -32,18 +33,26 @@ func NewMockMessagePublisher() outbound.MessagePublisher {
 // PublishIndexingJob publishes an indexing job message (mock implementation).
 func (m *MessagePublisher) PublishIndexingJob(
 	ctx context.Context,
-	repositoryID uuid.UUID,
+	indexingJobID, repositoryID uuid.UUID,
 	repositoryURL string,
 ) error {
 	// Log the job publication for development
 	slogger.Info(
 		ctx,
 		"Mock: Publishing indexing job",
-		slogger.Fields2("repository_url", repositoryURL, "repository_id", repositoryID),
+		slogger.Fields3(
+			"repository_url",
+			repositoryURL,
+			"repository_id",
+			repositoryID,
+			"indexing_job_id",
+			indexingJobID,
+		),
 	)
 
 	// Store for potential testing/verification
 	m.publishedJobs = append(m.publishedJobs, PublishedJob{
+		IndexingJobID: indexingJobID,
 		RepositoryID:  repositoryID,
 		RepositoryURL: repositoryURL,
 	})

@@ -89,6 +89,63 @@ This is a production-grade code chunking and semantic search system using hexago
 - Configurable concurrency (default: 5 workers)
 - Jobs include: git cloning, code parsing, chunking, embedding generation
 
+### Batch Embedding Processing
+The system supports two modes for generating embeddings:
+
+#### Test Mode (Development - Default)
+- **Purpose**: Fast local testing without API costs
+- **Configuration**: `batch_processing.use_test_embeddings: true`
+- **Behavior**: Generates synthetic 768-dimensional vectors locally
+- **Use case**: Development, testing, CI/CD pipelines
+- **No external API calls**: Completely offline
+
+#### Production Mode (Google Gemini Batches API)
+- **Purpose**: Efficient embedding generation at scale
+- **Configuration**: `batch_processing.use_test_embeddings: false`
+- **Behavior**: Uses Google Gemini Batches API for asynchronous processing
+- **Requirements**:
+  - `CODECHUNK_GEMINI_API_KEY` environment variable must be set
+  - Batch directories must be configured in config file:
+    ```yaml
+    gemini:
+      batch:
+        enabled: true
+        input_dir: /tmp/batch_embeddings/input
+        output_dir: /tmp/batch_embeddings/output
+        poll_interval: 5s
+        max_wait_time: 30m
+    ```
+  - Repository must have more than `threshold_chunks` (default: 10)
+- **Automatic fallback**: If batch API fails, falls back to sequential processing
+
+#### Verifying Batch Mode
+
+**Test Mode Active** (logs will show):
+```
+"Processing batch embedding results (TEST MODE)"
+"Using test embeddings for development"
+```
+
+**Production Mode Active** (logs will show):
+```
+"Processing batch embedding results (PRODUCTION MODE)"
+"Using batch embeddings API for production"
+"chunk_count": 8269
+```
+
+**Batch Not Working** (fallback to sequential):
+```
+"Production batch processing not implemented - falling back to sequential"
+```
+
+If you see the fallback message, check:
+1. `use_test_embeddings` is set to `false`
+2. Batch directories are configured (`input_dir`, `output_dir`)
+3. `CODECHUNK_GEMINI_API_KEY` is set
+4. `gemini.batch.enabled` is `true`
+
+See `BATCH_JOB_STATUS.md` for troubleshooting and monitoring batch jobs.
+
 ## Logging Guidelines
 
 ### Structured Logging with slogger Package

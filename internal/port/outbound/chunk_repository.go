@@ -36,6 +36,11 @@ type ChunkRepository interface {
 	// SaveChunks stores multiple code chunks in a batch operation.
 	SaveChunks(ctx context.Context, chunks []CodeChunk) error
 
+	// FindOrCreateChunks saves chunks and returns the actual chunk IDs (existing or new).
+	// For chunks that already exist (same repo/path/hash), returns the existing chunk with its ID.
+	// This ensures batch embedding requests use persisted chunk IDs, preventing FK constraint violations.
+	FindOrCreateChunks(ctx context.Context, chunks []CodeChunk) ([]CodeChunk, error)
+
 	// GetChunk retrieves a chunk by ID.
 	GetChunk(ctx context.Context, id uuid.UUID) (*CodeChunk, error)
 

@@ -199,10 +199,11 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			// Setup
 			ctx := context.Background()
 			mockRepo := &MockRepositoryRepositoryWithNormalization{}
+			mockJobRepo := new(MockIndexingJobRepository)
 			mockPublisher := &MockMessagePublisher{}
 
 			// Create service with enhanced duplicate detection - this will FAIL as the service doesn't use normalization yet
-			service := NewCreateRepositoryServiceWithNormalizedDuplicateDetection(mockRepo, mockPublisher)
+			service := NewCreateRepositoryServiceWithNormalizedDuplicateDetection(mockRepo, mockJobRepo, mockPublisher)
 
 			// Setup mocks based on expected behavior
 			if tt.shouldDetectDuplicate {
@@ -213,7 +214,8 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 				mockRepo.On("Exists", ctx, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
 				// If no duplicate, expect save and publish calls
 				mockRepo.On("Save", ctx, mock.AnythingOfType("*entity.Repository")).Return(nil)
-				mockPublisher.On("PublishIndexingJob", ctx, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).Return(nil)
+				mockJobRepo.On("Save", ctx, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
+				mockPublisher.On("PublishIndexingJob", ctx, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).Return(nil)
 			}
 
 			// Execute
@@ -248,10 +250,11 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 func TestCreateRepositoryService_NormalizedDuplicateDetectionWithDatabaseError(t *testing.T) {
 	ctx := context.Background()
 	mockRepo := &MockRepositoryRepositoryWithNormalization{}
+	mockJobRepo := new(MockIndexingJobRepository)
 	mockPublisher := &MockMessagePublisher{}
 
 	// Create service with enhanced duplicate detection - this will FAIL as the service doesn't exist yet
-	service := NewCreateRepositoryServiceWithNormalizedDuplicateDetection(mockRepo, mockPublisher)
+	service := NewCreateRepositoryServiceWithNormalizedDuplicateDetection(mockRepo, mockJobRepo, mockPublisher)
 
 	// Setup mock to return database error
 	expectedError := errors.New("database connection failed")

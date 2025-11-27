@@ -191,6 +191,7 @@ func TestConsumerSubscription(t *testing.T) {
 		// Create a valid enhanced message
 		message := messaging.EnhancedIndexingJobMessage{
 			MessageID:     "test-msg-123",
+			IndexingJobID: uuid.New(),
 			CorrelationID: "test-corr-456",
 			SchemaVersion: "2.0",
 			Timestamp:     time.Now(),
@@ -409,6 +410,7 @@ func TestConsumerErrorHandling(t *testing.T) {
 	t.Run("should handle processing errors", func(t *testing.T) {
 		message := messaging.EnhancedIndexingJobMessage{
 			MessageID:     "test-msg-123",
+			IndexingJobID: uuid.New(),
 			CorrelationID: "test-corr-456",
 			SchemaVersion: "2.0",
 			Timestamp:     time.Now(),

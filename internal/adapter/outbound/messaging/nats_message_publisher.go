@@ -167,12 +167,16 @@ func (n *NATSMessagePublisher) checkTestModeErrors(start time.Time) error {
 	return nil
 }
 
-func (n *NATSMessagePublisher) createAndMarshalMessage(repositoryID uuid.UUID, repositoryURL string) ([]byte, error) {
+func (n *NATSMessagePublisher) createAndMarshalMessage(
+	indexingJobID, repositoryID uuid.UUID,
+	repositoryURL string,
+) ([]byte, error) {
 	msg := messaging.EnhancedIndexingJobMessage{
 		MessageID:     uuid.New().String(),
 		CorrelationID: messaging.GenerateCorrelationID(),
 		SchemaVersion: "2.0",
 		Timestamp:     time.Now(),
+		IndexingJobID: indexingJobID,
 		RepositoryID:  repositoryID,
 		RepositoryURL: repositoryURL,
 		Priority:      messaging.JobPriorityNormal,
@@ -191,7 +195,7 @@ func (n *NATSMessagePublisher) createAndMarshalMessage(repositoryID uuid.UUID, r
 
 func (n *NATSMessagePublisher) PublishIndexingJob(
 	ctx context.Context,
-	repositoryID uuid.UUID,
+	indexingJobID, repositoryID uuid.UUID,
 	repositoryURL string,
 ) error {
 	start := time.Now()
@@ -221,7 +225,7 @@ func (n *NATSMessagePublisher) PublishIndexingJob(
 		return n.tryFallbackDelivery(ctx, repositoryID, repositoryURL)
 	}
 
-	data, err := n.createAndMarshalMessage(repositoryID, repositoryURL)
+	data, err := n.createAndMarshalMessage(indexingJobID, repositoryID, repositoryURL)
 	if err != nil {
 		n.updateMetrics(false, time.Since(start))
 		return fmt.Errorf("failed to marshal message: %w", err)

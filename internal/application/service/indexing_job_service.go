@@ -74,8 +74,8 @@ func (s *CreateIndexingJobService) CreateIndexingJob(
 		return nil, persistErr
 	}
 
-	// Queue the job for asynchronous processing
-	if queueErr := s.queueJobForProcessing(ctx, request.RepositoryID, repository.URL().String()); queueErr != nil {
+	// Queue the job for asynchronous processing with the actual database job ID
+	if queueErr := s.queueJobForProcessing(ctx, job.ID(), request.RepositoryID, repository.URL().String()); queueErr != nil {
 		return nil, queueErr
 	}
 
@@ -499,10 +499,10 @@ func (s *CreateIndexingJobService) persistIndexingJob(ctx context.Context, job *
 // queueJobForProcessing publishes an indexing job to the message queue for async processing.
 func (s *CreateIndexingJobService) queueJobForProcessing(
 	ctx context.Context,
-	repositoryID uuid.UUID,
+	indexingJobID, repositoryID uuid.UUID,
 	repositoryURL string,
 ) error {
-	if err := s.messagePublisher.PublishIndexingJob(ctx, repositoryID, repositoryURL); err != nil {
+	if err := s.messagePublisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL); err != nil {
 		return common.WrapServiceError(common.OpPublishJob,
 			fmt.Errorf("failed to queue indexing job for processing: %w", err))
 	}

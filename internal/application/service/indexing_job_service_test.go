@@ -91,7 +91,8 @@ func TestCreateIndexingJobService_CreateIndexingJob_Success(t *testing.T) {
 	// Mock expectations
 	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(repository, nil)
 	mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
-	mockPublisher.On("PublishIndexingJob", mock.Anything, repositoryID, "https://github.com/golang/go").Return(nil)
+	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), repositoryID, "https://github.com/golang/go").
+		Return(nil)
 
 	ctx := context.Background()
 
@@ -277,7 +278,7 @@ func TestCreateIndexingJobService_CreateIndexingJob_PublishJobFails(t *testing.T
 	publishError := errors.New("message queue unavailable")
 	mockRepo.On("FindByID", mock.Anything, repositoryID).Return(repository, nil)
 	mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
-	mockPublisher.On("PublishIndexingJob", mock.Anything, repositoryID, "https://github.com/golang/go").
+	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), repositoryID, "https://github.com/golang/go").
 		Return(publishError)
 
 	ctx := context.Background()

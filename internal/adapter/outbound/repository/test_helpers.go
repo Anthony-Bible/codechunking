@@ -42,6 +42,7 @@ func cleanupTestData(t *testing.T, pool *pgxpool.Pool) {
 	// CI/test mode - clean everything for complete isolation
 	ctx := context.Background()
 	queries := []string{
+		"DELETE FROM codechunking.batch_job_progress WHERE 1=1",
 		"DELETE FROM codechunking.embeddings WHERE 1=1",
 		"DELETE FROM codechunking.embeddings_partitioned WHERE 1=1", // Fix: Include partitioned table
 		"DELETE FROM codechunking.code_chunks WHERE 1=1",

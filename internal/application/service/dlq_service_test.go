@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -347,6 +348,7 @@ func TestDLQMessageManagement(t *testing.T) {
 		dlqMessage := messaging.DLQMessage{
 			DLQMessageID: "dlq-msg-001",
 			OriginalMessage: messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "msg-123",
 				RepositoryURL: "https://github.com/example/repo.git",
 			},
@@ -375,7 +377,8 @@ func TestDLQMessageManagement(t *testing.T) {
 		expectedMessage := messaging.DLQMessage{
 			DLQMessageID: dlqMessageID,
 			OriginalMessage: messaging.EnhancedIndexingJobMessage{
-				MessageID: "msg-456",
+				IndexingJobID: uuid.New(),
+				MessageID:     "msg-456",
 			},
 			FailureType: messaging.FailureTypeValidationError,
 		}
@@ -477,6 +480,7 @@ func TestDLQRetryWorkflows(t *testing.T) {
 		dlqMessage := messaging.DLQMessage{
 			DLQMessageID: "dlq-msg-retry",
 			OriginalMessage: messaging.EnhancedIndexingJobMessage{
+				IndexingJobID: uuid.New(),
 				MessageID:     "msg-retry",
 				RepositoryURL: "https://github.com/example/repo.git",
 				RetryAttempt:  3,

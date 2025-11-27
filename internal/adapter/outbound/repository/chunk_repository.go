@@ -3,6 +3,7 @@ package repository
 import (
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/service"
+	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
@@ -24,6 +25,8 @@ const (
 	defaultQualifiedName = ""
 	defaultSignature     = ""
 	defaultVisibility    = ""
+	// Expected dimensions for gemini-embedding-001 model.
+	expectedEmbeddingDimensions = 768
 )
 
 // SQL query constants.
@@ -62,6 +65,15 @@ const (
 			created_at = CURRENT_TIMESTAMP
 	`
 )
+
+// validateEmbeddingDimensions validates that an embedding has the expected dimensions.
+func validateEmbeddingDimensions(embedding *outbound.Embedding) error {
+	if len(embedding.Vector) != expectedEmbeddingDimensions {
+		return fmt.Errorf("embedding dimension mismatch: expected %d dimensions, got %d (model: %s, chunk_id: %s)",
+			expectedEmbeddingDimensions, len(embedding.Vector), embedding.ModelVersion, embedding.ChunkID.String())
+	}
+	return nil
+}
 
 // sanitizeContentWithLogging removes null bytes from content and logs when detected.
 func sanitizeContentWithLogging(ctx context.Context, content string, chunkID string, filePath string) string {
@@ -429,6 +441,158 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 	return nil
 }
 
+// FindOrCreateChunks saves chunks and returns the actual chunk IDs (existing or new).
+// For chunks that already exist (same repo/path/hash), returns the existing chunk with its ID.
+// This prevents FK constraint violations when using batch embeddings.
+func (r *PostgreSQLChunkRepository) FindOrCreateChunks(
+	ctx context.Context,
+	chunks []outbound.CodeChunk,
+) ([]outbound.CodeChunk, error) {
+	if len(chunks) == 0 {
+		return nil, nil
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		slogger.Error(ctx, "Failed to begin transaction for FindOrCreateChunks", slogger.Field("error", err.Error()))
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			slogger.Warn(ctx, "Failed to rollback transaction", slogger.Field("error", err.Error()))
+		}
+	}()
+
+	// Use a query that returns the actual persisted ID (whether new or existing)
+	query := `
+		INSERT INTO codechunking.code_chunks (
+			id, repository_id, file_path, chunk_type, content, language,
+			start_line, end_line, entity_name, parent_entity, content_hash, metadata,
+			qualified_name, signature, visibility
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		ON CONFLICT (repository_id, file_path, content_hash)
+		DO UPDATE SET id = code_chunks.id
+		RETURNING id
+	`
+
+	resultChunks := make([]outbound.CodeChunk, len(chunks))
+
+	for i, chunk := range chunks {
+		chunkID, err := uuid.Parse(chunk.ID)
+		if err != nil {
+			slogger.Error(ctx, "Invalid chunk ID in FindOrCreateChunks", slogger.Fields2(
+				"chunk_id", chunk.ID,
+				"error", err.Error(),
+			))
+			return nil, fmt.Errorf("invalid chunk ID format: %w", err)
+		}
+
+		// Use chunk type information or defaults
+		entityName := chunk.EntityName
+		if entityName == "" {
+			entityName = defaultEntityName
+		}
+
+		parentEntity := chunk.ParentEntity
+		if parentEntity == "" {
+			parentEntity = defaultParentEntity
+		}
+
+		chunkType := chunk.Type
+		if chunkType == "" {
+			chunkType = defaultChunkType
+		}
+
+		qualifiedName := chunk.QualifiedName
+		if qualifiedName == "" {
+			qualifiedName = defaultQualifiedName
+		}
+
+		signature := chunk.Signature
+		if signature == "" {
+			signature = defaultSignature
+		}
+
+		visibility := chunk.Visibility
+		if visibility == "" {
+			visibility = defaultVisibility
+		}
+
+		repositoryID := chunk.RepositoryID
+		if repositoryID == uuid.Nil {
+			slogger.Error(ctx, "Missing repository_id for chunk in FindOrCreateChunks", slogger.Fields2(
+				"chunk_id", chunk.ID,
+				"file_path", chunk.FilePath,
+			))
+			return nil, errors.New("repository_id is required for FindOrCreateChunks")
+		}
+
+		// Defensive sanitization
+		sanitizedContent := valueobject.SanitizeContent(chunk.Content)
+		if len(sanitizedContent) != len(chunk.Content) {
+			slogger.Warn(ctx, "Null bytes detected and removed in FindOrCreateChunks", slogger.Fields{
+				"chunk_id":           chunk.ID,
+				"file_path":          chunk.FilePath,
+				"null_bytes_removed": len(chunk.Content) - len(sanitizedContent),
+			})
+		}
+
+		var returnedID uuid.UUID
+		err = tx.QueryRow(ctx, query,
+			chunkID,
+			repositoryID,
+			chunk.FilePath,
+			chunkType,
+			sanitizedContent,
+			chunk.Language,
+			chunk.StartLine,
+			chunk.EndLine,
+			entityName,
+			parentEntity,
+			chunk.Hash,
+			nil, // metadata
+			qualifiedName,
+			signature,
+			visibility,
+		).Scan(&returnedID)
+		if err != nil {
+			slogger.Error(ctx, "Failed to insert/find chunk", slogger.Fields{
+				"chunk_id":      chunk.ID,
+				"file_path":     chunk.FilePath,
+				"repository_id": repositoryID.String(),
+				"error":         err.Error(),
+			})
+			return nil, fmt.Errorf("failed to insert/find chunk: %w", err)
+		}
+
+		// Create result chunk with the actual persisted ID
+		resultChunks[i] = chunk
+		resultChunks[i].ID = returnedID.String()
+
+		if returnedID.String() != chunk.ID {
+			slogger.Debug(ctx, "Chunk already existed, using existing ID", slogger.Fields{
+				"new_id":      chunk.ID,
+				"existing_id": returnedID.String(),
+				"file_path":   chunk.FilePath,
+			})
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slogger.Error(ctx, "Failed to commit FindOrCreateChunks transaction", slogger.Fields2(
+			"chunk_count", len(chunks),
+			"error", err.Error(),
+		))
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	slogger.Info(ctx, "FindOrCreateChunks completed successfully", slogger.Field(
+		"chunk_count", len(resultChunks),
+	))
+
+	return resultChunks, nil
+}
+
 // GetChunk retrieves a chunk by ID.
 func (r *PostgreSQLChunkRepository) GetChunk(ctx context.Context, id uuid.UUID) (*outbound.CodeChunk, error) {
 	query := `
@@ -607,6 +771,12 @@ func (r *PostgreSQLChunkRepository) CountChunksForRepository(ctx context.Context
 
 // SaveEmbedding stores an embedding with its associated chunk.
 func (r *PostgreSQLChunkRepository) SaveEmbedding(ctx context.Context, embedding *outbound.Embedding) error {
+	// Validate embedding dimensions before attempting storage
+	if err := validateEmbeddingDimensions(embedding); err != nil {
+		slogger.Error(ctx, "Embedding dimension validation failed", slogger.Field("error", err.Error()))
+		return err
+	}
+
 	// Try partitioned table first for better performance, fallback to regular table
 	err := r.saveEmbeddingToPartitioned(ctx, embedding)
 	if err != nil {
@@ -706,6 +876,17 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingToRegular(ctx context.Context, 
 func (r *PostgreSQLChunkRepository) SaveEmbeddings(ctx context.Context, embeddings []outbound.Embedding) error {
 	if len(embeddings) == 0 {
 		return nil
+	}
+
+	// Validate all embedding dimensions before starting transaction
+	for i, embedding := range embeddings {
+		if err := validateEmbeddingDimensions(&embedding); err != nil {
+			slogger.Error(ctx, "Batch embedding dimension validation failed", slogger.Fields2(
+				"batch_index", i,
+				"error", err.Error(),
+			))
+			return err
+		}
 	}
 
 	tx, err := r.pool.Begin(ctx)
@@ -1341,6 +1522,15 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 	chunk *outbound.CodeChunk,
 	embedding *outbound.Embedding,
 ) error {
+	// Validate embedding dimensions before starting transaction
+	if err := validateEmbeddingDimensions(embedding); err != nil {
+		slogger.Error(ctx, "ChunkWithEmbedding dimension validation failed", slogger.Fields2(
+			"chunk_id", chunk.ID,
+			"error", err.Error(),
+		))
+		return err
+	}
+
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		slogger.Error(ctx, "Failed to begin transaction for chunk with embedding", slogger.Field("error", err.Error()))
@@ -1444,6 +1634,15 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingInTx(
 	chunkType string,
 	filePath string,
 ) error {
+	// Pre-validation: double-check dimensions before database operations
+	if err := validateEmbeddingDimensions(embedding); err != nil {
+		slogger.Error(ctx, "Embedding dimension validation failed during transaction save", slogger.Fields{
+			"chunk_id": chunkID,
+			"error":    err.Error(),
+		})
+		return fmt.Errorf("embedding validation failed: %w", err)
+	}
+
 	// Try partitioned table
 	_, err := tx.Exec(ctx, insertPartitionedEmbeddingQuery,
 		embedding.ID,
@@ -1457,6 +1656,21 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingInTx(
 	)
 	if err == nil {
 		return nil
+	}
+
+	// Check for dimension-related database errors
+	errStr := err.Error()
+	if strings.Contains(errStr, "expected 768 dimensions") ||
+		strings.Contains(errStr, "22000") || // SQLSTATE for data exception
+		strings.Contains(errStr, "vector") {
+		slogger.Error(ctx, "Database vector dimension error detected", slogger.Fields{
+			"chunk_id":      chunkID,
+			"dimensions":    len(embedding.Vector),
+			"expected_dims": expectedEmbeddingDimensions,
+			"error":         err.Error(),
+		})
+		return fmt.Errorf("database rejected embedding: expected %d dimensions, got %d: %w",
+			expectedEmbeddingDimensions, len(embedding.Vector), err)
 	}
 
 	// Fallback to regular table
@@ -1473,6 +1687,21 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingInTx(
 		embedding.ModelVersion,
 	)
 	if err != nil {
+		// Check for dimension-related errors in regular table as well
+		errStr := err.Error()
+		if strings.Contains(errStr, "expected 768 dimensions") ||
+			strings.Contains(errStr, "22000") ||
+			strings.Contains(errStr, "vector") {
+			slogger.Error(ctx, "Database vector dimension error in regular table", slogger.Fields{
+				"chunk_id":      chunkID,
+				"dimensions":    len(embedding.Vector),
+				"expected_dims": expectedEmbeddingDimensions,
+				"error":         err.Error(),
+			})
+			return fmt.Errorf("database rejected embedding in regular table: expected %d dimensions, got %d: %w",
+				expectedEmbeddingDimensions, len(embedding.Vector), err)
+		}
+
 		slogger.Error(ctx, "Failed to save embedding to regular table in transaction", slogger.Fields{
 			"chunk_id":      chunkID,
 			"repository_id": repositoryID.String(),
@@ -1500,6 +1729,18 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			len(chunks),
 			len(embeddings),
 		)
+	}
+
+	// Validate all embedding dimensions before starting transaction
+	for i, embedding := range embeddings {
+		if err := validateEmbeddingDimensions(&embedding); err != nil {
+			slogger.Error(ctx, "Batch ChunksWithEmbeddings dimension validation failed", slogger.Fields{
+				"batch_index": i,
+				"chunk_id":    chunks[i].ID,
+				"error":       err.Error(),
+			})
+			return err
+		}
 	}
 
 	tx, err := r.pool.Begin(ctx)

@@ -389,6 +389,21 @@ func (sf *ServiceFactory) createGeminiEmbeddingClient() (outbound.EmbeddingServi
 		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
 	}
 
+	// Enable batch processing if configured
+	if sf.config.Gemini.Batch.Enabled {
+		err := geminiClient.EnableBatchProcessing(
+			sf.config.Gemini.Batch.InputDir,
+			sf.config.Gemini.Batch.OutputDir,
+			sf.config.Gemini.Batch.PollInterval,
+		)
+		if err != nil {
+			// Log warning but don't fail - fall back to sequential processing
+			slogger.WarnNoCtx("Failed to enable batch processing, using sequential mode", slogger.Fields{
+				"error": err.Error(),
+			})
+		}
+	}
+
 	return geminiClient, nil
 }
 

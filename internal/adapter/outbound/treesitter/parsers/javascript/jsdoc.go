@@ -44,7 +44,7 @@ func findJSDocComment(parseTree *valueobject.ParseTree, targetNode *valueobject.
 		searchStart = startByte - 500
 	}
 
-	beforeFunction := string(source[searchStart:startByte])
+	beforeFunction := valueobject.SanitizeContent(string(source[searchStart:startByte]))
 
 	// Find the last occurrence of /** before the function
 	jsdocStart := strings.LastIndex(beforeFunction, "/**")
@@ -128,7 +128,7 @@ func processJSDocTag(tagNode tree_sitter.Node, source []byte, info *JSDocInfo) {
 	for i := range tagNode.ChildCount() {
 		child := tagNode.Child(i)
 		childType := child.Type()
-		childText := string(source[child.StartByte():child.EndByte()])
+		childText := valueobject.SanitizeContent(string(source[child.StartByte():child.EndByte()]))
 
 		switch childType {
 		case "tag_name":

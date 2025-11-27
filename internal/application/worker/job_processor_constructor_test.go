@@ -37,7 +37,7 @@ func TestNewDefaultJobProcessor_WithBatchProgressRepo(t *testing.T) {
 		RetryBackoff:      5 * time.Second,
 	}
 
-	// Act - Pass all three optional parameters
+	// Act - Pass all optional parameters via options struct
 	processor := NewDefaultJobProcessor(
 		jobConfig,
 		mockIndexingJobRepo,
@@ -46,9 +46,11 @@ func TestNewDefaultJobProcessor_WithBatchProgressRepo(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorage,
-		batchConfig,           // Optional param 0: BatchProcessingConfig
-		mockBatchQueueManager, // Optional param 1: BatchQueueManager
-		mockBatchProgressRepo, // Optional param 2: BatchProgressRepository
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: mockBatchQueueManager,
+			BatchProgressRepo: mockBatchProgressRepo,
+		},
 	)
 
 	// Assert
@@ -111,9 +113,11 @@ func TestNewDefaultJobProcessor_WithoutBatchProgressRepo(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorage,
-		batchConfig,           // Optional param 0: BatchProcessingConfig
-		mockBatchQueueManager, // Optional param 1: BatchQueueManager
-		// batchProgressRepo NOT passed - this is the bug
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: mockBatchQueueManager,
+			// BatchProgressRepo intentionally omitted (nil)
+		},
 	)
 
 	// Assert

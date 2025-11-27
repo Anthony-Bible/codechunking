@@ -68,8 +68,10 @@ func TestProcessProductionBatchResults_SmallBatch(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil, // Use nil to force sync mode for testing batch processing logic
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil, // Use nil to force sync mode for testing batch processing logic
+		},
 	).(*DefaultJobProcessor)
 
 	// EXPECTATION 1: Process single batch with all 100 texts
@@ -160,8 +162,10 @@ func TestProcessProductionBatchResults_MultipleBatches(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil, // Use nil to force sync mode for testing batch processing logic
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil, // Use nil to force sync mode for testing batch processing logic
+		},
 	).(*DefaultJobProcessor)
 
 	// EXPECTATION 1: Process batch 1 (chunks 0-499)
@@ -261,8 +265,10 @@ func TestProcessProductionBatchResults_WithRemainder(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil, // Use nil to force sync mode
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil, // Use nil to force sync mode
+		},
 	).(*DefaultJobProcessor)
 
 	// Check for existing progress
@@ -357,8 +363,10 @@ func TestProcessProductionBatchResults_ResumeFromBatch2(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil, // Use nil to force sync mode
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil, // Use nil to force sync mode
+		},
 	).(*DefaultJobProcessor)
 
 	// NOTE: This test is designed for resumption logic which requires batch progress repo.
@@ -463,8 +471,10 @@ func TestProcessProductionBatchResults_QuotaErrorWithRetry(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil, // Use nil to force sync mode
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil, // Use nil to force sync mode
+		},
 	).(*DefaultJobProcessor)
 
 	// Check for existing progress
@@ -573,8 +583,10 @@ func TestProcessProductionBatchResults_QuotaErrorMaxRetries(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil, // Use nil to force sync mode
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil, // Use nil to force sync mode
+		},
 	).(*DefaultJobProcessor)
 
 	// Check for existing progress
@@ -678,8 +690,10 @@ func TestProcessProductionBatchResults_ValidationError(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil, // Use nil to force sync mode
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil, // Use nil to force sync mode
+		},
 	).(*DefaultJobProcessor)
 
 	// Check for existing progress
@@ -767,8 +781,10 @@ func TestProcessProductionBatchResults_ProgressSaveError(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil, // Use nil to force sync mode
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil, // Use nil to force sync mode
+		},
 	).(*DefaultJobProcessor)
 
 	// Check for existing progress
@@ -866,8 +882,10 @@ func TestProcessProductionBatchResults_LargeDataset(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil, // Use nil to force sync mode
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil, // Use nil to force sync mode
+		},
 	).(*DefaultJobProcessor)
 
 	// Check for existing progress

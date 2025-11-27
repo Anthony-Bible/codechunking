@@ -75,6 +75,15 @@ type JobProcessorConfig struct {
 	RetryBackoff      time.Duration
 }
 
+// JobProcessorBatchOptions contains optional batch processing dependencies.
+// All fields are optional and nil values indicate the dependency is not available.
+type JobProcessorBatchOptions struct {
+	BatchConfig           *config.BatchProcessingConfig
+	BatchQueueManager     outbound.BatchQueueManager
+	BatchProgressRepo     outbound.BatchProgressRepository
+	BatchEmbeddingService outbound.BatchEmbeddingService
+}
+
 // JobExecution tracks the execution of a single job.
 type JobExecution struct {
 	JobID        uuid.UUID
@@ -116,7 +125,7 @@ type DefaultJobProcessor struct {
 }
 
 // NewDefaultJobProcessor creates a new default job processor.
-// Accepts optional BatchProcessingConfig and BatchQueueManager parameters for backward compatibility.
+// The batchOptions parameter is optional and can be nil for minimal configuration.
 func NewDefaultJobProcessor(
 	processorConfig JobProcessorConfig,
 	indexingJobRepo outbound.IndexingJobRepository,
@@ -125,56 +134,21 @@ func NewDefaultJobProcessor(
 	codeParser outbound.CodeParser,
 	embeddingService outbound.EmbeddingService,
 	chunkStorageRepo outbound.ChunkStorageRepository,
-	batchConfigAndQueueManagers ...interface{},
+	batchOptions *JobProcessorBatchOptions,
 ) inbound.JobProcessor {
-	// Default batch configuration for backward compatibility
-	// Disabled by default to avoid breaking existing tests and deployments
+	// Handle nil batch options
+	if batchOptions == nil {
+		batchOptions = &JobProcessorBatchOptions{}
+	}
+
+	// Use defaults for nil config
 	batchConfig := config.BatchProcessingConfig{
 		Enabled:              false,
 		ThresholdChunks:      10,
 		FallbackToSequential: true,
 	}
-
-	// Handle optional parameters (backward compatible)
-	var batchQueueManager outbound.BatchQueueManager
-	var batchProgressRepo outbound.BatchProgressRepository
-	var batchEmbeddingService outbound.BatchEmbeddingService
-
-	// Parse optional parameters
-	//nolint:nestif // Complex parameter parsing for backward compatibility
-	if len(batchConfigAndQueueManagers) > 0 {
-		// Check if first parameter is BatchProcessingConfig
-		if cfg, ok := batchConfigAndQueueManagers[0].(config.BatchProcessingConfig); ok {
-			batchConfig = cfg
-			// Check if second parameter is BatchQueueManager or BatchProgressRepository
-			if len(batchConfigAndQueueManagers) > 1 {
-				if manager, ok := batchConfigAndQueueManagers[1].(outbound.BatchQueueManager); ok {
-					batchQueueManager = manager
-				} else if repo, ok := batchConfigAndQueueManagers[1].(outbound.BatchProgressRepository); ok {
-					// Second parameter is BatchProgressRepository (tests may skip BatchQueueManager)
-					batchProgressRepo = repo
-				}
-				// Check if third parameter is BatchProgressRepository or BatchEmbeddingService
-				if len(batchConfigAndQueueManagers) > 2 {
-					if repo, ok := batchConfigAndQueueManagers[2].(outbound.BatchProgressRepository); ok {
-						batchProgressRepo = repo
-					} else if batchSvc, ok := batchConfigAndQueueManagers[2].(outbound.BatchEmbeddingService); ok {
-						batchEmbeddingService = batchSvc
-					}
-				}
-				// Check if fourth parameter is BatchEmbeddingService
-				if len(batchConfigAndQueueManagers) > 3 {
-					if batchSvc, ok := batchConfigAndQueueManagers[3].(outbound.BatchEmbeddingService); ok {
-						batchEmbeddingService = batchSvc
-					}
-				}
-			}
-		} else {
-			// First parameter is BatchQueueManager (old signature)
-			if manager, ok := batchConfigAndQueueManagers[0].(outbound.BatchQueueManager); ok {
-				batchQueueManager = manager
-			}
-		}
+	if batchOptions.BatchConfig != nil {
+		batchConfig = *batchOptions.BatchConfig
 	}
 
 	// Ensure proper semaphore initialization
@@ -191,10 +165,10 @@ func NewDefaultJobProcessor(
 		gitClient:             gitClient,
 		codeParser:            codeParser,
 		embeddingService:      embeddingService,
-		batchEmbeddingService: batchEmbeddingService,
+		batchEmbeddingService: batchOptions.BatchEmbeddingService,
 		chunkStorageRepo:      chunkStorageRepo,
-		batchQueueManager:     batchQueueManager,
-		batchProgressRepo:     batchProgressRepo,
+		batchQueueManager:     batchOptions.BatchQueueManager,
+		batchProgressRepo:     batchOptions.BatchProgressRepo,
 		activeJobs:            make(map[string]*JobExecution),
 		semaphore:             make(chan struct{}, maxConcurrent),
 	}
@@ -721,49 +695,6 @@ func (p *DefaultJobProcessor) initializeEmbeddingProgress(execution *JobExecutio
 	}
 	atomic.AddInt64(&execution.Progress.ChunksGenerated, int64(chunkCount))
 	execution.Progress.Stage = "parsing_complete"
-}
-
-//nolint:unused // Reserved for future use in parallel chunk processing
-func (p *DefaultJobProcessor) processChunkEmbedding(
-	ctx context.Context,
-	jobID string,
-	repositoryID uuid.UUID,
-	chunk outbound.CodeChunk,
-	chunkIndex, totalChunks int,
-	execution *JobExecution,
-) error {
-	// Check for context cancellation
-	select {
-	case <-ctx.Done():
-		slogger.Warn(ctx, "Embedding generation cancelled due to context cancellation", slogger.Fields{
-			"job_id":   jobID,
-			"chunk_id": chunkIndex + 1,
-			"total":    totalChunks,
-		})
-		return ctx.Err()
-	default:
-	}
-
-	if execution.Progress != nil {
-		execution.Progress.CurrentFile = chunk.FilePath
-	}
-
-	// Generate the embedding
-	result, err := p.generateSingleEmbedding(ctx, jobID, chunk, chunkIndex)
-	if err != nil {
-		return err
-	}
-
-	// Store the embedding
-	if err := p.storeSingleEmbedding(ctx, jobID, repositoryID, chunk, result, chunkIndex); err != nil {
-		return err
-	}
-
-	if execution.Progress != nil {
-		atomic.AddInt64(&execution.Progress.EmbeddingsCreated, 1)
-	}
-
-	return nil
 }
 
 //nolint:unused // Reserved for future use in parallel chunk processing
@@ -1866,47 +1797,6 @@ func (p *DefaultJobProcessor) processSequentialEmbeddings(
 
 			return p.embeddingService.GenerateEmbedding(ctx, chunk.Content, embeddingOptions)
 		}, "sequential")
-}
-
-// processBatchResults processes batch embedding results and stores them.
-//
-//nolint:unused // Legacy function kept for backward compatibility
-func (p *DefaultJobProcessor) processBatchResults(
-	ctx context.Context,
-	indexingJobID uuid.UUID,
-	repositoryID uuid.UUID,
-	chunks []outbound.CodeChunk,
-	requests []*outbound.EmbeddingRequest,
-	execution *JobExecution,
-) error {
-	// Convert UUID to string for logging
-	jobID := indexingJobID.String()
-	mode := "TEST MODE"
-	if !p.batchConfig.UseTestEmbeddings {
-		mode = "PRODUCTION MODE"
-	}
-
-	slogger.Info(ctx, fmt.Sprintf("Processing batch embedding results (%s)", mode), slogger.Fields{
-		"job_id":        jobID,
-		"chunk_count":   len(chunks),
-		"request_count": len(requests),
-	})
-
-	if p.batchConfig.UseTestEmbeddings {
-		// Test mode: use test embeddings
-		return p.processEmbeddingsWithGenerator(ctx, jobID, repositoryID, chunks, execution,
-			func(ctx context.Context, chunk outbound.CodeChunk) (*outbound.EmbeddingResult, error) {
-				slogger.Debug(ctx, "Using test embedding for batch processing", slogger.Field("chunk_id", chunk.ID))
-				return p.createTestEmbeddingResult(chunk.Content), nil
-			}, "batch")
-	}
-
-	// Production mode: For now, fall back to sequential processing since full batch processing isn't implemented
-	slogger.Info(ctx, "Production batch processing not fully implemented - falling back to sequential", slogger.Fields{
-		"job_id": jobID,
-	})
-
-	return p.processSequentialEmbeddings(ctx, indexingJobID, repositoryID, chunks, execution)
 }
 
 func (p *DefaultJobProcessor) logEmbeddingProgress(

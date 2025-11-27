@@ -281,8 +281,10 @@ func createJobProcessorWithBatchConfig(
 		codeParser,
 		mockEmbedding,
 		chunkStorageRepo,
-		batchConfig,
-		batchProgressRepo,
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchProgressRepo: batchProgressRepo,
+		},
 	).(*DefaultJobProcessor)
 
 	return processor
@@ -310,7 +312,7 @@ func TestBatchProcessing_EndToEnd_SmallRepository(t *testing.T) {
 	processor := createJobProcessorWithBatchConfig(t, pool, mockEmbedding, 500)
 
 	// Execute: Process batches
-	err := processor.processProductionBatchResults(ctx, jobID.String(), repoID, chunks, nil)
+	err := processor.processProductionBatchResults(ctx, jobID, repoID, chunks, nil)
 
 	// Assert: No errors
 	assert.NoError(t, err, "Batch processing should complete without errors")
@@ -357,7 +359,7 @@ func TestBatchProcessing_EndToEnd_LargeRepository(t *testing.T) {
 	processor := createJobProcessorWithBatchConfig(t, pool, mockEmbedding, 500)
 
 	// Execute: Process batches
-	err := processor.processProductionBatchResults(ctx, jobID.String(), repoID, chunks, nil)
+	err := processor.processProductionBatchResults(ctx, jobID, repoID, chunks, nil)
 
 	// Assert: No errors
 	assert.NoError(t, err, "Batch processing should complete without errors")
@@ -412,7 +414,7 @@ func TestBatchProcessing_EndToEnd_WithResume(t *testing.T) {
 
 	// Step 1: Process first batch only
 	firstBatch := chunks[0:500]
-	err := processor.processProductionBatchResults(ctx, jobID.String(), repoID, firstBatch, nil)
+	err := processor.processProductionBatchResults(ctx, jobID, repoID, firstBatch, nil)
 	assert.NoError(t, err, "First batch should complete without errors")
 
 	// Verify first batch was saved
@@ -427,7 +429,7 @@ func TestBatchProcessing_EndToEnd_WithResume(t *testing.T) {
 	initialCallCount := mockEmbedding.generateBatchCallCount
 
 	// Step 2: Resume processing with all chunks (should skip batch 1)
-	err = processor.processProductionBatchResults(ctx, jobID.String(), repoID, chunks, nil)
+	err = processor.processProductionBatchResults(ctx, jobID, repoID, chunks, nil)
 	assert.NoError(t, err, "Resume processing should complete without errors")
 
 	// Verify all batches were processed
@@ -480,7 +482,7 @@ func TestBatchProcessing_EndToEnd_ProductionScale(t *testing.T) {
 
 	// Execute: Process batches
 	startTime := time.Now()
-	err := processor.processProductionBatchResults(ctx, jobID.String(), repoID, chunks, nil)
+	err := processor.processProductionBatchResults(ctx, jobID, repoID, chunks, nil)
 	duration := time.Since(startTime)
 
 	// Assert: No errors
@@ -548,7 +550,7 @@ func TestBatchProcessing_EndToEnd_ErrorHandling(t *testing.T) {
 	processor := createJobProcessorWithBatchConfig(t, pool, mockEmbedding, 500)
 
 	// Execute: Should fail
-	err := processor.processProductionBatchResults(ctx, jobID.String(), repoID, chunks, nil)
+	err := processor.processProductionBatchResults(ctx, jobID, repoID, chunks, nil)
 
 	// Assert: Error occurred
 	assert.Error(t, err, "Batch processing should fail when embedding service fails")

@@ -545,12 +545,11 @@ func (m *MockBatchEmbeddingService) CreateBatchEmbeddingJobWithRequests(
 
 	// Handle nil return
 	if args.Get(0) == nil {
-		if args.Get(1) == nil {
-			return nil, nil
-		}
 		// Try to get as function first
-		if fn, ok := args.Get(1).(func(context.Context, []*outbound.BatchEmbeddingRequest, outbound.EmbeddingOptions, uuid.UUID) error); ok {
-			return nil, fn(ctx, requests, options, batchID)
+		if args.Get(1) != nil {
+			if fn, ok := args.Get(1).(func(context.Context, []*outbound.BatchEmbeddingRequest, outbound.EmbeddingOptions, uuid.UUID) error); ok {
+				return nil, fn(ctx, requests, options, batchID)
+			}
 		}
 		return nil, args.Error(1)
 	}
@@ -583,12 +582,11 @@ func (m *MockBatchEmbeddingService) CreateBatchEmbeddingJobWithFile(
 
 	// Handle nil return
 	if args.Get(0) == nil {
-		if args.Get(1) == nil {
-			return nil, nil
-		}
 		// Try to get as function first
-		if fn, ok := args.Get(1).(func(context.Context, []*outbound.BatchEmbeddingRequest, outbound.EmbeddingOptions, uuid.UUID, string) error); ok {
-			return nil, fn(ctx, requests, options, batchID, fileURI)
+		if args.Get(1) != nil {
+			if fn, ok := args.Get(1).(func(context.Context, []*outbound.BatchEmbeddingRequest, outbound.EmbeddingOptions, uuid.UUID, string) error); ok {
+				return nil, fn(ctx, requests, options, batchID, fileURI)
+			}
 		}
 		return nil, args.Error(1)
 	}
@@ -735,6 +733,7 @@ func (suite *JobProcessorTestSuite) SetupTest() {
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	)
 
 	// Type assertion to concrete type for test access
@@ -894,6 +893,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_ConcurrentJobs_ExceedsLimit()
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	messages := []messaging.EnhancedIndexingJobMessage{
@@ -955,6 +955,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_JobTimeout_Enforcement() {
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -1028,6 +1029,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_MemoryLimit_Enforcement() {
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1118,6 +1120,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_EnhancedGitClient_Integration
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1188,6 +1191,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_EmbeddingService_Integration(
 		&MockCodeParser{},
 		mockEmbeddingService,
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1219,6 +1223,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_IntegrationFailure_ErrorPropa
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1393,6 +1398,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_RetryLogic_WithBackoff() {
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1463,6 +1469,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_IndexingJobRepo_PersistenceOp
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1496,6 +1503,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_RepositoryRepo_MetadataUpdate
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1538,6 +1546,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_DatabaseFailure_Handling() {
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1582,6 +1591,7 @@ func (suite *JobProcessorTestSuite) TestJobProcessor_WorkspaceDir_Management() {
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	err := processor.Cleanup()
@@ -1611,6 +1621,7 @@ func (suite *JobProcessorTestSuite) TestJobProcessor_ResourceLimits_Enforcement(
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1759,6 +1770,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInFailedSta
 		mockCodeParser,
 		mockEmbedding,
 		mockChunkStorage,
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1832,6 +1844,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInCompleted
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -1909,6 +1922,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInArchivedS
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -2005,6 +2019,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInCloningSt
 		mockCodeParser,
 		mockEmbedding,
 		mockChunkStorage,
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -2087,6 +2102,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInProcessin
 		mockCodeParser,
 		mockEmbedding,
 		mockChunkStorage,
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -2162,6 +2178,7 @@ func (suite *JobProcessorTestSuite) TestTransitionToCloning_AlreadyFailed_DoesNo
 		&MockCodeParser{},
 		&MockEmbeddingService{},
 		&MockChunkStorageRepository{},
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -2271,6 +2288,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_IdempotentRedelivery_
 		mockCodeParser,
 		mockEmbedding,
 		mockChunkStorage,
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	message := messaging.EnhancedIndexingJobMessage{
@@ -2366,6 +2384,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryNotFound_Re
 		mockCodeParser,
 		mockEmbedding,
 		mockChunkStorage,
+		nil, // No batch options for basic tests
 	).(*DefaultJobProcessor)
 
 	// Create message with repository ID that doesn't exist in database

@@ -45,21 +45,23 @@ func TestNATSMessagePublisher_Integration_RealNATSServer(t *testing.T) {
 
 	t.Run("publishes message to real NATS server", func(t *testing.T) {
 		ctx := context.Background()
+		indexingJobID := uuid.New()
 		repositoryID := uuid.New()
 		repositoryURL := "https://github.com/integration/test.git"
 
 		// This test will fail because PublishIndexingJob is not implemented
-		publishErr := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		publishErr := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		assert.NoError(t, publishErr, "Failed to publish message to NATS JetStream")
 	})
 
 	t.Run("verifies message in stream", func(t *testing.T) {
 		ctx := context.Background()
+		indexingJobID := uuid.New()
 		repositoryID := uuid.New()
 		repositoryURL := "https://github.com/verification/test.git"
 
 		// Publish message
-		publishErr := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		publishErr := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		require.NoError(t, publishErr)
 
 		// This test will fail because stream inspection is not implemented
@@ -174,7 +176,8 @@ func TestNATSMessagePublisher_Integration_MessageFlow(t *testing.T) {
 
 		// Publish all messages
 		for _, msg := range testMessages {
-			publishErr := publisher.PublishIndexingJob(ctx, msg.repositoryID, msg.repositoryURL)
+			indexingJobID := uuid.New()
+			publishErr := publisher.PublishIndexingJob(ctx, indexingJobID, msg.repositoryID, msg.repositoryURL)
 			require.NoError(t, publishErr, "Failed to publish message for %s", msg.repositoryURL)
 		}
 
@@ -190,11 +193,12 @@ func TestNATSMessagePublisher_Integration_MessageFlow(t *testing.T) {
 
 	t.Run("message persistence across reconnections", func(t *testing.T) {
 		ctx := context.Background()
+		indexingJobID := uuid.New()
 		repositoryID := uuid.New()
 		repositoryURL := "https://github.com/persistence/test.git"
 
 		// Publish message
-		publishErr := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		publishErr := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		require.NoError(t, publishErr)
 
 		// Disconnect and reconnect
@@ -248,10 +252,11 @@ func TestNATSMessagePublisher_Integration_Performance(t *testing.T) {
 
 		for i := range numMessages {
 			go func(index int) {
+				indexingJobID := uuid.New()
 				repositoryID := uuid.New()
 				repositoryURL := fmt.Sprintf("https://github.com/perf/repo%d.git", index)
 
-				publishErr := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+				publishErr := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 				errChan <- publishErr
 			}(i)
 		}
@@ -369,10 +374,11 @@ func TestNATSMessagePublisher_Integration_Monitoring(t *testing.T) {
 		// 5. Latency metrics (time to publish)
 
 		ctx := context.Background()
+		indexingJobID := uuid.New()
 		repositoryID := uuid.New()
 		repositoryURL := "https://github.com/monitoring/test.git"
 
-		publishErr := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		publishErr := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		require.NoError(t, publishErr)
 
 		// Should verify metrics are updated

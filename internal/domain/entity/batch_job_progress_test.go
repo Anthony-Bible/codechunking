@@ -62,7 +62,7 @@ func TestNewBatchJobProgress(t *testing.T) {
 		beforeCreation := time.Now()
 
 		// Act
-		progress := NewBatchJobProgress(indexingJobID, repositoryID, 1, 5)
+		progress := NewBatchJobProgress(repositoryID, indexingJobID, 1, 5)
 
 		afterCreation := time.Now()
 
@@ -105,6 +105,7 @@ func TestRestoreBatchJobProgress(t *testing.T) {
 			&retryTime,
 			&errorMsg,
 			nil, // geminiBatchJobID
+			nil, // geminiFileURI
 			createdAt,
 			updatedAt,
 			nil, // batchRequestData
@@ -150,6 +151,7 @@ func TestRestoreBatchJobProgress(t *testing.T) {
 			nil,
 			nil,
 			nil, // geminiBatchJobID
+			nil, // geminiFileURI
 			createdAt,
 			updatedAt,
 			nil, // batchRequestData
@@ -203,6 +205,7 @@ func TestRestoreBatchJobProgress(t *testing.T) {
 					nil,
 					nil,
 					nil, // geminiBatchJobID
+					nil, // geminiFileURI
 					createdAt,
 					updatedAt,
 					nil, // batchRequestData
@@ -251,6 +254,7 @@ func TestBatchJobProgress_Getters(t *testing.T) {
 			&retryTime,
 			&errorMsg,
 			nil, // geminiBatchJobID
+			nil, // geminiFileURI
 			createdAt,
 			updatedAt,
 			nil, // batchRequestData
@@ -318,6 +322,7 @@ func TestBatchJobProgress_MarkProcessing(t *testing.T) {
 					nil,
 					nil,
 					nil, // geminiBatchJobID
+					nil, // geminiFileURI
 					time.Now(),
 					time.Now(),
 					nil, // batchRequestData
@@ -412,6 +417,7 @@ func TestBatchJobProgress_MarkCompleted(t *testing.T) {
 			nil,
 			nil,
 			nil, // geminiBatchJobID
+			nil, // geminiFileURI
 			time.Now(),
 			time.Now(),
 			nil, // batchRequestData
@@ -624,6 +630,7 @@ func TestBatchJobProgress_IsRetryable(t *testing.T) {
 					nil,
 					nil,
 					nil, // geminiBatchJobID
+					nil, // geminiFileURI
 					time.Now(),
 					time.Now(),
 					nil, // batchRequestData
@@ -702,6 +709,7 @@ func TestBatchJobProgress_ShouldRetry(t *testing.T) {
 					nil,
 					nil,
 					nil, // geminiBatchJobID
+					nil, // geminiFileURI
 					time.Now(),
 					time.Now(),
 					nil, // batchRequestData
@@ -748,6 +756,7 @@ func TestBatchJobProgress_ShouldRetry(t *testing.T) {
 			nil, // No retry time set
 			nil,
 			nil, // geminiBatchJobID
+			nil, // geminiFileURI
 			time.Now(),
 			time.Now(),
 			nil, // batchRequestData
@@ -823,6 +832,7 @@ func TestBatchJobProgress_IncrementRetryCount(t *testing.T) {
 			nil,
 			nil,
 			nil, // geminiBatchJobID
+			nil, // geminiFileURI
 			time.Now(),
 			time.Now(),
 			nil, // batchRequestData
@@ -865,6 +875,7 @@ func TestBatchJobProgress_IncrementRetryCount(t *testing.T) {
 			nil,
 			nil,
 			nil, // geminiBatchJobID
+			nil, // geminiFileURI
 			time.Now(),
 			time.Now(),
 			nil, // batchRequestData
@@ -1247,7 +1258,7 @@ func TestBatchJobProgress_MarkPendingSubmission(t *testing.T) {
 		// Assert
 		assert.Equal(t, "pending_submission", progress.Status())
 		assert.NotNil(t, progress.BatchRequestData())
-		assert.Equal(t, 0, len(progress.BatchRequestData()))
+		assert.Empty(t, progress.BatchRequestData())
 	})
 
 	t.Run("should handle large request data", func(t *testing.T) {
@@ -1438,7 +1449,7 @@ func TestBatchJobProgress_MarkSubmissionFailed(t *testing.T) {
 
 		// Assert
 		assert.NotNil(t, progress.ErrorMessage())
-		assert.Equal(t, "", *progress.ErrorMessage())
+		assert.Empty(t, *progress.ErrorMessage())
 	})
 }
 
@@ -1472,7 +1483,8 @@ func TestBatchJobProgress_IsReadyForSubmission(t *testing.T) {
 					0,
 					nil,
 					nil,
-					nil,
+					nil, // geminiBatchJobID
+					nil, // geminiFileURI
 					time.Now(),
 					time.Now(),
 					nil, // batchRequestData
@@ -1597,7 +1609,8 @@ func TestBatchJobProgress_Validate_PendingSubmissionStatus(t *testing.T) {
 			0,
 			nil,
 			nil,
-			nil,
+			nil, // geminiBatchJobID
+			nil, // geminiFileURI
 			time.Now(),
 			time.Now(),
 			nil, // batchRequestData
@@ -1640,7 +1653,8 @@ func TestBatchJobProgress_Validate_PendingSubmissionStatus(t *testing.T) {
 			0,
 			nil,
 			nil,
-			nil,
+			nil, // geminiBatchJobID
+			nil, // geminiFileURI
 			time.Now(),
 			time.Now(),
 			nil, // batchRequestData
@@ -1686,7 +1700,8 @@ func TestBatchJobProgress_Validate_PendingSubmissionStatus(t *testing.T) {
 					0,
 					nil,
 					nil,
-					nil,
+					nil, // geminiBatchJobID
+					nil, // geminiFileURI
 					time.Now(),
 					time.Now(),
 					nil, // batchRequestData
@@ -1843,7 +1858,7 @@ func TestBatchJobProgress_BatchRequestData(t *testing.T) {
 
 		// Assert
 		assert.NotNil(t, data)
-		assert.Equal(t, 0, len(data))
+		assert.Empty(t, data)
 	})
 }
 

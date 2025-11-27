@@ -572,6 +572,44 @@ func (m *MockBatchEmbeddingService) CreateBatchEmbeddingJobWithRequests(
 	return args.Get(0).(*outbound.BatchEmbeddingJob), args.Error(1)
 }
 
+func (m *MockBatchEmbeddingService) CreateBatchEmbeddingJobWithFile(
+	ctx context.Context,
+	requests []*outbound.BatchEmbeddingRequest,
+	options outbound.EmbeddingOptions,
+	batchID uuid.UUID,
+	fileURI string,
+) (*outbound.BatchEmbeddingJob, error) {
+	args := m.Called(ctx, requests, options, batchID, fileURI)
+
+	// Handle nil return
+	if args.Get(0) == nil {
+		if args.Get(1) == nil {
+			return nil, nil
+		}
+		// Try to get as function first
+		if fn, ok := args.Get(1).(func(context.Context, []*outbound.BatchEmbeddingRequest, outbound.EmbeddingOptions, uuid.UUID, string) error); ok {
+			return nil, fn(ctx, requests, options, batchID, fileURI)
+		}
+		return nil, args.Error(1)
+	}
+
+	// Handle function return
+	if fn, ok := args.Get(0).(func(context.Context, []*outbound.BatchEmbeddingRequest, outbound.EmbeddingOptions, uuid.UUID, string) *outbound.BatchEmbeddingJob); ok {
+		result := fn(ctx, requests, options, batchID, fileURI)
+		// Check second return value
+		if args.Get(1) == nil {
+			return result, nil
+		}
+		if errFn, ok := args.Get(1).(func(context.Context, []*outbound.BatchEmbeddingRequest, outbound.EmbeddingOptions, uuid.UUID, string) error); ok {
+			return result, errFn(ctx, requests, options, batchID, fileURI)
+		}
+		return result, args.Error(1)
+	}
+
+	// Handle direct value return
+	return args.Get(0).(*outbound.BatchEmbeddingJob), args.Error(1)
+}
+
 func (m *MockBatchEmbeddingService) GetBatchJobStatus(
 	ctx context.Context,
 	jobID string,

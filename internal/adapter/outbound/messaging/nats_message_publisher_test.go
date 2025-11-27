@@ -359,14 +359,15 @@ func TestNATSMessagePublisher_EnsureStream_Failures(t *testing.T) {
 		},
 	}
 
-	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+	cfg := config.NATSConfig{
+		URL:      "nats://localhost:4222",
+		TestMode: true,
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// This test will fail because NewNATSMessagePublisher is not implemented
-			publisher, err := NewNATSMessagePublisher(config)
+			publisher, err := NewNATSMessagePublisher(cfg)
 			require.NoError(t, err)
 
 			if tt.setup != nil {
@@ -495,9 +496,10 @@ func TestNATSMessagePublisher_PublishIndexingJob_Success(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
+			indexingJobID := uuid.New()
 
 			// This test will fail because PublishIndexingJob is not implemented
-			err := publisher.PublishIndexingJob(ctx, tt.repositoryID, tt.repositoryURL)
+			err := publisher.PublishIndexingJob(ctx, indexingJobID, tt.repositoryID, tt.repositoryURL)
 			assert.NoError(t, err)
 		})
 	}
@@ -524,12 +526,13 @@ func TestNATSMessagePublisher_PublishIndexingJob_MessageFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
+	indexingJobID := uuid.New()
 	repositoryID := uuid.New()
 	repositoryURL := "https://github.com/user/repo.git"
 
 	t.Run("message contains correct data", func(t *testing.T) {
 		// This test will fail because PublishIndexingJob is not implemented
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		require.NoError(t, err)
 
 		// Should verify that published message contains:
@@ -542,7 +545,7 @@ func TestNATSMessagePublisher_PublishIndexingJob_MessageFormat(t *testing.T) {
 
 	t.Run("message published to correct subject", func(t *testing.T) {
 		// This test will fail because PublishIndexingJob is not implemented
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		require.NoError(t, err)
 
 		// Should verify message is published to subject: "indexing.job"
@@ -553,7 +556,7 @@ func TestNATSMessagePublisher_PublishIndexingJob_MessageFormat(t *testing.T) {
 
 	t.Run("message headers include metadata", func(t *testing.T) {
 		// This test will fail because PublishIndexingJob is not implemented
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		require.NoError(t, err)
 
 		// Should verify message headers include:
@@ -625,9 +628,10 @@ func TestNATSMessagePublisher_PublishIndexingJob_InvalidInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
+			indexingJobID := uuid.New()
 
 			// This test will fail because PublishIndexingJob is not implemented
-			err := publisher.PublishIndexingJob(ctx, tt.repositoryID, tt.repositoryURL)
+			err := publisher.PublishIndexingJob(ctx, indexingJobID, tt.repositoryID, tt.repositoryURL)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
 		})
@@ -654,6 +658,7 @@ func TestNATSMessagePublisher_PublishIndexingJob_ContextHandling(t *testing.T) {
 	err = publisher.(*NATSMessagePublisher).EnsureStream()
 	require.NoError(t, err)
 
+	indexingJobID := uuid.New()
 	repositoryID := uuid.New()
 	repositoryURL := "https://github.com/user/repo.git"
 
@@ -665,7 +670,7 @@ func TestNATSMessagePublisher_PublishIndexingJob_ContextHandling(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 
 		// This test will fail because PublishIndexingJob is not implemented
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "context deadline exceeded")
 	})
@@ -675,7 +680,7 @@ func TestNATSMessagePublisher_PublishIndexingJob_ContextHandling(t *testing.T) {
 		cancel() // Cancel immediately
 
 		// This test will fail because PublishIndexingJob is not implemented
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "context canceled")
 	})
@@ -686,7 +691,7 @@ func TestNATSMessagePublisher_PublishIndexingJob_ContextHandling(t *testing.T) {
 		ctx := context.Background()
 		// In real implementation, would add tracing info to context
 
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		assert.NoError(t, err)
 	})
 }
@@ -722,21 +727,22 @@ func TestNATSMessagePublisher_PublishIndexingJob_Concurrency(t *testing.T) {
 		errChan := make(chan error, numGoroutines*numMessagesPerGoroutine)
 
 		// Launch multiple goroutines to publish concurrently
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			go func(routineID int) {
-				for j := 0; j < numMessagesPerGoroutine; j++ {
+				for j := range numMessagesPerGoroutine {
+					indexingJobID := uuid.New()
 					repositoryID := uuid.New()
 					repositoryURL := fmt.Sprintf("https://github.com/user/repo%d-%d.git", routineID, j)
 
 					// This test will fail because PublishIndexingJob is not implemented
-					err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+					err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 					errChan <- err
 				}
 			}(i)
 		}
 
 		// Collect all results
-		for i := 0; i < numGoroutines*numMessagesPerGoroutine; i++ {
+		for range numGoroutines * numMessagesPerGoroutine {
 			err := <-errChan
 			assert.NoError(t, err)
 		}
@@ -809,10 +815,11 @@ func TestNATSMessagePublisher_ErrorHandling_NetworkFailures(t *testing.T) {
 
 			ctx := context.Background()
 			repositoryID := uuid.New()
+			indexingJobID := uuid.New()
 			repositoryURL := "https://github.com/user/repo.git"
 
 			// This test will fail because network failure handling is not implemented
-			err = publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+			err = publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 			if tt.setupFailure == nil {
 				// No actual failure simulation implemented yet, so test should pass
 				assert.NoError(t, err)
@@ -851,6 +858,7 @@ func TestNATSMessagePublisher_ErrorHandling_RetryLogic(t *testing.T) {
 
 	t.Run("retry on temporary network failure", func(t *testing.T) {
 		ctx := context.Background()
+		indexingJobID := uuid.New()
 		repositoryID := uuid.New()
 		repositoryURL := "https://github.com/user/repo.git"
 
@@ -861,12 +869,13 @@ func TestNATSMessagePublisher_ErrorHandling_RetryLogic(t *testing.T) {
 		// 3. Exponential backoff is applied
 		// 4. Success on retry within max attempts
 
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		assert.NoError(t, err) // Should succeed after retry
 	})
 
 	t.Run("fail after max retry attempts", func(t *testing.T) {
 		ctx := context.Background()
+		indexingJobID := uuid.New()
 		repositoryID := uuid.New()
 		repositoryURL := "https://github.com/user/repo.git"
 
@@ -877,7 +886,7 @@ func TestNATSMessagePublisher_ErrorHandling_RetryLogic(t *testing.T) {
 		// 3. Proper error context is provided
 
 		// Simulate persistent failure
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		// Retry logic not implemented yet, so test will pass for now
 		if err == nil {
 			t.Skip("Retry logic not implemented yet")
@@ -898,10 +907,11 @@ func TestNATSMessagePublisher_ErrorHandling_RetryLogic(t *testing.T) {
 
 		start := time.Now()
 		ctx := context.Background()
+		indexingJobID := uuid.New()
 		repositoryID := uuid.New()
 		repositoryURL := "https://github.com/user/repo.git"
 
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		elapsed := time.Since(start)
 
 		// Should verify timing matches expected backoff pattern
@@ -942,12 +952,13 @@ func TestNATSMessagePublisher_ErrorHandling_CircuitBreaker(t *testing.T) {
 		// 3. Circuit remains open for configured duration
 
 		ctx := context.Background()
+		indexingJobID := uuid.New()
 		repositoryID := uuid.New()
 		repositoryURL := "https://github.com/user/repo.git"
 
 		// Simulate multiple failures to trigger circuit breaker
-		for i := 0; i < 5; i++ {
-			err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		for i := range 5 {
+			err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 			if i < 3 {
 				// First few should attempt and fail
 				assert.Error(t, err)
@@ -971,12 +982,13 @@ func TestNATSMessagePublisher_ErrorHandling_CircuitBreaker(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_ErrorHandling_JetStreamErrors(t *testing.T) {
-	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+	cfg := config.NATSConfig{
+		URL:      "nats://localhost:4222",
+		TestMode: true,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
-	publisher, err := NewNATSMessagePublisher(config)
+	publisher, err := NewNATSMessagePublisher(cfg)
 	require.NoError(t, err)
 
 	err = publisher.(*NATSMessagePublisher).Connect()
@@ -1040,10 +1052,11 @@ func TestNATSMessagePublisher_ErrorHandling_JetStreamErrors(t *testing.T) {
 
 			ctx := context.Background()
 			repositoryID := uuid.New()
+			indexingJobID := uuid.New()
 			repositoryURL := "https://github.com/user/repo.git"
 
 			// This test will fail because JetStream error handling is not implemented
-			err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+			err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectedErr)
 		})
@@ -1067,12 +1080,13 @@ func TestNATSMessagePublisher_ErrorHandling_GracefulDegradation(t *testing.T) {
 		// 3. Appropriate error is returned if all fallbacks fail
 
 		ctx := context.Background()
+		indexingJobID := uuid.New()
 		repositoryID := uuid.New()
 		repositoryURL := "https://github.com/user/repo.git"
 
 		// Simulate complete NATS failure - enable fallback mode for this test
 		publisher.(*NATSMessagePublisher).SetTestErrorMode("fallback_enabled")
-		err := publisher.PublishIndexingJob(ctx, repositoryID, repositoryURL)
+		err := publisher.PublishIndexingJob(ctx, indexingJobID, repositoryID, repositoryURL)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "all message delivery mechanisms failed")
 	})

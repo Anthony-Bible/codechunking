@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -83,7 +84,7 @@ func TestBatchEmbeddingClient_CreateBatchEmbeddingJob(t *testing.T) {
 
 		// Try to create job with empty texts
 		ctx := context.Background()
-		job, err := batchClient.CreateBatchEmbeddingJob(ctx, []string{}, outbound.EmbeddingOptions{})
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, []string{}, outbound.EmbeddingOptions{}, uuid.New())
 
 		assert.Error(t, err)
 		assert.Nil(t, job)
@@ -120,7 +121,7 @@ func TestBatchEmbeddingClient_CreateBatchEmbeddingJob(t *testing.T) {
 
 		// Try to create job with too many chunks
 		ctx := context.Background()
-		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{})
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{}, uuid.New())
 
 		// Should return error
 		assert.Error(t, err)
@@ -162,7 +163,7 @@ func TestBatchEmbeddingClient_CreateBatchEmbeddingJob(t *testing.T) {
 
 		// Try to create job with exactly max chunks
 		ctx := context.Background()
-		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{})
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{}, uuid.New())
 
 		// Should succeed (no error about batch size)
 		// Note: This test will fail because the implementation doesn't exist yet,
@@ -204,7 +205,7 @@ func TestBatchEmbeddingClient_CreateBatchEmbeddingJob(t *testing.T) {
 
 		// Try to create job
 		ctx := context.Background()
-		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{})
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{}, uuid.New())
 
 		// Should succeed but log warning
 		// Note: We can't easily test log output without a log capture mechanism,
@@ -251,7 +252,7 @@ func TestBatchEmbeddingClient_CreateBatchEmbeddingJob(t *testing.T) {
 
 		// Try to create job with too many chunks
 		ctx := context.Background()
-		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{})
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{}, uuid.New())
 
 		// Should return error
 		assert.Error(t, err)
@@ -300,7 +301,7 @@ func TestBatchEmbeddingClient_CreateBatchEmbeddingJob(t *testing.T) {
 
 		// Try to create job
 		ctx := context.Background()
-		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{})
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{}, uuid.New())
 
 		// Should succeed (not at limit yet) but may log warning
 		if err != nil {
@@ -339,7 +340,7 @@ func TestBatchEmbeddingClient_CreateBatchEmbeddingJob(t *testing.T) {
 
 		// Try to create job
 		ctx := context.Background()
-		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{})
+		job, err := batchClient.CreateBatchEmbeddingJob(ctx, texts, outbound.EmbeddingOptions{}, uuid.New())
 
 		// Should succeed (not exceeding limit)
 		if err != nil {
@@ -477,7 +478,12 @@ func TestBatchEmbeddingClient_writeRequestsToFile(t *testing.T) {
 
 		// Write requests to file
 		ctx := context.Background()
-		fullPath, filename, err := batchClient.writeRequestsToFile(ctx, requests, outbound.EmbeddingOptions{})
+		fullPath, filename, err := batchClient.writeRequestsToFile(
+			ctx,
+			requests,
+			outbound.EmbeddingOptions{},
+			uuid.New(),
+		)
 
 		require.NoError(t, err)
 		assert.NotEmpty(t, fullPath)
@@ -485,7 +491,7 @@ func TestBatchEmbeddingClient_writeRequestsToFile(t *testing.T) {
 		assert.FileExists(t, fullPath)
 
 		// Verify filename is base name only (not full path)
-		assert.Equal(t, filepath.Base(fullPath), filename, "filename should be base name only")
+		assert.Equal(t, filename, filepath.Base(filename), "filename should be base name only")
 
 		// Verify filename meets Google Gemini API requirement (max 40 characters)
 		assert.LessOrEqual(t, len(filename), 40, "filename must not exceed 40 characters for Google Gemini API")

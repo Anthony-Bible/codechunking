@@ -95,7 +95,7 @@ import (
 // - EmbeddingResults are converted to Embeddings with correct properties
 // - Chunks are extracted from results and saved with embeddings
 // - Batch progress is updated with actual chunk count
-// - Batch status is marked as completed
+// - Batch status is marked as completed.
 func TestHandleCompletedBatch_Success(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -105,7 +105,8 @@ func TestHandleCompletedBatch_Success(t *testing.T) {
 	// Create batch progress entity
 	repositoryID := uuid.New()
 	batch := entity.NewBatchJobProgress(repositoryID, indexingJobID, 1, 3)
-	_ = batch.MarkSubmittedToGemini(batchJobID)
+	err := batch.MarkSubmittedToGemini(batchJobID)
+	require.NoError(t, err)
 
 	// Create completed job
 	completedTime := time.Now()
@@ -121,7 +122,7 @@ func TestHandleCompletedBatch_Success(t *testing.T) {
 
 	// Create mock embedding results (5 results with 768-dimensional vectors)
 	mockResults := make([]*outbound.EmbeddingResult, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		chunkID := uuid.New()
 		vector := make([]float64, 768)
 		for j := range vector {
@@ -176,7 +177,7 @@ func TestHandleCompletedBatch_Success(t *testing.T) {
 	}
 
 	// Act
-	err := poller.handleCompletedBatch(ctx, batch, job)
+	err = poller.handleCompletedBatch(ctx, batch, job)
 
 	// Assert
 	require.NoError(t, err, "handleCompletedBatch should not return an error")
@@ -196,16 +197,17 @@ func TestHandleCompletedBatch_Success(t *testing.T) {
 // - Model version is set correctly
 // - Repository ID is set on each embedding
 // - Chunk UUIDs are correctly extracted from RequestIDs
-// - All embeddings are properly associated with their chunks
+// - All embeddings are properly associated with their chunks.
 func TestHandleCompletedBatch_ConvertsEmbeddingResultsCorrectly(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	indexingJobID := uuid.New()
-	batchJobID := "gemini_batch_job_456"
+	batchJobID := "batches/gemini_batch_job_456"
 
 	repositoryID := uuid.New()
 	batch := entity.NewBatchJobProgress(repositoryID, indexingJobID, 1, 1)
-	_ = batch.MarkSubmittedToGemini(batchJobID)
+	err := batch.MarkSubmittedToGemini(batchJobID)
+	require.NoError(t, err)
 
 	completedTime := time.Now()
 	job := &outbound.BatchEmbeddingJob{
@@ -281,7 +283,7 @@ func TestHandleCompletedBatch_ConvertsEmbeddingResultsCorrectly(t *testing.T) {
 	}
 
 	// Act
-	err := poller.handleCompletedBatch(ctx, batch, job)
+	err = poller.handleCompletedBatch(ctx, batch, job)
 
 	// Assert
 	require.NoError(t, err)
@@ -295,17 +297,18 @@ func TestHandleCompletedBatch_ConvertsEmbeddingResultsCorrectly(t *testing.T) {
 // It verifies:
 // - Only the successful embeddings are saved (8 out of 10)
 // - Batch is still marked as completed with accurate count (8)
-// - A warning is logged for missing chunk results
+// - A warning is logged for missing chunk results.
 func TestHandleCompletedBatch_HandlesPartialResults(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	indexingJobID := uuid.New()
-	batchJobID := "gemini_batch_job_partial"
+	batchJobID := "batches/gemini_batch_job_partial"
 
 	// Batch was created for 10 chunks
 	repositoryID := uuid.New()
 	batch := entity.NewBatchJobProgress(repositoryID, indexingJobID, 1, 1)
-	_ = batch.MarkSubmittedToGemini(batchJobID)
+	err := batch.MarkSubmittedToGemini(batchJobID)
+	require.NoError(t, err)
 
 	completedTime := time.Now()
 	job := &outbound.BatchEmbeddingJob{
@@ -318,7 +321,7 @@ func TestHandleCompletedBatch_HandlesPartialResults(t *testing.T) {
 
 	// But only 8 results are returned
 	mockResults := make([]*outbound.EmbeddingResult, 8)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		chunkID := uuid.New()
 		mockResults[i] = &outbound.EmbeddingResult{
 			Vector:      make([]float64, 768),
@@ -366,7 +369,7 @@ func TestHandleCompletedBatch_HandlesPartialResults(t *testing.T) {
 	}
 
 	// Act
-	err := poller.handleCompletedBatch(ctx, batch, job)
+	err = poller.handleCompletedBatch(ctx, batch, job)
 
 	// Assert
 	require.NoError(t, err)
@@ -385,16 +388,17 @@ func TestHandleCompletedBatch_HandlesPartialResults(t *testing.T) {
 // - Embeddings with wrong dimensions are detected (512 instead of 768)
 // - Batch is marked as failed when validation fails
 // - Error is logged with dimension mismatch details
-// - No chunks are saved when validation fails
+// - No chunks are saved when validation fails.
 func TestHandleCompletedBatch_ValidatesDimensions(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	indexingJobID := uuid.New()
-	batchJobID := "gemini_batch_job_invalid_dims"
+	batchJobID := "batches/gemini_batch_job_invalid_dims"
 
 	repositoryID := uuid.New()
 	batch := entity.NewBatchJobProgress(repositoryID, indexingJobID, 1, 1)
-	_ = batch.MarkSubmittedToGemini(batchJobID)
+	err := batch.MarkSubmittedToGemini(batchJobID)
+	require.NoError(t, err)
 
 	completedTime := time.Now()
 	job := &outbound.BatchEmbeddingJob{
@@ -441,7 +445,7 @@ func TestHandleCompletedBatch_ValidatesDimensions(t *testing.T) {
 	}
 
 	// Act
-	err := poller.handleCompletedBatch(ctx, batch, job)
+	err = poller.handleCompletedBatch(ctx, batch, job)
 
 	// Assert
 	require.Error(t, err, "handleCompletedBatch should return error for dimension mismatch")
@@ -462,16 +466,17 @@ func TestHandleCompletedBatch_ValidatesDimensions(t *testing.T) {
 // - Error is properly returned from handleCompletedBatch
 // - Batch is NOT marked as completed
 // - No database writes occur
-// - Error is logged appropriately
+// - Error is logged appropriately.
 func TestHandleCompletedBatch_HandlesGetResultsError(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	indexingJobID := uuid.New()
-	batchJobID := "gemini_batch_job_error"
+	batchJobID := "batches/gemini_batch_job_error"
 
 	repositoryID := uuid.New()
 	batch := entity.NewBatchJobProgress(repositoryID, indexingJobID, 1, 1)
-	_ = batch.MarkSubmittedToGemini(batchJobID)
+	err := batch.MarkSubmittedToGemini(batchJobID)
+	require.NoError(t, err)
 
 	completedTime := time.Now()
 	job := &outbound.BatchEmbeddingJob{
@@ -513,7 +518,7 @@ func TestHandleCompletedBatch_HandlesGetResultsError(t *testing.T) {
 	}
 
 	// Act
-	err := poller.handleCompletedBatch(ctx, batch, job)
+	err = poller.handleCompletedBatch(ctx, batch, job)
 
 	// Assert
 	require.Error(t, err, "handleCompletedBatch should return the GetBatchJobResults error")
@@ -536,16 +541,17 @@ func TestHandleCompletedBatch_HandlesGetResultsError(t *testing.T) {
 // It verifies:
 // - Error is properly returned from handleCompletedBatch
 // - Batch is NOT marked as completed
-// - Error can be retried in next poll cycle
+// - Error can be retried in next poll cycle.
 func TestHandleCompletedBatch_HandlesSaveError(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	indexingJobID := uuid.New()
-	batchJobID := "gemini_batch_job_save_error"
+	batchJobID := "batches/gemini_batch_job_save_error"
 
 	repositoryID := uuid.New()
 	batch := entity.NewBatchJobProgress(repositoryID, indexingJobID, 1, 1)
-	_ = batch.MarkSubmittedToGemini(batchJobID)
+	err := batch.MarkSubmittedToGemini(batchJobID)
+	require.NoError(t, err)
 
 	completedTime := time.Now()
 	job := &outbound.BatchEmbeddingJob{
@@ -608,7 +614,7 @@ func TestHandleCompletedBatch_HandlesSaveError(t *testing.T) {
 	}
 
 	// Act
-	err := poller.handleCompletedBatch(ctx, batch, job)
+	err = poller.handleCompletedBatch(ctx, batch, job)
 
 	// Assert
 	require.Error(t, err, "handleCompletedBatch should return the save error")
@@ -631,16 +637,17 @@ func TestHandleCompletedBatch_HandlesSaveError(t *testing.T) {
 // It verifies:
 // - RequestIDs are parsed correctly
 // - Invalid RequestID formats are handled (error or skipped)
-// - Chunk-to-embedding mapping is correct
+// - Chunk-to-embedding mapping is correct.
 func TestHandleCompletedBatch_ExtractsChunkIDsFromRequestIDs(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	indexingJobID := uuid.New()
-	batchJobID := "gemini_batch_job_requestid"
+	batchJobID := "batches/gemini_batch_job_requestid"
 
 	repositoryID := uuid.New()
 	batch := entity.NewBatchJobProgress(repositoryID, indexingJobID, 1, 1)
-	_ = batch.MarkSubmittedToGemini(batchJobID)
+	err := batch.MarkSubmittedToGemini(batchJobID)
+	require.NoError(t, err)
 
 	completedTime := time.Now()
 	job := &outbound.BatchEmbeddingJob{
@@ -716,7 +723,7 @@ func TestHandleCompletedBatch_ExtractsChunkIDsFromRequestIDs(t *testing.T) {
 	}
 
 	// Act
-	err := poller.handleCompletedBatch(ctx, batch, job)
+	err = poller.handleCompletedBatch(ctx, batch, job)
 
 	// Assert
 	require.NoError(t, err)
@@ -744,7 +751,7 @@ func TestHandleCompletedBatch_ExtractsChunkIDsFromRequestIDs(t *testing.T) {
 // - Output format is "chunk_<uuid_without_hyphens>"
 // - Length is <= 40 characters
 // - String starts with "chunk_" prefix
-// - Contains only alphanumeric characters and underscore
+// - Contains only alphanumeric characters and underscore.
 func TestEncodeChunkIDToRequestID_ValidUUID(t *testing.T) {
 	// Arrange
 	testUUID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
@@ -755,15 +762,15 @@ func TestEncodeChunkIDToRequestID_ValidUUID(t *testing.T) {
 	// Assert
 	assert.NotEmpty(t, requestID, "RequestID should not be empty")
 	assert.LessOrEqual(t, len(requestID), 40, "RequestID must be <= 40 characters for Gemini API")
-	assert.True(t, len(requestID) > 6, "RequestID should have content beyond the prefix")
+	assert.Greater(t, len(requestID), 6, "RequestID should have content beyond the prefix")
 
 	// Verify format: "chunk_<uuid_without_hyphens>"
-	assert.True(t, len(requestID) >= 6, "RequestID should have at least 'chunk_' prefix")
+	assert.GreaterOrEqual(t, len(requestID), 6, "RequestID should have at least 'chunk_' prefix")
 	assert.Equal(t, "chunk_", requestID[:6], "RequestID should start with 'chunk_' prefix")
 
 	// Verify the UUID part (without hyphens) is exactly 32 characters
 	uuidPart := requestID[6:]
-	assert.Equal(t, 32, len(uuidPart), "UUID without hyphens should be 32 characters")
+	assert.Len(t, uuidPart, 32, "UUID without hyphens should be 32 characters")
 
 	// Verify only valid characters (alphanumeric + underscore)
 	validChars := "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
@@ -777,7 +784,7 @@ func TestEncodeChunkIDToRequestID_ValidUUID(t *testing.T) {
 	assert.Equal(t, expected, requestID, "RequestID should match expected format")
 
 	// Verify total length (6 char prefix + 32 char UUID = 38 chars)
-	assert.Equal(t, 38, len(requestID), "RequestID should be exactly 38 characters")
+	assert.Len(t, requestID, 38, "RequestID should be exactly 38 characters")
 }
 
 // TestEncodeChunkIDToRequestID_MultipleUUIDs tests that different UUIDs produce unique RequestIDs.
@@ -785,7 +792,7 @@ func TestEncodeChunkIDToRequestID_ValidUUID(t *testing.T) {
 // - All encoded IDs are unique
 // - All encoded IDs are <= 40 characters
 // - All encoded IDs start with "chunk_" prefix
-// - Each encoded ID properly represents its source UUID
+// - Each encoded ID properly represents its source UUID.
 func TestEncodeChunkIDToRequestID_MultipleUUIDs(t *testing.T) {
 	// Arrange - Create 5 different UUIDs
 	testUUIDs := []uuid.UUID{
@@ -807,18 +814,18 @@ func TestEncodeChunkIDToRequestID_MultipleUUIDs(t *testing.T) {
 	for _, requestID := range requestIDs {
 		uniqueIDs[requestID] = true
 	}
-	assert.Equal(t, len(testUUIDs), len(uniqueIDs),
+	assert.Len(t, uniqueIDs, len(testUUIDs),
 		"All encoded RequestIDs should be unique")
 
 	// Assert - All IDs meet format requirements
 	for i, requestID := range requestIDs {
 		assert.LessOrEqual(t, len(requestID), 40,
 			"RequestID %d must be <= 40 characters", i)
-		assert.True(t, len(requestID) >= 6,
+		assert.GreaterOrEqual(t, len(requestID), 6,
 			"RequestID %d should have 'chunk_' prefix", i)
 		assert.Equal(t, "chunk_", requestID[:6],
 			"RequestID %d should start with 'chunk_'", i)
-		assert.Equal(t, 38, len(requestID),
+		assert.Len(t, requestID, 38,
 			"RequestID %d should be exactly 38 characters", i)
 	}
 
@@ -841,7 +848,7 @@ func TestEncodeChunkIDToRequestID_MultipleUUIDs(t *testing.T) {
 // It verifies:
 // - RequestID in correct format decodes without error
 // - Decoded UUID matches the expected value
-// - Hyphens are correctly reinserted into the UUID
+// - Hyphens are correctly reinserted into the UUID.
 func TestDecodeRequestIDToChunkID_ValidRequestID(t *testing.T) {
 	// Arrange
 	requestID := "chunk_550e8400e29b41d4a716446655440000"
@@ -859,7 +866,7 @@ func TestDecodeRequestIDToChunkID_ValidRequestID(t *testing.T) {
 // TestDecodeRequestIDToChunkID_InvalidPrefix tests error handling for incorrect prefix.
 // It verifies:
 // - RequestID with wrong prefix returns an error
-// - Error message indicates invalid format or missing prefix
+// - Error message indicates invalid format or missing prefix.
 func TestDecodeRequestIDToChunkID_InvalidPrefix(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -905,7 +912,7 @@ func TestDecodeRequestIDToChunkID_InvalidPrefix(t *testing.T) {
 // TestDecodeRequestIDToChunkID_InvalidUUID tests error handling for invalid UUID strings.
 // It verifies:
 // - RequestID with invalid UUID format returns an error
-// - Error message indicates invalid UUID
+// - Error message indicates invalid UUID.
 func TestDecodeRequestIDToChunkID_InvalidUUID(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -955,7 +962,7 @@ func TestDecodeRequestIDToChunkID_InvalidUUID(t *testing.T) {
 // TestDecodeRequestIDToChunkID_EmptyString tests error handling for empty input.
 // It verifies:
 // - Empty string returns an error
-// - Error indicates empty or invalid RequestID
+// - Error indicates empty or invalid RequestID.
 func TestDecodeRequestIDToChunkID_EmptyString(t *testing.T) {
 	// Act
 	decodedUUID, err := decodeRequestIDToChunkID("")
@@ -976,11 +983,11 @@ func TestDecodeRequestIDToChunkID_EmptyString(t *testing.T) {
 // It verifies:
 // - For any UUID, encode(UUID) -> decode(RequestID) == UUID
 // - No data loss occurs during round-trip conversion
-// - Process works for multiple random UUIDs
+// - Process works for multiple random UUIDs.
 func TestEncodeDecodeRoundTrip(t *testing.T) {
 	// Arrange - Generate 10 random UUIDs
 	testUUIDs := make([]uuid.UUID, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		testUUIDs[i] = uuid.New()
 	}
 
@@ -1050,7 +1057,7 @@ func TestDecodeRequestIDToChunkID_WithHyphens(t *testing.T) {
 // It verifies:
 // - Nil UUID encodes successfully
 // - Max UUID encodes successfully
-// - All encoded values meet length requirements
+// - All encoded values meet length requirements.
 func TestEncodeChunkIDToRequestID_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1084,7 +1091,7 @@ func TestEncodeChunkIDToRequestID_EdgeCases(t *testing.T) {
 				"Encoded RequestID should match expected format")
 			assert.LessOrEqual(t, len(requestID), 40,
 				"RequestID must be <= 40 characters")
-			assert.Equal(t, 38, len(requestID),
+			assert.Len(t, requestID, 38,
 				"RequestID should be exactly 38 characters")
 		})
 	}
@@ -1094,7 +1101,7 @@ func TestEncodeChunkIDToRequestID_EdgeCases(t *testing.T) {
 // It verifies:
 // - Lowercase UUID hex strings decode correctly
 // - Uppercase UUID hex strings decode correctly
-// - Mixed case UUID hex strings decode correctly
+// - Mixed case UUID hex strings decode correctly.
 func TestDecodeRequestIDToChunkID_CaseSensitivity(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -1141,17 +1148,18 @@ func TestDecodeRequestIDToChunkID_CaseSensitivity(t *testing.T) {
 // to the chunks and embeddings during batch result processing.
 //
 // This test documents the BUG: repository_id is hardcoded to uuid.Nil in batch_poller.go:374-377
-// Expected behavior: repository_id should be retrieved from IndexingJob and set on chunks/embeddings
+// Expected behavior: repository_id should be retrieved from IndexingJob and set on chunks/embeddings.
 func TestHandleCompletedBatch_RepositoryIDFlow(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
 	repositoryID := uuid.New() // The repository ID that should be preserved
 	indexingJobID := uuid.New()
-	batchJobID := "gemini_batch_job_repository_test"
+	batchJobID := "batches/gemini_batch_job_repository_test"
 
 	// Create batch progress entity with indexing job ID
 	batch := entity.NewBatchJobProgress(repositoryID, indexingJobID, 1, 1)
-	_ = batch.MarkSubmittedToGemini(batchJobID)
+	err := batch.MarkSubmittedToGemini(batchJobID)
+	require.NoError(t, err)
 
 	completedTime := time.Now()
 	job := &outbound.BatchEmbeddingJob{
@@ -1216,7 +1224,7 @@ func TestHandleCompletedBatch_RepositoryIDFlow(t *testing.T) {
 
 	// Act - This should FAIL due to the repository_id bug
 	t.Logf("Executing handleCompletedBatch - should fail due to repository_id bug")
-	err := poller.handleCompletedBatch(ctx, batch, job)
+	err = poller.handleCompletedBatch(ctx, batch, job)
 
 	// Assert - The test should fail because repository_id is uuid.Nil instead of repositoryID
 	// However, due to the mock's .Return(nil), it might pass, so we need additional validation
@@ -1236,7 +1244,7 @@ func TestHandleCompletedBatch_RepositoryIDFlow(t *testing.T) {
 }
 
 // TestHandleCompletedBatch_RepositoryIDFixed verifies that repository_id is properly
-// preserved from batch to chunks and embeddings
+// preserved from batch to chunks and embeddings.
 func TestHandleCompletedBatch_RepositoryIDFixed(t *testing.T) {
 	// This test verifies the FIXED behavior where repository_id flows correctly
 	// from batch entity to chunks and embeddings
@@ -1245,10 +1253,11 @@ func TestHandleCompletedBatch_RepositoryIDFixed(t *testing.T) {
 	ctx := context.Background()
 	repositoryID := uuid.New()
 	indexingJobID := uuid.New()
-	batchJobID := "gemini_batch_explicit_failure"
+	batchJobID := "batches/gemini_batch_explicit_failure"
 
 	batch := entity.NewBatchJobProgress(repositoryID, indexingJobID, 1, 1)
-	_ = batch.MarkSubmittedToGemini(batchJobID)
+	err := batch.MarkSubmittedToGemini(batchJobID)
+	require.NoError(t, err)
 
 	completedTime := time.Now()
 	job := &outbound.BatchEmbeddingJob{
@@ -1303,7 +1312,7 @@ func TestHandleCompletedBatch_RepositoryIDFixed(t *testing.T) {
 	}
 
 	// Act
-	err := poller.handleCompletedBatch(ctx, batch, job)
+	err = poller.handleCompletedBatch(ctx, batch, job)
 
 	// Assert
 	require.NoError(t, err)
@@ -1316,7 +1325,7 @@ func TestHandleCompletedBatch_RepositoryIDFixed(t *testing.T) {
 	mockProgressRepo.AssertExpectations(t)
 }
 
-// Helper function to check if a string contains any of the specified substrings
+// Helper function to check if a string contains any of the specified substrings.
 func containsAny(s string, substrings []string) bool {
 	for _, substr := range substrings {
 		if len(s) >= len(substr) {

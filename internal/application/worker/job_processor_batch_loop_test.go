@@ -444,6 +444,9 @@ func TestProcessProductionBatchResults_QuotaErrorWithRetry(t *testing.T) {
 		ThresholdChunks:      10,
 		FallbackToSequential: false,
 		UseTestEmbeddings:    false,
+		MaxRetries:           3,                     // Explicit retry config for quota error tests
+		InitialBackoff:       10 * time.Millisecond, // Fast for testing
+		MaxBackoff:           50 * time.Millisecond, // Fast for testing
 	}
 
 	processorConfig := JobProcessorConfig{
@@ -551,6 +554,9 @@ func TestProcessProductionBatchResults_QuotaErrorMaxRetries(t *testing.T) {
 		ThresholdChunks:      10,
 		FallbackToSequential: false,
 		UseTestEmbeddings:    false,
+		MaxRetries:           3,                     // Explicit retry config: 1 initial + 3 retries = 4 attempts
+		InitialBackoff:       10 * time.Millisecond, // Fast for testing
+		MaxBackoff:           50 * time.Millisecond, // Fast for testing
 	}
 
 	processorConfig := JobProcessorConfig{

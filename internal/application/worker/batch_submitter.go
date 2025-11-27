@@ -6,6 +6,7 @@ import (
 	"codechunking/internal/port/outbound"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -77,7 +78,7 @@ func (s *BatchSubmitter) Start(ctx context.Context) error {
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
-		return fmt.Errorf("batch submitter is already running")
+		return errors.New("batch submitter is already running")
 	}
 	s.running = true
 	s.mu.Unlock()
@@ -364,7 +365,7 @@ func (s *BatchSubmitter) handleSubmissionFailure(
 func calculateBackoff(config BatchSubmitterConfig, attempts int) time.Duration {
 	// Calculate 2^attempts * InitialBackoff
 	backoff := config.InitialBackoff
-	for i := 0; i < attempts; i++ {
+	for range attempts {
 		backoff *= 2
 		if backoff >= config.MaxBackoff {
 			return config.MaxBackoff
@@ -380,7 +381,8 @@ func isRateLimitError(err error) bool {
 	}
 
 	// Check if it's an EmbeddingError with quota issue
-	if embErr, ok := err.(*outbound.EmbeddingError); ok {
+	embErr := &outbound.EmbeddingError{}
+	if errors.As(err, &embErr) {
 		if embErr.IsQuotaError() {
 			return true
 		}

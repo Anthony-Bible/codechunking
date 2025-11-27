@@ -626,7 +626,7 @@ func (p *DefaultJobProcessor) findRepositoryRoot(workspacePath string) (string, 
 	return findGitRepositoryRoot(workspacePath)
 }
 
-// isQuotaError checks if the error is related to Google Gemini API quota exhaustion
+// isQuotaError checks if the error is related to Google Gemini API quota exhaustion.
 func isQuotaError(err error) bool {
 	if err == nil {
 		return false
@@ -1136,13 +1136,59 @@ func (p *DefaultJobProcessor) processProductionBatchResults(
 		}
 	}
 
+	// Process batches with fallback support
+	err := p.processBatchLoop(
+		ctx,
+		jobID,
+		indexingJobID,
+		repositoryID,
+		batches,
+		startBatch,
+		totalBatches,
+		embeddingOptions,
+		useAsyncSubmission,
+		execution,
+	)
+	if err != nil {
+		return err
+	}
+
+	if useAsyncSubmission {
+		slogger.Info(ctx, "All batches submitted asynchronously", slogger.Fields{
+			"job_id":        jobID,
+			"total_batches": totalBatches,
+			"total_chunks":  len(chunks),
+		})
+	} else {
+		slogger.Info(ctx, "All batches completed successfully (sync mode)", slogger.Fields{
+			"job_id":        jobID,
+			"total_batches": totalBatches,
+			"total_chunks":  len(chunks),
+		})
+	}
+
+	return nil
+}
+
+// processBatchLoop processes batches in a loop with fallback support.
+// This method is extracted from processProductionBatchResults to keep function length under 100 lines.
+func (p *DefaultJobProcessor) processBatchLoop(
+	ctx context.Context,
+	jobID string,
+	indexingJobID uuid.UUID,
+	repositoryID uuid.UUID,
+	batches [][]outbound.CodeChunk,
+	startBatch int,
+	totalBatches int,
+	embeddingOptions outbound.EmbeddingOptions,
+	useAsyncSubmission bool,
+	execution *JobExecution,
+) error {
 	slogger.Info(ctx, "Starting batch processing loop", slogger.Fields{
-		"job_id":         jobID,
-		"total_chunks":   len(chunks),
-		"total_batches":  totalBatches,
-		"start_batch":    startBatch + 1,
-		"max_batch_size": maxBatchSize,
-		"async_mode":     useAsyncSubmission,
+		"job_id":        jobID,
+		"total_batches": totalBatches,
+		"start_batch":   startBatch + 1,
+		"async_mode":    useAsyncSubmission,
 	})
 
 	for i := startBatch; i < totalBatches; i++ {
@@ -1173,25 +1219,39 @@ func (p *DefaultJobProcessor) processProductionBatchResults(
 				embeddingOptions,
 			)
 		} else {
-			err = p.processSyncBatch(ctx, jobID, indexingJobID, repositoryID, batchNumber, totalBatches, batch, texts, embeddingOptions, execution)
+			err = p.processSyncBatch(
+				ctx,
+				jobID,
+				indexingJobID,
+				repositoryID,
+				batchNumber,
+				totalBatches,
+				batch,
+				texts,
+				embeddingOptions,
+				execution,
+			)
 		}
 		if err != nil {
+			// Check if fallback is enabled and the error is retryable
+			if p.batchConfig.FallbackToSequential && p.shouldFallbackOnError(err) {
+				slogger.Warn(ctx, "Batch processing failed, falling back to sequential", slogger.Fields{
+					"job_id":       jobID,
+					"batch_number": batchNumber,
+					"error":        err.Error(),
+				})
+				// Fall back to sequential processing for remaining chunks (including current failed batch)
+				remainingChunks := p.collectRemainingChunks(batches, i)
+				return p.processSequentialEmbeddingsWithFallback(
+					ctx,
+					indexingJobID,
+					repositoryID,
+					remainingChunks,
+					execution,
+				)
+			}
 			return err
 		}
-	}
-
-	if useAsyncSubmission {
-		slogger.Info(ctx, "All batches submitted asynchronously", slogger.Fields{
-			"job_id":        jobID,
-			"total_batches": totalBatches,
-			"total_chunks":  len(chunks),
-		})
-	} else {
-		slogger.Info(ctx, "All batches completed successfully (sync mode)", slogger.Fields{
-			"job_id":        jobID,
-			"total_batches": totalBatches,
-			"total_chunks":  len(chunks),
-		})
 	}
 
 	return nil
@@ -1213,6 +1273,20 @@ func (p *DefaultJobProcessor) getBatchEmbeddingOptions() outbound.EmbeddingOptio
 		TaskType:          outbound.TaskTypeRetrievalDocument,
 		IncludeTokenCount: true,
 	}
+}
+
+// collectRemainingChunks collects all chunks from the current batch onwards.
+// This is used when batch processing fails and we need to fall back to sequential
+// processing for all remaining chunks (including the failed batch).
+func (p *DefaultJobProcessor) collectRemainingChunks(
+	batches [][]outbound.CodeChunk,
+	fromIndex int,
+) []outbound.CodeChunk {
+	var remaining []outbound.CodeChunk
+	for i := fromIndex; i < len(batches); i++ {
+		remaining = append(remaining, batches[i]...)
+	}
+	return remaining
 }
 
 // storeEmbeddingWithProgress stores a single embedding and updates progress tracking.
@@ -2267,11 +2341,8 @@ func (p *DefaultJobProcessor) processBatchWithRetry(
 ) ([]outbound.EmbeddingResult, error) {
 	var lastErr error
 
-	// Determine max retries (default to 3 if not configured)
+	// Use configured max retries (0 means no retries, only initial attempt)
 	maxRetries := p.batchConfig.MaxRetries
-	if maxRetries <= 0 {
-		maxRetries = 3
-	}
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		// Call embedding service

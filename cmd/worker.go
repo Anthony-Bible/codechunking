@@ -388,10 +388,12 @@ func createWorkerService(
 		codeParser,             // Now using real TreeSitter CodeParser
 		embeddingService,       // Using Gemini embedding service
 		chunkStorageRepository, // Repository for storing chunks and embeddings
-		cfg.BatchProcessing,    // Batch processing configuration
-		batchQueueManager,      // Optional: BatchQueueManager for enhanced processing
-		batchProgressRepo,      // Optional: BatchProgressRepository for tracking batch progress
-		batchEmbeddingService,  // Optional: BatchEmbeddingService for async batch operations
+		&worker.JobProcessorBatchOptions{
+			BatchConfig:           &cfg.BatchProcessing,
+			BatchQueueManager:     batchQueueManager,
+			BatchProgressRepo:     batchProgressRepo,
+			BatchEmbeddingService: batchEmbeddingService,
+		},
 	)
 
 	// Create consumer

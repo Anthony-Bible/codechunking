@@ -70,8 +70,10 @@ func TestProductionBatchProcessingCreatesRealBatchJob(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil, // No batch queue manager for this test
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil, // No batch queue manager for this test
+		},
 	).(*DefaultJobProcessor)
 
 	// Prepare test embeddings results for batch processing
@@ -172,8 +174,10 @@ func TestProductionBatchProcessingStoresResultsCorrectly(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil,
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil,
+		},
 	).(*DefaultJobProcessor)
 
 	// Prepare batch embedding results (50 embeddings)
@@ -293,8 +297,10 @@ func TestProductionBatchProcessingLogsBatchJobID(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil,
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil,
+		},
 	).(*DefaultJobProcessor)
 
 	// Prepare batch results
@@ -386,8 +392,10 @@ func TestProductionBatchFallsBackOnAPIFailure(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil,
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil,
+		},
 	).(*DefaultJobProcessor)
 
 	// Extract chunk texts
@@ -504,8 +512,10 @@ func TestBatchConfigurationWithMissingDirectories(t *testing.T) {
 		mockCodeParser,
 		mockEmbeddingService,
 		mockChunkStorageRepo,
-		batchConfig,
-		nil,
+		&JobProcessorBatchOptions{
+			BatchConfig:       &batchConfig,
+			BatchQueueManager: nil,
+		},
 	).(*DefaultJobProcessor)
 
 	// Extract chunk texts

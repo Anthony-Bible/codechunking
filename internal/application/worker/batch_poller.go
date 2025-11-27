@@ -61,7 +61,7 @@ func NewBatchPoller(
 
 // EncodeChunkIDToRequestID converts a chunk UUID to a Gemini-compatible RequestID.
 // Format: "chunk_<uuid_without_hyphens>"
-// Example: 550e8400-e29b-41d4-a716-446655440000 -> chunk_550e8400e29b41d4a716446655440000
+// Example: 550e8400-e29b-41d4-a716-446655440000 -> chunk_550e8400e29b41d4a716446655440000.
 func EncodeChunkIDToRequestID(chunkID uuid.UUID) string {
 	uuidStr := chunkID.String()
 	uuidWithoutHyphens := strings.ReplaceAll(uuidStr, "-", "")
@@ -314,12 +314,15 @@ func (p *BatchPoller) handleCompletedBatch(
 	batch *entity.BatchJobProgress,
 	job *outbound.BatchEmbeddingJob,
 ) (returnErr error) {
-	slogger.Info(ctx, "Batch job completed, processing results", slogger.Fields{
+	fields := slogger.Fields{
 		"batch_id":        batch.ID(),
-		"gemini_job_id":   *batch.GeminiBatchJobID(),
 		"indexing_job_id": batch.IndexingJobID(),
 		"batch_number":    batch.BatchNumber(),
-	})
+	}
+	if geminiJobID := batch.GeminiBatchJobID(); geminiJobID != nil {
+		fields["gemini_job_id"] = *geminiJobID
+	}
+	slogger.Info(ctx, "Batch job completed, processing results", fields)
 
 	// Process batch results with error tracking and automatic cleanup
 	return p.processBatchWithErrorTracking(ctx, batch)
@@ -339,11 +342,14 @@ func (p *BatchPoller) processBatchWithErrorTracking(ctx context.Context, batch *
 				processErr = fmt.Errorf("failed to save failed batch after processing error [%s]: %w", errMsg, saveErr)
 			}
 			// Log the failure with full context
-			slogger.Error(ctx, "Batch processing failed", slogger.Fields{
-				"batch_id":      batch.ID(),
-				"gemini_job_id": *batch.GeminiBatchJobID(),
-				"error":         errMsg,
-			})
+			errorFields := slogger.Fields{
+				"batch_id": batch.ID(),
+				"error":    errMsg,
+			}
+			if geminiJobID := batch.GeminiBatchJobID(); geminiJobID != nil {
+				errorFields["gemini_job_id"] = *geminiJobID
+			}
+			slogger.Error(ctx, "Batch processing failed", errorFields)
 		} else {
 			// Success - mark as completed
 			slogger.Info(ctx, "Batch marked as completed", slogger.Fields{
@@ -404,7 +410,11 @@ func (p *BatchPoller) downloadAndValidateBatchResults(
 	batch *entity.BatchJobProgress,
 ) ([]*outbound.EmbeddingResult, error) {
 	// Download batch results
-	results, err := p.batchEmbeddingService.GetBatchJobResults(ctx, *batch.GeminiBatchJobID())
+	geminiJobID := batch.GeminiBatchJobID()
+	if geminiJobID == nil {
+		return nil, errors.New("batch has no Gemini job ID")
+	}
+	results, err := p.batchEmbeddingService.GetBatchJobResults(ctx, *geminiJobID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get batch job results: %w", err)
 	}
@@ -508,12 +518,15 @@ func (p *BatchPoller) handleFailedBatch(
 		errorMsg = fmt.Sprintf("%s, error_file=%s", errorMsg, job.ErrorFileURI)
 	}
 
-	slogger.Error(ctx, "Batch job failed", slogger.Fields{
-		"batch_id":      batch.ID(),
-		"gemini_job_id": *batch.GeminiBatchJobID(),
-		"error":         errorMsg,
-		"retry_count":   batch.RetryCount(),
-	})
+	errorFields := slogger.Fields{
+		"batch_id":    batch.ID(),
+		"error":       errorMsg,
+		"retry_count": batch.RetryCount(),
+	}
+	if geminiJobID := batch.GeminiBatchJobID(); geminiJobID != nil {
+		errorFields["gemini_job_id"] = *geminiJobID
+	}
+	slogger.Error(ctx, "Batch job failed", errorFields)
 
 	// Check if we should retry
 	maxRetries := 3 // TODO: Make this configurable

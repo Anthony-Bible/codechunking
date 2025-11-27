@@ -12,20 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockTimeSleep is a helper to mock time.Sleep for testing backoff delays.
-// This will be used when dependency injection is added to the implementation.
-type sleepRecorder struct {
-	sleeps []time.Duration
-}
-
-func (s *sleepRecorder) Sleep(d time.Duration) {
-	s.sleeps = append(s.sleeps, d)
-}
-
-func (s *sleepRecorder) GetSleeps() []time.Duration {
-	return s.sleeps
-}
-
 // TestProcessBatchWithRetry_SuccessFirstAttempt verifies that when the embedding service
 // succeeds immediately, no retries occur and results are returned successfully.
 func TestProcessBatchWithRetry_SuccessFirstAttempt(t *testing.T) {
@@ -34,8 +20,8 @@ func TestProcessBatchWithRetry_SuccessFirstAttempt(t *testing.T) {
 	processor := &DefaultJobProcessor{
 		embeddingService: mockEmbedding,
 		batchConfig: config.BatchProcessingConfig{
-			InitialBackoff: 30 * time.Second,
-			MaxBackoff:     300 * time.Second,
+			InitialBackoff: 10 * time.Millisecond, // Fast for testing
+			MaxBackoff:     50 * time.Millisecond, // Fast for testing
 			MaxRetries:     3,
 		},
 	}
@@ -94,11 +80,10 @@ func TestProcessBatchWithRetry_QuotaErrorWithRetry(t *testing.T) {
 	processor := &DefaultJobProcessor{
 		embeddingService: mockEmbedding,
 		batchConfig: config.BatchProcessingConfig{
-			InitialBackoff: 30 * time.Second,
-			MaxBackoff:     300 * time.Second,
+			InitialBackoff: 10 * time.Millisecond, // Fast for testing
+			MaxBackoff:     50 * time.Millisecond, // Fast for testing
 			MaxRetries:     3,
 		},
-		// In real implementation, would need to inject sleep function
 	}
 
 	ctx := context.Background()
@@ -162,8 +147,8 @@ func TestProcessBatchWithRetry_ExponentialBackoff(t *testing.T) {
 	processor := &DefaultJobProcessor{
 		embeddingService: mockEmbedding,
 		batchConfig: config.BatchProcessingConfig{
-			InitialBackoff: 30 * time.Second,
-			MaxBackoff:     300 * time.Second,
+			InitialBackoff: 10 * time.Millisecond, // Fast for testing
+			MaxBackoff:     50 * time.Millisecond, // Fast for testing
 			MaxRetries:     3,
 		},
 	}
@@ -232,8 +217,8 @@ func TestProcessBatchWithRetry_MaxRetriesExceeded(t *testing.T) {
 	processor := &DefaultJobProcessor{
 		embeddingService: mockEmbedding,
 		batchConfig: config.BatchProcessingConfig{
-			InitialBackoff: 30 * time.Second,
-			MaxBackoff:     300 * time.Second,
+			InitialBackoff: 10 * time.Millisecond, // Fast for testing
+			MaxBackoff:     50 * time.Millisecond, // Fast for testing
 			MaxRetries:     3,
 		},
 	}
@@ -288,9 +273,9 @@ func TestProcessBatchWithRetry_MaxBackoffCap(t *testing.T) {
 	processor := &DefaultJobProcessor{
 		embeddingService: mockEmbedding,
 		batchConfig: config.BatchProcessingConfig{
-			InitialBackoff: 30 * time.Second,
-			MaxBackoff:     300 * time.Second,
-			MaxRetries:     5, // Allow more retries to test capping
+			InitialBackoff: 10 * time.Millisecond, // Fast for testing
+			MaxBackoff:     50 * time.Millisecond, // Fast for testing
+			MaxRetries:     5,                     // Allow more retries to test capping
 		},
 	}
 
@@ -361,8 +346,8 @@ func TestProcessBatchWithRetry_RetryAfterHeader(t *testing.T) {
 	processor := &DefaultJobProcessor{
 		embeddingService: mockEmbedding,
 		batchConfig: config.BatchProcessingConfig{
-			InitialBackoff: 30 * time.Second,
-			MaxBackoff:     300 * time.Second,
+			InitialBackoff: 10 * time.Millisecond, // Fast for testing
+			MaxBackoff:     50 * time.Millisecond, // Fast for testing
 			MaxRetries:     3,
 		},
 	}
@@ -429,8 +414,8 @@ func TestProcessBatchWithRetry_NonRetryableError(t *testing.T) {
 	processor := &DefaultJobProcessor{
 		embeddingService: mockEmbedding,
 		batchConfig: config.BatchProcessingConfig{
-			InitialBackoff: 30 * time.Second,
-			MaxBackoff:     300 * time.Second,
+			InitialBackoff: 10 * time.Millisecond, // Fast for testing
+			MaxBackoff:     50 * time.Millisecond, // Fast for testing
 			MaxRetries:     3,
 		},
 	}
@@ -484,8 +469,8 @@ func TestProcessBatchWithRetry_ContextCancellation(t *testing.T) {
 	processor := &DefaultJobProcessor{
 		embeddingService: mockEmbedding,
 		batchConfig: config.BatchProcessingConfig{
-			InitialBackoff: 30 * time.Second,
-			MaxBackoff:     300 * time.Second,
+			InitialBackoff: 10 * time.Millisecond, // Fast for testing
+			MaxBackoff:     50 * time.Millisecond, // Fast for testing
 			MaxRetries:     3,
 		},
 	}
@@ -511,8 +496,9 @@ func TestProcessBatchWithRetry_ContextCancellation(t *testing.T) {
 		Once()
 
 	// Cancel context after first failure to simulate cancellation during retry delay
+	// Use 5ms to ensure cancellation happens during the 10ms backoff sleep
 	go func() {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 		cancel()
 	}()
 
@@ -544,8 +530,8 @@ func TestProcessBatchWithRetry_MixedErrorTypes(t *testing.T) {
 	processor := &DefaultJobProcessor{
 		embeddingService: mockEmbedding,
 		batchConfig: config.BatchProcessingConfig{
-			InitialBackoff: 30 * time.Second,
-			MaxBackoff:     300 * time.Second,
+			InitialBackoff: 10 * time.Millisecond, // Fast for testing
+			MaxBackoff:     50 * time.Millisecond, // Fast for testing
 			MaxRetries:     3,
 		},
 	}
@@ -615,9 +601,9 @@ func TestProcessBatchWithRetry_ZeroMaxRetries(t *testing.T) {
 	processor := &DefaultJobProcessor{
 		embeddingService: mockEmbedding,
 		batchConfig: config.BatchProcessingConfig{
-			InitialBackoff: 30 * time.Second,
-			MaxBackoff:     300 * time.Second,
-			MaxRetries:     0, // No retries allowed
+			InitialBackoff: 10 * time.Millisecond, // Fast for testing
+			MaxBackoff:     50 * time.Millisecond, // Fast for testing
+			MaxRetries:     0,                     // No retries allowed
 		},
 	}
 
@@ -667,16 +653,4 @@ func convertToPointerSlice(results []outbound.EmbeddingResult) []*outbound.Embed
 		pointers[i] = &results[i]
 	}
 	return pointers
-}
-
-// assertApproximateDuration is a helper to assert a duration is within a tolerance.
-// This will be used when verifying actual sleep durations in the implementation.
-func assertApproximateDuration(t *testing.T, actual, expected, tolerance time.Duration) {
-	t.Helper()
-	diff := actual - expected
-	if diff < 0 {
-		diff = -diff
-	}
-	assert.LessOrEqual(t, diff, tolerance,
-		"Duration %v should be within %v of %v", actual, tolerance, expected)
 }

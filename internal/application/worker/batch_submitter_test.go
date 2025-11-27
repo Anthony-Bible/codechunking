@@ -683,7 +683,7 @@ func TestBatchSubmitter_MaxAttemptsExceeded(t *testing.T) {
 	batch.MarkPendingSubmission(requestData)
 
 	// Manually set submission attempts to 9
-	for i := 0; i < 9; i++ {
+	for range 9 {
 		batch.MarkSubmissionFailed("test error", time.Now().Add(1*time.Minute))
 	}
 
@@ -797,7 +797,7 @@ func TestBatchSubmitter_ConcurrencyControl(t *testing.T) {
 
 	// Create 5 batches ready for submission
 	batches := make([]*entity.BatchJobProgress, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		batches[i] = createTestBatchProgress(entity.StatusPendingSubmission, true)
 	}
 
@@ -858,7 +858,7 @@ func TestBatchSubmitter_ConcurrencyControl(t *testing.T) {
 
 	// Act - Submit batches concurrently
 	var wg sync.WaitGroup
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

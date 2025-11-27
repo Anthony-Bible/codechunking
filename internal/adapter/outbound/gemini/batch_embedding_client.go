@@ -921,7 +921,7 @@ func (c *BatchEmbeddingClient) downloadAndParseResults(
 		// - Downloaded using a batch-specific method
 		//
 		// Since none of these are currently implemented, we'll return a clear error
-		//if strings.HasPrefix(outputFileURI, "files/batch-") {
+		// if strings.HasPrefix(outputFileURI, "files/batch-") {
 		//	return nil, fmt.Errorf(
 		//		"batch output file '%s' cannot be downloaded: "+
 		//			"Google's Batch API returns file references (files/batch-xxx) that exceed the Files API 40-character limit "+

@@ -529,9 +529,10 @@ func createBatchProgress(
 		chunksProcessed,
 		status,
 		0,
-		nil,
-		nil,
+		nil, // nextRetryAt
+		nil, // errorMessage
 		nil, // geminiBatchJobID
+		nil, // geminiFileURI
 		now,
 		now,
 		nil, // batchRequestData

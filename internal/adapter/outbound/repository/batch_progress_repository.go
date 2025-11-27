@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// SQL query constants to avoid repetition
+// SQL query constants to avoid repetition.
 const (
 	batchJobProgressFields = `
 		id, repository_id, indexing_job_id, batch_number, total_batches, chunks_processed,

@@ -18,7 +18,7 @@ import (
 // MockMessagePublisherWithHealth combines MessagePublisher and MessagePublisherHealth.
 type MockMessagePublisherWithHealth struct {
 	// MessagePublisher methods
-	publishFunc func(ctx context.Context, repositoryID, repositoryURL string) error
+	publishFunc func(ctx context.Context, indexingJobID, repositoryID uuid.UUID, repositoryURL string) error
 
 	// Health monitoring methods
 	healthStatus outbound.MessagePublisherHealthStatus
@@ -47,11 +47,12 @@ func NewMockMessagePublisherWithHealth() *MockMessagePublisherWithHealth {
 
 func (m *MockMessagePublisherWithHealth) PublishIndexingJob(
 	ctx context.Context,
+	indexingJobID uuid.UUID,
 	repositoryID uuid.UUID,
 	repositoryURL string,
 ) error {
 	if m.publishFunc != nil {
-		return m.publishFunc(ctx, repositoryID.String(), repositoryURL)
+		return m.publishFunc(ctx, indexingJobID, repositoryID, repositoryURL)
 	}
 	if m.simulateError {
 		return errors.New("message publishing failed")

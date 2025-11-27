@@ -24,10 +24,11 @@ func TestApplicationServiceInterfaces_MustExist(t *testing.T) {
 	t.Run("CreateRepositoryService interface must exist", func(t *testing.T) {
 		// This test will fail until NewCreateRepositoryService function exists
 		mockRepo := new(MockRepositoryRepository)
+		mockJobRepo := new(MockIndexingJobRepository)
 		mockPublisher := new(MockMessagePublisher)
 
 		// This line will cause compilation error until service is implemented
-		service := NewCreateRepositoryService(mockRepo, mockPublisher)
+		service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 		assert.NotNil(t, service)
 	})
 
@@ -101,8 +102,9 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 		// Test case: Auto-generate name from URL if not provided
 		t.Run("should auto-generate name from URL when name is empty", func(t *testing.T) {
 			mockRepo := new(MockRepositoryRepository)
+			mockJobRepo := new(MockIndexingJobRepository)
 			mockPublisher := new(MockMessagePublisher)
-			service := NewCreateRepositoryService(mockRepo, mockPublisher)
+			service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 			request := dto.CreateRepositoryRequest{
 				URL: "https://github.com/golang/go",
@@ -112,7 +114,8 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 			mockRepo.On("Exists", context.Background(), mock.AnythingOfType("valueobject.RepositoryURL")).
 				Return(false, nil)
 			mockRepo.On("Save", context.Background(), mock.AnythingOfType("*entity.Repository")).Return(nil)
-			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
+			mockJobRepo.On("Save", context.Background(), mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
+			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
 				Return(nil)
 
 			response, err := service.CreateRepository(context.Background(), request)
@@ -124,8 +127,9 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 		// Test case: URL normalization
 		t.Run("should_normalize_repository_URL_by_removing_.git_suffix", func(t *testing.T) {
 			mockRepo := new(MockRepositoryRepository)
+			mockJobRepo := new(MockIndexingJobRepository)
 			mockPublisher := new(MockMessagePublisher)
-			service := NewCreateRepositoryService(mockRepo, mockPublisher)
+			service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 			request := dto.CreateRepositoryRequest{
 				URL:  "https://github.com/golang/go.git", // With .git suffix
@@ -135,7 +139,8 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 			mockRepo.On("Exists", context.Background(), mock.AnythingOfType("valueobject.RepositoryURL")).
 				Return(false, nil)
 			mockRepo.On("Save", context.Background(), mock.AnythingOfType("*entity.Repository")).Return(nil)
-			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
+			mockJobRepo.On("Save", context.Background(), mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
+			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
 				Return(nil)
 
 			response, err := service.CreateRepository(context.Background(), request)
@@ -147,8 +152,9 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 		// Test case: Business rule validation
 		t.Run("should enforce repository URL validation rules", func(t *testing.T) {
 			mockRepo := new(MockRepositoryRepository)
+			mockJobRepo := new(MockIndexingJobRepository)
 			mockPublisher := new(MockMessagePublisher)
-			service := NewCreateRepositoryService(mockRepo, mockPublisher)
+			service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 			invalidURLs := []string{
 				"not-a-url",

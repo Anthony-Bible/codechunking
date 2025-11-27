@@ -101,16 +101,18 @@ type MockMessagePublisher struct {
 
 func (m *MockMessagePublisher) PublishIndexingJob(
 	ctx context.Context,
+	indexingJobID uuid.UUID,
 	repositoryID uuid.UUID,
 	repositoryURL string,
 ) error {
-	args := m.Called(ctx, repositoryID, repositoryURL)
+	args := m.Called(ctx, indexingJobID, repositoryID, repositoryURL)
 	return args.Error(0)
 }
 
 func TestCreateRepositoryService_CreateRepository_Success(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+	mockJobRepo := new(MockIndexingJobRepository)
 	mockPublisher := new(MockMessagePublisher)
 
 	// Set up silent logger for tests to avoid logging side effects
@@ -125,7 +127,7 @@ func TestCreateRepositoryService_CreateRepository_Success(t *testing.T) {
 	slogger.SetGlobalLogger(silentLogger)
 	defer slogger.SetGlobalLogger(nil)
 
-	service := NewCreateRepositoryService(mockRepo, mockPublisher)
+	service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
 		URL:           "https://github.com/golang/go",
@@ -137,7 +139,8 @@ func TestCreateRepositoryService_CreateRepository_Success(t *testing.T) {
 	// Mock expectations
 	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
-	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
+	mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
+	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
 		Return(nil)
 
 	ctx := context.Background()
@@ -166,6 +169,7 @@ func TestCreateRepositoryService_CreateRepository_Success(t *testing.T) {
 func TestCreateRepositoryService_CreateRepository_InvalidURL(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+	mockJobRepo := new(MockIndexingJobRepository)
 	mockPublisher := new(MockMessagePublisher)
 
 	// Set up silent logger for tests to avoid logging side effects
@@ -180,7 +184,7 @@ func TestCreateRepositoryService_CreateRepository_InvalidURL(t *testing.T) {
 	slogger.SetGlobalLogger(silentLogger)
 	defer slogger.SetGlobalLogger(nil)
 
-	service := NewCreateRepositoryService(mockRepo, mockPublisher)
+	service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
 		URL:  "invalid-url",
@@ -206,6 +210,7 @@ func TestCreateRepositoryService_CreateRepository_InvalidURL(t *testing.T) {
 func TestCreateRepositoryService_CreateRepository_RepositoryAlreadyExists(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+	mockJobRepo := new(MockIndexingJobRepository)
 	mockPublisher := new(MockMessagePublisher)
 
 	// Set up silent logger for tests to avoid logging side effects
@@ -220,7 +225,7 @@ func TestCreateRepositoryService_CreateRepository_RepositoryAlreadyExists(t *tes
 	slogger.SetGlobalLogger(silentLogger)
 	defer slogger.SetGlobalLogger(nil)
 
-	service := NewCreateRepositoryService(mockRepo, mockPublisher)
+	service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
 		URL:  "https://github.com/golang/go",
@@ -248,6 +253,7 @@ func TestCreateRepositoryService_CreateRepository_RepositoryAlreadyExists(t *tes
 func TestCreateRepositoryService_CreateRepository_RepositoryExistsCheckFails(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+	mockJobRepo := new(MockIndexingJobRepository)
 	mockPublisher := new(MockMessagePublisher)
 
 	// Set up silent logger for tests to avoid logging side effects
@@ -262,7 +268,7 @@ func TestCreateRepositoryService_CreateRepository_RepositoryExistsCheckFails(t *
 	slogger.SetGlobalLogger(silentLogger)
 	defer slogger.SetGlobalLogger(nil)
 
-	service := NewCreateRepositoryService(mockRepo, mockPublisher)
+	service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
 		URL:  "https://github.com/golang/go",
@@ -291,6 +297,7 @@ func TestCreateRepositoryService_CreateRepository_RepositoryExistsCheckFails(t *
 func TestCreateRepositoryService_CreateRepository_SaveFails(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+	mockJobRepo := new(MockIndexingJobRepository)
 	mockPublisher := new(MockMessagePublisher)
 
 	// Set up silent logger for tests to avoid logging side effects
@@ -305,7 +312,7 @@ func TestCreateRepositoryService_CreateRepository_SaveFails(t *testing.T) {
 	slogger.SetGlobalLogger(silentLogger)
 	defer slogger.SetGlobalLogger(nil)
 
-	service := NewCreateRepositoryService(mockRepo, mockPublisher)
+	service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
 		URL:  "https://github.com/golang/go",
@@ -334,6 +341,7 @@ func TestCreateRepositoryService_CreateRepository_SaveFails(t *testing.T) {
 func TestCreateRepositoryService_CreateRepository_PublishJobFails(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+	mockJobRepo := new(MockIndexingJobRepository)
 	mockPublisher := new(MockMessagePublisher)
 
 	// Set up silent logger for tests to avoid logging side effects
@@ -348,7 +356,7 @@ func TestCreateRepositoryService_CreateRepository_PublishJobFails(t *testing.T) 
 	slogger.SetGlobalLogger(silentLogger)
 	defer slogger.SetGlobalLogger(nil)
 
-	service := NewCreateRepositoryService(mockRepo, mockPublisher)
+	service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
 		URL:  "https://github.com/golang/go",
@@ -358,7 +366,8 @@ func TestCreateRepositoryService_CreateRepository_PublishJobFails(t *testing.T) 
 	publishError := errors.New("message queue unavailable")
 	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
-	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
+	mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
+	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
 		Return(publishError)
 
 	ctx := context.Background()
@@ -379,6 +388,7 @@ func TestCreateRepositoryService_CreateRepository_PublishJobFails(t *testing.T) 
 func TestCreateRepositoryService_CreateRepository_AutoGeneratesNameFromURL(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockRepositoryRepository)
+	mockJobRepo := new(MockIndexingJobRepository)
 	mockPublisher := new(MockMessagePublisher)
 
 	// Set up silent logger for tests to avoid logging side effects
@@ -393,7 +403,7 @@ func TestCreateRepositoryService_CreateRepository_AutoGeneratesNameFromURL(t *te
 	slogger.SetGlobalLogger(silentLogger)
 	defer slogger.SetGlobalLogger(nil)
 
-	service := NewCreateRepositoryService(mockRepo, mockPublisher)
+	service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 	request := dto.CreateRepositoryRequest{
 		URL: "https://github.com/golang/go",
@@ -402,7 +412,8 @@ func TestCreateRepositoryService_CreateRepository_AutoGeneratesNameFromURL(t *te
 
 	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
-	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
+	mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
+	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
 		Return(nil)
 
 	ctx := context.Background()

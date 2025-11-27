@@ -29,7 +29,7 @@ type MockMessagePublisherWithHealthMonitoring struct {
 	mu sync.RWMutex
 
 	// MessagePublisher interface
-	PublishIndexingJobFunc func(ctx context.Context, repositoryID uuid.UUID, repositoryURL string) error
+	PublishIndexingJobFunc func(ctx context.Context, indexingJobID, repositoryID uuid.UUID, repositoryURL string) error
 
 	// Health monitoring data
 	connectionHealth outbound.MessagePublisherHealthStatus
@@ -44,6 +44,7 @@ type MockMessagePublisherWithHealthMonitoring struct {
 
 type PublishIndexingJobCall struct {
 	Ctx           context.Context
+	IndexingJobID uuid.UUID
 	RepositoryID  uuid.UUID
 	RepositoryURL string
 	Timestamp     time.Time
@@ -72,6 +73,7 @@ func NewMockMessagePublisherWithHealthMonitoring() *MockMessagePublisherWithHeal
 // PublishIndexingJob publishes an indexing job message and tracks the call for testing.
 func (m *MockMessagePublisherWithHealthMonitoring) PublishIndexingJob(
 	ctx context.Context,
+	indexingJobID uuid.UUID,
 	repositoryID uuid.UUID,
 	repositoryURL string,
 ) error {
@@ -81,6 +83,7 @@ func (m *MockMessagePublisherWithHealthMonitoring) PublishIndexingJob(
 	// Record the call
 	m.publishCalls = append(m.publishCalls, PublishIndexingJobCall{
 		Ctx:           ctx,
+		IndexingJobID: indexingJobID,
 		RepositoryID:  repositoryID,
 		RepositoryURL: repositoryURL,
 		Timestamp:     time.Now(),
@@ -93,7 +96,7 @@ func (m *MockMessagePublisherWithHealthMonitoring) PublishIndexingJob(
 
 	// Use custom function if provided
 	if m.PublishIndexingJobFunc != nil {
-		return m.PublishIndexingJobFunc(ctx, repositoryID, repositoryURL)
+		return m.PublishIndexingJobFunc(ctx, indexingJobID, repositoryID, repositoryURL)
 	}
 
 	// Update metrics based on success/failure

@@ -161,8 +161,9 @@ func TestRepositoryService_URLValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			mockRepo := &MockRepositoryRepository{}
+			mockJobRepo := new(MockIndexingJobRepository)
 			mockPublisher := &MockMessagePublisher{}
-			service := NewCreateRepositoryService(mockRepo, mockPublisher)
+			service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 			// Execute
 			_, err := service.CreateRepository(context.Background(), tt.request)
@@ -230,8 +231,9 @@ func TestRepositoryService_SuccessfulURLValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			mockRepo := &MockRepositoryRepository{}
+			mockJobRepo := new(MockIndexingJobRepository)
 			mockPublisher := &MockMessagePublisher{}
-			service := NewCreateRepositoryService(mockRepo, mockPublisher)
+			service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 			// Mock repository doesn't exist
 			mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).
@@ -239,9 +241,10 @@ func TestRepositoryService_SuccessfulURLValidation(t *testing.T) {
 
 			// Mock successful save
 			mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
+			mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
 
 			// Mock successful message publish
-			mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+			mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
 				Return(nil)
 
 			// Execute
@@ -284,8 +287,9 @@ func TestRepositoryService_URLValidationErrorPropagation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			mockRepo := &MockRepositoryRepository{}
+			mockJobRepo := new(MockIndexingJobRepository)
 			mockPublisher := &MockMessagePublisher{}
-			service := NewCreateRepositoryService(mockRepo, mockPublisher)
+			service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 			request := dto.CreateRepositoryRequest{
 				URL: tt.url,
@@ -365,15 +369,17 @@ func TestRepositoryService_URLValidationEdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup
 			mockRepo := &MockRepositoryRepository{}
+			mockJobRepo := new(MockIndexingJobRepository)
 			mockPublisher := &MockMessagePublisher{}
-			service := NewCreateRepositoryService(mockRepo, mockPublisher)
+			service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 			// Setup mocks for valid URLs BEFORE execution
 			if !tt.shouldFail {
 				mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).
 					Return(false, nil)
 				mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
-				mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
+				mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
+				mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).
 					Return(nil)
 			}
 

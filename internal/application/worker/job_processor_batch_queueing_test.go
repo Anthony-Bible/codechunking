@@ -26,7 +26,7 @@ import (
 // CURRENT BEHAVIOR (WHY THIS FAILS):
 // - submitBatchJobAsync() immediately calls CreateBatchEmbeddingJobWithRequests()
 // - Batch progress status is set to "processing" after submission
-// - No request data is stored - batch is submitted immediately
+// - No request data is stored - batch is submitted immediately.
 func TestJobProcessor_SubmitBatchJobAsync_QueuesForSubmission(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -150,7 +150,7 @@ func TestJobProcessor_SubmitBatchJobAsync_QueuesForSubmission(t *testing.T) {
 //
 // CURRENT BEHAVIOR (WHY THIS FAILS):
 // - No request data is stored (current implementation submits immediately)
-// - BatchRequestData() returns nil
+// - BatchRequestData() returns nil.
 func TestJobProcessor_SubmitBatchJobAsync_SerializesRequestData(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -246,7 +246,7 @@ func TestJobProcessor_SubmitBatchJobAsync_SerializesRequestData(t *testing.T) {
 // - Metadata field should be present (may be empty)
 //
 // CURRENT BEHAVIOR (WHY THIS FAILS):
-// - No request data is stored
+// - No request data is stored.
 func TestJobProcessor_SubmitBatchJobAsync_RequestDataFormat(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -325,7 +325,7 @@ func TestJobProcessor_SubmitBatchJobAsync_RequestDataFormat(t *testing.T) {
 // - No batch should be submitted
 //
 // CURRENT BEHAVIOR:
-// - Error is handled, but we need to ensure no partial state is created
+// - Error is handled, but we need to ensure no partial state is created.
 func TestJobProcessor_SubmitBatchJobAsync_ChunkSaveError(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -389,7 +389,7 @@ func TestJobProcessor_SubmitBatchJobAsync_ChunkSaveError(t *testing.T) {
 //
 // CURRENT BEHAVIOR (WHY THIS FAILS):
 // - Currently, if batch progress save fails, chunks are saved but no progress record exists
-// - With new implementation, this should happen BEFORE Gemini submission
+// - With new implementation, this should happen BEFORE Gemini submission.
 func TestJobProcessor_SubmitBatchJobAsync_BatchProgressSaveError(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -459,7 +459,7 @@ func TestJobProcessor_SubmitBatchJobAsync_BatchProgressSaveError(t *testing.T) {
 // CURRENT BEHAVIOR (WHY THIS FAILS):
 // - Batches are submitted immediately to Gemini API
 // - Status is set to "processing" after submission
-// - CreateBatchEmbeddingJobWithRequests is called for each batch
+// - CreateBatchEmbeddingJobWithRequests is called for each batch.
 func TestJobProcessor_ProcessJob_WithBatching_QueuesAllBatches(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -470,7 +470,7 @@ func TestJobProcessor_ProcessJob_WithBatching_QueuesAllBatches(t *testing.T) {
 	// Threshold = 10, batch size = 100, so 250 chunks = 3 batches
 	numChunks := 250
 	chunks := make([]outbound.CodeChunk, numChunks)
-	for i := 0; i < numChunks; i++ {
+	for i := range numChunks {
 		chunks[i] = outbound.CodeChunk{
 			ID:           uuid.New().String(),
 			RepositoryID: repositoryID,
@@ -553,7 +553,7 @@ func TestJobProcessor_ProcessJob_WithBatching_QueuesAllBatches(t *testing.T) {
 // - GenerateEmbedding (sequential) should be called
 //
 // CURRENT BEHAVIOR:
-// - This should still work, but we need to ensure new queueing logic doesn't break it
+// - This should still work, but we need to ensure new queueing logic doesn't break it.
 func TestJobProcessor_ProcessJob_FallbackToSequential_StillWorks(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -630,7 +630,7 @@ func TestJobProcessor_ProcessJob_FallbackToSequential_StillWorks(t *testing.T) {
 // - No batch progress should be created
 //
 // CURRENT BEHAVIOR:
-// - Error is returned (this should continue to work)
+// - Error is returned (this should continue to work).
 func TestJobProcessor_SubmitBatchJobAsync_NoBatchEmbeddingService(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -686,7 +686,7 @@ func TestJobProcessor_SubmitBatchJobAsync_NoBatchEmbeddingService(t *testing.T) 
 // - Each request should correspond to a chunk
 //
 // CURRENT BEHAVIOR (WHY THIS FAILS):
-// - No request data is stored currently
+// - No request data is stored currently.
 func TestJobProcessor_SubmitBatchJobAsync_MultipleChunks_CorrectRequestCount(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -696,7 +696,7 @@ func TestJobProcessor_SubmitBatchJobAsync_MultipleChunks_CorrectRequestCount(t *
 	// Create 5 chunks
 	numChunks := 5
 	chunks := make([]outbound.CodeChunk, numChunks)
-	for i := 0; i < numChunks; i++ {
+	for i := range numChunks {
 		chunks[i] = outbound.CodeChunk{
 			ID:           uuid.New().String(),
 			RepositoryID: repositoryID,

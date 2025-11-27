@@ -154,6 +154,32 @@ func (m *MockEmbeddingServiceWithDelay) EstimateTokenCount(ctx context.Context, 
 	return len(text) / 4, nil
 }
 
+func (m *MockEmbeddingServiceWithDelay) CountTokens(
+	ctx context.Context,
+	text string,
+	model string,
+) (*outbound.TokenCountResult, error) {
+	return &outbound.TokenCountResult{
+		TotalTokens: len(text) / 4,
+		Model:       model,
+	}, nil
+}
+
+func (m *MockEmbeddingServiceWithDelay) CountTokensBatch(
+	ctx context.Context,
+	texts []string,
+	model string,
+) ([]*outbound.TokenCountResult, error) {
+	results := make([]*outbound.TokenCountResult, len(texts))
+	for i, text := range texts {
+		results[i] = &outbound.TokenCountResult{
+			TotalTokens: len(text) / 4,
+			Model:       model,
+		}
+	}
+	return results, nil
+}
+
 // RED PHASE TESTS - All tests should FAIL initially
 
 func TestMockEmbeddingServiceFailure(t *testing.T) {

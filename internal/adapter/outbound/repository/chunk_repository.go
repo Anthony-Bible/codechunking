@@ -35,10 +35,13 @@ const (
 		INSERT INTO codechunking.code_chunks (
 			id, repository_id, file_path, chunk_type, content, language,
 			start_line, end_line, entity_name, parent_entity, content_hash, metadata,
-			qualified_name, signature, visibility
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			qualified_name, signature, visibility, token_count, token_counted_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		ON CONFLICT (repository_id, file_path, content_hash)
-		DO UPDATE SET id = code_chunks.id
+		DO UPDATE SET
+			id = code_chunks.id,
+			token_count = COALESCE(EXCLUDED.token_count, code_chunks.token_count),
+			token_counted_at = COALESCE(EXCLUDED.token_counted_at, code_chunks.token_counted_at)
 		RETURNING id
 	`
 
@@ -285,6 +288,8 @@ func (r *PostgreSQLChunkRepository) SaveChunk(ctx context.Context, chunk *outbou
 		qualifiedName,
 		signature,
 		visibility,
+		chunk.TokenCount,
+		chunk.TokenCountedAt,
 	).Scan(&actualChunkID)
 	if err != nil {
 		slogger.Error(ctx, "Failed to save chunk", slogger.Fields{
@@ -404,6 +409,8 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 			qualifiedName,
 			signature,
 			visibility,
+			chunk.TokenCount,
+			chunk.TokenCountedAt,
 		).Scan(&actualChunkID)
 		if err != nil {
 			slogger.Error(ctx, "Failed to save chunk in batch", slogger.Fields{
@@ -464,14 +471,18 @@ func (r *PostgreSQLChunkRepository) FindOrCreateChunks(
 	}()
 
 	// Use a query that returns the actual persisted ID (whether new or existing)
+	// On conflict, preserve existing token_count (find or create, not update)
 	query := `
 		INSERT INTO codechunking.code_chunks (
 			id, repository_id, file_path, chunk_type, content, language,
 			start_line, end_line, entity_name, parent_entity, content_hash, metadata,
-			qualified_name, signature, visibility
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			qualified_name, signature, visibility, token_count, token_counted_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		ON CONFLICT (repository_id, file_path, content_hash)
-		DO UPDATE SET id = code_chunks.id
+		DO UPDATE SET
+			id = code_chunks.id,
+			token_count = COALESCE(code_chunks.token_count, EXCLUDED.token_count),
+			token_counted_at = COALESCE(code_chunks.token_counted_at, EXCLUDED.token_counted_at)
 		RETURNING id
 	`
 
@@ -554,6 +565,8 @@ func (r *PostgreSQLChunkRepository) FindOrCreateChunks(
 			qualifiedName,
 			signature,
 			visibility,
+			chunk.TokenCount,
+			chunk.TokenCountedAt,
 		).Scan(&returnedID)
 		if err != nil {
 			slogger.Error(ctx, "Failed to insert/find chunk", slogger.Fields{
@@ -597,7 +610,8 @@ func (r *PostgreSQLChunkRepository) FindOrCreateChunks(
 func (r *PostgreSQLChunkRepository) GetChunk(ctx context.Context, id uuid.UUID) (*outbound.CodeChunk, error) {
 	query := `
 		SELECT id, file_path, start_line, end_line, content, language, content_hash, created_at,
-		       chunk_type, COALESCE(entity_name, ''), COALESCE(parent_entity, ''), COALESCE(qualified_name, ''), COALESCE(signature, ''), COALESCE(visibility, '')
+		       chunk_type, COALESCE(entity_name, ''), COALESCE(parent_entity, ''), COALESCE(qualified_name, ''), COALESCE(signature, ''), COALESCE(visibility, ''),
+		       token_count, token_counted_at
 		FROM codechunking.code_chunks
 		WHERE id = $1 AND deleted_at IS NULL
 	`
@@ -620,6 +634,8 @@ func (r *PostgreSQLChunkRepository) GetChunk(ctx context.Context, id uuid.UUID) 
 		&chunk.QualifiedName,
 		&chunk.Signature,
 		&chunk.Visibility,
+		&chunk.TokenCount,
+		&chunk.TokenCountedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -647,7 +663,8 @@ func (r *PostgreSQLChunkRepository) GetChunksForRepository(
 ) ([]outbound.CodeChunk, error) {
 	query := `
 		SELECT id, file_path, start_line, end_line, content, language, content_hash, created_at,
-		       chunk_type, COALESCE(entity_name, ''), COALESCE(parent_entity, ''), COALESCE(qualified_name, ''), COALESCE(signature, ''), COALESCE(visibility, '')
+		       chunk_type, COALESCE(entity_name, ''), COALESCE(parent_entity, ''), COALESCE(qualified_name, ''), COALESCE(signature, ''), COALESCE(visibility, ''),
+		       token_count, token_counted_at
 		FROM codechunking.code_chunks
 		WHERE repository_id = $1 AND deleted_at IS NULL
 		ORDER BY file_path, start_line
@@ -683,6 +700,8 @@ func (r *PostgreSQLChunkRepository) GetChunksForRepository(
 			&chunk.QualifiedName,
 			&chunk.Signature,
 			&chunk.Visibility,
+			&chunk.TokenCount,
+			&chunk.TokenCountedAt,
 		)
 		if err != nil {
 			slogger.Error(ctx, "Failed to scan chunk row", slogger.Fields2(
@@ -1581,6 +1600,8 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 		fields.QualifiedName,
 		fields.Signature,
 		fields.Visibility,
+		chunk.TokenCount,
+		chunk.TokenCountedAt,
 	).Scan(&actualChunkID)
 	if err != nil {
 		slogger.Error(ctx, "Failed to save chunk in transaction", slogger.Fields{
@@ -1710,6 +1731,53 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingInTx(
 		return fmt.Errorf("failed to save embedding in transaction: %w", err)
 	}
 
+	return nil
+}
+
+// UpdateTokenCounts updates the token count for multiple chunks in a batch operation.
+func (r *PostgreSQLChunkRepository) UpdateTokenCounts(ctx context.Context, updates []outbound.ChunkTokenUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		slogger.Error(ctx, "Failed to begin transaction for UpdateTokenCounts", slogger.Field("error", err.Error()))
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			slogger.Warn(ctx, "Failed to rollback UpdateTokenCounts transaction", slogger.Field("error", err.Error()))
+		}
+	}()
+
+	query := `
+		UPDATE codechunking.code_chunks
+		SET token_count = $1, token_counted_at = $2
+		WHERE id = $3 AND deleted_at IS NULL
+	`
+
+	for _, update := range updates {
+		_, err := tx.Exec(ctx, query, update.TokenCount, update.TokenCountedAt, update.ChunkID)
+		if err != nil {
+			slogger.Error(ctx, "Failed to update token count", slogger.Fields{
+				"chunk_id":    update.ChunkID.String(),
+				"token_count": update.TokenCount,
+				"error":       err.Error(),
+			})
+			return fmt.Errorf("failed to update token count for chunk %s: %w", update.ChunkID.String(), err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slogger.Error(ctx, "Failed to commit UpdateTokenCounts transaction", slogger.Fields2(
+			"update_count", len(updates),
+			"error", err.Error(),
+		))
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	slogger.Debug(ctx, "Token counts updated successfully", slogger.Field("update_count", len(updates)))
 	return nil
 }
 
@@ -1852,6 +1920,8 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			qualifiedName,
 			signature,
 			visibility,
+			chunk.TokenCount,
+			chunk.TokenCountedAt,
 		).Scan(&actualChunkID)
 		if err != nil {
 			slogger.Error(ctx, "Failed to save chunk in batch transaction", slogger.Fields{

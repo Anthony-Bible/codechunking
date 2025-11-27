@@ -70,6 +70,32 @@ func (m *mockEmbeddingService) EstimateTokenCount(ctx context.Context, text stri
 	return len(text) / 4, nil
 }
 
+func (m *mockEmbeddingService) CountTokens(
+	ctx context.Context,
+	text string,
+	model string,
+) (*outbound.TokenCountResult, error) {
+	return &outbound.TokenCountResult{
+		TotalTokens: len(text) / 4,
+		Model:       model,
+	}, nil
+}
+
+func (m *mockEmbeddingService) CountTokensBatch(
+	ctx context.Context,
+	texts []string,
+	model string,
+) ([]*outbound.TokenCountResult, error) {
+	results := make([]*outbound.TokenCountResult, len(texts))
+	for i, text := range texts {
+		results[i] = &outbound.TokenCountResult{
+			TotalTokens: len(text) / 4,
+			Model:       model,
+		}
+	}
+	return results, nil
+}
+
 // Test helper to create a manager with mocks.
 func createTestManager() outbound.BatchQueueManager {
 	embeddingService := &mockEmbeddingService{}

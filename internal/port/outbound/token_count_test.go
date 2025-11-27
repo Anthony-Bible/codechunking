@@ -15,7 +15,7 @@ func newTestEmbeddingService() EmbeddingService {
 	return &testEmbeddingService{}
 }
 
-// Stub implementations that return errors (for red phase)
+// Stub implementations that return errors (for red phase).
 func (s *testEmbeddingService) GenerateEmbedding(
 	_ context.Context,
 	_ string,
@@ -56,7 +56,7 @@ func (s *testEmbeddingService) EstimateTokenCount(_ context.Context, _ string) (
 	return 0, errors.New("not implemented")
 }
 
-// CountTokens stub - returns error to make tests fail
+// CountTokens stub - returns error to make tests fail.
 func (s *testEmbeddingService) CountTokens(
 	_ context.Context,
 	text string,
@@ -75,7 +75,7 @@ func (s *testEmbeddingService) CountTokens(
 	return nil, errors.New("CountTokens not implemented")
 }
 
-// CountTokensBatch stub - returns error to make tests fail
+// CountTokensBatch stub - returns error to make tests fail.
 func (s *testEmbeddingService) CountTokensBatch(
 	_ context.Context,
 	texts []string,

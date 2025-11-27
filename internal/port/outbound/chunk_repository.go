@@ -26,6 +26,16 @@ type CodeChunk struct {
 	QualifiedName string `json:"qualified_name,omitempty"` // Fully qualified name
 	Signature     string `json:"signature,omitempty"`      // Function/method signature
 	Visibility    string `json:"visibility,omitempty"`     // Visibility modifier (public, private, protected)
+	// Token counting fields
+	TokenCount     int        `json:"token_count,omitempty"`      // Exact token count from Google CountTokens API
+	TokenCountedAt *time.Time `json:"token_counted_at,omitempty"` // Timestamp when token count was retrieved
+}
+
+// ChunkTokenUpdate represents a token count update for a specific chunk.
+type ChunkTokenUpdate struct {
+	ChunkID        uuid.UUID  `json:"chunk_id"`
+	TokenCount     int        `json:"token_count"`
+	TokenCountedAt *time.Time `json:"token_counted_at"`
 }
 
 // ChunkRepository defines operations for storing and retrieving code chunks.
@@ -52,6 +62,9 @@ type ChunkRepository interface {
 
 	// CountChunksForRepository returns the number of chunks for a repository.
 	CountChunksForRepository(ctx context.Context, repositoryID uuid.UUID) (int, error)
+
+	// UpdateTokenCounts updates the token count for multiple chunks in a batch operation.
+	UpdateTokenCounts(ctx context.Context, updates []ChunkTokenUpdate) error
 }
 
 // EmbeddingRepository defines operations for storing and retrieving embeddings.

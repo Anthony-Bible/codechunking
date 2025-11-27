@@ -145,6 +145,30 @@ func (m *MockEmbeddingService) EstimateTokenCount(ctx context.Context, text stri
 	return args.Int(0), args.Error(1)
 }
 
+func (m *MockEmbeddingService) CountTokens(
+	ctx context.Context,
+	text string,
+	model string,
+) (*outbound.TokenCountResult, error) {
+	args := m.Called(ctx, text, model)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.TokenCountResult), args.Error(1)
+}
+
+func (m *MockEmbeddingService) CountTokensBatch(
+	ctx context.Context,
+	texts []string,
+	model string,
+) ([]*outbound.TokenCountResult, error) {
+	args := m.Called(ctx, texts, model)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*outbound.TokenCountResult), args.Error(1)
+}
+
 // MockChunkRepository is a mock implementation for retrieving chunk information.
 type MockChunkRepository struct {
 	mock.Mock

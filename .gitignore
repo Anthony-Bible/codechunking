@@ -66,3 +66,17 @@ processed.txt
 tests.txt
 test_removal_recommendations.md
 unimplemented_tests.md
+
+# Test and debugging artifacts
+*-logs*.txt
+tokens.txt
+*.tmp
+*.sql
+!/migrations/*.sql
+
+# Temporary test scripts
+scripts/*.go
+scripts/*.sh
+
+# Local analysis files
+countTokens.py

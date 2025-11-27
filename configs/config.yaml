@@ -31,6 +31,63 @@ gemini:
   timeout: 120s  # Per-request timeout for embedding generation
                  # Applied to each individual embedding API call
                  # Should be less than worker job_timeout
+  batch:
+    enabled: true
+    input_dir: /tmp/batch_embeddings/input
+    output_dir: /tmp/batch_embeddings/output
+    poll_interval: 5s
+    max_wait_time: 30m
+
+# Batch processing configuration for enhanced embedding generation
+batch_processing:
+  # Enable queue-based batch processing alongside individual processing
+  enabled: true
+  # Threshold for switching to batch processing (chunks > this value use batch)
+  threshold_chunks: 50
+  # Batch size configuration by priority level
+  batch_sizes:
+    # Real-time priority: 1-25 requests (lowest latency)
+    realtime:
+      min: 1
+      max: 25
+      timeout: 5m
+    # Interactive priority: 5-50 requests (responsive UI)
+    interactive:
+      min: 5
+      max: 50
+      timeout: 10m
+    # Background priority: 50-200 requests (balanced for job processing)
+    background:
+      min: 50
+      max: 200
+      timeout: 30m
+    # Batch priority: 100-500 requests (maximum efficiency)
+    batch:
+      min: 100
+      max: 500
+      timeout: 60m
+  # Fallback configuration
+  fallback_to_sequential: true  # Fall back to individual processing on batch failures
+  queue_limits:
+    max_queue_size: 10000       # Maximum requests in queue
+    max_wait_time: 30m          # Maximum time waiting in queue
+  # Default priority for job processing
+  default_priority: "background"
+  # Test embeddings configuration (for development/testing only)
+  use_test_embeddings: false
+  # Batch chunking strategy parameters
+  max_batch_size: 500           # Maximum chunks per API batch
+  initial_backoff: 30s          # Initial backoff delay for retries
+  max_backoff: 300s             # Maximum backoff delay
+  max_retries: 3                # Maximum retry attempts per batch
+  enable_batch_chunking: true   # Enable/disable batch chunking
+
+  # Batch Submitter configuration (rate-limit-aware submission)
+  submitter_poll_interval: 5s         # How often to check for pending submissions
+  max_concurrent_submissions: 1       # Max parallel Gemini API submissions (1 = safest)
+  submission_initial_backoff: 1m      # Initial backoff on rate limit
+  submission_max_backoff: 30m         # Maximum backoff duration
+  max_submission_attempts: 10         # Max retry attempts per batch submission
 
 log:
   level: info

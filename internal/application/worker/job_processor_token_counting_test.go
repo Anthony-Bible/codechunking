@@ -5,6 +5,7 @@ import (
 	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -33,6 +34,7 @@ func TestJobProcessor_CountTokensForChunks(t *testing.T) {
 			StartLine:    1,
 			EndLine:      1,
 			Type:         "function",
+			Hash:         "hash1",
 		},
 		{
 			ID:           uuid.New().String(),
@@ -42,6 +44,7 @@ func TestJobProcessor_CountTokensForChunks(t *testing.T) {
 			StartLine:    3,
 			EndLine:      3,
 			Type:         "type",
+			Hash:         "hash2",
 		},
 	}
 
@@ -269,11 +272,12 @@ func TestJobProcessor_TokenCountingModes(t *testing.T) {
 				chunks[i] = outbound.CodeChunk{
 					ID:           uuid.New().String(),
 					RepositoryID: repositoryID,
-					FilePath:     "test.go",
+					FilePath:     fmt.Sprintf("test_%d.go", i),
 					Content:      "func test() {}",
 					StartLine:    i + 1,
 					EndLine:      i + 1,
 					Type:         "function",
+					Hash:         fmt.Sprintf("hash_%d", i),
 				}
 			}
 
@@ -450,6 +454,7 @@ func TestJobProcessor_TokenCountingFailsGracefully(t *testing.T) {
 					StartLine:    1,
 					EndLine:      1,
 					Type:         "function",
+					Hash:         "hash1",
 				},
 			}
 
@@ -732,11 +737,12 @@ func TestJobProcessor_ProgressiveTokenCounting_BatchSaving(t *testing.T) {
 		chunks[i] = outbound.CodeChunk{
 			ID:           uuid.New().String(),
 			RepositoryID: repositoryID,
-			FilePath:     "test.go",
+			FilePath:     fmt.Sprintf("test_%d.go", i),
 			Content:      "func test() {}",
 			StartLine:    i + 1,
 			EndLine:      i + 1,
 			Type:         "function",
+			Hash:         fmt.Sprintf("hash_%d", i),
 		}
 	}
 
@@ -890,11 +896,12 @@ func TestJobProcessor_ProgressiveTokenCounting_FinalPartialBatch(t *testing.T) {
 		chunks[i] = outbound.CodeChunk{
 			ID:           uuid.New().String(),
 			RepositoryID: repositoryID,
-			FilePath:     "test.go",
+			FilePath:     fmt.Sprintf("test_%d.go", i),
 			Content:      "func test() {}",
 			StartLine:    i + 1,
 			EndLine:      i + 1,
 			Type:         "function",
+			Hash:         fmt.Sprintf("hash_%d", i),
 		}
 	}
 
@@ -1043,11 +1050,12 @@ func TestJobProcessor_ProgressiveTokenCounting_GracefulDegradation(t *testing.T)
 		chunks[i] = outbound.CodeChunk{
 			ID:           uuid.New().String(),
 			RepositoryID: repositoryID,
-			FilePath:     "test.go",
+			FilePath:     fmt.Sprintf("test_%d.go", i),
 			Content:      "func test() {}",
 			StartLine:    i + 1,
 			EndLine:      i + 1,
 			Type:         "function",
+			Hash:         fmt.Sprintf("hash_%d", i),
 		}
 	}
 

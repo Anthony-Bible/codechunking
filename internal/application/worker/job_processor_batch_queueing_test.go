@@ -756,3 +756,121 @@ func TestJobProcessor_SubmitBatchJobAsync_MultipleChunks_CorrectRequestCount(t *
 		requestIDs[req.RequestID] = true
 	}
 }
+
+// TestJobProcessor_SubmitBatchJobAsync_DeduplicatesChunks verifies that
+// submitBatchJobAsync deduplicates chunks by (repository_id, file_path, content_hash)
+// before calling FindOrCreateChunks.
+//
+// RED PHASE EXPECTATION:
+// - Chunks with same (repository_id, file_path, hash) should be deduplicated
+// - FindOrCreateChunks should receive only unique chunks
+// - Duplicate chunks should be removed before persistence
+//
+// CURRENT BEHAVIOR (WHY THIS FAILS):
+// - submitBatchJobAsync calls FindOrCreateChunks directly without deduplication
+// - This can cause duplicate chunk errors in the database.
+func TestJobProcessor_SubmitBatchJobAsync_DeduplicatesChunks(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	repositoryID := uuid.New()
+	indexingJobID := uuid.New()
+
+	// Create chunks with duplicates - same repo_id, file_path, and hash
+	sharedHash := "abc123hash"
+	sharedFilePath := "/test/duplicate.go"
+
+	chunks := []outbound.CodeChunk{
+		{
+			ID:           uuid.New().String(),
+			RepositoryID: repositoryID,
+			Content:      "function test() { return 42; }",
+			FilePath:     sharedFilePath,
+			Language:     "go",
+			Hash:         sharedHash, // Same hash
+		},
+		{
+			ID:           uuid.New().String(),
+			RepositoryID: repositoryID,
+			Content:      "function other() { return 'hello'; }",
+			FilePath:     "/test/unique.go",
+			Language:     "go",
+			Hash:         "xyz789different",
+		},
+		{
+			ID:           uuid.New().String(),
+			RepositoryID: repositoryID,
+			Content:      "function test() { return 42; }", // Duplicate content
+			FilePath:     sharedFilePath,                   // Same file path
+			Language:     "go",
+			Hash:         sharedHash, // Same hash - THIS IS A DUPLICATE
+		},
+		{
+			ID:           uuid.New().String(),
+			RepositoryID: repositoryID,
+			Content:      "function another() { return true; }",
+			FilePath:     "/test/another.go",
+			Language:     "go",
+			Hash:         "def456hash",
+		},
+	}
+
+	// Create mocks
+	mockChunkStorageRepo := new(MockChunkStorageRepository)
+	mockBatchProgressRepo := new(MockBatchProgressRepository)
+	mockBatchEmbeddingService := new(MockBatchEmbeddingService)
+
+	// KEY EXPECTATION: Capture what chunks are passed to FindOrCreateChunks
+	var capturedChunks []outbound.CodeChunk
+	mockChunkStorageRepo.On("FindOrCreateChunks", ctx, mock.MatchedBy(func(c []outbound.CodeChunk) bool {
+		capturedChunks = c
+		return true
+	})).Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk {
+		// Return same chunks with IDs (simulating DB save)
+		return chunks
+	}, nil)
+
+	mockBatchProgressRepo.On("Save", ctx, mock.Anything).Return(nil)
+
+	processor := &DefaultJobProcessor{
+		chunkStorageRepo:      mockChunkStorageRepo,
+		batchProgressRepo:     mockBatchProgressRepo,
+		batchEmbeddingService: mockBatchEmbeddingService,
+		batchConfig: config.BatchProcessingConfig{
+			Enabled:           true,
+			UseTestEmbeddings: false,
+		},
+	}
+
+	options := outbound.EmbeddingOptions{
+		Model:    "gemini-embedding-001",
+		TaskType: outbound.TaskTypeRetrievalDocument,
+	}
+
+	// Act
+	err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
+
+	// Assert
+	require.NoError(t, err)
+
+	// CRITICAL ASSERTION: FindOrCreateChunks should receive only 3 unique chunks (not 4)
+	// Chunks[0] and chunks[2] are duplicates (same repo_id, file_path, hash)
+	assert.Len(t, capturedChunks, 3, "Should receive only deduplicated chunks")
+
+	// Verify the duplicate was removed
+	// Count how many chunks have the shared hash
+	hashCount := 0
+	for _, chunk := range capturedChunks {
+		if chunk.Hash == sharedHash && chunk.FilePath == sharedFilePath {
+			hashCount++
+		}
+	}
+	assert.Equal(t, 1, hashCount, "Should have only one chunk with the duplicate hash/filepath combination")
+
+	// Verify all remaining chunks have unique keys
+	seenKeys := make(map[string]bool)
+	for _, chunk := range capturedChunks {
+		key := chunk.RepositoryID.String() + "|" + chunk.FilePath + "|" + chunk.Hash
+		assert.False(t, seenKeys[key], "All chunks should have unique (repo_id, file_path, hash) keys")
+		seenKeys[key] = true
+	}
+}

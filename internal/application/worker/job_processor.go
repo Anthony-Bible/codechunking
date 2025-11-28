@@ -1439,6 +1439,7 @@ func (p *DefaultJobProcessor) countTokensForChunks(
 
 	// Select chunks to count based on mode
 	chunksToCount := p.selectChunksForCounting(ctx, chunks, mode)
+	chunksToCount = deduplicateChunksByKey(ctx, chunksToCount)
 	if len(chunksToCount) == 0 {
 		return
 	}
@@ -2397,6 +2398,9 @@ func (p *DefaultJobProcessor) submitBatchJobAsync(
 		chunks[i].RepositoryID = repositoryID
 	}
 
+	// Deduplicate chunks to avoid inserting duplicates
+	chunks = deduplicateChunksByKey(ctx, chunks)
+
 	// FindOrCreateChunks returns chunks with their actual persisted IDs
 	// This prevents FK constraint violations when embeddings reference chunk IDs
 	slogger.Debug(ctx, "Finding or creating chunks before queueing batch", slogger.Fields{
@@ -2597,4 +2601,52 @@ func (p *DefaultJobProcessor) resumeFromLastBatch(
 	}
 
 	return lastBatch, nil
+}
+
+// chunkKey represents a unique key for deduplication based on repository ID, file path, and content hash.
+// This combination matches the PostgreSQL unique constraint on (repository_id, file_path, content_hash)
+// to prevent duplicate chunk insertion errors.
+type chunkKey struct {
+	repoID   uuid.UUID
+	filePath string
+	hash     string
+}
+
+// deduplicateChunksByKey removes duplicate chunks by (repository_id, file_path, content_hash) key.
+// It keeps the first occurrence of each unique key and logs a warning if duplicates are found.
+func deduplicateChunksByKey(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk {
+	if len(chunks) == 0 {
+		return []outbound.CodeChunk{}
+	}
+
+	// Pre-allocate map with capacity to avoid rehashing
+	seen := make(map[chunkKey]struct{}, len(chunks))
+	result := make([]outbound.CodeChunk, 0, len(chunks))
+	duplicateCount := 0
+
+	for _, chunk := range chunks {
+		key := chunkKey{
+			repoID:   chunk.RepositoryID,
+			filePath: chunk.FilePath,
+			hash:     chunk.Hash,
+		}
+
+		if _, exists := seen[key]; !exists {
+			seen[key] = struct{}{}
+			result = append(result, chunk)
+		} else {
+			duplicateCount++
+		}
+	}
+
+	if duplicateCount > 0 {
+		slogger.Warn(ctx, "Duplicate chunks detected in batch - possible parser issue",
+			slogger.Fields{
+				"original_count": len(chunks),
+				"unique_count":   len(result),
+				"duplicates":     duplicateCount,
+			})
+	}
+
+	return result
 }

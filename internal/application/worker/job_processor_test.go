@@ -352,6 +352,16 @@ func (m *MockEmbeddingService) CountTokensBatch(
 	return args.Get(0).([]*outbound.TokenCountResult), args.Error(1)
 }
 
+func (m *MockEmbeddingService) CountTokensWithCallback(
+	ctx context.Context,
+	chunks []outbound.CodeChunk,
+	model string,
+	callback outbound.TokenCountCallback,
+) error {
+	args := m.Called(ctx, chunks, model, callback)
+	return args.Error(0)
+}
+
 // MockChunkStorageRepository mocks the chunk storage repository interface.
 type MockChunkStorageRepository struct {
 	mock.Mock
@@ -364,6 +374,10 @@ func (m *MockChunkStorageRepository) SaveChunk(ctx context.Context, chunk *outbo
 
 func (m *MockChunkStorageRepository) SaveChunks(ctx context.Context, chunks []outbound.CodeChunk) error {
 	args := m.Called(ctx, chunks)
+	// Handle function return types (for dynamic return values in tests)
+	if fn, ok := args.Get(0).(func(context.Context, []outbound.CodeChunk) error); ok {
+		return fn(ctx, chunks)
+	}
 	return args.Error(0)
 }
 

@@ -96,6 +96,27 @@ func (m *mockEmbeddingService) CountTokensBatch(
 	return results, nil
 }
 
+func (m *mockEmbeddingService) CountTokensWithCallback(
+	ctx context.Context,
+	chunks []outbound.CodeChunk,
+	model string,
+	callback outbound.TokenCountCallback,
+) error {
+	for i, chunk := range chunks {
+		result := &outbound.TokenCountResult{
+			TotalTokens: len(chunk.Content) / 4,
+			Model:       model,
+		}
+		if callback != nil {
+			if err := callback(i, &chunk, result); err != nil {
+				// Log but continue processing
+				continue
+			}
+		}
+	}
+	return nil
+}
+
 // Test helper to create a manager with mocks.
 func createTestManager() outbound.BatchQueueManager {
 	embeddingService := &mockEmbeddingService{}

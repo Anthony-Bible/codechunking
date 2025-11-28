@@ -169,6 +169,16 @@ func (m *MockEmbeddingService) CountTokensBatch(
 	return args.Get(0).([]*outbound.TokenCountResult), args.Error(1)
 }
 
+func (m *MockEmbeddingService) CountTokensWithCallback(
+	ctx context.Context,
+	chunks []outbound.CodeChunk,
+	model string,
+	callback outbound.TokenCountCallback,
+) error {
+	args := m.Called(ctx, chunks, model, callback)
+	return args.Error(0)
+}
+
 // MockChunkRepository is a mock implementation for retrieving chunk information.
 type MockChunkRepository struct {
 	mock.Mock

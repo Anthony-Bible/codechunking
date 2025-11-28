@@ -94,6 +94,26 @@ func (s *testEmbeddingService) CountTokensBatch(
 	return nil, errors.New("CountTokensBatch not implemented")
 }
 
+// CountTokensWithCallback stub - returns error to make tests fail.
+func (s *testEmbeddingService) CountTokensWithCallback(
+	_ context.Context,
+	chunks []CodeChunk,
+	_ string,
+	callback TokenCountCallback,
+) error {
+	// Validate empty slice
+	if len(chunks) == 0 {
+		return &EmbeddingError{
+			Code:      "invalid_input",
+			Message:   "chunks slice cannot be empty",
+			Type:      "validation",
+			Retryable: false,
+		}
+	}
+	// Return error for red phase - implementation doesn't exist yet
+	return errors.New("CountTokensWithCallback not implemented")
+}
+
 // TestTokenCountResult_Structure validates the TokenCountResult type has correct fields.
 func TestTokenCountResult_Structure(t *testing.T) {
 	t.Parallel()

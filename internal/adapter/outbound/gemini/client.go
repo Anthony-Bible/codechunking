@@ -986,6 +986,56 @@ func (c *Client) CountTokensBatch(
 	return results, nil
 }
 
+// CountTokensWithCallback counts tokens for each chunk and invokes the callback after each result.
+// This enables progressive processing (e.g., saving chunks in batches) during token counting.
+func (c *Client) CountTokensWithCallback(
+	ctx context.Context,
+	chunks []outbound.CodeChunk,
+	model string,
+	callback outbound.TokenCountCallback,
+) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+
+	// Check context cancellation early
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	effectiveModel := model
+	if effectiveModel == "" {
+		effectiveModel = c.config.Model
+	}
+
+	slogger.Info(ctx, "Progressive token counting started", slogger.Fields{
+		"chunk_count": len(chunks),
+		"model":       effectiveModel,
+	})
+
+	for i := range chunks {
+		// Check for cancellation between chunks
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		result, err := c.CountTokens(ctx, chunks[i].Content, model)
+		if err != nil {
+			return fmt.Errorf("token counting failed at index %d: %w", i, err)
+		}
+
+		if err := callback(i, &chunks[i], result); err != nil {
+			return fmt.Errorf("callback failed at index %d: %w", i, err)
+		}
+	}
+
+	return nil
+}
+
 // Request/Response structures for JSON serialization/deserialization
 
 // EmbeddingRequest represents the JSON structure for Gemini embedding requests.

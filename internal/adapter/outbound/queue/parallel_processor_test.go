@@ -180,6 +180,27 @@ func (m *MockEmbeddingServiceWithDelay) CountTokensBatch(
 	return results, nil
 }
 
+func (m *MockEmbeddingServiceWithDelay) CountTokensWithCallback(
+	ctx context.Context,
+	chunks []outbound.CodeChunk,
+	model string,
+	callback outbound.TokenCountCallback,
+) error {
+	for i, chunk := range chunks {
+		result := &outbound.TokenCountResult{
+			TotalTokens: len(chunk.Content) / 4,
+			Model:       model,
+		}
+		if callback != nil {
+			if err := callback(i, &chunk, result); err != nil {
+				// Log but continue processing
+				continue
+			}
+		}
+	}
+	return nil
+}
+
 // RED PHASE TESTS - All tests should FAIL initially
 
 func TestMockEmbeddingServiceFailure(t *testing.T) {

@@ -61,6 +61,12 @@ const (
 	jobStatusRunning   = "running"
 	jobStatusCompleted = "completed"
 	unknownCommitHash  = "unknown"
+
+	// tokenCountSaveBatchSize defines how many chunks to accumulate before saving to database.
+	// Trade-off: Larger batches reduce database round trips but increase memory usage and risk
+	// losing more work on failure. 50 provides a good balance for most repositories.
+	// Consider making this configurable if needed for very large repositories.
+	tokenCountSaveBatchSize = 50
 )
 
 // JobProcessorConfig holds configuration for the job processor.
@@ -1416,7 +1422,11 @@ func (p *DefaultJobProcessor) storeSingleEmbeddingWithErrorHandling(
 // countTokensForChunks counts tokens for chunks based on configuration mode.
 // Modes: "all" - count all chunks, "sample" - count X% of chunks, "on_demand" - skip counting.
 // Errors are logged but do not fail the job (graceful degradation).
-func (p *DefaultJobProcessor) countTokensForChunks(ctx context.Context, chunks []outbound.CodeChunk) {
+func (p *DefaultJobProcessor) countTokensForChunks(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	chunks []outbound.CodeChunk,
+) {
 	if !p.batchConfig.TokenCounting.Enabled {
 		return
 	}
@@ -1428,10 +1438,144 @@ func (p *DefaultJobProcessor) countTokensForChunks(ctx context.Context, chunks [
 	}
 
 	// Select chunks to count based on mode
-	var chunksToCount []outbound.CodeChunk
+	chunksToCount := p.selectChunksForCounting(ctx, chunks, mode)
+	if len(chunksToCount) == 0 {
+		return
+	}
+
+	slogger.Info(ctx, "Starting progressive token counting", slogger.Fields{
+		"mode":            mode,
+		"total_chunks":    len(chunks),
+		"chunks_to_count": len(chunksToCount),
+		"batch_size":      tokenCountSaveBatchSize,
+	})
+
+	// State for progressive saving
+	now := time.Now()
+	pendingChunks := make([]outbound.CodeChunk, 0, tokenCountSaveBatchSize)
+	totalTokens := 0
+	savedCount := 0
+	oversizedChunks := 0
+	maxTokensPerChunk := p.batchConfig.TokenCounting.MaxTokensPerChunk
+	if maxTokensPerChunk <= 0 {
+		maxTokensPerChunk = 8192
+	}
+
+	// Callback invoked after each token count
+	callback := func(index int, chunk *outbound.CodeChunk, result *outbound.TokenCountResult) error {
+		// Update chunk with token count data
+		chunk.RepositoryID = repositoryID
+		chunk.TokenCount = result.TotalTokens
+		chunk.TokenCountedAt = &now
+		totalTokens += result.TotalTokens
+
+		// Check for oversized chunks
+		if result.TotalTokens > maxTokensPerChunk {
+			oversizedChunks++
+			slogger.Warn(ctx, "Chunk exceeds max token limit", slogger.Fields{
+				"chunk_id":             chunk.ID,
+				"token_count":          result.TotalTokens,
+				"max_tokens_per_chunk": maxTokensPerChunk,
+				"file_path":            chunk.FilePath,
+			})
+		}
+
+		// Add to pending batch
+		pendingChunks = append(pendingChunks, *chunk)
+
+		// Save batch when full
+		if len(pendingChunks) >= tokenCountSaveBatchSize {
+			saved := p.saveTokenCountedChunkBatch(ctx, pendingChunks, false, savedCount, len(chunksToCount))
+			savedCount += saved
+			pendingChunks = pendingChunks[:0] // Reset slice, keep capacity
+		}
+
+		return nil
+	}
+
+	// Process all chunks with callback
+	err := p.embeddingService.CountTokensWithCallback(ctx, chunksToCount, "gemini-embedding-001", callback)
+	if err != nil {
+		slogger.Warn(
+			ctx,
+			"Token counting failed, continuing with embedding generation",
+			slogger.Field("error", err.Error()),
+		)
+		// Don't return - try to save any pending chunks
+	}
+
+	// Save any remaining chunks in final partial batch
+	if len(pendingChunks) > 0 {
+		saved := p.saveTokenCountedChunkBatch(ctx, pendingChunks, true, savedCount, len(chunksToCount))
+		savedCount += saved
+	}
+
+	// Emit metrics
+	avgTokens := 0
+	if len(chunksToCount) > 0 {
+		avgTokens = totalTokens / len(chunksToCount)
+	}
+	p.emitTokenCountingMetrics(ctx, savedCount, totalTokens, avgTokens, oversizedChunks)
+
+	slogger.Info(ctx, "Progressive token counting completed", slogger.Fields{
+		"chunks_processed": len(chunksToCount),
+		"chunks_saved":     savedCount,
+		"total_tokens":     totalTokens,
+		"average_tokens":   avgTokens,
+		"oversized_chunks": oversizedChunks,
+	})
+}
+
+// saveTokenCountedChunkBatch saves a batch of chunks with token counts to the database.
+// Returns the number of chunks successfully saved (or 0 on error).
+// Errors are logged but do not fail the operation (graceful degradation).
+func (p *DefaultJobProcessor) saveTokenCountedChunkBatch(
+	ctx context.Context,
+	chunks []outbound.CodeChunk,
+	isFinalBatch bool,
+	totalSavedSoFar int,
+	totalChunks int,
+) int {
+	if len(chunks) == 0 {
+		return 0
+	}
+
+	if err := p.chunkStorageRepo.SaveChunks(ctx, chunks); err != nil {
+		logMessage := "Failed to save chunk batch with token counts"
+		if isFinalBatch {
+			logMessage = "Failed to save final chunk batch with token counts"
+		}
+		slogger.Warn(ctx, logMessage, slogger.Fields{
+			"batch_size": len(chunks),
+			"error":      err.Error(),
+		})
+		return 0
+	}
+
+	logMessage := "Saved chunk batch with token counts"
+	fields := slogger.Fields{
+		"batch_size":  len(chunks),
+		"total_saved": totalSavedSoFar + len(chunks),
+	}
+	if !isFinalBatch {
+		fields["total_chunks"] = totalChunks
+		logMessage = "Saved chunk batch with token counts"
+	}
+	slogger.Info(ctx, logMessage, fields)
+
+	return len(chunks)
+}
+
+// selectChunksForCounting selects which chunks to count based on the configured mode.
+// Returns the selected chunks or nil if no chunks should be counted.
+func (p *DefaultJobProcessor) selectChunksForCounting(
+	ctx context.Context,
+	chunks []outbound.CodeChunk,
+	mode string,
+) []outbound.CodeChunk {
 	switch mode {
 	case "all":
-		chunksToCount = chunks
+		return chunks
 	case "sample":
 		samplePercent := p.batchConfig.TokenCounting.SamplePercent
 		if samplePercent <= 0 || samplePercent > 100 {
@@ -1440,104 +1584,17 @@ func (p *DefaultJobProcessor) countTokensForChunks(ctx context.Context, chunks [
 				"Invalid sample_percent, skipping token counting",
 				slogger.Field("sample_percent", samplePercent),
 			)
-			return
+			return nil
 		}
 		sampleSize := (len(chunks) * samplePercent) / 100
 		if sampleSize == 0 {
 			sampleSize = 1
 		}
-		chunksToCount = chunks[:sampleSize]
+		return chunks[:sampleSize]
 	default:
 		slogger.Warn(ctx, "Unknown token counting mode, skipping", slogger.Field("mode", mode))
-		return
+		return nil
 	}
-
-	if len(chunksToCount) == 0 {
-		return
-	}
-
-	slogger.Info(ctx, "Starting token counting", slogger.Fields{
-		"mode":            mode,
-		"total_chunks":    len(chunks),
-		"chunks_to_count": len(chunksToCount),
-		"sample_percent":  p.batchConfig.TokenCounting.SamplePercent,
-	})
-
-	// Extract texts for counting
-	texts := make([]string, len(chunksToCount))
-	for i, chunk := range chunksToCount {
-		texts[i] = chunk.Content
-	}
-
-	// Call CountTokensBatch
-	results, err := p.embeddingService.CountTokensBatch(ctx, texts, "gemini-embedding-001")
-	if err != nil {
-		slogger.Warn(
-			ctx,
-			"Token counting failed, continuing with embedding generation",
-			slogger.Field("error", err.Error()),
-		)
-		return
-	}
-
-	// Build updates
-	now := time.Now()
-	updates := make([]outbound.ChunkTokenUpdate, len(chunksToCount))
-	totalTokens := 0
-	oversizedChunks := 0
-	maxTokensPerChunk := p.batchConfig.TokenCounting.MaxTokensPerChunk
-	if maxTokensPerChunk <= 0 {
-		maxTokensPerChunk = 8192 // Default to Gemini embedding model limit
-	}
-
-	for i, result := range results {
-		chunkID, parseErr := uuid.Parse(chunksToCount[i].ID)
-		if parseErr != nil {
-			slogger.Warn(ctx, "Invalid chunk ID for token count update", slogger.Fields{
-				"chunk_id": chunksToCount[i].ID,
-				"error":    parseErr.Error(),
-			})
-			continue
-		}
-		updates[i] = outbound.ChunkTokenUpdate{
-			ChunkID:        chunkID,
-			TokenCount:     result.TotalTokens,
-			TokenCountedAt: &now,
-		}
-		totalTokens += result.TotalTokens
-
-		// Check for oversized chunks
-		if result.TotalTokens > maxTokensPerChunk {
-			oversizedChunks++
-			slogger.Warn(ctx, "Chunk exceeds max token limit", slogger.Fields{
-				"chunk_id":             chunkID.String(),
-				"token_count":          result.TotalTokens,
-				"max_tokens_per_chunk": maxTokensPerChunk,
-				"file_path":            chunksToCount[i].FilePath,
-			})
-		}
-	}
-
-	// Update repository
-	if err := p.chunkStorageRepo.UpdateTokenCounts(ctx, updates); err != nil {
-		slogger.Warn(ctx, "Failed to persist token counts, continuing", slogger.Field("error", err.Error()))
-		return
-	}
-
-	avgTokens := 0
-	if len(updates) > 0 {
-		avgTokens = totalTokens / len(updates)
-	}
-
-	// Emit metrics
-	p.emitTokenCountingMetrics(ctx, len(chunksToCount), totalTokens, avgTokens, oversizedChunks)
-
-	slogger.Info(ctx, "Token counting completed successfully", slogger.Fields{
-		"chunks_counted":   len(updates),
-		"total_tokens":     totalTokens,
-		"average_tokens":   avgTokens,
-		"oversized_chunks": oversizedChunks,
-	})
 }
 
 // emitTokenCountingMetrics emits OpenTelemetry metrics for token counting operations.
@@ -1671,7 +1728,7 @@ func (p *DefaultJobProcessor) processBatchEmbeddings(
 	jobID := indexingJobID.String()
 
 	// PRE-FLIGHT: Count tokens before embedding generation (non-blocking)
-	p.countTokensForChunks(ctx, chunks)
+	p.countTokensForChunks(ctx, repositoryID, chunks)
 
 	// Check context before starting batch processing
 	if err := ctx.Err(); err != nil {
@@ -1943,7 +2000,7 @@ func (p *DefaultJobProcessor) processSequentialEmbeddings(
 	jobID := indexingJobID.String()
 
 	// PRE-FLIGHT: Count tokens before embedding generation (non-blocking)
-	p.countTokensForChunks(ctx, chunks)
+	p.countTokensForChunks(ctx, repositoryID, chunks)
 
 	if p.batchConfig.UseTestEmbeddings {
 		// Test mode: use test embeddings

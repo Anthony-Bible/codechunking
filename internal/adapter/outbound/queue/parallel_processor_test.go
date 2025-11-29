@@ -435,7 +435,6 @@ func TestParallelBatchProcessor_ConcurrentBatchProcessing(t *testing.T) {
 				batch[j] = &outbound.EmbeddingRequest{
 					RequestID: fmt.Sprintf("req-%d-%d", i, j),
 					Text:      fmt.Sprintf("test text %d-%d", i, j),
-					Priority:  outbound.PriorityBackground,
 					Options:   outbound.EmbeddingOptions{Model: "test-model"},
 				}
 			}
@@ -503,7 +502,6 @@ func TestParallelBatchProcessor_ConcurrentBatchProcessing(t *testing.T) {
 			batch := []*outbound.EmbeddingRequest{{
 				RequestID: fmt.Sprintf("req-%d", i),
 				Text:      fmt.Sprintf("test text %d", i),
-				Priority:  outbound.PriorityBackground,
 				Options:   outbound.EmbeddingOptions{Model: "test-model"},
 			}}
 			batches[i] = batch
@@ -561,7 +559,6 @@ func TestParallelBatchProcessor_RateLimitingAndConcurrencyControl(t *testing.T) 
 			batch := []*outbound.EmbeddingRequest{{
 				RequestID: fmt.Sprintf("req-%d", i),
 				Text:      fmt.Sprintf("test text %d", i),
-				Priority:  outbound.PriorityBackground,
 				Options:   outbound.EmbeddingOptions{Model: "test-model"},
 			}}
 			batches[i] = batch
@@ -603,7 +600,6 @@ func TestParallelBatchProcessor_RateLimitingAndConcurrencyControl(t *testing.T) 
 			batch := []*outbound.EmbeddingRequest{{
 				RequestID: fmt.Sprintf("req-%d", i),
 				Text:      fmt.Sprintf("test text %d", i),
-				Priority:  outbound.PriorityBackground,
 				Options:   outbound.EmbeddingOptions{Model: "test-model"},
 			}}
 			batches[i] = batch
@@ -662,7 +658,6 @@ func TestParallelBatchProcessor_RateLimitingAndConcurrencyControl(t *testing.T) 
 				batch := []*outbound.EmbeddingRequest{{
 					RequestID: fmt.Sprintf("burst-%d-req-%d", burst, i),
 					Text:      fmt.Sprintf("test text %d-%d", burst, i),
-					Priority:  outbound.PriorityBackground,
 					Options:   outbound.EmbeddingOptions{Model: "test-model"},
 				}}
 				batches[i] = batch
@@ -712,7 +707,6 @@ func TestParallelBatchProcessor_RateLimitingAndConcurrencyControl(t *testing.T) 
 			batch := []*outbound.EmbeddingRequest{{
 				RequestID: fmt.Sprintf("req-%d", i),
 				Text:      fmt.Sprintf("test text %d", i),
-				Priority:  outbound.PriorityBackground,
 				Options:   outbound.EmbeddingOptions{Model: "test-model"},
 			}}
 			batches[i] = batch
@@ -768,7 +762,6 @@ func TestParallelBatchProcessor_ErrorHandling(t *testing.T) {
 			batch := []*outbound.EmbeddingRequest{{
 				RequestID: fmt.Sprintf("req-%d", i),
 				Text:      fmt.Sprintf("test text %d", i),
-				Priority:  outbound.PriorityBackground,
 				Options:   outbound.EmbeddingOptions{Model: "test-model"},
 			}}
 			batches[i] = batch
@@ -853,7 +846,6 @@ func TestParallelBatchProcessor_ErrorHandling(t *testing.T) {
 			firstBatches[i] = []*outbound.EmbeddingRequest{{
 				RequestID: fmt.Sprintf("first-req-%d", i),
 				Text:      fmt.Sprintf("test text %d", i),
-				Priority:  outbound.PriorityBackground,
 				Options:   outbound.EmbeddingOptions{Model: "test-model"},
 			}}
 		}
@@ -887,7 +879,6 @@ func TestParallelBatchProcessor_ErrorHandling(t *testing.T) {
 			retryBatches[i] = []*outbound.EmbeddingRequest{{
 				RequestID: fmt.Sprintf("retry-req-%d", i),
 				Text:      fmt.Sprintf("retry text %d", i),
-				Priority:  outbound.PriorityBackground,
 				Options:   outbound.EmbeddingOptions{Model: "test-model"},
 			}}
 		}
@@ -932,7 +923,6 @@ func TestParallelBatchProcessor_ContextCancellationAndTimeouts(t *testing.T) {
 			batches[i] = []*outbound.EmbeddingRequest{{
 				RequestID: fmt.Sprintf("req-%d", i),
 				Text:      fmt.Sprintf("test text %d", i),
-				Priority:  outbound.PriorityBackground,
 				Options:   outbound.EmbeddingOptions{Model: "test-model"},
 			}}
 		}
@@ -981,7 +971,6 @@ func TestParallelBatchProcessor_ContextCancellationAndTimeouts(t *testing.T) {
 		batches := [][]*outbound.EmbeddingRequest{{{
 			RequestID: "timeout-test",
 			Text:      "test text",
-			Priority:  outbound.PriorityBackground,
 			Options:   outbound.EmbeddingOptions{Model: "test-model"},
 		}}}
 
@@ -1030,7 +1019,6 @@ func TestParallelBatchProcessor_ResourceManagement(t *testing.T) {
 				batches[i] = []*outbound.EmbeddingRequest{{
 					RequestID: fmt.Sprintf("round-%d-req-%d", round, i),
 					Text:      fmt.Sprintf("test text %d-%d", round, i),
-					Priority:  outbound.PriorityBackground,
 					Options:   outbound.EmbeddingOptions{Model: "test-model"},
 				}}
 			}
@@ -1079,7 +1067,6 @@ func TestParallelBatchProcessor_ResourceManagement(t *testing.T) {
 			batches[i] = []*outbound.EmbeddingRequest{{
 				RequestID: fmt.Sprintf("shutdown-req-%d", i),
 				Text:      fmt.Sprintf("test text %d", i),
-				Priority:  outbound.PriorityBackground,
 				Options:   outbound.EmbeddingOptions{Model: "test-model"},
 			}}
 		}

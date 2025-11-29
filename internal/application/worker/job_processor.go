@@ -827,11 +827,6 @@ func (p *DefaultJobProcessor) validateBatchProcessingConfig() error {
 		return err
 	}
 
-	// Validate batch sizes if configured
-	if err := p.validateBatchSizes(); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -839,11 +834,6 @@ func (p *DefaultJobProcessor) validateBatchProcessingConfig() error {
 func (p *DefaultJobProcessor) validateThresholdChunks() error {
 	if p.batchConfig.ThresholdChunks < 0 {
 		return fmt.Errorf("negative batch threshold is invalid: %d", p.batchConfig.ThresholdChunks)
-	}
-
-	// Zero threshold is only invalid if BatchSizes is configured (enhanced config)
-	if p.batchConfig.ThresholdChunks == 0 && len(p.batchConfig.BatchSizes) > 0 {
-		return errors.New("zero batch threshold is invalid")
 	}
 
 	return nil
@@ -872,26 +862,6 @@ func (p *DefaultJobProcessor) validateQueueLimits() error {
 	}
 	if limits.MaxWaitTime == 0 {
 		return errors.New("queue limits max_wait_time must be positive when max queue size is configured")
-	}
-
-	return nil
-}
-
-// validateBatchSizes validates batch size configuration for all priorities.
-func (p *DefaultJobProcessor) validateBatchSizes() error {
-	for priority, sizeConfig := range p.batchConfig.BatchSizes {
-		if sizeConfig.Min <= 0 {
-			return fmt.Errorf("batch size min must be positive for priority %s", priority)
-		}
-		if sizeConfig.Max <= 0 {
-			return fmt.Errorf("batch size max must be positive for priority %s", priority)
-		}
-		if sizeConfig.Min > sizeConfig.Max {
-			return fmt.Errorf("batch size min cannot be greater than max for priority %s", priority)
-		}
-		if sizeConfig.Timeout <= 0 {
-			return fmt.Errorf("batch size timeout must be positive for priority %s", priority)
-		}
 	}
 
 	return nil
@@ -1846,7 +1816,6 @@ func (p *DefaultJobProcessor) createEmbeddingRequest(
 		RequestID:     p.generateRequestID(jobID, chunk.ID),
 		CorrelationID: jobID,
 		Text:          chunk.Content,
-		Priority:      p.getRequestPriority(),
 		Options:       p.getEmbeddingOptions(),
 		Metadata:      p.createRequestMetadata(chunk, workspaceDir),
 		SubmittedAt:   submittedAt,
@@ -1856,11 +1825,6 @@ func (p *DefaultJobProcessor) createEmbeddingRequest(
 // generateRequestID creates a unique request ID for the chunk.
 func (p *DefaultJobProcessor) generateRequestID(jobID, chunkID string) string {
 	return fmt.Sprintf("%s-%s", jobID, chunkID)
-}
-
-// getRequestPriority determines the priority for embedding requests.
-func (p *DefaultJobProcessor) getRequestPriority() outbound.RequestPriority {
-	return outbound.PriorityBackground
 }
 
 // getEmbeddingOptions returns the configured embedding options.

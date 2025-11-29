@@ -131,19 +131,14 @@ func (qhm *QueueHealthMonitor) calculateErrorRate(totalErrors, totalProcessed in
 
 // GetDetailedHealthMetrics provides more detailed health metrics for monitoring.
 func (qhm *QueueHealthMonitor) GetDetailedHealthMetrics(
-	queues map[outbound.RequestPriority][]*outbound.EmbeddingRequest,
+	queueSize int,
 	totalErrors int64,
 	totalProcessed int64,
 	timeoutCount int64,
 	deadlineExceeded int64,
 	lastProcessed time.Time,
 ) *DetailedHealthMetrics {
-	totalQueueSize := 0
-	for _, requests := range queues {
-		totalQueueSize += len(requests)
-	}
-
-	utilization := float64(totalQueueSize) / float64(qhm.config.MaxQueueSize)
+	utilization := float64(queueSize) / float64(qhm.config.MaxQueueSize)
 
 	metrics := &DetailedHealthMetrics{
 		QueueUtilization:     utilization,
@@ -152,7 +147,6 @@ func (qhm *QueueHealthMonitor) GetDetailedHealthMetrics(
 		DeadlineExceededRate: qhm.calculateDeadlineExceededRate(deadlineExceeded, totalProcessed),
 		ProcessingLagSeconds: qhm.calculateProcessingLag(lastProcessed),
 		HealthScore:          qhm.calculateHealthScore(utilization, totalErrors, totalProcessed, timeoutCount),
-		PriorityQueueHealth:  qhm.calculatePriorityQueueHealth(queues),
 		Recommendations:      qhm.generateHealthRecommendations(utilization, totalErrors, totalProcessed),
 	}
 
@@ -207,46 +201,6 @@ func (qhm *QueueHealthMonitor) calculateHealthScore(
 	return score
 }
 
-// calculatePriorityQueueHealth calculates health for each priority queue.
-func (qhm *QueueHealthMonitor) calculatePriorityQueueHealth(
-	queues map[outbound.RequestPriority][]*outbound.EmbeddingRequest,
-) map[outbound.RequestPriority]PriorityQueueHealth {
-	health := make(map[outbound.RequestPriority]PriorityQueueHealth)
-
-	// Assume equal allocation per priority for health calculation
-	maxPerPriority := qhm.config.MaxQueueSize / 4
-
-	for priority, requests := range queues {
-		queueSize := len(requests)
-		utilization := float64(queueSize) / float64(maxPerPriority)
-
-		var status outbound.HealthStatus
-		var message string
-
-		switch {
-		case utilization >= 0.95:
-			status = outbound.HealthStatusUnhealthy
-			message = "Critical capacity"
-		case utilization >= 0.8:
-			status = outbound.HealthStatusDegraded
-			message = "High utilization"
-		default:
-			status = outbound.HealthStatusHealthy
-			message = "Normal"
-		}
-
-		health[priority] = PriorityQueueHealth{
-			QueueSize:   queueSize,
-			Utilization: utilization,
-			Status:      status,
-			Message:     message,
-			MaxCapacity: maxPerPriority,
-		}
-	}
-
-	return health
-}
-
 // generateHealthRecommendations generates recommendations based on current health.
 func (qhm *QueueHealthMonitor) generateHealthRecommendations(
 	utilization float64,
@@ -284,21 +238,11 @@ func (qhm *QueueHealthMonitor) generateHealthRecommendations(
 
 // DetailedHealthMetrics provides comprehensive health metrics.
 type DetailedHealthMetrics struct {
-	QueueUtilization     float64                                          `json:"queue_utilization"`
-	ErrorRate            float64                                          `json:"error_rate"`
-	TimeoutRate          float64                                          `json:"timeout_rate"`
-	DeadlineExceededRate float64                                          `json:"deadline_exceeded_rate"`
-	ProcessingLagSeconds float64                                          `json:"processing_lag_seconds"`
-	HealthScore          float64                                          `json:"health_score"`
-	PriorityQueueHealth  map[outbound.RequestPriority]PriorityQueueHealth `json:"priority_queue_health"`
-	Recommendations      []string                                         `json:"recommendations"`
-}
-
-// PriorityQueueHealth represents health metrics for a specific priority queue.
-type PriorityQueueHealth struct {
-	QueueSize   int                   `json:"queue_size"`
-	Utilization float64               `json:"utilization"`
-	Status      outbound.HealthStatus `json:"status"`
-	Message     string                `json:"message"`
-	MaxCapacity int                   `json:"max_capacity"`
+	QueueUtilization     float64  `json:"queue_utilization"`
+	ErrorRate            float64  `json:"error_rate"`
+	TimeoutRate          float64  `json:"timeout_rate"`
+	DeadlineExceededRate float64  `json:"deadline_exceeded_rate"`
+	ProcessingLagSeconds float64  `json:"processing_lag_seconds"`
+	HealthScore          float64  `json:"health_score"`
+	Recommendations      []string `json:"recommendations"`
 }

@@ -1,29 +1,40 @@
 # Base configuration for CodeChunking
+# See wiki/configuration-reference.md for complete documentation
+
 api:
-  host: 0.0.0.0
-  port: 8080
-  read_timeout: 10s
-  write_timeout: 10s
+  host: 0.0.0.0               # API server bind address
+  port: 8080                  # API server port
+  read_timeout: 10s           # Maximum duration for reading HTTP requests
+  write_timeout: 10s          # Maximum duration for writing HTTP responses
+  # Middleware flags (optional, default to true)
+  # enable_default_middleware: true
+  # enable_cors: true
+  # enable_security_headers: true
+  # enable_logging: true
+  # enable_error_handling: true
 
 worker:
-  concurrency: 5
-  queue_group: workers
-  job_timeout: 30m  # Overall timeout for complete job processing
-                    # Must be larger than (gemini.timeout × max_chunks_per_repo)
-                    # to allow all embeddings to complete
+  concurrency: 5              # Number of concurrent worker processes (min: 1)
+  queue_group: workers        # NATS queue group name for load balancing
+  job_timeout: 30m            # Overall timeout for complete job processing
+                             # Must be larger than (gemini.timeout × max_chunks_per_repo)
+                             # to allow all embeddings to complete
 
 database:
-  host: localhost
-  port: 5432
-  name: codechunking
-  sslmode: disable
-  max_connections: 25
-  max_idle_connections: 5
+  host: localhost              # Database server hostname
+  port: 5432                   # Database port (1-65535)
+  name: codechunking           # Database name (required)
+  # user:                      # Database username (required, set via env var)
+  # password:                  # Database password (required, set via env var)
+  sslmode: disable             # SSL mode: "disable", "require", "prefer"
+  max_connections: 25          # Maximum open connections
+  max_idle_connections: 5      # Maximum idle connections
 
 nats:
-  url: nats://localhost:4222
-  max_reconnects: 5
-  reconnect_wait: 2s
+  url: nats://localhost:4222   # NATS server URL
+  max_reconnects: 5            # Maximum reconnection attempts
+  reconnect_wait: 2s           # Time between reconnection attempts
+  # test_mode: false          # Enable test mode for debugging
 
 search:
   iterative_scan_mode: relaxed_order  # pgvector 0.8.0+ iterative scanning mode
@@ -102,5 +113,39 @@ batch_processing:
     max_tokens_per_chunk: 8192       # Maximum tokens per chunk (Gemini embedding model limit)
 
 log:
-  level: info
-  format: json
+  level: info                   # Log level: "debug", "info", "warn", "error"
+  format: json                  # Log format: "json", "text"
+
+# Git operations configuration
+git:
+  default_depth: 1              # Git clone depth (0 = full, 1 = shallow)
+  shallow_clone_threshold_mb: 100  # Repository size threshold for shallow clone
+  default_timeout: 30m          # Default git operation timeout
+  max_concurrent_clones: 3      # Maximum concurrent git clone operations
+  retry_attempts: 2             # Retry attempts for git operations
+  retry_backoff_duration: 5s    # Backoff between git retries
+  enable_progress_tracking: true    # Enable git operation progress tracking
+  enable_performance_monitoring: true  # Enable git performance monitoring
+  auto_select_strategy: true    # Automatically select clone strategy
+  workspace_cleanup_enabled: true      # Enable workspace cleanup
+  workspace_cleanup_interval: 24h      # Cleanup interval
+
+# Security configuration
+security:
+  max_url_length: 2048          # Maximum URL length (characters)
+  max_body_size: 65536          # Maximum request body size (64KB)
+  enable_xss_protection: true   # Enable XSS protection
+  enable_sql_injection: true    # Enable SQL injection protection
+  enable_control_char_check: true   # Enable control character validation
+  enable_unicode_check: true    # Enable Unicode validation
+  enable_path_traversal: true   # Enable path traversal protection
+  log_security_violations: true # Log security violations
+  log_level: "INFO"             # Security log level
+  enable_validation_cache: true # Enable validation caching
+  cache_size: 1000              # Validation cache size
+  cache_ttl: 5m                 # Validation cache TTL
+  rate_limit:
+    requests_per_minute: 60     # Rate limit per minute
+    burst_size: 10              # Burst capacity
+    window_size: 1m             # Rate limit window
+    enabled: true               # Enable rate limiting

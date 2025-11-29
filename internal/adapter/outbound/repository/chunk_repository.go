@@ -3,11 +3,11 @@ package repository
 import (
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/service"
-	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,14 +31,28 @@ const (
 
 // SQL query constants.
 const (
+	// chunkColumnsPerRow is the number of columns in the code_chunks table insert statement.
+	// This constant is used by buildMultiRowChunkInsert to calculate parameter placeholders.
+	// IMPORTANT: If you modify the chunk table schema or insert query, update this constant.
+	chunkColumnsPerRow = 17
+
+	// multiRowInsertBatchSize is the maximum number of chunks to insert in a single batch.
+	// PostgreSQL has a limit on the number of parameters (typically 65535), so we batch large
+	// inserts to stay well under that limit. With 17 columns per row, 500 rows = 8500 parameters,
+	// which provides a safe margin below the limit while maintaining good performance.
+	multiRowInsertBatchSize = 500
+
 	insertChunkQuery = `
 		INSERT INTO codechunking.code_chunks (
 			id, repository_id, file_path, chunk_type, content, language,
 			start_line, end_line, entity_name, parent_entity, content_hash, metadata,
-			qualified_name, signature, visibility
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			qualified_name, signature, visibility, token_count, token_counted_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		ON CONFLICT (repository_id, file_path, content_hash)
-		DO UPDATE SET id = code_chunks.id
+		DO UPDATE SET
+			id = code_chunks.id,
+			token_count = COALESCE(EXCLUDED.token_count, code_chunks.token_count),
+			token_counted_at = COALESCE(EXCLUDED.token_counted_at, code_chunks.token_counted_at)
 		RETURNING id
 	`
 
@@ -66,6 +80,76 @@ const (
 	`
 )
 
+// buildMultiRowChunkInsert builds a multi-row INSERT query for code chunks.
+//
+// Parameters:
+//   - numRows: The number of chunk rows to include in the INSERT statement
+//
+// Returns:
+//   - A complete SQL INSERT query with VALUES placeholders for the specified number of rows
+//   - Empty string if numRows is <= 0
+//
+// Each chunk has 17 columns, so parameters are numbered sequentially:
+//   - Row 1: $1-$17
+//   - Row 2: $18-$34
+//   - Row 3: $35-$51
+//   - etc.
+//
+// RETURNING Clause Guarantee:
+//   - PostgreSQL guarantees that RETURNING returns rows in the same order as the VALUES clause
+//   - This allows callers to match returned IDs to input chunks by index position
+//   - See: https://www.postgresql.org/docs/current/dml-returning.html
+//
+// Example output for numRows=2:
+//
+//	INSERT INTO codechunking.code_chunks (id, repository_id, ..., token_counted_at)
+//	VALUES ($1, $2, ..., $17), ($18, $19, ..., $34)
+//	ON CONFLICT (repository_id, file_path, content_hash)
+//	DO UPDATE SET id = code_chunks.id, token_count = COALESCE(...), token_counted_at = COALESCE(...)
+//	RETURNING id
+func buildMultiRowChunkInsert(numRows int) string {
+	if numRows <= 0 {
+		return ""
+	}
+
+	var b strings.Builder
+
+	// INSERT clause with column names
+	b.WriteString(`INSERT INTO codechunking.code_chunks (`)
+	b.WriteString(`id, repository_id, file_path, chunk_type, content, language, `)
+	b.WriteString(`start_line, end_line, entity_name, parent_entity, content_hash, metadata, `)
+	b.WriteString(`qualified_name, signature, visibility, token_count, token_counted_at`)
+	b.WriteString(`) VALUES `)
+
+	// Generate VALUES rows with parameter placeholders
+	for row := range numRows {
+		if row > 0 {
+			b.WriteString(`, `)
+		}
+		b.WriteString(`(`)
+		for col := range chunkColumnsPerRow {
+			if col > 0 {
+				b.WriteString(`, `)
+			}
+			paramNum := row*chunkColumnsPerRow + col + 1
+			b.WriteString(`$`)
+			b.WriteString(strconv.Itoa(paramNum))
+		}
+		b.WriteString(`)`)
+	}
+
+	// ON CONFLICT clause - preserve existing token counts
+	b.WriteString(` ON CONFLICT (repository_id, file_path, content_hash) DO UPDATE SET `)
+	b.WriteString(`id = code_chunks.id, `)
+	b.WriteString(`token_count = COALESCE(code_chunks.token_count, EXCLUDED.token_count), `)
+	b.WriteString(`token_counted_at = COALESCE(code_chunks.token_counted_at, EXCLUDED.token_counted_at)`)
+
+	// RETURNING clause
+	b.WriteString(` RETURNING id`)
+
+	return b.String()
+}
+
 // validateEmbeddingDimensions validates that an embedding has the expected dimensions.
 func validateEmbeddingDimensions(embedding *outbound.Embedding) error {
 	if len(embedding.Vector) != expectedEmbeddingDimensions {
@@ -91,6 +175,85 @@ func sanitizeContentWithLogging(ctx context.Context, content string, chunkID str
 		return strings.ReplaceAll(content, "\x00", "")
 	}
 	return content
+}
+
+// prepareChunkInsertArgs prepares the 17 arguments needed for a chunk INSERT statement.
+// This helper ensures consistent default value handling across all chunk insert operations.
+//
+// Returns a slice of 17 interface{} values in the order expected by insertChunkQuery:
+//  1. chunkID (uuid.UUID)
+//  2. repositoryID (uuid.UUID)
+//  3. filePath (string)
+//  4. chunkType (string, with default)
+//  5. sanitizedContent (string)
+//  6. language (string)
+//  7. startLine (int)
+//  8. endLine (int)
+//  9. entityName (string, with default)
+//
+// 10. parentEntity (string, with default)
+// 11. contentHash (string)
+// 12. metadata (nil)
+// 13. qualifiedName (string, with default)
+// 14. signature (string, with default)
+// 15. visibility (string, with default)
+// 16. tokenCount (*int)
+// 17. tokenCountedAt (*time.Time).
+func prepareChunkInsertArgs(ctx context.Context, chunk outbound.CodeChunk, chunkID uuid.UUID) []interface{} {
+	// Apply defaults to optional fields
+	chunkType := chunk.Type
+	if chunkType == "" {
+		chunkType = defaultChunkType
+	}
+
+	entityName := chunk.EntityName
+	if entityName == "" {
+		entityName = defaultEntityName
+	}
+
+	parentEntity := chunk.ParentEntity
+	if parentEntity == "" {
+		parentEntity = defaultParentEntity
+	}
+
+	qualifiedName := chunk.QualifiedName
+	if qualifiedName == "" {
+		qualifiedName = defaultQualifiedName
+	}
+
+	signature := chunk.Signature
+	if signature == "" {
+		signature = defaultSignature
+	}
+
+	visibility := chunk.Visibility
+	if visibility == "" {
+		visibility = defaultVisibility
+	}
+
+	// Sanitize content for PostgreSQL UTF-8 compatibility
+	sanitizedContent := sanitizeContentWithLogging(ctx, chunk.Content, chunk.ID, chunk.FilePath)
+
+	// Build and return the 17-element argument slice
+	return []interface{}{
+		chunkID,
+		chunk.RepositoryID,
+		chunk.FilePath,
+		chunkType,
+		sanitizedContent,
+		chunk.Language,
+		chunk.StartLine,
+		chunk.EndLine,
+		entityName,
+		parentEntity,
+		chunk.Hash,
+		nil, // metadata
+		qualifiedName,
+		signature,
+		visibility,
+		chunk.TokenCount,
+		chunk.TokenCountedAt,
+	}
 }
 
 // PostgreSQLChunkRepository implements the ChunkStorageRepository interface.
@@ -223,43 +386,8 @@ func (r *PostgreSQLChunkRepository) SaveChunk(ctx context.Context, chunk *outbou
 		return fmt.Errorf("invalid chunk ID format: %w", err)
 	}
 
-	// Use chunk type information or defaults
-	entityName := chunk.EntityName
-	if entityName == "" {
-		entityName = defaultEntityName
-	}
-
-	parentEntity := chunk.ParentEntity
-	if parentEntity == "" {
-		parentEntity = defaultParentEntity
-	}
-
-	chunkType := chunk.Type
-	if chunkType == "" {
-		chunkType = defaultChunkType
-	}
-
-	qualifiedName := chunk.QualifiedName
-	if qualifiedName == "" {
-		qualifiedName = defaultQualifiedName
-	}
-
-	signature := chunk.Signature
-	if signature == "" {
-		signature = defaultSignature
-	}
-
-	visibility := chunk.Visibility
-	if visibility == "" {
-		visibility = defaultVisibility
-	}
-
-	// Sanitize content for PostgreSQL UTF-8 compatibility
-	sanitizedContent := sanitizeContentWithLogging(ctx, chunk.Content, chunk.ID, chunk.FilePath)
-
 	// Validate repository ID is provided
-	repositoryID := chunk.RepositoryID
-	if repositoryID == uuid.Nil {
+	if chunk.RepositoryID == uuid.Nil {
 		slogger.Error(ctx, "Missing repository_id for chunk save", slogger.Fields2(
 			"chunk_id", chunk.ID,
 			"file_path", chunk.FilePath,
@@ -267,30 +395,17 @@ func (r *PostgreSQLChunkRepository) SaveChunk(ctx context.Context, chunk *outbou
 		return errors.New("repository_id is required to save chunk")
 	}
 
+	// Prepare all arguments with defaults and sanitization
+	args := prepareChunkInsertArgs(ctx, *chunk, chunkID)
+
 	// Save chunk and get the actual chunk ID (could be existing if conflict occurs)
 	var actualChunkID uuid.UUID
-	err = r.pool.QueryRow(ctx, query,
-		chunkID,
-		repositoryID,
-		chunk.FilePath,
-		chunkType,
-		sanitizedContent,
-		chunk.Language,
-		chunk.StartLine,
-		chunk.EndLine,
-		entityName,
-		parentEntity,
-		chunk.Hash,
-		nil, // metadata
-		qualifiedName,
-		signature,
-		visibility,
-	).Scan(&actualChunkID)
+	err = r.pool.QueryRow(ctx, query, args...).Scan(&actualChunkID)
 	if err != nil {
 		slogger.Error(ctx, "Failed to save chunk", slogger.Fields{
 			"chunk_id":      chunk.ID,
 			"file_path":     chunk.FilePath,
-			"repository_id": repositoryID.String(),
+			"repository_id": chunk.RepositoryID.String(),
 			"error":         err.Error(),
 		})
 		return fmt.Errorf("failed to save chunk: %w", err)
@@ -314,7 +429,9 @@ func (r *PostgreSQLChunkRepository) SaveChunk(ctx context.Context, chunk *outbou
 	return nil
 }
 
-// SaveChunks stores multiple code chunks in a batch operation.
+// SaveChunks stores multiple code chunks in a batch operation using multi-row INSERT.
+// Large batches are automatically split into smaller batches to stay within PostgreSQL's
+// parameter limit (65535). The batch size is controlled by multiRowInsertBatchSize constant.
 func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []outbound.CodeChunk) error {
 	if len(chunks) == 0 {
 		return nil
@@ -331,98 +448,90 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 		}
 	}()
 
-	query := insertChunkQuery
+	for batchStart := 0; batchStart < len(chunks); batchStart += multiRowInsertBatchSize {
+		batchEnd := batchStart + multiRowInsertBatchSize
+		if batchEnd > len(chunks) {
+			batchEnd = len(chunks)
+		}
+		batch := chunks[batchStart:batchEnd]
 
-	for i, chunk := range chunks {
-		chunkID, err := uuid.Parse(chunk.ID)
+		// Build the multi-row INSERT query
+		query := buildMultiRowChunkInsert(len(batch))
+
+		// Prepare arguments for the query
+		args := make([]interface{}, 0, len(batch)*chunkColumnsPerRow)
+		for _, chunk := range batch {
+			chunkID, err := uuid.Parse(chunk.ID)
+			if err != nil {
+				slogger.Error(ctx, "Invalid chunk ID in batch", slogger.Fields2(
+					"chunk_id", chunk.ID,
+					"error", err.Error(),
+				))
+				return fmt.Errorf("invalid chunk ID format: %w", err)
+			}
+
+			repositoryID := chunk.RepositoryID
+			if repositoryID == uuid.Nil {
+				slogger.Error(ctx, "Missing repository_id for chunk batch save", slogger.Fields2(
+					"chunk_id", chunk.ID,
+					"file_path", chunk.FilePath,
+				))
+				return errors.New("repository_id is required to save chunk in batch")
+			}
+
+			// Use helper to prepare all 17 arguments with consistent defaults
+			chunkArgs := prepareChunkInsertArgs(ctx, chunk, chunkID)
+			args = append(args, chunkArgs...)
+		}
+
+		// Execute the multi-row INSERT and scan all returned IDs
+		rows, err := tx.Query(ctx, query, args...)
 		if err != nil {
-			slogger.Error(ctx, "Invalid chunk ID in batch", slogger.Fields2(
-				"chunk_id", chunk.ID,
-				"error", err.Error(),
-			))
-			return fmt.Errorf("invalid chunk ID format: %w", err)
-		}
-
-		// Use chunk type information or defaults
-		entityName := chunk.EntityName
-		if entityName == "" {
-			entityName = defaultEntityName
-		}
-
-		parentEntity := chunk.ParentEntity
-		if parentEntity == "" {
-			parentEntity = defaultParentEntity
-		}
-
-		chunkType := chunk.Type
-		if chunkType == "" {
-			chunkType = defaultChunkType
-		}
-
-		qualifiedName := chunk.QualifiedName
-		if qualifiedName == "" {
-			qualifiedName = defaultQualifiedName
-		}
-
-		signature := chunk.Signature
-		if signature == "" {
-			signature = defaultSignature
-		}
-
-		visibility := chunk.Visibility
-		if visibility == "" {
-			visibility = defaultVisibility
-		}
-
-		repositoryID := chunk.RepositoryID
-		if repositoryID == uuid.Nil {
-			slogger.Error(ctx, "Missing repository_id for chunk batch save", slogger.Fields2(
-				"chunk_id", chunk.ID,
-				"file_path", chunk.FilePath,
-			))
-			return errors.New("repository_id is required to save chunk in batch")
-		}
-
-		// Sanitize content for PostgreSQL UTF-8 compatibility
-		sanitizedContent := sanitizeContentWithLogging(ctx, chunk.Content, chunk.ID, chunk.FilePath)
-
-		// Save chunk and get the actual chunk ID (could be existing if conflict occurs)
-		var actualChunkID uuid.UUID
-		err = tx.QueryRow(ctx, query,
-			chunkID,
-			repositoryID,
-			chunk.FilePath,
-			chunkType,
-			sanitizedContent,
-			chunk.Language,
-			chunk.StartLine,
-			chunk.EndLine,
-			entityName,
-			parentEntity,
-			chunk.Hash,
-			nil, // metadata
-			qualifiedName,
-			signature,
-			visibility,
-		).Scan(&actualChunkID)
-		if err != nil {
-			slogger.Error(ctx, "Failed to save chunk in batch", slogger.Fields{
-				"chunk_id":      chunk.ID,
-				"file_path":     chunk.FilePath,
-				"repository_id": repositoryID.String(),
-				"error":         err.Error(),
+			slogger.Error(ctx, "Failed to execute multi-row chunk insert", slogger.Fields{
+				"batch_size": len(batch),
+				"error":      err.Error(),
 			})
-			return fmt.Errorf("failed to save chunk in batch: %w", err)
+			return fmt.Errorf("failed to execute multi-row chunk insert: %w", err)
 		}
 
-		// Update the in-memory chunk ID with the actual ID
-		if actualChunkID != chunkID {
-			slogger.Info(ctx, "Chunk already exists in batch, using existing chunk ID", slogger.Fields{
-				"generated_chunk_id": chunkID.String(),
-				"actual_chunk_id":    actualChunkID.String(),
-				"file_path":          chunk.FilePath,
-			})
-			chunks[i].ID = actualChunkID.String()
+		// Scan returned IDs and update chunks
+		rowIndex := 0
+		for rows.Next() {
+			var actualChunkID uuid.UUID
+			if err := rows.Scan(&actualChunkID); err != nil {
+				rows.Close()
+				slogger.Error(ctx, "Failed to scan returned chunk ID", slogger.Fields2(
+					"row_index", rowIndex,
+					"error", err.Error(),
+				))
+				return fmt.Errorf("failed to scan returned chunk ID: %w", err)
+			}
+
+			// Update in-memory chunk ID if it changed due to conflict
+			expectedChunkID, _ := uuid.Parse(batch[rowIndex].ID)
+			if actualChunkID != expectedChunkID {
+				slogger.Info(ctx, "Chunk already exists in batch, using existing chunk ID", slogger.Fields{
+					"generated_chunk_id": expectedChunkID.String(),
+					"actual_chunk_id":    actualChunkID.String(),
+					"file_path":          batch[rowIndex].FilePath,
+				})
+				chunks[batchStart+rowIndex].ID = actualChunkID.String()
+			}
+			rowIndex++
+		}
+		rows.Close()
+
+		if err := rows.Err(); err != nil {
+			slogger.Error(ctx, "Error iterating over returned chunk IDs", slogger.Field("error", err.Error()))
+			return fmt.Errorf("error iterating over returned chunk IDs: %w", err)
+		}
+
+		if rowIndex != len(batch) {
+			slogger.Error(ctx, "Mismatch between inserted rows and returned IDs", slogger.Fields2(
+				"expected", len(batch),
+				"actual", rowIndex,
+			))
+			return fmt.Errorf("expected %d returned IDs, got %d", len(batch), rowIndex)
 		}
 	}
 
@@ -444,6 +553,7 @@ func (r *PostgreSQLChunkRepository) SaveChunks(ctx context.Context, chunks []out
 // FindOrCreateChunks saves chunks and returns the actual chunk IDs (existing or new).
 // For chunks that already exist (same repo/path/hash), returns the existing chunk with its ID.
 // This prevents FK constraint violations when using batch embeddings.
+// Uses multi-row INSERT for efficient batch processing.
 func (r *PostgreSQLChunkRepository) FindOrCreateChunks(
 	ctx context.Context,
 	chunks []outbound.CodeChunk,
@@ -463,118 +573,102 @@ func (r *PostgreSQLChunkRepository) FindOrCreateChunks(
 		}
 	}()
 
-	// Use a query that returns the actual persisted ID (whether new or existing)
-	query := `
-		INSERT INTO codechunking.code_chunks (
-			id, repository_id, file_path, chunk_type, content, language,
-			start_line, end_line, entity_name, parent_entity, content_hash, metadata,
-			qualified_name, signature, visibility
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-		ON CONFLICT (repository_id, file_path, content_hash)
-		DO UPDATE SET id = code_chunks.id
-		RETURNING id
-	`
-
 	resultChunks := make([]outbound.CodeChunk, len(chunks))
 
-	for i, chunk := range chunks {
-		chunkID, err := uuid.Parse(chunk.ID)
+	// Process in batches to stay under PostgreSQL's parameter limit
+	for batchStart := 0; batchStart < len(chunks); batchStart += multiRowInsertBatchSize {
+		batchEnd := batchStart + multiRowInsertBatchSize
+		if batchEnd > len(chunks) {
+			batchEnd = len(chunks)
+		}
+		batch := chunks[batchStart:batchEnd]
+
+		// Build the multi-row INSERT query
+		query := buildMultiRowChunkInsert(len(batch))
+
+		// Prepare arguments for the query
+		args := make([]interface{}, 0, len(batch)*chunkColumnsPerRow)
+		for _, chunk := range batch {
+			chunkID, err := uuid.Parse(chunk.ID)
+			if err != nil {
+				slogger.Error(ctx, "Invalid chunk ID in FindOrCreateChunks", slogger.Fields2(
+					"chunk_id", chunk.ID,
+					"error", err.Error(),
+				))
+				return nil, fmt.Errorf("invalid chunk ID format: %w", err)
+			}
+
+			repositoryID := chunk.RepositoryID
+			if repositoryID == uuid.Nil {
+				slogger.Error(ctx, "Missing repository_id for chunk in FindOrCreateChunks", slogger.Fields2(
+					"chunk_id", chunk.ID,
+					"file_path", chunk.FilePath,
+				))
+				return nil, errors.New("repository_id is required for FindOrCreateChunks")
+			}
+
+			// Use helper to prepare all 17 arguments with consistent defaults
+			chunkArgs := prepareChunkInsertArgs(ctx, chunk, chunkID)
+			args = append(args, chunkArgs...)
+		}
+
+		// Execute the multi-row INSERT and scan all returned IDs
+		rows, err := tx.Query(ctx, query, args...)
 		if err != nil {
-			slogger.Error(ctx, "Invalid chunk ID in FindOrCreateChunks", slogger.Fields2(
-				"chunk_id", chunk.ID,
-				"error", err.Error(),
+			slogger.Error(ctx, "Failed to execute multi-row FindOrCreateChunks insert", slogger.Fields{
+				"batch_size": len(batch),
+				"error":      err.Error(),
+			})
+			return nil, fmt.Errorf("failed to execute multi-row FindOrCreateChunks insert: %w", err)
+		}
+
+		// Scan returned IDs - PostgreSQL guarantees RETURNING order matches VALUES order
+		rowIndex := 0
+		for rows.Next() {
+			var returnedID uuid.UUID
+			if err := rows.Scan(&returnedID); err != nil {
+				rows.Close()
+				slogger.Error(ctx, "Failed to scan returned chunk ID in FindOrCreateChunks", slogger.Fields2(
+					"row_index", rowIndex,
+					"error", err.Error(),
+				))
+				return nil, fmt.Errorf("failed to scan returned chunk ID: %w", err)
+			}
+
+			// Map returned ID to the corresponding chunk
+			// resultChunks[batchStart + rowIndex] corresponds to batch[rowIndex]
+			resultChunks[batchStart+rowIndex] = batch[rowIndex]
+			resultChunks[batchStart+rowIndex].ID = returnedID.String()
+
+			// Log if we got a different ID (chunk already existed)
+			expectedChunkID, _ := uuid.Parse(batch[rowIndex].ID)
+			if returnedID != expectedChunkID {
+				slogger.Debug(ctx, "Chunk already existed in FindOrCreateChunks, using existing ID", slogger.Fields{
+					"new_id":      batch[rowIndex].ID,
+					"existing_id": returnedID.String(),
+					"file_path":   batch[rowIndex].FilePath,
+				})
+			}
+
+			rowIndex++
+		}
+		rows.Close()
+
+		if err := rows.Err(); err != nil {
+			slogger.Error(
+				ctx,
+				"Error iterating over returned chunk IDs in FindOrCreateChunks",
+				slogger.Field("error", err.Error()),
+			)
+			return nil, fmt.Errorf("error iterating over returned chunk IDs: %w", err)
+		}
+
+		if rowIndex != len(batch) {
+			slogger.Error(ctx, "Mismatch between inserted rows and returned IDs in FindOrCreateChunks", slogger.Fields2(
+				"expected", len(batch),
+				"actual", rowIndex,
 			))
-			return nil, fmt.Errorf("invalid chunk ID format: %w", err)
-		}
-
-		// Use chunk type information or defaults
-		entityName := chunk.EntityName
-		if entityName == "" {
-			entityName = defaultEntityName
-		}
-
-		parentEntity := chunk.ParentEntity
-		if parentEntity == "" {
-			parentEntity = defaultParentEntity
-		}
-
-		chunkType := chunk.Type
-		if chunkType == "" {
-			chunkType = defaultChunkType
-		}
-
-		qualifiedName := chunk.QualifiedName
-		if qualifiedName == "" {
-			qualifiedName = defaultQualifiedName
-		}
-
-		signature := chunk.Signature
-		if signature == "" {
-			signature = defaultSignature
-		}
-
-		visibility := chunk.Visibility
-		if visibility == "" {
-			visibility = defaultVisibility
-		}
-
-		repositoryID := chunk.RepositoryID
-		if repositoryID == uuid.Nil {
-			slogger.Error(ctx, "Missing repository_id for chunk in FindOrCreateChunks", slogger.Fields2(
-				"chunk_id", chunk.ID,
-				"file_path", chunk.FilePath,
-			))
-			return nil, errors.New("repository_id is required for FindOrCreateChunks")
-		}
-
-		// Defensive sanitization
-		sanitizedContent := valueobject.SanitizeContent(chunk.Content)
-		if len(sanitizedContent) != len(chunk.Content) {
-			slogger.Warn(ctx, "Null bytes detected and removed in FindOrCreateChunks", slogger.Fields{
-				"chunk_id":           chunk.ID,
-				"file_path":          chunk.FilePath,
-				"null_bytes_removed": len(chunk.Content) - len(sanitizedContent),
-			})
-		}
-
-		var returnedID uuid.UUID
-		err = tx.QueryRow(ctx, query,
-			chunkID,
-			repositoryID,
-			chunk.FilePath,
-			chunkType,
-			sanitizedContent,
-			chunk.Language,
-			chunk.StartLine,
-			chunk.EndLine,
-			entityName,
-			parentEntity,
-			chunk.Hash,
-			nil, // metadata
-			qualifiedName,
-			signature,
-			visibility,
-		).Scan(&returnedID)
-		if err != nil {
-			slogger.Error(ctx, "Failed to insert/find chunk", slogger.Fields{
-				"chunk_id":      chunk.ID,
-				"file_path":     chunk.FilePath,
-				"repository_id": repositoryID.String(),
-				"error":         err.Error(),
-			})
-			return nil, fmt.Errorf("failed to insert/find chunk: %w", err)
-		}
-
-		// Create result chunk with the actual persisted ID
-		resultChunks[i] = chunk
-		resultChunks[i].ID = returnedID.String()
-
-		if returnedID.String() != chunk.ID {
-			slogger.Debug(ctx, "Chunk already existed, using existing ID", slogger.Fields{
-				"new_id":      chunk.ID,
-				"existing_id": returnedID.String(),
-				"file_path":   chunk.FilePath,
-			})
+			return nil, fmt.Errorf("expected %d returned IDs, got %d", len(batch), rowIndex)
 		}
 	}
 
@@ -597,7 +691,8 @@ func (r *PostgreSQLChunkRepository) FindOrCreateChunks(
 func (r *PostgreSQLChunkRepository) GetChunk(ctx context.Context, id uuid.UUID) (*outbound.CodeChunk, error) {
 	query := `
 		SELECT id, file_path, start_line, end_line, content, language, content_hash, created_at,
-		       chunk_type, COALESCE(entity_name, ''), COALESCE(parent_entity, ''), COALESCE(qualified_name, ''), COALESCE(signature, ''), COALESCE(visibility, '')
+		       chunk_type, COALESCE(entity_name, ''), COALESCE(parent_entity, ''), COALESCE(qualified_name, ''), COALESCE(signature, ''), COALESCE(visibility, ''),
+		       token_count, token_counted_at
 		FROM codechunking.code_chunks
 		WHERE id = $1 AND deleted_at IS NULL
 	`
@@ -620,6 +715,8 @@ func (r *PostgreSQLChunkRepository) GetChunk(ctx context.Context, id uuid.UUID) 
 		&chunk.QualifiedName,
 		&chunk.Signature,
 		&chunk.Visibility,
+		&chunk.TokenCount,
+		&chunk.TokenCountedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -647,7 +744,8 @@ func (r *PostgreSQLChunkRepository) GetChunksForRepository(
 ) ([]outbound.CodeChunk, error) {
 	query := `
 		SELECT id, file_path, start_line, end_line, content, language, content_hash, created_at,
-		       chunk_type, COALESCE(entity_name, ''), COALESCE(parent_entity, ''), COALESCE(qualified_name, ''), COALESCE(signature, ''), COALESCE(visibility, '')
+		       chunk_type, COALESCE(entity_name, ''), COALESCE(parent_entity, ''), COALESCE(qualified_name, ''), COALESCE(signature, ''), COALESCE(visibility, ''),
+		       token_count, token_counted_at
 		FROM codechunking.code_chunks
 		WHERE repository_id = $1 AND deleted_at IS NULL
 		ORDER BY file_path, start_line
@@ -683,6 +781,8 @@ func (r *PostgreSQLChunkRepository) GetChunksForRepository(
 			&chunk.QualifiedName,
 			&chunk.Signature,
 			&chunk.Visibility,
+			&chunk.TokenCount,
+			&chunk.TokenCountedAt,
 		)
 		if err != nil {
 			slogger.Error(ctx, "Failed to scan chunk row", slogger.Fields2(
@@ -1581,6 +1681,8 @@ func (r *PostgreSQLChunkRepository) SaveChunkWithEmbedding(
 		fields.QualifiedName,
 		fields.Signature,
 		fields.Visibility,
+		chunk.TokenCount,
+		chunk.TokenCountedAt,
 	).Scan(&actualChunkID)
 	if err != nil {
 		slogger.Error(ctx, "Failed to save chunk in transaction", slogger.Fields{
@@ -1713,6 +1815,53 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingInTx(
 	return nil
 }
 
+// UpdateTokenCounts updates the token count for multiple chunks in a batch operation.
+func (r *PostgreSQLChunkRepository) UpdateTokenCounts(ctx context.Context, updates []outbound.ChunkTokenUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		slogger.Error(ctx, "Failed to begin transaction for UpdateTokenCounts", slogger.Field("error", err.Error()))
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			slogger.Warn(ctx, "Failed to rollback UpdateTokenCounts transaction", slogger.Field("error", err.Error()))
+		}
+	}()
+
+	query := `
+		UPDATE codechunking.code_chunks
+		SET token_count = $1, token_counted_at = $2
+		WHERE id = $3 AND deleted_at IS NULL
+	`
+
+	for _, update := range updates {
+		_, err := tx.Exec(ctx, query, update.TokenCount, update.TokenCountedAt, update.ChunkID)
+		if err != nil {
+			slogger.Error(ctx, "Failed to update token count", slogger.Fields{
+				"chunk_id":    update.ChunkID.String(),
+				"token_count": update.TokenCount,
+				"error":       err.Error(),
+			})
+			return fmt.Errorf("failed to update token count for chunk %s: %w", update.ChunkID.String(), err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slogger.Error(ctx, "Failed to commit UpdateTokenCounts transaction", slogger.Fields2(
+			"update_count", len(updates),
+			"error", err.Error(),
+		))
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	slogger.Debug(ctx, "Token counts updated successfully", slogger.Field("update_count", len(updates)))
+	return nil
+}
+
 // SaveChunksWithEmbeddings stores multiple chunks and embeddings in a single transaction.
 func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 	ctx context.Context,
@@ -1771,65 +1920,16 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 			return fmt.Errorf("invalid chunk ID format: %w", err)
 		}
 
-		// Use chunk type information or defaults
-		entityName := chunk.EntityName
-		if entityName == "" {
-			entityName = defaultEntityName
-		}
-
-		parentEntity := chunk.ParentEntity
-		if parentEntity == "" {
-			parentEntity = defaultParentEntity
-		}
-
-		chunkType := chunk.Type
-		if chunkType == "" {
-			chunkType = defaultChunkType
-		}
-
-		qualifiedName := chunk.QualifiedName
-		if qualifiedName == "" {
-			qualifiedName = defaultQualifiedName
-		}
-
-		signature := chunk.Signature
-		if signature == "" {
-			signature = defaultSignature
-		}
-
-		visibility := chunk.Visibility
-		if visibility == "" {
-			visibility = defaultVisibility
-		}
-
-		// CRITICAL: Ensure consistent repository ID between chunk and embedding
-		// This prevents partition routing foreign key violations
-		repositoryID := chunks[i].RepositoryID
-
-		// Validate that we have a repository ID
-		if repositoryID == uuid.Nil {
-			slogger.Error(ctx, "Missing repository_id for batch transactional chunk save", slogger.Fields{
+		// Prepare chunk fields with defaults and validate repository ID consistency
+		fields, err := prepareChunkFields(&chunks[i], &embeddings[i])
+		if err != nil {
+			slogger.Error(ctx, "Failed to prepare chunk fields in batch transaction", slogger.Fields{
 				"chunk_id":    chunk.ID,
 				"batch_index": i,
+				"error":       err.Error(),
 			})
-			return errors.New("repository_id is required to save chunk in batch transaction")
+			return fmt.Errorf("failed to prepare chunk fields at index %d: %w", i, err)
 		}
-
-		// Validate repository ID consistency before forcing
-		// If embedding has a different non-nil repository ID, that's an error
-		if embeddings[i].RepositoryID != uuid.Nil && embeddings[i].RepositoryID != repositoryID {
-			slogger.Error(ctx, "Repository ID mismatch detected", slogger.Fields3(
-				"chunk_id", chunk.ID,
-				"chunk_repository_id", repositoryID.String(),
-				"embedding_repository_id", embeddings[i].RepositoryID.String(),
-			))
-			return fmt.Errorf("repository ID mismatch for chunk %s: chunk=%s, embedding=%s",
-				chunk.ID, repositoryID.String(), embeddings[i].RepositoryID.String())
-		}
-
-		// Force embedding to use the EXACT same repository ID as the chunk
-		// This ensures they route to the same partition and prevents foreign key violations
-		embeddings[i].RepositoryID = repositoryID
 
 		// Sanitize content for PostgreSQL UTF-8 compatibility
 		sanitizedContent := sanitizeContentWithLogging(ctx, chunk.Content, chunk.ID, chunk.FilePath)
@@ -1838,26 +1938,28 @@ func (r *PostgreSQLChunkRepository) SaveChunksWithEmbeddings(
 		var actualChunkID uuid.UUID
 		err = tx.QueryRow(ctx, chunkQuery,
 			chunkID,
-			repositoryID,
+			fields.RepositoryID,
 			chunk.FilePath,
-			chunkType,
+			fields.ChunkType,
 			sanitizedContent,
 			chunk.Language,
 			chunk.StartLine,
 			chunk.EndLine,
-			entityName,
-			parentEntity,
+			fields.EntityName,
+			fields.ParentEntity,
 			chunk.Hash,
 			nil, // metadata
-			qualifiedName,
-			signature,
-			visibility,
+			fields.QualifiedName,
+			fields.Signature,
+			fields.Visibility,
+			chunk.TokenCount,
+			chunk.TokenCountedAt,
 		).Scan(&actualChunkID)
 		if err != nil {
 			slogger.Error(ctx, "Failed to save chunk in batch transaction", slogger.Fields{
 				"chunk_id":      chunk.ID,
 				"batch_index":   i,
-				"repository_id": repositoryID.String(),
+				"repository_id": fields.RepositoryID.String(),
 				"error":         err.Error(),
 			})
 			return fmt.Errorf("failed to save chunk in batch transaction: %w", err)

@@ -42,7 +42,28 @@ type EmbeddingService interface {
 
 	// EstimateTokenCount estimates the number of tokens in the given text
 	EstimateTokenCount(ctx context.Context, text string) (int, error)
+
+	// CountTokens counts the exact number of tokens in the given text using the embedding model
+	// Returns a TokenCountResult containing the token count, model used, and optional cache timestamp
+	CountTokens(ctx context.Context, text string, model string) (*TokenCountResult, error)
+
+	// CountTokensBatch counts tokens for multiple texts in a single batch request
+	// Returns a slice of TokenCountResult matching the input texts order
+	CountTokensBatch(ctx context.Context, texts []string, model string) ([]*TokenCountResult, error)
+
+	// CountTokensWithCallback counts tokens for each chunk and invokes the callback after each result.
+	// This allows for progressive processing (e.g., saving chunks to DB in batches).
+	// The callback receives the index, chunk, and token count result for each processed chunk.
+	// If the callback returns an error, processing continues but the error is logged.
+	CountTokensWithCallback(ctx context.Context, chunks []CodeChunk, model string, callback TokenCountCallback) error
 }
+
+// TokenCountCallback is called after each successful token count with the updated chunk.
+// The index parameter indicates the position of the chunk in the original slice.
+// The chunk parameter is the chunk being processed.
+// The result parameter contains the token count information.
+// Returning an error will log the error but won't stop processing.
+type TokenCountCallback func(index int, chunk *CodeChunk, result *TokenCountResult) error
 
 // BatchEmbeddingService defines the interface for file-based batch embedding operations.
 // This interface provides asynchronous batch processing capabilities using the Google GenAI Batches API.
@@ -314,6 +335,13 @@ type BatchEmbeddingRequest struct {
 	RequestID string                 `json:"request_id"`         // Unique request identifier
 	Text      string                 `json:"text"`               // Text to embed
 	Metadata  map[string]interface{} `json:"metadata,omitempty"` // Optional metadata
+}
+
+// TokenCountResult represents the result of a token counting operation.
+type TokenCountResult struct {
+	TotalTokens int        `json:"total_tokens"`        // Total number of tokens counted
+	Model       string     `json:"model"`               // Model used for token counting
+	CachedAt    *time.Time `json:"cached_at,omitempty"` // Optional timestamp if result was cached
 }
 
 // BatchEmbeddingResponse represents a single embedding response from a batch.

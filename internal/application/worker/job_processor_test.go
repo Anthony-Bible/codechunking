@@ -324,6 +324,44 @@ func (m *MockEmbeddingService) EstimateTokenCount(ctx context.Context, text stri
 	return args.Int(0), args.Error(1)
 }
 
+func (m *MockEmbeddingService) CountTokens(
+	ctx context.Context,
+	text string,
+	model string,
+) (*outbound.TokenCountResult, error) {
+	args := m.Called(ctx, text, model)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.TokenCountResult), args.Error(1)
+}
+
+func (m *MockEmbeddingService) CountTokensBatch(
+	ctx context.Context,
+	texts []string,
+	model string,
+) ([]*outbound.TokenCountResult, error) {
+	args := m.Called(ctx, texts, model)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	// Support both direct values and function returns
+	if fn, ok := args.Get(0).(func(context.Context, []string, string) []*outbound.TokenCountResult); ok {
+		return fn(ctx, texts, model), args.Error(1)
+	}
+	return args.Get(0).([]*outbound.TokenCountResult), args.Error(1)
+}
+
+func (m *MockEmbeddingService) CountTokensWithCallback(
+	ctx context.Context,
+	chunks []outbound.CodeChunk,
+	model string,
+	callback outbound.TokenCountCallback,
+) error {
+	args := m.Called(ctx, chunks, model, callback)
+	return args.Error(0)
+}
+
 // MockChunkStorageRepository mocks the chunk storage repository interface.
 type MockChunkStorageRepository struct {
 	mock.Mock
@@ -336,6 +374,10 @@ func (m *MockChunkStorageRepository) SaveChunk(ctx context.Context, chunk *outbo
 
 func (m *MockChunkStorageRepository) SaveChunks(ctx context.Context, chunks []outbound.CodeChunk) error {
 	args := m.Called(ctx, chunks)
+	// Handle function return types (for dynamic return values in tests)
+	if fn, ok := args.Get(0).(func(context.Context, []outbound.CodeChunk) error); ok {
+		return fn(ctx, chunks)
+	}
 	return args.Error(0)
 }
 
@@ -386,6 +428,11 @@ func (m *MockChunkStorageRepository) CountChunksForRepository(
 ) (int, error) {
 	args := m.Called(ctx, repositoryID)
 	return args.Int(0), args.Error(1)
+}
+
+func (m *MockChunkStorageRepository) UpdateTokenCounts(ctx context.Context, updates []outbound.ChunkTokenUpdate) error {
+	args := m.Called(ctx, updates)
+	return args.Error(0)
 }
 
 func (m *MockChunkStorageRepository) SaveEmbedding(ctx context.Context, embedding *outbound.Embedding) error {

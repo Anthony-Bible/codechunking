@@ -112,6 +112,17 @@ type BatchProcessingConfig struct {
 	SubmissionInitialBackoff time.Duration `mapstructure:"submission_initial_backoff"` // Initial backoff on rate limit
 	SubmissionMaxBackoff     time.Duration `mapstructure:"submission_max_backoff"`     // Maximum backoff duration
 	MaxSubmissionAttempts    int           `mapstructure:"max_submission_attempts"`    // Max retry attempts per batch
+
+	// Token counting configuration
+	TokenCounting TokenCountingConfig `mapstructure:"token_counting"` // Token counting configuration
+}
+
+// TokenCountingConfig holds configuration for token counting integration.
+type TokenCountingConfig struct {
+	Enabled           bool   `mapstructure:"enabled"`              // Enable token counting
+	Mode              string `mapstructure:"mode"`                 // Mode: "all", "sample", or "on_demand"
+	SamplePercent     int    `mapstructure:"sample_percent"`       // Percentage of chunks to sample (for "sample" mode)
+	MaxTokensPerChunk int    `mapstructure:"max_tokens_per_chunk"` // Maximum tokens per chunk (default: 8192)
 }
 
 // BatchSizeConfig holds batch size configuration for a specific priority level.

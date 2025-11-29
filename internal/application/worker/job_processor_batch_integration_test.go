@@ -231,6 +231,56 @@ func (m *IntegrationMockEmbeddingService) EstimateTokenCount(ctx context.Context
 	return len(text) / 4, nil
 }
 
+// CountTokens counts the exact number of tokens in the given text.
+func (m *IntegrationMockEmbeddingService) CountTokens(
+	ctx context.Context,
+	text string,
+	model string,
+) (*outbound.TokenCountResult, error) {
+	return &outbound.TokenCountResult{
+		TotalTokens: len(text) / 4,
+		Model:       model,
+	}, nil
+}
+
+// CountTokensBatch counts tokens for multiple texts in a single batch request.
+func (m *IntegrationMockEmbeddingService) CountTokensBatch(
+	ctx context.Context,
+	texts []string,
+	model string,
+) ([]*outbound.TokenCountResult, error) {
+	results := make([]*outbound.TokenCountResult, len(texts))
+	for i, text := range texts {
+		results[i] = &outbound.TokenCountResult{
+			TotalTokens: len(text) / 4,
+			Model:       model,
+		}
+	}
+	return results, nil
+}
+
+// CountTokensWithCallback counts tokens for each chunk and invokes the callback after each result.
+func (m *IntegrationMockEmbeddingService) CountTokensWithCallback(
+	ctx context.Context,
+	chunks []outbound.CodeChunk,
+	model string,
+	callback outbound.TokenCountCallback,
+) error {
+	for i, chunk := range chunks {
+		result := &outbound.TokenCountResult{
+			TotalTokens: len(chunk.Content) / 4,
+			Model:       model,
+		}
+		if callback != nil {
+			if err := callback(i, &chunk, result); err != nil {
+				// Log but continue processing
+				continue
+			}
+		}
+	}
+	return nil
+}
+
 // createJobProcessorWithBatchConfig creates a job processor with batch processing enabled.
 func createJobProcessorWithBatchConfig(
 	t *testing.T,

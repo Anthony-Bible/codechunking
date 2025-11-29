@@ -1116,7 +1116,7 @@ func TestBatchProgressRepository_GetPendingSubmissionBatch_DistributedLocking(t 
 		// Manually query within transaction to test FOR UPDATE SKIP LOCKED
 		query := `SELECT id, repository_id, indexing_job_id, batch_number, total_batches,
 			chunks_processed, status, retry_count, next_retry_at, error_message,
-			gemini_batch_job_id, created_at, updated_at,
+			gemini_batch_job_id, gemini_file_uri, created_at, updated_at,
 			batch_request_data, submission_attempts, next_submission_at
 			FROM codechunking.batch_job_progress
 			WHERE status = 'pending_submission'
@@ -1134,13 +1134,14 @@ func TestBatchProgressRepository_GetPendingSubmissionBatch_DistributedLocking(t 
 		var nextRetryAt *time.Time
 		var errorMessage *string
 		var geminiBatchJobID *string
+		var geminiFileURI *string
 		var createdAt, updatedAt time.Time
 		var batchRequestData []byte
 		var nextSubmissionAt *time.Time
 
 		err := row.Scan(
 			&id, &repositoryID, &indexingJobID, &batchNumber, &totalBatches, &chunksProcessed,
-			&status, &retryCount, &nextRetryAt, &errorMessage, &geminiBatchJobID,
+			&status, &retryCount, &nextRetryAt, &errorMessage, &geminiBatchJobID, &geminiFileURI,
 			&createdAt, &updatedAt, &batchRequestData, &submissionAttempts, &nextSubmissionAt,
 		)
 		if err != nil {
@@ -1149,7 +1150,7 @@ func TestBatchProgressRepository_GetPendingSubmissionBatch_DistributedLocking(t 
 
 		return entity.RestoreBatchJobProgress(
 			id, repositoryID, indexingJobID, batchNumber, totalBatches, chunksProcessed,
-			status, retryCount, nextRetryAt, errorMessage, geminiBatchJobID,
+			status, retryCount, nextRetryAt, errorMessage, geminiBatchJobID, geminiFileURI,
 			createdAt, updatedAt, batchRequestData, submissionAttempts, nextSubmissionAt,
 		), nil
 	}()
@@ -1173,7 +1174,7 @@ func TestBatchProgressRepository_GetPendingSubmissionBatch_DistributedLocking(t 
 		// Manually query within transaction to test FOR UPDATE SKIP LOCKED
 		query := `SELECT id, repository_id, indexing_job_id, batch_number, total_batches,
 			chunks_processed, status, retry_count, next_retry_at, error_message,
-			gemini_batch_job_id, created_at, updated_at,
+			gemini_batch_job_id, gemini_file_uri, created_at, updated_at,
 			batch_request_data, submission_attempts, next_submission_at
 			FROM codechunking.batch_job_progress
 			WHERE status = 'pending_submission'
@@ -1191,13 +1192,14 @@ func TestBatchProgressRepository_GetPendingSubmissionBatch_DistributedLocking(t 
 		var nextRetryAt *time.Time
 		var errorMessage *string
 		var geminiBatchJobID *string
+		var geminiFileURI *string
 		var createdAt, updatedAt time.Time
 		var batchRequestData []byte
 		var nextSubmissionAt *time.Time
 
 		err := row.Scan(
 			&id, &repositoryID, &indexingJobID, &batchNumber, &totalBatches, &chunksProcessed,
-			&status, &retryCount, &nextRetryAt, &errorMessage, &geminiBatchJobID,
+			&status, &retryCount, &nextRetryAt, &errorMessage, &geminiBatchJobID, &geminiFileURI,
 			&createdAt, &updatedAt, &batchRequestData, &submissionAttempts, &nextSubmissionAt,
 		)
 		if err != nil {
@@ -1206,7 +1208,7 @@ func TestBatchProgressRepository_GetPendingSubmissionBatch_DistributedLocking(t 
 
 		return entity.RestoreBatchJobProgress(
 			id, repositoryID, indexingJobID, batchNumber, totalBatches, chunksProcessed,
-			status, retryCount, nextRetryAt, errorMessage, geminiBatchJobID,
+			status, retryCount, nextRetryAt, errorMessage, geminiBatchJobID, geminiFileURI,
 			createdAt, updatedAt, batchRequestData, submissionAttempts, nextSubmissionAt,
 		), nil
 	}()

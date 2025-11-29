@@ -49,35 +49,11 @@ batch_processing:
   enabled: true
   # Threshold for switching to batch processing (chunks > this value use batch)
   threshold_chunks: 50
-  # Batch size configuration by priority level
-  batch_sizes:
-    # Real-time priority: 1-25 requests (lowest latency)
-    realtime:
-      min: 1
-      max: 25
-      timeout: 5m
-    # Interactive priority: 5-50 requests (responsive UI)
-    interactive:
-      min: 5
-      max: 50
-      timeout: 10m
-    # Background priority: 50-200 requests (balanced for job processing)
-    background:
-      min: 50
-      max: 200
-      timeout: 30m
-    # Batch priority: 100-500 requests (maximum efficiency)
-    batch:
-      min: 100
-      max: 500
-      timeout: 60m
   # Fallback configuration
   fallback_to_sequential: true  # Fall back to individual processing on batch failures
   queue_limits:
     max_queue_size: 10000       # Maximum requests in queue
     max_wait_time: 30m          # Maximum time waiting in queue
-  # Default priority for job processing
-  default_priority: "background"
   # Test embeddings configuration (for development/testing only)
   use_test_embeddings: false
   # Batch chunking strategy parameters

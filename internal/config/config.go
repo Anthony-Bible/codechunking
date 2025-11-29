@@ -91,20 +91,18 @@ type BatchConfig struct {
 
 // BatchProcessingConfig holds enhanced batch processing configuration.
 type BatchProcessingConfig struct {
-	Enabled              bool                       `mapstructure:"enabled"`                // Enable queue-based batch processing
-	ThresholdChunks      int                        `mapstructure:"threshold_chunks"`       // Min chunks to trigger batch processing
-	BatchSizes           map[string]BatchSizeConfig `mapstructure:"batch_sizes"`            // Batch size configuration by priority
-	FallbackToSequential bool                       `mapstructure:"fallback_to_sequential"` // Fall back to individual processing on failures
-	QueueLimits          QueueLimitsConfig          `mapstructure:"queue_limits"`           // Queue size and wait time limits
-	DefaultPriority      string                     `mapstructure:"default_priority"`       // Default priority for job processing
-	UseTestEmbeddings    bool                       `mapstructure:"use_test_embeddings"`    // Use test embeddings (for testing/TDD only)
-	MaxBatchSize         int                        `mapstructure:"max_batch_size"`         // Maximum chunks per API batch
-	InitialBackoff       time.Duration              `mapstructure:"initial_backoff"`        // Initial backoff delay for retries
-	MaxBackoff           time.Duration              `mapstructure:"max_backoff"`            // Maximum backoff delay
-	MaxRetries           int                        `mapstructure:"max_retries"`            // Maximum retry attempts per batch
-	EnableBatchChunking  bool                       `mapstructure:"enable_batch_chunking"`  // Enable/disable batch chunking
-	PollerInterval       time.Duration              `mapstructure:"poller_interval"`        // Interval for polling Gemini batch jobs
-	MaxConcurrentPolls   int                        `mapstructure:"max_concurrent_polls"`   // Max concurrent batch job polls
+	Enabled              bool              `mapstructure:"enabled"`                // Enable queue-based batch processing
+	ThresholdChunks      int               `mapstructure:"threshold_chunks"`       // Min chunks to trigger batch processing
+	FallbackToSequential bool              `mapstructure:"fallback_to_sequential"` // Fall back to individual processing on failures
+	QueueLimits          QueueLimitsConfig `mapstructure:"queue_limits"`           // Queue size and wait time limits
+	UseTestEmbeddings    bool              `mapstructure:"use_test_embeddings"`    // Use test embeddings (for testing/TDD only)
+	MaxBatchSize         int               `mapstructure:"max_batch_size"`         // Maximum chunks per API batch
+	InitialBackoff       time.Duration     `mapstructure:"initial_backoff"`        // Initial backoff delay for retries
+	MaxBackoff           time.Duration     `mapstructure:"max_backoff"`            // Maximum backoff delay
+	MaxRetries           int               `mapstructure:"max_retries"`            // Maximum retry attempts per batch
+	EnableBatchChunking  bool              `mapstructure:"enable_batch_chunking"`  // Enable/disable batch chunking
+	PollerInterval       time.Duration     `mapstructure:"poller_interval"`        // Interval for polling Gemini batch jobs
+	MaxConcurrentPolls   int               `mapstructure:"max_concurrent_polls"`   // Max concurrent batch job polls
 
 	// Batch Submitter configuration (rate-limit-aware submission)
 	SubmitterPollInterval    time.Duration `mapstructure:"submitter_poll_interval"`    // How often submitter checks for pending batches
@@ -123,13 +121,6 @@ type TokenCountingConfig struct {
 	Mode              string `mapstructure:"mode"`                 // Mode: "all", "sample", or "on_demand"
 	SamplePercent     int    `mapstructure:"sample_percent"`       // Percentage of chunks to sample (for "sample" mode)
 	MaxTokensPerChunk int    `mapstructure:"max_tokens_per_chunk"` // Maximum tokens per chunk (default: 8192)
-}
-
-// BatchSizeConfig holds batch size configuration for a specific priority level.
-type BatchSizeConfig struct {
-	Min     int           `mapstructure:"min"`     // Minimum batch size
-	Max     int           `mapstructure:"max"`     // Maximum batch size
-	Timeout time.Duration `mapstructure:"timeout"` // Timeout for batch processing
 }
 
 // QueueLimitsConfig holds queue limits configuration.

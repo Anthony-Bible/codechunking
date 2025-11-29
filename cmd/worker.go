@@ -231,23 +231,12 @@ func convertBatchProcessingConfig(cfg *config.BatchProcessingConfig) *outbound.B
 	}
 
 	batchConfig := &outbound.BatchConfig{
-		// Use YAML queue limits, fallback to defaults
 		MaxQueueSize:        cfg.QueueLimits.MaxQueueSize,
 		BatchTimeout:        batchTimeout,
 		ProcessingInterval:  defaultConfig.ProcessingInterval,
 		EnableDynamicSizing: true,
-		PriorityWeights:     defaultConfig.PriorityWeights,
-	}
-
-	// Configure batch sizes based on priority and YAML configuration
-	// Use the default priority's batch size as the baseline
-	if batchSizeConfig, exists := cfg.BatchSizes[cfg.DefaultPriority]; exists {
-		batchConfig.MinBatchSize = batchSizeConfig.Min
-		batchConfig.MaxBatchSize = batchSizeConfig.Max
-	} else {
-		// Fallback to default batch sizes if priority not found
-		batchConfig.MinBatchSize = defaultConfig.MinBatchSize
-		batchConfig.MaxBatchSize = defaultConfig.MaxBatchSize
+		MinBatchSize:        defaultConfig.MinBatchSize,
+		MaxBatchSize:        defaultConfig.MaxBatchSize,
 	}
 
 	return batchConfig
@@ -270,7 +259,6 @@ func createBatchQueueManager(
 
 	slogger.InfoNoCtx("Creating batch queue manager", slogger.Fields{
 		"threshold_chunks": cfg.BatchProcessing.ThresholdChunks,
-		"default_priority": cfg.BatchProcessing.DefaultPriority,
 		"fallback_enabled": cfg.BatchProcessing.FallbackToSequential,
 	})
 
@@ -315,7 +303,6 @@ func createBatchQueueManager(
 	}
 
 	slogger.InfoNoCtx("Batch queue manager created and started successfully", slogger.Fields{
-		"batch_sizes":            cfg.BatchProcessing.BatchSizes,
 		"queue_limits":           cfg.BatchProcessing.QueueLimits,
 		"applied_max_queue_size": batchConfig.MaxQueueSize,
 		"applied_batch_timeout":  batchConfig.BatchTimeout,

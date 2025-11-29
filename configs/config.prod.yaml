@@ -1,32 +1,94 @@
 # Production configuration overrides
+# See wiki/configuration-reference.md for complete documentation
+
 api:
-  read_timeout: 30s
-  write_timeout: 30s
+  read_timeout: 30s            # Longer timeout for production network conditions
+  write_timeout: 30s           # Longer timeout for production network conditions
 
 worker:
-  concurrency: 20
-  job_timeout: 60m
+  concurrency: 20              # Higher concurrency for production throughput
+  job_timeout: 60m             # Extended timeout for large repositories
 
 database:
-  sslmode: require
-  max_connections: 100
-  max_idle_connections: 20
+  sslmode: require             # Enforce SSL in production
+  max_connections: 100         # Higher connection limit for production
+  max_idle_connections: 20     # More idle connections for better performance
 
 nats:
-  max_reconnects: 10
-  reconnect_wait: 5s
+  max_reconnects: 10           # More reconnection attempts for production resilience
+  reconnect_wait: 5s           # Longer wait between reconnections
 
 gemini:
-  max_retries: 5
-  timeout: 60s
+  max_retries: 5               # More retries for production reliability
+  timeout: 60s                 # Shorter per-request timeout for better responsiveness
 
 log:
-  level: error
-  format: json
+  level: error                 # Only log errors in production
+  format: json                 # Structured JSON logging for production monitoring
 
-# Production secrets should be set via environment variables:
-# CODECHUNK_DATABASE_USER
-# CODECHUNK_DATABASE_PASSWORD
-# CODECHUNK_DATABASE_HOST
-# CODECHUNK_GEMINI_API_KEY
-# CODECHUNK_NATS_URL
+# Production batch processing settings
+batch_processing:
+  # Higher threshold for production (more efficient batching)
+  threshold_chunks: 100
+  # Production-optimized batch sizes (larger for efficiency)
+  batch_sizes:
+    realtime:
+      min: 5
+      max: 25
+      timeout: 5m
+    interactive:
+      min: 10
+      max: 50
+      timeout: 10m
+    background:
+      min: 50
+      max: 200
+      timeout: 30m
+    batch:
+      min: 100
+      max: 500
+      timeout: 60m
+  fallback_to_sequential: true     # Ensure fallback to sequential processing
+  queue_limits:
+    max_queue_size: 50000          # Larger queue for production
+    max_wait_time: 60m             # Longer wait time for high load
+  default_priority: "background"
+  use_test_embeddings: false        # Production must use real embeddings
+  # Production-optimized batch settings
+  max_batch_size: 1000             # Larger batch size for production efficiency
+  initial_backoff: 1m              # Longer initial backoff for production
+  max_backoff: 10m                 # Longer max backoff for production
+  max_retries: 5                   # More retries for production reliability
+  enable_batch_chunking: true
+  # Production poller configuration (more efficient)
+  poller_interval: 60s             # Less frequent polling for efficiency
+  max_concurrent_polls: 10         # More concurrent polls for scalability
+  # Production token counting
+  token_counting:
+    enabled: true
+    mode: "all"                    # Count all chunks for accurate billing
+    sample_percent: 10
+    max_tokens_per_chunk: 8192
+
+# Production security settings (more restrictive)
+security:
+  max_url_length: 1024             # Shorter URLs for security
+  max_body_size: 32768             # Smaller limit for security (32KB)
+  rate_limit:
+    requests_per_minute: 120       # Moderate rate limiting
+    burst_size: 20                 # Controlled burst size
+    window_size: 1m
+    enabled: true                  # Strict rate limiting in production
+
+# Production git operations
+git:
+  default_timeout: 60m             # Longer timeout for large repos
+  max_concurrent_clones: 5         # Higher concurrency for production
+  retry_attempts: 3                # More retries for production
+
+# Production secrets must be set via environment variables:
+# CODECHUNK_DATABASE_USER         - Required database username
+# CODECHUNK_DATABASE_PASSWORD     - Required database password
+# CODECHUNK_DATABASE_HOST         - Database hostname if not localhost
+# CODECHUNK_GEMINI_API_KEY        - Required Gemini API key for embeddings
+# CODECHUNK_NATS_URL              - NATS server URL if using external NATS

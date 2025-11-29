@@ -1,30 +1,20 @@
 # Development configuration overrides
+# See wiki/configuration-reference.md for complete documentation
+
 database:
-  user: dev
-  password: dev
+  user: dev                    # Development database username
+  password: dev                # Development database password
 
 log:
-  level: debug
-  format: text
+  level: debug                 # Verbose logging for development
+  format: text                 # Human-readable text format
 
-# Gemini API key should be set via environment variable:
-# export CODECHUNK_GEMINI_API_KEY=your-api-key
+# Enhanced development configuration
+worker:
+  concurrency: 3               # Lower concurrency for debugging
 
-# Note: Timeout configuration is inherited from config.yaml
-# - gemini.timeout: 120s (per-embedding API call timeout)
-# - worker.job_timeout: 30m (overall job processing timeout)
-# These values allow sufficient time for embedding generation even with network slowdowns
-gemini:
-  batch:
-    enabled: true
-    input_dir: /tmp/batch_embeddings/input
-    output_dir: /tmp/batch_embeddings/output
-    poll_interval: 5s
-    max_wait_time: 30m
-
-# Enhanced batch processing for development
 batch_processing:
-  # Enable batch processing in development environment
+  # Enable batch processing but with developer-friendly settings
   enabled: true
   # Lower threshold for development to test batching with smaller repos
   threshold_chunks: 10
@@ -46,25 +36,55 @@ batch_processing:
       min: 25
       max: 200
       timeout: 20m
-  fallback_to_sequential: false
+  fallback_to_sequential: false    # Test batch processing without fallback
   queue_limits:
-    max_queue_size: 100000
+    max_queue_size: 10000
     max_wait_time: 15m
   default_priority: "background"
-  # Use test embeddings in development for faster testing without API calls
+  # Note: Set use_test_embeddings: true to avoid API costs during development
   use_test_embeddings: false
-  # Batch chunking strategy parameters (development values)
+  # Development-optimized batch settings
   max_batch_size: 300           # Smaller batch size for faster testing
   initial_backoff: 5s           # Shorter initial backoff for development
   max_backoff: 60s              # Shorter max backoff for development
   max_retries: 2                # Fewer retries in development
-  enable_batch_chunking: true   # Enable batch chunking in development
-  # Async batch job poller configuration
+  enable_batch_chunking: true
+  # Development poller configuration (more frequent for testing)
   poller_interval: 30s          # Poll Gemini batch jobs every 30 seconds
   max_concurrent_polls: 5       # Max concurrent batch job status checks
   # Token counting configuration
   token_counting:
-    enabled: true                    # Enable token counting
-    mode: "all"                      # Mode: "all", "sample", or "on_demand"
-    sample_percent: 10               # Percentage of chunks to sample (for "sample" mode)
-    max_tokens_per_chunk: 8192       # Maximum tokens per chunk (Gemini embedding model limit)
+    enabled: true                    # Enable token counting in development
+    mode: "all"                      # Count all chunks for accuracy
+    sample_percent: 10               # Not used in "all" mode
+    max_tokens_per_chunk: 8192       # Maximum tokens per chunk
+
+# Development security settings (more permissive)
+security:
+  rate_limit:
+    requests_per_minute: 300    # Higher rate limit for development
+    burst_size: 50              # Larger burst size
+    window_size: 1m
+    enabled: true               # Still enable rate limiting
+
+# Development git operations
+git:
+  default_timeout: 10m         # Shorter timeout for faster development cycles
+  max_concurrent_clones: 2     # Fewer concurrent clones for resource conservation
+
+# Gemini API key should be set via environment variable:
+# export CODECHUNK_GEMINI_API_KEY=your-api-key
+
+# Note: Timeout configuration is inherited from config.yaml
+# - gemini.timeout: 120s (per-embedding API call timeout)
+# - worker.job_timeout: 30m (overall job processing timeout)
+# These values allow sufficient time for embedding generation even with network slowdowns
+
+# Gemini batch configuration (development)
+gemini:
+  batch:
+    enabled: true
+    input_dir: /tmp/batch_embeddings/input
+    output_dir: /tmp/batch_embeddings/output
+    poll_interval: 5s
+    max_wait_time: 30m

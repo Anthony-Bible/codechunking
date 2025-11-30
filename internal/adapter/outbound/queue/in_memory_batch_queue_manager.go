@@ -14,8 +14,8 @@ type InMemoryBatchQueueManager struct {
 	// Core configuration
 	config *outbound.BatchConfig
 
-	// Queue storage - in-memory priority queues
-	queues map[outbound.RequestPriority][]*outbound.EmbeddingRequest
+	// Queue storage - single in-memory FIFO queue
+	queue []*outbound.EmbeddingRequest
 
 	// State management
 	isRunning    bool
@@ -39,13 +39,8 @@ type InMemoryBatchQueueManager struct {
 func NewInMemoryBatchQueueManager() outbound.BatchQueueManager {
 	config := DefaultBatchConfig()
 	return &InMemoryBatchQueueManager{
-		config: config,
-		queues: map[outbound.RequestPriority][]*outbound.EmbeddingRequest{
-			outbound.PriorityRealTime:    {},
-			outbound.PriorityInteractive: {},
-			outbound.PriorityBackground:  {},
-			outbound.PriorityBatch:       {},
-		},
+		config:          config,
+		queue:           []*outbound.EmbeddingRequest{},
 		isRunning:       false,
 		metricsTracker:  NewQueueMetricsTracker(),
 		statsCalculator: NewQueueStatsCalculator(),
@@ -82,8 +77,8 @@ func (q *InMemoryBatchQueueManager) QueueEmbeddingRequest(
 	defer q.mu.Unlock()
 
 	// Check queue capacity
-	totalSize := q.getTotalQueueSizeUnsafe()
-	if totalSize >= q.config.MaxQueueSize {
+	queueSize := len(q.queue)
+	if queueSize >= q.config.MaxQueueSize {
 		return &outbound.QueueManagerError{
 			Code:      "queue_full",
 			Message:   "Queue capacity exceeded",
@@ -93,13 +88,12 @@ func (q *InMemoryBatchQueueManager) QueueEmbeddingRequest(
 		}
 	}
 
-	// Add to appropriate priority queue
-	q.queues[request.Priority] = append(q.queues[request.Priority], request)
+	// Add to queue (FIFO)
+	q.queue = append(q.queue, request)
 
 	slogger.Info(ctx, "Queued embedding request", slogger.Fields{
 		"request_id": request.RequestID,
-		"priority":   request.Priority,
-		"queue_size": totalSize + 1,
+		"queue_size": queueSize + 1,
 	})
 
 	return nil
@@ -118,8 +112,8 @@ func (q *InMemoryBatchQueueManager) QueueBulkEmbeddingRequests(
 	defer q.mu.Unlock()
 
 	// Check capacity for all requests
-	totalSize := q.getTotalQueueSizeUnsafe()
-	if totalSize+len(requests) > q.config.MaxQueueSize {
+	queueSize := len(q.queue)
+	if queueSize+len(requests) > q.config.MaxQueueSize {
 		return &outbound.QueueManagerError{
 			Code:      "queue_full",
 			Message:   "Queue capacity exceeded",
@@ -128,20 +122,18 @@ func (q *InMemoryBatchQueueManager) QueueBulkEmbeddingRequests(
 		}
 	}
 
-	// Add all requests to their appropriate priority queues
-	for _, request := range requests {
-		q.queues[request.Priority] = append(q.queues[request.Priority], request)
-	}
+	// Add all requests to queue
+	q.queue = append(q.queue, requests...)
 
 	slogger.Info(ctx, "Queued bulk embedding requests", slogger.Fields{
 		"request_count":    len(requests),
-		"total_queue_size": totalSize + len(requests),
+		"total_queue_size": queueSize + len(requests),
 	})
 
 	return nil
 }
 
-// ProcessQueue processes pending requests in priority order and creates optimized batches.
+// ProcessQueue processes pending requests and creates optimized batches.
 func (q *InMemoryBatchQueueManager) ProcessQueue(ctx context.Context) (int, error) {
 	// Check running status without lock first
 	q.mu.RLock()
@@ -167,63 +159,52 @@ func (q *InMemoryBatchQueueManager) ProcessQueue(ctx context.Context) (int, erro
 	}()
 
 	batchCount := 0
-	priorities := getPriorityProcessingOrder()
 
-	for _, priority := range priorities {
-		// Get batch for this priority with minimal lock time
-		q.mu.Lock()
-		requests := q.queues[priority]
-		if len(requests) == 0 {
-			q.mu.Unlock()
-			continue
-		}
-
-		// Get current queue sizes for optimization
-		queueSizes := make(map[outbound.RequestPriority]int)
-		for p, reqs := range q.queues {
-			queueSizes[p] = len(reqs)
-		}
+	// Get queue size with minimal lock time
+	q.mu.Lock()
+	queueSize := len(q.queue)
+	if queueSize == 0 {
 		q.mu.Unlock()
+		return 0, nil
+	}
+	q.mu.Unlock()
 
-		// Calculate optimal batch size outside of lock
-		batchSize := q.batchOptimizer.GetOptimalBatchSize(ctx, priority, len(requests), queueSizes)
-		if batchSize > len(requests) {
-			batchSize = len(requests)
-		}
+	// Calculate optimal batch size outside of lock
+	batchSize := q.batchOptimizer.GetOptimalBatchSize(ctx, queueSize)
+	if batchSize > queueSize {
+		batchSize = queueSize
+	}
 
-		if batchSize > 0 {
-			// Extract batch with minimal lock time
-			q.mu.Lock()
-			currentRequests := q.queues[priority]
-			if len(currentRequests) >= batchSize {
-				batch := make([]*outbound.EmbeddingRequest, batchSize)
-				copy(batch, currentRequests[:batchSize])
-				q.queues[priority] = currentRequests[batchSize:]
-				q.mu.Unlock()
+	if batchSize > 0 {
+		// Extract batch with minimal lock time
+		q.mu.Lock()
+		currentQueueSize := len(q.queue)
+		if currentQueueSize >= batchSize {
+			batch := make([]*outbound.EmbeddingRequest, batchSize)
+			copy(batch, q.queue[:batchSize])
+			q.queue = q.queue[batchSize:]
+			q.mu.Unlock()
 
-				// Process batch outside of lock
-				if err := q.processBatch(ctx, batch); err != nil {
-					slogger.Error(ctx, "Failed to process batch", slogger.Fields{
-						"priority":   priority,
-						"batch_size": batchSize,
-						"error":      err.Error(),
-					})
-					q.metricsTracker.RecordError()
-					continue
-				}
-
-				batchCount++
-				q.metricsTracker.RecordBatchProcessed(batchSize)
-
-				slogger.Info(ctx, "Processed batch", slogger.Fields{
-					"priority":    priority,
-					"batch_size":  batchSize,
-					"batch_count": batchCount,
+			// Process batch outside of lock
+			if err := q.processBatch(ctx, batch); err != nil {
+				slogger.Error(ctx, "Failed to process batch", slogger.Fields{
+					"batch_size": batchSize,
+					"error":      err.Error(),
 				})
-			} else {
-				// Queue changed while we were calculating - unlock and continue
-				q.mu.Unlock()
+				q.metricsTracker.RecordError()
+				return batchCount, err
 			}
+
+			batchCount++
+			q.metricsTracker.RecordBatchProcessed(batchSize)
+
+			slogger.Info(ctx, "Processed batch", slogger.Fields{
+				"batch_size":  batchSize,
+				"batch_count": batchCount,
+			})
+		} else {
+			// Queue changed while we were calculating - unlock and continue
+			q.mu.Unlock()
 		}
 	}
 
@@ -235,19 +216,17 @@ func (q *InMemoryBatchQueueManager) FlushQueue(ctx context.Context) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	// Process all remaining requests in all priority queues
-	for priority, requests := range q.queues {
-		if len(requests) > 0 {
-			if err := q.processBatch(ctx, requests); err != nil {
-				return &outbound.QueueManagerError{
-					Code:    "flush_failed",
-					Message: "Failed to flush queue",
-					Type:    "processing",
-					Cause:   err,
-				}
+	// Process all remaining requests
+	if len(q.queue) > 0 {
+		if err := q.processBatch(ctx, q.queue); err != nil {
+			return &outbound.QueueManagerError{
+				Code:    "flush_failed",
+				Message: "Failed to flush queue",
+				Type:    "processing",
+				Cause:   err,
 			}
-			q.queues[priority] = []*outbound.EmbeddingRequest{}
 		}
+		q.queue = []*outbound.EmbeddingRequest{}
 	}
 
 	return nil
@@ -256,10 +235,7 @@ func (q *InMemoryBatchQueueManager) FlushQueue(ctx context.Context) error {
 // GetQueueStats returns current statistics about queue state and processing metrics.
 func (q *InMemoryBatchQueueManager) GetQueueStats(ctx context.Context) (*outbound.QueueStats, error) {
 	q.mu.RLock()
-	queues := make(map[outbound.RequestPriority][]*outbound.EmbeddingRequest)
-	for priority, requests := range q.queues {
-		queues[priority] = requests
-	}
+	queueSize := len(q.queue)
 	q.mu.RUnlock()
 
 	// Get current metrics
@@ -267,7 +243,7 @@ func (q *InMemoryBatchQueueManager) GetQueueStats(ctx context.Context) (*outboun
 
 	// Calculate stats using the dedicated calculator
 	stats := q.statsCalculator.CalculateQueueStats(
-		queues,
+		queueSize,
 		q.config,
 		metrics.TotalProcessed,
 		metrics.TotalBatches,
@@ -284,7 +260,7 @@ func (q *InMemoryBatchQueueManager) GetQueueStats(ctx context.Context) (*outboun
 // GetQueueHealth returns health status of the queue manager and its dependencies.
 func (q *InMemoryBatchQueueManager) GetQueueHealth(ctx context.Context) (*outbound.QueueHealth, error) {
 	q.mu.RLock()
-	totalQueueSize := q.getTotalQueueSizeUnsafe()
+	queueSize := len(q.queue)
 	isRunning := q.isRunning
 	isProcessing := q.isProcessing
 	q.mu.RUnlock()
@@ -296,7 +272,7 @@ func (q *InMemoryBatchQueueManager) GetQueueHealth(ctx context.Context) (*outbou
 	health := q.healthMonitor.CalculateQueueHealth(
 		isRunning,
 		isProcessing,
-		totalQueueSize,
+		queueSize,
 		metrics.TotalErrors,
 		metrics.TotalProcessed,
 		metrics.LastProcessed,
@@ -338,10 +314,10 @@ func (q *InMemoryBatchQueueManager) DrainQueue(ctx context.Context, timeout time
 	for time.Now().Before(deadline) {
 		// Check queue size with minimal lock time
 		q.mu.RLock()
-		totalSize := q.getTotalQueueSizeUnsafe()
+		queueSize := len(q.queue)
 		q.mu.RUnlock()
 
-		if totalSize == 0 {
+		if queueSize == 0 {
 			return nil // Queue is empty
 		}
 
@@ -400,16 +376,7 @@ func (q *InMemoryBatchQueueManager) Stop(ctx context.Context) error {
 	return nil
 }
 
-// Helper methods
-
-func (q *InMemoryBatchQueueManager) getTotalQueueSizeUnsafe() int {
-	total := 0
-	for _, requests := range q.queues {
-		total += len(requests)
-	}
-	return total
-}
-
+// processBatch processes a batch of requests.
 func (q *InMemoryBatchQueueManager) processBatch(ctx context.Context, batch []*outbound.EmbeddingRequest) error {
 	// For the green phase implementation, we just simulate processing
 	// In a real implementation, this would delegate to the batch processor

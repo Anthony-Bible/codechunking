@@ -28,29 +28,10 @@ batch_processing:
   enabled: true
   # Lower threshold for development to test batching with smaller repos
   threshold_chunks: 10
-  # Development batch sizes (smaller for faster testing)
-  batch_sizes:
-    realtime:
-      min: 1
-      max: 5
-      timeout: 2m
-    interactive:
-      min: 3
-      max: 10
-      timeout: 5m
-    background:
-      min: 10
-      max: 50
-      timeout: 15m
-    batch:
-      min: 25
-      max: 200
-      timeout: 20m
   fallback_to_sequential: false
   queue_limits:
     max_queue_size: 100000
     max_wait_time: 15m
-  default_priority: "background"
   # Use test embeddings in development for faster testing without API calls
   use_test_embeddings: false
   # Batch chunking strategy parameters (development values)

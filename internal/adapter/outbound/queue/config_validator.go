@@ -16,12 +16,6 @@ func DefaultBatchConfig() *outbound.BatchConfig {
 		MaxQueueSize:        1000,
 		ProcessingInterval:  1 * time.Second,
 		EnableDynamicSizing: true,
-		PriorityWeights: map[outbound.RequestPriority]float64{
-			outbound.PriorityRealTime:    1.0,
-			outbound.PriorityInteractive: 0.7,
-			outbound.PriorityBackground:  0.4,
-			outbound.PriorityBatch:       0.1,
-		},
 	}
 }
 
@@ -69,13 +63,6 @@ func ValidateBatchConfig(config *outbound.BatchConfig) error {
 		)
 	}
 
-	// Validate priority weights
-	if config.PriorityWeights != nil {
-		if err := validatePriorityWeights(config.PriorityWeights); err != nil {
-			return err
-		}
-	}
-
 	// Validate reasonable upper bounds to prevent resource exhaustion
 	if config.MaxBatchSize > 1000 {
 		return createConfigurationError(
@@ -95,47 +82,6 @@ func ValidateBatchConfig(config *outbound.BatchConfig) error {
 		return createConfigurationError(
 			"batch_timeout_too_long",
 			"BatchTimeout should not exceed 5 minutes",
-		)
-	}
-
-	return nil
-}
-
-// validatePriorityWeights validates the priority weights configuration.
-func validatePriorityWeights(weights map[outbound.RequestPriority]float64) error {
-	requiredPriorities := []outbound.RequestPriority{
-		outbound.PriorityRealTime,
-		outbound.PriorityInteractive,
-		outbound.PriorityBackground,
-		outbound.PriorityBatch,
-	}
-
-	// Check that all required priorities have weights
-	for _, priority := range requiredPriorities {
-		weight, exists := weights[priority]
-		if !exists {
-			return createConfigurationError(
-				"missing_priority_weight",
-				"Missing weight for priority: "+string(priority),
-			)
-		}
-
-		// Validate weight range
-		if weight < 0.0 || weight > 1.0 {
-			return createConfigurationError(
-				"invalid_priority_weight",
-				"Priority weight must be between 0.0 and 1.0 for: "+string(priority),
-			)
-		}
-	}
-
-	// Validate that real-time has the highest weight
-	if weights[outbound.PriorityRealTime] < weights[outbound.PriorityInteractive] ||
-		weights[outbound.PriorityRealTime] < weights[outbound.PriorityBackground] ||
-		weights[outbound.PriorityRealTime] < weights[outbound.PriorityBatch] {
-		return createConfigurationError(
-			"invalid_priority_ordering",
-			"Real-time priority must have the highest weight",
 		)
 	}
 
@@ -169,24 +115,6 @@ func NormalizeConfig(config *outbound.BatchConfig) *outbound.BatchConfig {
 
 	if normalized.ProcessingInterval == 0 {
 		normalized.ProcessingInterval = 1 * time.Second
-	}
-
-	// Initialize priority weights if missing
-	if normalized.PriorityWeights == nil {
-		normalized.PriorityWeights = map[outbound.RequestPriority]float64{
-			outbound.PriorityRealTime:    1.0,
-			outbound.PriorityInteractive: 0.7,
-			outbound.PriorityBackground:  0.4,
-			outbound.PriorityBatch:       0.1,
-		}
-	} else {
-		// Fill in missing priority weights with defaults
-		defaults := DefaultBatchConfig().PriorityWeights
-		for priority, defaultWeight := range defaults {
-			if _, exists := normalized.PriorityWeights[priority]; !exists {
-				normalized.PriorityWeights[priority] = defaultWeight
-			}
-		}
 	}
 
 	return &normalized
@@ -249,25 +177,10 @@ func createConfigurationError(code, message string) *outbound.QueueManagerError 
 	}
 }
 
-// GetRecommendedBatchSize provides recommended batch sizes for different scenarios.
-func GetRecommendedBatchSize(priority outbound.RequestPriority, currentLoad int) int {
-	switch priority {
-	case outbound.PriorityRealTime:
-		// Small batches for low latency (1-5 requests)
-		return min(5, max(1, currentLoad))
-	case outbound.PriorityInteractive:
-		// Medium batches for responsive UI (5-25 requests)
-		return min(25, max(5, currentLoad/2))
-	case outbound.PriorityBackground:
-		// Large-medium batches (25-100 requests)
-		return min(100, max(25, currentLoad))
-	case outbound.PriorityBatch:
-		// Large batches for efficiency (50-200 requests)
-		return min(200, max(50, currentLoad))
-	default:
-		// Default to moderate batch size
-		return min(50, max(10, currentLoad/2))
-	}
+// GetRecommendedBatchSize provides recommended batch sizes based on current load.
+func GetRecommendedBatchSize(currentLoad int) int {
+	// Default to moderate batch size based on load
+	return min(100, max(10, currentLoad/2))
 }
 
 // EstimateOptimalQueueSize estimates the optimal queue size based on system parameters.
@@ -322,16 +235,6 @@ func IsConfigurationOptimal(config *outbound.BatchConfig) (bool, []string) {
 
 	if !config.EnableDynamicSizing {
 		warnings = append(warnings, "Dynamic sizing is disabled - may miss optimization opportunities")
-	}
-
-	// Check priority weight distribution
-	if weights := config.PriorityWeights; weights != nil {
-		realTimeWeight := weights[outbound.PriorityRealTime]
-		batchWeight := weights[outbound.PriorityBatch]
-
-		if realTimeWeight-batchWeight < 0.3 {
-			warnings = append(warnings, "Priority weight difference is small - may not provide enough prioritization")
-		}
 	}
 
 	return len(warnings) == 0, warnings

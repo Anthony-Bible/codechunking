@@ -149,11 +149,10 @@ func TestNATSBatchQueueManager_QueueEmbeddingRequest(t *testing.T) {
 		errorType   string
 	}{
 		{
-			name: "should queue valid real-time request",
+			name: "should queue valid request",
 			request: &outbound.EmbeddingRequest{
 				RequestID:   "req-001",
 				Text:        "Sample text for embedding",
-				Priority:    outbound.PriorityRealTime,
 				Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 				SubmittedAt: time.Now(),
 			},
@@ -164,7 +163,6 @@ func TestNATSBatchQueueManager_QueueEmbeddingRequest(t *testing.T) {
 			request: &outbound.EmbeddingRequest{
 				RequestID:   "",
 				Text:        "Sample text",
-				Priority:    outbound.PriorityInteractive,
 				Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 				SubmittedAt: time.Now(),
 			},
@@ -176,19 +174,6 @@ func TestNATSBatchQueueManager_QueueEmbeddingRequest(t *testing.T) {
 			request: &outbound.EmbeddingRequest{
 				RequestID:   "req-005",
 				Text:        "",
-				Priority:    outbound.PriorityInteractive,
-				Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
-				SubmittedAt: time.Now(),
-			},
-			expectError: true,
-			errorType:   "validation",
-		},
-		{
-			name: "should reject request with invalid priority",
-			request: &outbound.EmbeddingRequest{
-				RequestID:   "req-006",
-				Text:        "Sample text",
-				Priority:    outbound.RequestPriority("invalid"),
 				Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 				SubmittedAt: time.Now(),
 			},
@@ -241,19 +226,17 @@ func TestNATSBatchQueueManager_QueueBulkEmbeddingRequests(t *testing.T) {
 		expectedType string
 	}{
 		{
-			name: "should queue multiple valid requests with mixed priorities",
+			name: "should queue multiple valid requests",
 			requests: []*outbound.EmbeddingRequest{
 				{
 					RequestID:   "bulk-001",
-					Text:        "Real-time request",
-					Priority:    outbound.PriorityRealTime,
+					Text:        "Request 1",
 					Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 					SubmittedAt: time.Now(),
 				},
 				{
 					RequestID:   "bulk-002",
-					Text:        "Interactive request",
-					Priority:    outbound.PriorityInteractive,
+					Text:        "Request 2",
 					Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 					SubmittedAt: time.Now(),
 				},
@@ -316,26 +299,23 @@ func TestNATSBatchQueueManager_ProcessQueue(t *testing.T) {
 	err := manager.Start(ctx)
 	require.NoError(t, err)
 
-	// Queue requests with different priorities
+	// Queue requests
 	requests := []*outbound.EmbeddingRequest{
 		{
-			RequestID:   "rt-001",
-			Text:        "Real-time 1",
-			Priority:    outbound.PriorityRealTime,
+			RequestID:   "req-001",
+			Text:        "Request 1",
 			Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 			SubmittedAt: time.Now(),
 		},
 		{
-			RequestID:   "int-001",
-			Text:        "Interactive 1",
-			Priority:    outbound.PriorityInteractive,
+			RequestID:   "req-002",
+			Text:        "Request 2",
 			Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 			SubmittedAt: time.Now(),
 		},
 		{
-			RequestID:   "batch-001",
-			Text:        "Batch 1",
-			Priority:    outbound.PriorityBatch,
+			RequestID:   "req-003",
+			Text:        "Request 3",
 			Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 			SubmittedAt: time.Now(),
 		},
@@ -359,7 +339,7 @@ func TestNATSBatchQueueManager_ProcessQueue(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestNATSBatchQueueManager_PriorityOrdering(t *testing.T) {
+func TestNATSBatchQueueManager_FIFOOrdering(t *testing.T) {
 	manager := createTestManager()
 	ctx := context.Background()
 
@@ -367,19 +347,17 @@ func TestNATSBatchQueueManager_PriorityOrdering(t *testing.T) {
 	err := manager.Start(ctx)
 	require.NoError(t, err)
 
-	// Queue requests in reverse priority order to test proper sorting
+	// Queue requests in order
 	requests := []*outbound.EmbeddingRequest{
 		{
-			RequestID:   "batch-001",
-			Text:        "Batch priority",
-			Priority:    outbound.PriorityBatch,
+			RequestID:   "first-001",
+			Text:        "First request",
 			Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 			SubmittedAt: time.Now(),
 		},
 		{
-			RequestID:   "rt-001",
-			Text:        "Real-time priority",
-			Priority:    outbound.PriorityRealTime,
+			RequestID:   "second-001",
+			Text:        "Second request",
 			Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 			SubmittedAt: time.Now(),
 		},
@@ -389,14 +367,13 @@ func TestNATSBatchQueueManager_PriorityOrdering(t *testing.T) {
 	err = manager.QueueBulkEmbeddingRequests(ctx, requests)
 	require.NoError(t, err)
 
-	// Get queue stats to verify priority distribution
+	// Get queue stats to verify queue size
 	stats, err := manager.GetQueueStats(ctx)
 	require.NoError(t, err)
 
-	// Verify that requests are distributed to correct priority queues
-	assert.Equal(t, 1, stats.RealTimeQueueSize, "Should have 1 real-time request")
-	assert.Equal(t, 1, stats.BatchQueueSize, "Should have 1 batch request")
+	// Verify requests are in queue
 	assert.Equal(t, 2, stats.TotalQueueSize, "Should have 2 total requests")
+	assert.Equal(t, 2, stats.QueueSize, "QueueSize should match TotalQueueSize")
 
 	// Process queue
 	batchCount, err := manager.ProcessQueue(ctx)
@@ -460,14 +437,12 @@ func TestNATSBatchQueueManager_QueueCapacityLimits(t *testing.T) {
 		{
 			RequestID:   "req-001",
 			Text:        "Request 1",
-			Priority:    outbound.PriorityInteractive,
 			Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 			SubmittedAt: time.Now(),
 		},
 		{
 			RequestID:   "req-002",
 			Text:        "Request 2",
-			Priority:    outbound.PriorityInteractive,
 			Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 			SubmittedAt: time.Now(),
 		},
@@ -480,7 +455,6 @@ func TestNATSBatchQueueManager_QueueCapacityLimits(t *testing.T) {
 	extraRequest := &outbound.EmbeddingRequest{
 		RequestID:   "overflow-request",
 		Text:        "This should fail",
-		Priority:    outbound.PriorityInteractive,
 		Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 		SubmittedAt: time.Now(),
 	}
@@ -549,14 +523,12 @@ func TestNATSBatchQueueManager_DrainQueue(t *testing.T) {
 		{
 			RequestID:   "drain-001",
 			Text:        "Request 1",
-			Priority:    outbound.PriorityInteractive,
 			Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 			SubmittedAt: time.Now(),
 		},
 		{
 			RequestID:   "drain-002",
 			Text:        "Request 2",
-			Priority:    outbound.PriorityInteractive,
 			Options:     outbound.EmbeddingOptions{Model: "gemini-embedding-001"},
 			SubmittedAt: time.Now(),
 		},

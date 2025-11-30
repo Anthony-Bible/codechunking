@@ -38,23 +38,6 @@ func validateEmbeddingRequest(request *outbound.EmbeddingRequest) error {
 		}
 	}
 
-	// Validate priority
-	validPriorities := map[outbound.RequestPriority]bool{
-		outbound.PriorityRealTime:    true,
-		outbound.PriorityInteractive: true,
-		outbound.PriorityBackground:  true,
-		outbound.PriorityBatch:       true,
-	}
-
-	if !validPriorities[request.Priority] {
-		return &outbound.QueueManagerError{
-			Code:      "invalid_priority",
-			Message:   "Invalid priority value",
-			Type:      "validation",
-			RequestID: request.RequestID,
-		}
-	}
-
 	return nil
 }
 
@@ -93,23 +76,6 @@ func validateBulkEmbeddingRequests(requests []*outbound.EmbeddingRequest) error 
 	}
 
 	return nil
-}
-
-// calculateTotalQueueSize calculates the total number of requests across all priority queues.
-func calculateTotalQueueSize(queues map[outbound.RequestPriority][]*outbound.EmbeddingRequest) int {
-	total := 0
-	for _, requests := range queues {
-		total += len(requests)
-	}
-	return total
-}
-
-// updatePriorityDistribution updates the priority distribution statistics after queuing a request.
-func updatePriorityDistribution(stats *outbound.QueueStats, request *outbound.EmbeddingRequest) {
-	if stats.PriorityDistribution == nil {
-		stats.PriorityDistribution = make(map[outbound.RequestPriority]int)
-	}
-	stats.PriorityDistribution[request.Priority]++
 }
 
 // calculateQueueUtilization calculates queue utilization percentage.
@@ -174,16 +140,6 @@ func calculateBatchesPerSecond(totalBatches int64, duration time.Duration) float
 		return 0.0
 	}
 	return float64(totalBatches) / seconds
-}
-
-// getPriorityProcessingOrder returns the order in which priorities should be processed.
-func getPriorityProcessingOrder() []outbound.RequestPriority {
-	return []outbound.RequestPriority{
-		outbound.PriorityRealTime,
-		outbound.PriorityInteractive,
-		outbound.PriorityBackground,
-		outbound.PriorityBatch,
-	}
 }
 
 // createQueueCapacityError creates a standardized queue capacity exceeded error.

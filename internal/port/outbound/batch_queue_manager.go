@@ -7,17 +7,17 @@ import (
 
 // BatchQueueManager defines the interface for managing embedding request queues and bridging
 // individual requests to batch processing using NATS JetStream. This interface handles
-// priority-based queuing, dynamic batch sizing, and integration with existing batch processing systems.
+// dynamic batch sizing and integration with existing batch processing systems.
 type BatchQueueManager interface {
 	// QueueEmbeddingRequest queues an individual embedding request for batch processing.
-	// The request will be batched with others based on priority and current system load.
+	// The request will be batched with others based on current system load.
 	QueueEmbeddingRequest(ctx context.Context, request *EmbeddingRequest) error
 
 	// QueueBulkEmbeddingRequests queues multiple embedding requests efficiently.
-	// Requests are distributed across priority queues and batched appropriately.
+	// Requests are batched appropriately based on configuration.
 	QueueBulkEmbeddingRequests(ctx context.Context, requests []*EmbeddingRequest) error
 
-	// ProcessQueue processes pending requests in priority order and creates optimized batches.
+	// ProcessQueue processes pending requests and creates optimized batches.
 	// Returns the number of batches created and any processing errors encountered.
 	ProcessQueue(ctx context.Context) (int, error)
 
@@ -51,30 +51,12 @@ type EmbeddingRequest struct {
 	RequestID     string                 `json:"request_id"`
 	CorrelationID string                 `json:"correlation_id,omitempty"`
 	Text          string                 `json:"text"`
-	Priority      RequestPriority        `json:"priority"`
 	Options       EmbeddingOptions       `json:"options"`
 	Metadata      map[string]interface{} `json:"metadata,omitempty"`
 	SubmittedAt   time.Time              `json:"submitted_at"`
 	Deadline      *time.Time             `json:"deadline,omitempty"`
 	CallbackURL   string                 `json:"callback_url,omitempty"`
 }
-
-// RequestPriority defines the priority levels for embedding requests.
-type RequestPriority string
-
-const (
-	// PriorityRealTime for immediate processing with minimal latency (< 100ms target).
-	PriorityRealTime RequestPriority = "real_time"
-
-	// PriorityInteractive for user-facing features requiring responsive processing (< 500ms target).
-	PriorityInteractive RequestPriority = "interactive"
-
-	// PriorityBackground for background processing with balanced cost/latency (< 5s target).
-	PriorityBackground RequestPriority = "background"
-
-	// PriorityBatch for bulk processing optimized for cost efficiency (< 30s target).
-	PriorityBatch RequestPriority = "batch"
-)
 
 // BatchConfig holds configuration parameters for batch processing optimization.
 type BatchConfig struct {
@@ -86,9 +68,6 @@ type BatchConfig struct {
 
 	// BatchTimeout is the maximum time to wait before processing a partial batch.
 	BatchTimeout time.Duration `json:"batch_timeout"`
-
-	// PriorityWeights defines how priorities affect batching decisions.
-	PriorityWeights map[RequestPriority]float64 `json:"priority_weights"`
 
 	// EnableDynamicSizing allows automatic batch size adjustment based on load.
 	EnableDynamicSizing bool `json:"enable_dynamic_sizing"`
@@ -102,12 +81,9 @@ type BatchConfig struct {
 
 // QueueStats provides detailed statistics about queue operations and performance.
 type QueueStats struct {
-	// Queue size metrics by priority
-	RealTimeQueueSize    int `json:"real_time_queue_size"`
-	InteractiveQueueSize int `json:"interactive_queue_size"`
-	BackgroundQueueSize  int `json:"background_queue_size"`
-	BatchQueueSize       int `json:"batch_queue_size"`
-	TotalQueueSize       int `json:"total_queue_size"`
+	// Queue size metrics
+	QueueSize      int `json:"queue_size"`
+	TotalQueueSize int `json:"total_queue_size"`
 
 	// Processing metrics
 	TotalRequestsProcessed  int64         `json:"total_requests_processed"`
@@ -126,9 +102,8 @@ type QueueStats struct {
 	BatchesPerSecond  float64 `json:"batches_per_second"`
 
 	// Queue efficiency metrics
-	QueueUtilization     float64                 `json:"queue_utilization"`
-	BatchSizeEfficiency  float64                 `json:"batch_size_efficiency"`
-	PriorityDistribution map[RequestPriority]int `json:"priority_distribution"`
+	QueueUtilization    float64 `json:"queue_utilization"`
+	BatchSizeEfficiency float64 `json:"batch_size_efficiency"`
 
 	// Timing information
 	LastProcessedAt time.Time     `json:"last_processed_at"`

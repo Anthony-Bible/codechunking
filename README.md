@@ -13,11 +13,11 @@ A production-grade semantic code search system using Go, PostgreSQL with pgvecto
 - **Vector Embeddings**: Generate embeddings with Google Gemini API (768-dimensional)
 - **Semantic Code Search**: Natural language queries with POST /search endpoint ✨
 - **Advanced Filtering**: Filter by repository, language, file type, semantic construct types, entity names, and visibility
-- **pgvector Iterative Scanning**: Guaranteed result counts with pgvector 0.8.0+ optimization 🚀
-- **High-Performance Metadata Filtering**: SQL-level filtering for 2-3x faster query performance
+- **pgvector with Partitioning**: Scalable vector storage using partitioned tables for large repositories
+- **Batch Processing**: Gemini Batches API integration for efficient embedding generation at scale
 - **Semantic Overlap**: Configurable overlap between chunks for improved retrieval quality
 - **Pagination & Sorting**: Full pagination with multiple sorting options (similarity, file path)
-- **Asynchronous Processing**: Scalable job processing with NATS JetStream
+- **Asynchronous Processing**: Scalable job processing with NATS JetStream and configurable worker concurrency
 - **Idempotent Job Processing**: Safe retries and resume capability for interrupted jobs
 
 ### Production Features
@@ -48,38 +48,6 @@ The system follows hexagonal architecture (ports and adapters) principles:
 ├── configs/              # Configuration files
 ├── migrations/           # Database migrations
 └── docker/              # Docker configurations
-```
-
-### Architecture Overview
-
-```mermaid
-flowchart LR
-    %% Actors & Entrypoints
-    user[User / CLI / Client] --> api[API Server]
-
-    %% API Handlers
-    api --> repoH[[Repository Handler]]
-    api --> searchH[[Search Handler]]
-    api --> healthH[[Health Endpoint]]
-
-    %% Messaging & Workers
-    repoH --> nats{{NATS JetStream}}
-    nats --> worker[Worker Service]
-
-    %% Processing Pipeline
-    worker --> git[Git Clone]
-    worker --> ts[Tree-sitter Parsers]
-    ts --> chunker[Semantic Chunker]
-    chunker --> gemini[Gemini Embeddings]
-
-    %% Storage & Query
-    gemini --> db[(PostgreSQL + pgvector)]
-    searchH --> gemini
-    searchH --> db
-    db <--> api
-
-    classDef core stroke-width:2px
-    class api,nats,worker,db core
 ```
 
 ## Data Flow Architecture
@@ -241,37 +209,6 @@ graph TB
     class GEMINI_CLIENT,BATCH_PROCESSOR,RETRY_LOGIC embedLayer
 ```
 
-### Critical Components
-
-```mermaid
-flowchart TB
-    subgraph Critical Path
-        A[Repository Ingestion] --> B[Chunking]
-        B --> C[Embedding Generation]
-        C --> D[Vector Storage]
-        E[Semantic Query] --> F[Vector Similarity Search]
-        F --> G[Result Assembly]
-    end
-
-    %% Map to concrete components
-    A -.-> api[API Server]
-    api -.-> nats{{NATS JetStream}}
-    nats -.-> worker[Worker Service]
-    worker -.-> ts[Tree-sitter Parsers]
-    ts -.-> chunker[Semantic Chunker]
-    chunker -.-> gemini[Gemini Client]
-    gemini -.-> db[(PostgreSQL + pgvector)]
-    E -.-> api
-    F -.-> db
-    G -.-> api
-
-    %% Styling to highlight criticals
-    classDef critical fill:#ffe0e0,stroke:#c62828,stroke-width:2px
-    classDef infra fill:#e3f2fd,stroke:#1565c0,stroke-width:1.5px
-    class A,B,C,D,E,F,G critical
-    class api,nats,worker,ts,chunker,gemini,db infra
-```
-
 ### Key Data Flow Stages
 
 1. **Repository Submission**: User submits repository URL via REST API
@@ -281,6 +218,8 @@ flowchart TB
 5. **Embedding Generation**: Google Gemini API generates 768-dimensional embeddings
 6. **Vector Storage**: Embeddings stored in PostgreSQL with pgvector HNSW indexing
 7. **Search & Retrieval**: Vector similarity search enables semantic code search
+
+For detailed architecture documentation, see the [wiki](wiki/).
 
 ### Processing Capabilities
 
@@ -334,6 +273,28 @@ make dev-api
 # In another terminal, start worker
 make dev-worker
 ```
+
+### 4. Verify the setup
+
+```bash
+# Test health endpoint - should return 200 OK
+curl http://localhost:8080/health
+
+# Index your first repository
+curl -X POST http://localhost:8080/repositories \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://github.com/golang/go", "name": "golang"}'
+
+# Check repository status (replace {id} with the ID from the response)
+curl http://localhost:8080/repositories/{id}
+
+# Try a semantic search once indexing is complete
+curl -X POST http://localhost:8080/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "http request handler", "limit": 5}'
+```
+
+For detailed API documentation, see the [wiki](wiki/).
 
 ## Installation
 
@@ -409,7 +370,7 @@ codechunking chunk --file script.py --lang python --out chunks.json
 
 #### Index a repository
 ```bash
-curl -X POST http://localhost:8080/api/v1/repositories \
+curl -X POST http://localhost:8080/repositories \
   -H "Content-Type: application/json" \
   -d '{"url": "https://github.com/example/repo"}'
 ```
@@ -418,6 +379,35 @@ curl -X POST http://localhost:8080/api/v1/repositories \
 ```bash
 curl http://localhost:8080/health
 # Returns health status with NATS monitoring, response time metrics
+```
+
+#### List all repositories
+```bash
+curl http://localhost:8080/repositories
+```
+
+#### Get repository details
+```bash
+curl http://localhost:8080/repositories/{id}
+# Returns repository metadata including file and chunk counts
+```
+
+#### List repository indexing jobs
+```bash
+curl http://localhost:8080/repositories/{id}/jobs
+# Shows all indexing jobs for a repository with their status
+```
+
+#### Get specific job details
+```bash
+curl http://localhost:8080/repositories/{id}/jobs/{job_id}
+# Returns detailed job information including progress and errors
+```
+
+#### Delete a repository
+```bash
+curl -X DELETE http://localhost:8080/repositories/{id}
+# Removes repository and all associated data
 ```
 
 #### Search code semantically ✨
@@ -446,6 +436,16 @@ curl -X POST http://localhost:8080/search \
 
 **pgvector Iterative Scanning:** The search automatically uses iterative scanning to guarantee you get the requested number of results, even with restrictive filters. This solves the common "overfiltering" problem where filters reduce result counts below the requested limit.
 
+### Authentication & Authorization
+
+**Current Status:** No authentication or authorization is implemented. All endpoints are publicly accessible without API keys or tokens.
+
+The API includes security middleware that sets appropriate headers, but does not enforce authentication. If you need to protect your instance, consider adding:
+- API key authentication
+- OAuth2 / JWT tokens
+- IP whitelisting
+- Rate limiting
+
 ## Configuration
 
 Configuration can be provided through:
@@ -454,6 +454,8 @@ Configuration can be provided through:
 3. Command-line flags
 
 Priority: Flags > Environment > Config File > Defaults
+
+For detailed configuration options and advanced tuning, see the [wiki](wiki/).
 
 ### Configuration Files
 
@@ -471,6 +473,8 @@ export CODECHUNK_LOG_LEVEL=debug
 ```
 
 ## Development
+
+For comprehensive development guides, architecture deep-dives, and troubleshooting, see the [wiki](wiki/).
 
 ### Project Structure
 

@@ -105,13 +105,20 @@ graph TB
 
         CHUNKER[Function/Class<br/>Chunker]
         SEMANTIC_ANALYZER[Semantic Analysis<br/>Service]
+        JOB_STATE_MGR[Job State Manager<br/>Idempotent Transitions]
+    end
+
+    %% Observability
+    subgraph "Observability & Monitoring"
+        TOKEN_COUNTER[Token Counter<br/>OpenTelemetry Metrics]
     end
 
     %% Embedding & Storage
     subgraph "Embedding & Vector Storage"
         GEMINI_CLIENT[Google Gemini<br/>Embedding Client]
-        BATCH_PROCESSOR[Parallel Batch<br/>Processor]
+        BATCH_PROCESSOR[Gemini Batches API<br/>BatchSubmitter & Poller]
         RETRY_LOGIC[Retry Logic &<br/>Circuit Breaker]
+        BATCH_PROGRESS[Batch Progress<br/>Tracking & Retry]
     end
 
     %% Data Storage
@@ -151,7 +158,15 @@ graph TB
     PY_PARSER --> CHUNKER
     CHUNKER --> SEMANTIC_ANALYZER
 
+    %% Job State Management & Token Counting
+    JOB_PROCESSOR --> JOB_STATE_MGR
+    JOB_STATE_MGR -->|Update Status| POSTGRES
+    CHUNKER --> TOKEN_COUNTER
+    TOKEN_COUNTER -->|Metrics| BATCH_PROCESSOR
+
     SEMANTIC_ANALYZER --> BATCH_PROCESSOR
+    BATCH_PROCESSOR --> BATCH_PROGRESS
+    BATCH_PROGRESS -->|Track Progress| POSTGRES
     BATCH_PROCESSOR --> GEMINI_CLIENT
     GEMINI_CLIENT -.->|Retry on Failure| RETRY_LOGIC
     RETRY_LOGIC -.-> GEMINI_CLIENT
@@ -201,23 +216,25 @@ graph TB
 
     class USER,API_CLIENT userLayer
     class API_SERVER,REPO_HANDLER,SEARCH_HANDLER,HEALTH apiLayer
-    class REPO_SERVICE,SEARCH_SERVICE,WORKER_SERVICE,JOB_PROCESSOR appLayer
+    class REPO_SERVICE,SEARCH_SERVICE,WORKER_SERVICE,JOB_PROCESSOR,JOB_STATE_MGR appLayer
     class REPO_ENTITY,JOB_ENTITY,ALERT_ENTITY,ERROR_ENTITY domainLayer
     class NATS_PUBLISHER,NATS_STREAM,NATS_CONSUMER messageLayer
     class GIT_CLONE,TS_PARSER,GO_PARSER,PY_PARSER,CHUNKER,SEMANTIC_ANALYZER processLayer
     class POSTGRES,PGVECTOR,REPO_TABLE,CHUNKS_TABLE,EMBED_TABLE,EMBED_PART,JOBS_TABLE storageLayer
-    class GEMINI_CLIENT,BATCH_PROCESSOR,RETRY_LOGIC embedLayer
+    class GEMINI_CLIENT,BATCH_PROCESSOR,RETRY_LOGIC,BATCH_PROGRESS,TOKEN_COUNTER embedLayer
 ```
 
 ### Key Data Flow Stages
 
 1. **Repository Submission**: User submits repository URL via REST API
 2. **Job Creation**: Repository entity created, indexing job queued to NATS JetStream
-3. **Background Processing**: Worker clones repository and parses code with Tree-sitter
-4. **Semantic Chunking**: Code parsed into semantic units (functions, classes, methods)
-5. **Embedding Generation**: Google Gemini API generates 768-dimensional embeddings
-6. **Vector Storage**: Embeddings stored in PostgreSQL with pgvector HNSW indexing
-7. **Search & Retrieval**: Vector similarity search enables semantic code search
+3. **Job State Management**: Idempotent state transitions (pending → cloning → processing → completed/failed) with resume capability
+4. **Background Processing**: Worker clones repository and parses code with Tree-sitter
+5. **Semantic Chunking**: Code parsed into semantic units (functions, classes, methods)
+6. **Token Counting**: OpenTelemetry metrics track tokens per chunk for cost monitoring
+7. **Batch Processing**: Gemini Batches API with progress tracking for efficient embedding generation
+8. **Vector Storage**: Embeddings stored in PostgreSQL with pgvector HNSW indexing and partitioned tables
+9. **Search & Retrieval**: Vector similarity search with iterative scanning for guaranteed results
 
 For detailed architecture documentation, see the [wiki](wiki/).
 

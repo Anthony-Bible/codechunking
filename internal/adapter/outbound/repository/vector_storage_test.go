@@ -131,7 +131,7 @@ func TestVectorOperations(t *testing.T) {
 		INSERT INTO repositories (id, url, normalized_url, name, description, status) 
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`, repositoryID, testURL, testURL,
-		"vector-test-repo", "Test repository for vector operations", "indexed")
+		"vector-test-repo", "Test repository for vector operations", "completed")
 	require.NoError(t, err)
 
 	// Create test code chunk
@@ -302,7 +302,7 @@ func TestPartitionManagement(t *testing.T) {
 			VALUES ($1, $2, $3, $4, $5, $6)
 			ON CONFLICT (url) DO NOTHING
 		`, repositoryID, "https://github.com/test/constraint-repo", "https://github.com/test/constraint-repo",
-			"constraint-test-repo", "Test repository for constraint testing", "indexed")
+			"constraint-test-repo", "Test repository for constraint testing", "completed")
 		require.NoError(t, err)
 
 		_, err = pool.Exec(ctx, `

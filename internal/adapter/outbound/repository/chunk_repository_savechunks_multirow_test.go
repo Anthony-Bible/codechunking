@@ -33,7 +33,7 @@ func TestSaveChunks_MultiRow_SingleChunk(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "single-chunk-test-repo", "Test repository for single chunk multi-row INSERT", "indexed")
+	`, repositoryID, testURL, testURL, "single-chunk-test-repo", "Test repository for single chunk multi-row INSERT", "completed")
 	require.NoError(t, err)
 
 	// Create a single chunk
@@ -106,7 +106,7 @@ func TestSaveChunks_MultiRow_MultipleChunks(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "multiple-chunks-test-repo", "Test repository for multiple chunks multi-row INSERT", "indexed")
+	`, repositoryID, testURL, testURL, "multiple-chunks-test-repo", "Test repository for multiple chunks multi-row INSERT", "completed")
 	require.NoError(t, err)
 
 	// Create 5 chunks
@@ -211,7 +211,7 @@ func TestSaveChunks_MultiRow_LargeBatch(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "large-batch-test-repo", "Test repository for large batch multi-row INSERT", "indexed")
+	`, repositoryID, testURL, testURL, "large-batch-test-repo", "Test repository for large batch multi-row INSERT", "completed")
 	require.NoError(t, err)
 
 	// Create 50 chunks (typical batch size for token counting)
@@ -297,7 +297,7 @@ func TestSaveChunks_MultiRow_PreservesChunkData(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "preserve-data-test-repo", "Test repository for data preservation multi-row INSERT", "indexed")
+	`, repositoryID, testURL, testURL, "preserve-data-test-repo", "Test repository for data preservation multi-row INSERT", "completed")
 	require.NoError(t, err)
 
 	// Create chunks with comprehensive field values
@@ -457,7 +457,7 @@ func TestSaveChunks_MultiRow_ConflictHandling(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "conflict-test-repo", "Test repository for conflict handling multi-row INSERT", "indexed")
+	`, repositoryID, testURL, testURL, "conflict-test-repo", "Test repository for conflict handling multi-row INSERT", "completed")
 	require.NoError(t, err)
 
 	// Create initial chunks with token counts
@@ -555,7 +555,7 @@ func TestSaveChunks_MultiRow_MixedTokenCounts(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "mixed-tokens-test-repo", "Test repository for mixed token counts", "indexed")
+	`, repositoryID, testURL, testURL, "mixed-tokens-test-repo", "Test repository for mixed token counts", "completed")
 	require.NoError(t, err)
 
 	// Create chunks with mixed token count states

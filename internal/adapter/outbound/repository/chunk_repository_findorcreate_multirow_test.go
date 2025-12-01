@@ -33,7 +33,7 @@ func TestFindOrCreateChunks_MultiRow_AllNewChunks(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "all-new-chunks-repo", "Test repository for all new chunks", "indexed")
+	`, repositoryID, testURL, testURL, "all-new-chunks-repo", "Test repository for all new chunks", "completed")
 	require.NoError(t, err)
 
 	// Create 5 new chunks (none exist in DB yet)
@@ -111,7 +111,7 @@ func TestFindOrCreateChunks_MultiRow_AllExistingChunks(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "all-existing-chunks-repo", "Test repository for all existing chunks", "indexed")
+	`, repositoryID, testURL, testURL, "all-existing-chunks-repo", "Test repository for all existing chunks", "completed")
 	require.NoError(t, err)
 
 	// Create and save initial chunks
@@ -211,7 +211,7 @@ func TestFindOrCreateChunks_MultiRow_MixedNewAndExisting(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "mixed-chunks-repo", "Test repository for mixed chunks", "indexed")
+	`, repositoryID, testURL, testURL, "mixed-chunks-repo", "Test repository for mixed chunks", "completed")
 	require.NoError(t, err)
 
 	// Create and save 2 existing chunks
@@ -386,7 +386,7 @@ func TestFindOrCreateChunks_MultiRow_ReturningOrderMatchesInput(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "order-preservation-repo", "Test repository for order preservation", "indexed")
+	`, repositoryID, testURL, testURL, "order-preservation-repo", "Test repository for order preservation", "completed")
 	require.NoError(t, err)
 
 	// Create chunks with unique, identifiable content
@@ -581,7 +581,7 @@ func TestFindOrCreateChunks_MultiRow_LargeBatch(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "large-batch-findorcreate-repo", "Test repository for large batch FindOrCreateChunks", "indexed")
+	`, repositoryID, testURL, testURL, "large-batch-findorcreate-repo", "Test repository for large batch FindOrCreateChunks", "completed")
 	require.NoError(t, err)
 
 	// Create 100 chunks
@@ -693,7 +693,7 @@ func TestFindOrCreateChunks_MultiRow_PreservesExistingTokenCounts(t *testing.T) 
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "preserve-tokens-repo", "Test repository for preserving token counts", "indexed")
+	`, repositoryID, testURL, testURL, "preserve-tokens-repo", "Test repository for preserving token counts", "completed")
 	require.NoError(t, err)
 
 	// Create and save chunks with token counts

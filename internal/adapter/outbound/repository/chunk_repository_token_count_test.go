@@ -32,7 +32,7 @@ func TestChunkRepository_SaveWithTokenCount(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "token-count-test-repo", "Test repository for token counting", "indexed")
+	`, repositoryID, testURL, testURL, "token-count-test-repo", "Test repository for token counting", "completed")
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -202,7 +202,7 @@ func TestChunkRepository_UpdateTokenCount(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "update-token-test-repo", "Test repository for updating token counts", "indexed")
+	`, repositoryID, testURL, testURL, "update-token-test-repo", "Test repository for updating token counts", "completed")
 	require.NoError(t, err)
 
 	// Create initial chunk without token count
@@ -300,7 +300,7 @@ func TestChunkRepository_GetChunksWithTokenCount(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "get-token-test-repo", "Test repository for getting token counts", "indexed")
+	`, repositoryID, testURL, testURL, "get-token-test-repo", "Test repository for getting token counts", "completed")
 	require.NoError(t, err)
 
 	// Create chunks with varying token counts
@@ -422,7 +422,7 @@ func TestChunkRepository_BatchOperationsWithTokenCount(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "batch-token-test-repo", "Test repository for batch token operations", "indexed")
+	`, repositoryID, testURL, testURL, "batch-token-test-repo", "Test repository for batch token operations", "completed")
 	require.NoError(t, err)
 
 	t.Run("SaveChunks should preserve token_count for all chunks", func(t *testing.T) {
@@ -494,7 +494,7 @@ func TestChunkRepository_FindOrCreateChunksWithTokenCount(t *testing.T) {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, repositoryID, testURL, testURL, "find-create-token-test-repo", "Test repository for find/create with token counts", "indexed")
+	`, repositoryID, testURL, testURL, "find-create-token-test-repo", "Test repository for find/create with token counts", "completed")
 	require.NoError(t, err)
 
 	now := time.Now()

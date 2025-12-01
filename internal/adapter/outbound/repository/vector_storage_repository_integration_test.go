@@ -1497,7 +1497,7 @@ func setupTestRepositoryAndChunks(t *testing.T, pool *pgxpool.Pool, chunkCount i
 		ON CONFLICT (url) DO NOTHING
 	`, repositoryID, "https://github.com/test/vector-repo-"+repositoryID.String()[:8],
 		"https://github.com/test/vector-repo-"+repositoryID.String()[:8],
-		"vector-test-repo", "Test repository for vector operations", "indexed")
+		"vector-test-repo", "Test repository for vector operations", "completed")
 	if err != nil {
 		t.Fatalf("Failed to create test repository: %v", err)
 	}
@@ -1717,7 +1717,7 @@ func setupTestRepositoryAndChunksWithLanguages(
 		ON CONFLICT (url) DO NOTHING
 	`, repositoryID, "https://github.com/test/multi-lang-repo-"+repositoryID.String()[:8],
 		"https://github.com/test/multi-lang-repo-"+repositoryID.String()[:8],
-		"multi-lang-test-repo", "Test repository with multiple languages", "indexed")
+		"multi-lang-test-repo", "Test repository with multiple languages", "completed")
 	if err != nil {
 		t.Fatalf("Failed to create test repository: %v", err)
 	}
@@ -1780,7 +1780,7 @@ func setupTestRepositoryAndChunksWithTypes(
 		ON CONFLICT (url) DO NOTHING
 	`, repositoryID, "https://github.com/test/multi-type-repo-"+repositoryID.String()[:8],
 		"https://github.com/test/multi-type-repo-"+repositoryID.String()[:8],
-		"multi-type-test-repo", "Test repository with multiple chunk types", "indexed")
+		"multi-type-test-repo", "Test repository with multiple chunk types", "completed")
 	if err != nil {
 		t.Fatalf("Failed to create test repository: %v", err)
 	}
@@ -1842,7 +1842,7 @@ func setupTestRepositoryAndChunksWithFilePaths(
 		ON CONFLICT (url) DO NOTHING
 	`, repositoryID, "https://github.com/test/multi-ext-repo-"+repositoryID.String()[:8],
 		"https://github.com/test/multi-ext-repo-"+repositoryID.String()[:8],
-		"multi-ext-test-repo", "Test repository with multiple file extensions", "indexed")
+		"multi-ext-test-repo", "Test repository with multiple file extensions", "completed")
 	if err != nil {
 		t.Fatalf("Failed to create test repository: %v", err)
 	}
@@ -1887,7 +1887,7 @@ func setupTestRepositoryWithMixedMetadata(t *testing.T, pool *pgxpool.Pool, tota
 		ON CONFLICT (url) DO NOTHING
 	`, repositoryID, "https://github.com/test/mixed-meta-repo-"+repositoryID.String()[:8],
 		"https://github.com/test/mixed-meta-repo-"+repositoryID.String()[:8],
-		"mixed-meta-test-repo", "Test repository with mixed metadata", "indexed")
+		"mixed-meta-test-repo", "Test repository with mixed metadata", "completed")
 	if err != nil {
 		t.Fatalf("Failed to create test repository: %v", err)
 	}
@@ -1972,7 +1972,7 @@ func setupTestRepositoryWithSelectiveMetadata(
 		ON CONFLICT (url) DO NOTHING
 	`, repositoryID, "https://github.com/test/selective-meta-repo-"+repositoryID.String()[:8],
 		"https://github.com/test/selective-meta-repo-"+repositoryID.String()[:8],
-		"selective-meta-test-repo", "Test repository with selective metadata distribution", "indexed")
+		"selective-meta-test-repo", "Test repository with selective metadata distribution", "completed")
 	if err != nil {
 		t.Fatalf("Failed to create test repository: %v", err)
 	}
@@ -2763,7 +2763,7 @@ func TestVectorStorageRepository_VectorSimilaritySearch_NullMetadata(t *testing.
 			INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 			VALUES ($1, $2, $3, $4, $5, $6)
 		`, repositoryID, repoURL, repoURL,
-			"null-metadata-test", "Test repository for NULL metadata", "indexed")
+			"null-metadata-test", "Test repository for NULL metadata", "completed")
 		if err != nil {
 			t.Fatalf("Failed to create test repository: %v", err)
 		}
@@ -2923,7 +2923,7 @@ func TestVectorStorageRepository_VectorSimilaritySearch_NullMetadata(t *testing.
 			INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 			VALUES ($1, $2, $3, $4, $5, $6)
 		`, repositoryID, repoURL, repoURL,
-			"mixed-metadata-test", "Test repository for mixed metadata", "indexed")
+			"mixed-metadata-test", "Test repository for mixed metadata", "completed")
 		if err != nil {
 			t.Fatalf("Failed to create test repository: %v", err)
 		}
@@ -3114,7 +3114,7 @@ func TestVectorStorageRepository_NullMetadataBackfill(t *testing.T) {
 			INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
 			VALUES ($1, $2, $3, $4, $5, $6)
 		`, repositoryID, repoURL, repoURL,
-			"backfill-test", "Test repository for backfill", "indexed")
+			"backfill-test", "Test repository for backfill", "completed")
 		if err != nil {
 			t.Fatalf("Failed to create test repository: %v", err)
 		}

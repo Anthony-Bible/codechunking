@@ -713,8 +713,8 @@ func convertNodeToDomain(node tree_sitter.Node) *valueobject.ParseNode {
 
 	domainNode := &valueobject.ParseNode{
 		Type:      node.Type(),
-		StartByte: uint32(startByte), //nolint:gosec // Safe after overflow check
-		EndByte:   uint32(endByte),   //nolint:gosec // Safe after overflow check
+		StartByte: uint32(startByte),
+		EndByte:   uint32(endByte),
 		Children:  make([]*valueobject.ParseNode, 0, node.ChildCount()),
 	}
 

@@ -74,7 +74,8 @@ func TestTransactionManager_BasicTransaction(t *testing.T) {
 
 					// Nested transaction (savepoint)
 					return txManager.WithTransaction(ctx, func(ctx context.Context) error {
-						testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/nested")
+						nestedID := uuid.New().String()
+						testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/nested-" + nestedID)
 						testRepo2 := entity.NewRepository(testURL, "Nested Repository", nil, nil)
 
 						return repoRepo.Save(ctx, testRepo2)

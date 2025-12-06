@@ -51,8 +51,9 @@ func TestConstraintViolations(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Unique constraint violation", func(t *testing.T) {
-		// Create first repository
-		testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/unique-violation")
+		// Create first repository with unique URL to avoid collisions across test runs
+		uniqueID := uuid.New().String()
+		testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/unique-violation-" + uniqueID)
 		repo1 := entity.NewRepository(testURL, "First Repo", nil, nil)
 
 		err := repoRepo.Save(ctx, repo1)
@@ -131,8 +132,9 @@ func TestConstraintViolations(t *testing.T) {
 		// Try to save a malformed repository (this would require bypassing domain validation)
 		// For this test, we'll create a scenario where required data is somehow missing
 
-		// Create repository with unique URL to avoid constraint violations
-		testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/not-null-test")
+		// Create repository with unique URL to avoid constraint violations across test runs
+		uniqueID := uuid.New().String()
+		testURL, _ := valueobject.NewRepositoryURL("https://github.com/test/not-null-test-" + uniqueID)
 		testRepo := entity.NewRepository(testURL, "Not Null Test Repo", nil, nil)
 		err := repoRepo.Save(ctx, testRepo)
 		// Should succeed with valid repository

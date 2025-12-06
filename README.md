@@ -383,6 +383,41 @@ codechunking chunk --file script.py --lang python --out chunks.json
   - Content preview
   - Semantic construct type (function, method, class, etc.)
 
+### Client CLI
+
+The `codechunking-client` is a standalone CLI for AI agents and automation. It outputs structured JSON for easy parsing.
+
+```bash
+# Build the client (no CGO required)
+make build-client
+
+# Check API health
+./bin/codechunking-client health
+
+# Add and index a repository (wait for completion)
+./bin/codechunking-client repos add https://github.com/user/repo --wait
+
+# Search for code semantically
+./bin/codechunking-client search "authentication middleware" --limit 10
+
+# List repositories
+./bin/codechunking-client repos list --status completed
+```
+
+**Global Flags:**
+- `--api-url` (default: `http://localhost:8080`) - API server URL
+- `--timeout` (default: `30s`) - Request timeout
+
+**JSON Output Format:**
+```json
+{"success": true, "data": {...}, "timestamp": "..."}
+{"success": false, "error": {"code": "NOT_FOUND", "message": "..."}, "timestamp": "..."}
+```
+
+**Error Codes:** `INVALID_CONFIG`, `CONNECTION_ERROR`, `TIMEOUT_ERROR`, `NOT_FOUND`, `SERVER_ERROR`, `API_ERROR`, `INVALID_ARGUMENT`
+
+For complete documentation including agent integration and CLAUDE.md snippets, see the [Client CLI Guide](wiki/Client-CLI-Guide.md).
+
 ### API Endpoints
 
 #### Index a repository

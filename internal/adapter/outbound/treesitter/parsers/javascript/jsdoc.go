@@ -58,9 +58,11 @@ func findJSDocComment(parseTree *valueobject.ParseTree, targetNode *valueobject.
 		return nil
 	}
 
-	// Calculate absolute byte positions
-	absoluteStart := searchStart + uint32(jsdocStart)          //nolint:gosec // jsdocStart is bounded by string length
-	absoluteEnd := searchStart + uint32(jsdocStart+jsdocEnd+2) //nolint:gosec // jsdocEnd is bounded by string length
+	// Calculate absolute byte positions.
+	// jsdocStart and jsdocEnd are bounded by beforeFunction length (max 500 bytes),
+	// so they are safe to convert to uint32.
+	absoluteStart := searchStart + uint32(jsdocStart)
+	absoluteEnd := searchStart + uint32(jsdocStart+jsdocEnd+2)
 
 	// Create a synthetic ParseNode for the comment
 	// (This is a simplified approach - ideally we'd find the actual comment node from the tree)

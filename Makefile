@@ -1,4 +1,4 @@
-.PHONY: dev test build migrate clean help
+.PHONY: dev test build migrate clean help build-client build-client-cross test-client
 
 # Variables
 BINARY_NAME=codechunking
@@ -53,6 +53,10 @@ dev-all:
 test:
 	$(GO_CMD) test -v -short -timeout 30s ./...
 
+## test-client: Run client-specific tests
+test-client:
+	$(GO_CMD) test -v -short -timeout 30s ./internal/client/...
+
 ## test-integration: Run integration tests
 test-integration:
 	$(DOCKER_COMPOSE) up -d
@@ -81,6 +85,18 @@ build-linux:
 build-docker:
 	docker build -f docker/Dockerfile -t $(BINARY_NAME):latest .
 	@echo "Docker image built: $(BINARY_NAME):latest"
+
+## build-client: Build standalone client binary (no CGO, static binary)
+build-client:
+	CGO_ENABLED=0 $(GO_CMD) build -o bin/codechunking-client ./cmd/client
+	@echo "Client binary built: bin/codechunking-client"
+
+## build-client-cross: Cross-compile client for Linux and macOS
+build-client-cross:
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO_CMD) build -o bin/codechunking-client-linux-amd64 ./cmd/client
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GO_CMD) build -o bin/codechunking-client-darwin-amd64 ./cmd/client
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO_CMD) build -o bin/codechunking-client-darwin-arm64 ./cmd/client
+	@echo "Cross-compiled client binaries built in bin/"
 
 ## migrate-up: Apply all database migrations
 migrate-up:

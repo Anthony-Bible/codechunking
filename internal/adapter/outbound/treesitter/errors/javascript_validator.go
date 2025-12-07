@@ -70,9 +70,10 @@ func (v *JavaScriptValidator) ValidateSyntaxWithTree(source string, tree *tree_s
 		// Find first error node and extract details
 		errorNode := v.findFirstErrorNode(rootNode)
 		if !errorNode.IsNull() {
-			//nolint:gosec // Row and Column are always small positive values from tree-sitter
+			// Row and Column are always small positive values from tree-sitter,
+			// so conversion to int is safe on all supported platforms.
 			row := int(errorNode.StartPoint().Row) + 1
-			//nolint:gosec // Row and Column are always small positive values from tree-sitter
+
 			col := int(errorNode.StartPoint().Column)
 			return NewSyntaxError(fmt.Sprintf("invalid syntax: %s",
 				v.extractErrorMessage(errorNode, []byte(source)))).

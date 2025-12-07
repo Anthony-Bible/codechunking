@@ -318,7 +318,14 @@ For detailed API documentation, see the [wiki](wiki/).
 ### Using Go
 
 ```bash
+# Full CLI with tree-sitter dependencies (requires CGO)
 go install github.com/Anthony-Bible/codechunking@latest
+
+# Client-only (no CGO dependencies, ideal for AI agents)
+# Note: Due to Go module path constraints, clone and build locally
+git clone https://github.com/Anthony-Bible/codechunking.git
+cd codechunking
+CGO_ENABLED=0 go install ./cmd/client
 ```
 
 ### Using Docker
@@ -524,7 +531,14 @@ Add this to your project's `agents.md` or `claude.md` file for instant AI agent 
 ````markdown
 ### CodeChunking Client Integration
 
-**Binary:** `./bin/codechunking-client` (build with `make build-client`)
+**Binary:**
+- Build: `make build-client` → `./bin/codechunking-client`
+- Install:
+  ```bash
+  git clone https://github.com/Anthony-Bible/codechunking.git
+  cd codechunking
+  CGO_ENABLED=0 go install ./cmd/client
+  ```
 
 **Essential Commands:**
 - Health check: `codechunking-client health`

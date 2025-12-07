@@ -1,10 +1,22 @@
-.PHONY: dev test build migrate clean help build-client build-client-cross test-client
+.PHONY: dev test build migrate clean help build-client build-client-cross test-client install install-client build-with-version
 
 # Variables
 BINARY_NAME=codechunking
 DOCKER_COMPOSE=docker compose
 GO_CMD=go
 MIGRATE_CMD=migrate
+
+# Version and installation variables
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+LDFLAGS = -ldflags "-X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)"
+
+# Installation directory detection
+ifeq ($(OS),Windows_NT)
+    INSTALL_DIR ?= $(shell echo $$USERPROFILE/bin)
+else
+    INSTALL_DIR ?= $(shell $(GO_CMD) env GOPATH)/bin
+endif
 
 # Default target
 all: build
@@ -97,6 +109,25 @@ build-client-cross:
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GO_CMD) build -o bin/codechunking-client-darwin-amd64 ./cmd/client
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO_CMD) build -o bin/codechunking-client-darwin-arm64 ./cmd/client
 	@echo "Cross-compiled client binaries built in bin/"
+
+## build-with-version: Build the binary with version injection
+build-with-version:
+	CGO_ENABLED=1 $(GO_CMD) build $(LDFLAGS) -o bin/$(BINARY_NAME) main.go
+	@echo "Binary built with version $(VERSION): bin/$(BINARY_NAME)"
+
+## install: Build and install main binary to $(INSTALL_DIR)
+install: build
+	@mkdir -p $(INSTALL_DIR)
+	@cp bin/$(BINARY_NAME) $(INSTALL_DIR)/
+	@echo "Installed $(BINARY_NAME) to $(INSTALL_DIR)/$(BINARY_NAME)"
+	@echo "Make sure $(INSTALL_DIR) is in your PATH"
+
+## install-client: Build and install client binary to $(INSTALL_DIR)
+install-client: build-client
+	@mkdir -p $(INSTALL_DIR)
+	@cp bin/codechunking-client $(INSTALL_DIR)/
+	@echo "Installed codechunking-client to $(INSTALL_DIR)/codechunking-client"
+	@echo "Make sure $(INSTALL_DIR) is in your PATH"
 
 ## migrate-up: Apply all database migrations
 migrate-up:

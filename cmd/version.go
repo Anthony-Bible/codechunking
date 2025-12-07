@@ -10,6 +10,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version information variables that will be set via ldflags during build.
+var (
+	Version   string // Example: v1.0.0
+	Commit    string // Example: abc123def456
+	BuildTime string // Example: 2025-01-01T12:00:00Z
+)
+
 // newVersionCmd creates and returns the version command.
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
@@ -19,8 +26,16 @@ func newVersionCmd() *cobra.Command {
 
 This command displays the current version of the codechunking CLI tool,
 which includes version number, build information, and other relevant details.`,
-		Run: func(_ *cobra.Command, _ []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// TODO: Implement version output using Version, Commit, and BuildTime variables
+			// The implementation should:
+			// 1. Use the version variables set via ldflags
+			// 2. Support a --short flag to output only the version number
+			// 3. Format the output nicely with the application name
+			// 4. Provide default values when variables are not set
+
 			slogger.InfoNoCtx("version called", nil)
+			return nil
 		},
 	}
 }

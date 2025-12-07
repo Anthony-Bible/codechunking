@@ -48,7 +48,7 @@ The system supports:
 - Embedding generation with Google Gemini
 - Vector storage and similarity search with PostgreSQL/pgvector
 - Asynchronous job processing with NATS JetStream`,
-		PersistentPreRunE: func(c *cobra.Command, args []string) error {
+		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
 			// Check for version flag before running config initialization
 			versionFlag, err := c.Flags().GetBool("version")
 			if err != nil {
@@ -58,13 +58,13 @@ The system supports:
 				err := runVersion(c, false)
 				if err == nil {
 					// Prevent further execution after showing version
-					c.Run = func(cmd *cobra.Command, args []string) {}
+					c.Run = func(_ *cobra.Command, _ []string) {}
 				}
 				return err
 			}
 			return nil
 		},
-		Run: func(c *cobra.Command, args []string) {
+		Run: func(c *cobra.Command, _ []string) {
 			// Default behavior: show help when no command provided
 			_ = c.Help() // Help prints to stdout and returns an error we can ignore
 		},

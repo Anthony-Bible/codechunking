@@ -5,16 +5,25 @@ Copyright © 2025 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"fmt"
+	"codechunking/internal/version"
 
 	"github.com/spf13/cobra"
 )
 
-// Version information variables that will be set via ldflags during build. //nolint:gochecknoglobals // Required for build-time injection.
+// Version information variables that will be set via ldflags during build.
+// These are kept for backward compatibility with existing build processes and tests.
+//
+//nolint:gochecknoglobals // Required for backward compatibility with existing build systems.
 var (
-	Version   string // Example: v1.0.0
-	Commit    string // Example: abc123def456
-	BuildTime string // Example: 2025-01-01T12:00:00Z
+	// Version is the application version (e.g., v1.0.0).
+	// This variable is primarily maintained for build systems that may still reference it.
+	Version string
+	// Commit is the git commit hash (e.g., abc123def456).
+	// This variable is primarily maintained for build systems that may still reference it.
+	Commit string
+	// BuildTime is the build timestamp (e.g., 2025-01-01T12:00:00Z).
+	// This variable is primarily maintained for build systems that may still reference it.
+	BuildTime string
 )
 
 // newVersionCmd creates and returns the version command.
@@ -37,37 +46,29 @@ which includes version number, build information, and other relevant details.`,
 	return cmd
 }
 
-// runVersion implements the version command output.
+// runVersion implements the version command output using the refactored version package.
 func runVersion(cmd *cobra.Command, short bool) error {
-	// Provide default values for empty variables
-	version := Version
-	if version == "" {
-		version = "dev"
+	// Sync legacy variables with version package for backward compatibility
+	syncLegacyVersionVars()
+
+	// Get version information from the centralized version package
+	versionInfo := version.GetVersion()
+
+	// Write the formatted version output
+	return versionInfo.Write(cmd.OutOrStdout(), short)
+}
+
+// syncLegacyVersionVars synchronizes the legacy version variables with the version package.
+// This ensures backward compatibility for any build processes or tests that may still
+// set the legacy variables directly.
+func syncLegacyVersionVars() {
+	// Reset version package state to ensure clean state for tests
+	version.ResetBuildVars()
+
+	// Only set variables if at least one is non-empty
+	if Version != "" || Commit != "" || BuildTime != "" {
+		version.SetBuildVars(Version, Commit, BuildTime)
 	}
-
-	commit := Commit
-	if commit == "" {
-		commit = "unknown"
-	}
-
-	buildTime := BuildTime
-	if buildTime == "" {
-		buildTime = "unknown"
-	}
-
-	if short {
-		// Single line output for --short flag
-		fmt.Fprintln(cmd.OutOrStdout(), version)
-		return nil
-	}
-
-	// Multi-line output with application name and details
-	fmt.Fprintf(cmd.OutOrStdout(), "CodeChunking CLI\n")
-	fmt.Fprintf(cmd.OutOrStdout(), "Version: %s\n", version)
-	fmt.Fprintf(cmd.OutOrStdout(), "Commit: %s\n", commit)
-	fmt.Fprintf(cmd.OutOrStdout(), "Built: %s\n", buildTime)
-
-	return nil
 }
 
 func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for command registration

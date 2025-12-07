@@ -13,29 +13,8 @@ permissions:
   packages: write
 
 jobs:
-  release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
-
-  build-and-upload:
-    name: Build and Upload Assets
-    needs: release
+  build:
+    name: Build Release Assets
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -50,17 +29,23 @@ jobs:
             arch: arm64
           - os: windows
             arch: amd64
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+        with:
+          fetch-depth: 0  # Get full history for proper version info
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      
-      - name: Build binary
+
+      - name: Get build time
+        id: build_time
+        run: echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
+      - name: Build main binary
         env:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
@@ -69,22 +54,89 @@ jobs:
           if [ "${{ matrix.os }}" = "windows" ]; then
             binary_name="${binary_name}.exe"
           fi
-          CGO_ENABLED=1 go build -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o "$binary_name" main.go
+
+          # Build with version, commit, and build time ldflags
+          CGO_ENABLED=1 go build -ldflags="-s -w \
+            -X cmd.Version=${{ github.ref_name }} \
+            -X cmd.Commit=${{ github.sha }} \
+            -X cmd.BuildTime=${{ steps.build_time.outputs.build_time }}" \
+            -o "$binary_name" main.go
+
+          # Create tarball
           tar czf "${binary_name}.tar.gz" "$binary_name"
-      
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
+
+      - name: Build client binary
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          client_binary="codechunking-client-${{ matrix.os }}-${{ matrix.arch }}"
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            client_binary="${client_binary}.exe"
+          fi
+
+          # Build client binary (static, no CGO)
+          CGO_ENABLED=0 go build -ldflags="-s -w" \
+            -o "$client_binary" ./cmd/client
+
+          # Create tarball
+          tar czf "${client_binary}.tar.gz" "$client_binary"
+
+      - name: Generate checksums
+        run: |
+          # Create checksums file
+          echo "# Checksums for ${{ github.ref_name }}" > checksums.txt
+
+          # Add checksums for all artifacts
+          for file in *.tar.gz; do
+            if [ -f "$file" ]; then
+              sha256sum "$file" >> checksums.txt
+            fi
+          done
+
+          # Display checksums for verification
+          cat checksums.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            *.tar.gz
+            checksums.txt
+          retention-days: 1
+
+  create-release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref }}
+          name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/*.tar.gz
+            artifacts/checksums.txt
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ./codechunking-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
-          asset_name: codechunking-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
-          asset_content_type: application/gzip
 
   docker-release:
     name: Docker Release
-    needs: release
+    needs: create-release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -118,6 +170,10 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
       
+      - name: Get build time
+        id: docker_build_time
+        run: echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -126,6 +182,14 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.docker_build_time.outputs.build_time }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.docker_build_time.outputs.build_time }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

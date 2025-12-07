@@ -5,23 +5,69 @@ Copyright © 2025 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"codechunking/internal/application/common/slogger"
+	"codechunking/internal/version"
 
 	"github.com/spf13/cobra"
 )
 
+// Version information variables that will be set via ldflags during build.
+// These are kept for backward compatibility with existing build processes and tests.
+//
+//nolint:gochecknoglobals // Required for backward compatibility with existing build systems.
+var (
+	// Version is the application version (e.g., v1.0.0).
+	// This variable is primarily maintained for build systems that may still reference it.
+	Version string
+	// Commit is the git commit hash (e.g., abc123def456).
+	// This variable is primarily maintained for build systems that may still reference it.
+	Commit string
+	// BuildTime is the build timestamp (e.g., 2025-01-01T12:00:00Z).
+	// This variable is primarily maintained for build systems that may still reference it.
+	BuildTime string
+)
+
 // newVersionCmd creates and returns the version command.
 func newVersionCmd() *cobra.Command {
-	return &cobra.Command{
+	var short bool
+
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Show version information",
 		Long: `Show version information for the codechunking application.
 
 This command displays the current version of the codechunking CLI tool,
 which includes version number, build information, and other relevant details.`,
-		Run: func(_ *cobra.Command, _ []string) {
-			slogger.InfoNoCtx("version called", nil)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runVersion(cmd, short)
 		},
+	}
+
+	cmd.Flags().BoolVarP(&short, "short", "s", false, "Show only version number")
+	return cmd
+}
+
+// runVersion implements the version command output using the refactored version package.
+func runVersion(cmd *cobra.Command, short bool) error {
+	// Sync legacy variables with version package for backward compatibility
+	syncLegacyVersionVars()
+
+	// Get version information from the centralized version package
+	versionInfo := version.GetVersion()
+
+	// Write the formatted version output
+	return versionInfo.Write(cmd.OutOrStdout(), short)
+}
+
+// syncLegacyVersionVars synchronizes the legacy version variables with the version package.
+// This ensures backward compatibility for any build processes or tests that may still
+// set the legacy variables directly.
+func syncLegacyVersionVars() {
+	// Reset version package state to ensure clean state for tests
+	version.ResetBuildVars()
+
+	// Only set variables if at least one is non-empty
+	if Version != "" || Commit != "" || BuildTime != "" {
+		version.SetBuildVars(Version, Commit, BuildTime)
 	}
 }
 

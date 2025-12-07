@@ -18,8 +18,18 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the binary
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o codechunking main.go
+# Build arguments for version information
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_TIME=unknown
+
+# Build the binary with version ldflags
+RUN CGO_ENABLED=1 GOOS=linux go build \
+    -ldflags="-s -w \
+    -X cmd.Version=${VERSION} \
+    -X cmd.Commit=${COMMIT} \
+    -X cmd.BuildTime=${BUILD_TIME}" \
+    -o codechunking main.go
 
 # Final stage - use Debian slim for glibc compatibility
 FROM debian:bookworm-slim

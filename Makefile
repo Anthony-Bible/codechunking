@@ -9,7 +9,7 @@ MIGRATE_CMD=migrate
 # Version and installation variables
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS = -ldflags "-X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)"
+LDFLAGS = -ldflags "-X codechunking/cmd.Version=$(VERSION) -X codechunking/cmd.Commit=$(shell git rev-parse HEAD 2>/dev/null || echo unknown) -X codechunking/cmd.BuildTime=$(BUILD_TIME)"
 
 # Installation directory detection
 ifeq ($(OS),Windows_NT)

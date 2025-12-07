@@ -85,9 +85,6 @@ func TestRootCommand_VersionFlag(t *testing.T) {
 			testRootCmd := newRootCmd()
 			testRootCmd.AddCommand(newVersionCmd())
 
-			// Add version flags to root command
-			testRootCmd.Flags().BoolP("version", "v", false, "Show version information")
-
 			// Execute command with version flag
 			var buf bytes.Buffer
 			testRootCmd.SetOut(&buf)
@@ -139,9 +136,6 @@ func TestRootCommand_VersionFlagPriority(t *testing.T) {
 	testRootCmd.AddCommand(dummyCmd)
 	testRootCmd.AddCommand(newVersionCmd())
 
-	// Add version flag
-	testRootCmd.Flags().BoolP("version", "v", false, "Show version information")
-
 	// Capture output
 	var buf bytes.Buffer
 	testRootCmd.SetOut(&buf)
@@ -177,9 +171,6 @@ func TestRootCommand_VersionFlagExitsAfterDisplay(t *testing.T) {
 	}
 	subCmd.Flags().String("subflag", "", "A subcommand flag")
 	testRootCmd.AddCommand(subCmd)
-
-	// Add version flag
-	testRootCmd.Flags().BoolP("version", "v", false, "Show version information")
 
 	// Try to execute with version flag and other arguments
 	var buf bytes.Buffer

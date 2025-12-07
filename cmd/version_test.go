@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"codechunking/internal/application/common/slogger"
 	"os"
 	"strings"
 	"testing"
@@ -15,7 +14,8 @@ import (
 
 // createTestVersionCommand creates a version command without triggering config initialization.
 func createTestVersionCommand() *cobra.Command {
-	return &cobra.Command{
+	var short bool
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Show version information",
 		Long: `Show version information for the codechunking application.
@@ -23,17 +23,11 @@ func createTestVersionCommand() *cobra.Command {
 This command displays the current version of the codechunking CLI tool,
 which includes version number, build information, and other relevant details.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement version output using Version, Commit, and BuildTime variables
-			// The implementation should:
-			// 1. Use the version variables set via ldflags
-			// 2. Support a --short flag to output only the version number
-			// 3. Format the output nicely with the application name
-			// 4. Provide default values when variables are not set
-
-			slogger.InfoNoCtx("version called", nil)
-			return nil
+			return runVersion(cmd, short)
 		},
 	}
+	cmd.Flags().BoolVarP(&short, "short", "s", false, "Show only version number")
+	return cmd
 }
 
 // TestVersionCommand_Exists verifies that the version command is registered.
@@ -161,7 +155,6 @@ func TestVersionCommand_SingleLineOutput(t *testing.T) {
 
 	// Create version command with short flag
 	versionCmd := createTestVersionCommand()
-	versionCmd.Flags().Bool("short", false, "Show only version number")
 	err := versionCmd.Flags().Set("short", "true")
 	require.NoError(t, err)
 

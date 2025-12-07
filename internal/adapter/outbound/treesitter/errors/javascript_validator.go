@@ -70,6 +70,8 @@ func (v *JavaScriptValidator) ValidateSyntaxWithTree(source string, tree *tree_s
 		// Find first error node and extract details
 		errorNode := v.findFirstErrorNode(rootNode)
 		if !errorNode.IsNull() {
+			// Row and Column are always small positive values from tree-sitter,
+			// so conversion to int is safe on all supported platforms.
 			row := int(errorNode.StartPoint().Row) + 1
 
 			col := int(errorNode.StartPoint().Column)

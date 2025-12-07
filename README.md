@@ -418,6 +418,25 @@ make build-client
 
 For complete documentation including agent integration and CLAUDE.md snippets, see the [Client CLI Guide](wiki/Client-CLI-Guide.md).
 
+### Using with AI Agents
+
+The `codechunking-client` is designed for seamless AI agent integration with structured JSON output and comprehensive error handling.
+
+**Quick Agent Examples:**
+```bash
+# Agent: Index and search a repository
+./bin/codechunking-client repos add https://github.com/user/repo --wait
+./bin/codechunking-client search "error handling pattern" --limit 10
+
+# Agent: Check system health
+./bin/codechunking-client health | jq -e '.success' && echo "API ready"
+
+# Agent: Find all Go functions in a repo
+./bin/codechunking-client search "function" --types function --languages go
+```
+
+For complete agent integration patterns, see the [Client CLI Guide](wiki/Client-CLI-Guide.md#agent-integration).
+
 ### API Endpoints
 
 #### Index a repository
@@ -497,6 +516,34 @@ The API includes security middleware that sets appropriate headers, but does not
 - OAuth2 / JWT tokens
 - IP whitelisting
 - Rate limiting
+
+## AI Agent Quick Setup
+
+Add this to your project's `agents.md` or `claude.md` file for instant AI agent context:
+
+````markdown
+### CodeChunking Client Integration
+
+**Binary:** `./bin/codechunking-client` (build with `make build-client`)
+
+**Essential Commands:**
+- Health check: `codechunking-client health`
+- Add repo: `codechunking-client repos add <url> --wait`
+- List repos: `codechunking-client repos list --status completed`
+- Search: `codechunking-client search "<query>" --limit N --languages L`
+
+**JSON Output Pattern:**
+All commands return: `{"success": true/false, "data": {...}|error: {...}, "timestamp": "..."}`
+
+**Common Workflows:**
+1. Index repository → wait for completion → search code
+2. Parse results with `jq -r '.data.results[].file_path'`
+3. Check success with `jq -e '.success'`
+
+**Error Codes:** INVALID_CONFIG, CONNECTION_ERROR, TIMEOUT_ERROR, NOT_FOUND, SERVER_ERROR
+````
+
+**API URL:** Configure with `--api-url` or `CODECHUNK_CLIENT_API_URL` (default: http://localhost:8080)
 
 ## Configuration
 

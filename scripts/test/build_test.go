@@ -362,9 +362,8 @@ func TestBuildScriptVersionValidation(t *testing.T) {
 		t.Run(fmt.Sprintf("InvalidVersion_%s", invalidVersion), func(t *testing.T) {
 			t.Parallel()
 			var args []string
-			if invalidVersion != "" {
-				args = append(args, invalidVersion)
-			}
+			// Always append the version (including empty string)
+			args = append(args, invalidVersion)
 
 			cmd := exec.Command("bash", append([]string{scriptPath}, args...)...)
 			var stderr bytes.Buffer

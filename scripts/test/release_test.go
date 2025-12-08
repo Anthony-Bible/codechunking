@@ -27,7 +27,8 @@ func TestReleaseScriptExecution(t *testing.T) {
 
 	err = cmd.Run()
 	if err != nil {
-		t.Fatalf("Expected release script to execute successfully, got error: %v", err)
+		t.Fatalf("Expected release script to execute successfully, got error: %v\nStdout: %s\nStderr: %s",
+			err, stdout.String(), stderr.String())
 	}
 
 	if stdout.Len() == 0 {

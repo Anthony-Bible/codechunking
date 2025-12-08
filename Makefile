@@ -83,10 +83,14 @@ test-coverage:
 ## test-all: Run all tests with coverage
 test-all: test test-integration test-coverage
 
-## build: Build the binary
+## build: Build both main and client binaries using build script
 build:
-	CGO_ENABLED=1 $(GO_CMD) build -o bin/$(BINARY_NAME) main.go
-	@echo "Binary built: bin/$(BINARY_NAME)"
+	@if [ -f "VERSION" ]; then \
+		./scripts/build.sh $$(cat VERSION); \
+	else \
+		./scripts/build.sh $$(git describe --tags --always --dirty 2>/dev/null || echo "dev"); \
+	fi
+	@echo "Binaries built: bin/codechunking and bin/client"
 
 ## build-linux: Build for Linux
 build-linux:
@@ -110,16 +114,31 @@ build-client-cross:
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO_CMD) build -o bin/codechunking-client-darwin-arm64 ./cmd/client
 	@echo "Cross-compiled client binaries built in bin/"
 
-## build-with-version: Build the binary with version injection
+## build-with-version: Build the binary with version injection using build script
 build-with-version:
-	CGO_ENABLED=1 $(GO_CMD) build $(LDFLAGS) -o bin/$(BINARY_NAME) main.go
-	@echo "Binary built with version $(VERSION): bin/$(BINARY_NAME)"
+	@if [ -n "$(VERSION)" ]; then \
+		./scripts/build.sh $(VERSION); \
+	else \
+		echo "Error: VERSION is required. Usage: make build-with-version VERSION=v1.0.0"; \
+		exit 1; \
+	fi
+	@echo "Binaries built with version $(VERSION): bin/codechunking and bin/client"
 
-## install: Build and install main binary to $(INSTALL_DIR)
+## install: Build and install both binaries to $(INSTALL_DIR)
 install: build
 	@mkdir -p $(INSTALL_DIR)
-	@cp bin/$(BINARY_NAME) $(INSTALL_DIR)/
-	@echo "Installed $(BINARY_NAME) to $(INSTALL_DIR)/$(BINARY_NAME)"
+	@if [ -f "bin/codechunking" ]; then \
+		cp bin/codechunking $(INSTALL_DIR)/; \
+		echo "Installed codechunking to $(INSTALL_DIR)/codechunking"; \
+	else \
+		echo "Warning: bin/codechunking not found"; \
+	fi
+	@if [ -f "bin/client" ]; then \
+		cp bin/client $(INSTALL_DIR)/codechunking-client; \
+		echo "Installed codechunking-client to $(INSTALL_DIR)/codechunking-client"; \
+	else \
+		echo "Warning: bin/client not found"; \
+	fi
 	@echo "Make sure $(INSTALL_DIR) is in your PATH"
 
 ## install-client: Build and install client binary to $(INSTALL_DIR)

@@ -13,7 +13,6 @@ cd "$(dirname "$0")/.." || {
 
 # Default values
 VERSION=""
-VERSION_FILE="${VERSION_FILE:-VERSION}"
 OUTPUT_DIR="${OUTPUT_DIR:-bin}"
 VERBOSE=false
 CLEAN=false
@@ -64,15 +63,14 @@ OPTIONS:
 
 ARGUMENTS:
     VERSION          Version string (e.g., v1.0.0, v2.1.0-beta)
-                    If not provided, will read from VERSION file
+                    If not provided, uses git describe (or "dev" if no git)
 
 ENVIRONMENT VARIABLES:
-    VERSION_FILE     Path to VERSION file (default: VERSION)
     OUTPUT_DIR       Output directory for binaries (default: bin)
 
 EXAMPLES:
-    $0 v1.0.0                    # Build with version v1.0.0
-    $0                           # Build using version from VERSION file
+    $0 v1.0.0                    # Build with explicit version v1.0.0
+    $0                           # Build using git describe (e.g., v1.4.0-5-gabc123)
     $0 --verbose v1.0.0          # Build with verbose output
     $0 --clean --platform linux/amd64 v1.0.0  # Clean cross-compile build
 
@@ -80,44 +78,53 @@ EOF
 }
 
 # Function to validate version format
+# Accepts: v1.0.0, v1.0.0-beta, v1.0.0-5-gabc123, v1.0.0-dirty, abc123def (commit hash), dev
 validate_version() {
     local version="${1:-}"
     if [ -z "$version" ]; then
         print_error "Version parameter is empty"
         return 1
     fi
-    # Check version format: v<semver> (e.g., v1.0.0, v2.1.0-beta)
-    if ! echo "$version" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9\.\-]*)?$' > /dev/null; then
+    # Accept semver, git describe output, short commit hash, or "dev"
+    # Patterns: v1.0.0, v1.0.0-rc1, v1.0.0-5-gabc123-dirty, abc123def, dev
+    if ! echo "$version" | grep -E '^(v[0-9]+\.[0-9]+\.[0-9]+[a-zA-Z0-9\.\-]*|[a-f0-9]{7,40}|dev)$' > /dev/null; then
         print_error "Invalid version format: $version"
-        print_error "Version must match format: v1.0.0, v2.1.0-beta, etc."
+        print_error "Expected: vX.Y.Z[-suffix], git commit hash, or 'dev'"
         return 1
     fi
 }
 
-# Function to get version
+# Function to get version from git or CLI argument
+# Priority: 1. CLI argument, 2. git describe, 3. "dev"
+# shellcheck disable=SC2120 # Function designed for optional argument, called without args
 get_version() {
     local version="${1:-}"
 
+    # Priority 1: Explicit CLI argument
     if [ -n "$version" ]; then
         validate_version "$version"
         echo "$version"
         return
     fi
 
-    # Try to read from VERSION file
-    if [ -f "$VERSION_FILE" ]; then
-        version=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+    # Priority 2: Git describe (source of truth)
+    if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+        # Fetch tags in shallow clone (common in CI environments)
+        if [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+            git fetch --tags --depth=1 2>/dev/null || true
+        fi
+
+        version=$(git describe --tags --always --dirty 2>/dev/null)
         if [ -n "$version" ]; then
-            validate_version "$version"
-            print_info "Using version from $VERSION_FILE: $version"
+            print_always "Using version from git: $version"
             echo "$version"
             return
         fi
     fi
 
-    print_error "No version specified and $VERSION_FILE file not found or empty"
-    print_error "Either provide a version argument or create a $VERSION_FILE file"
-    exit 1
+    # Priority 3: No git available - development build
+    print_warn "No git repository found, using 'dev'"
+    echo "dev"
 }
 
 # Function to check dependencies
@@ -194,6 +201,15 @@ build_binary() {
         print_always "Cross-compiling for $GOOS/$GOARCH"
     fi
 
+    # Add test mode optimizations (must be before adding ldflags to build_args)
+    if [ "$TEST_MODE" = true ]; then
+        # In test mode, use faster linking and disable some optimizations
+        ldflags="$ldflags -w -s"
+        # Use smaller build cache for tests
+        export GOCACHE=/tmp/go-cache-test
+        export GOMODCACHE=/tmp/go-mod-cache-test
+    fi
+
     # Add output and ldflags
     build_args+=("-o" "$OUTPUT_DIR/$output_name")
     build_args+=("-ldflags" "$ldflags")
@@ -205,15 +221,6 @@ build_binary() {
     if [ "$VERBOSE" = true ]; then
         build_args+=("-v")
         echo "Running: go build ${build_args[*]} $main_path"
-    fi
-
-    # Add test mode optimizations
-    if [ "$TEST_MODE" = true ]; then
-        # In test mode, use faster linking and disable some optimizations
-        ldflags="$ldflags -w -s"
-        # Use smaller build cache for tests
-        export GOCACHE=/tmp/go-cache-test
-        export GOMODCACHE=/tmp/go-mod-cache-test
     fi
 
     # Execute build command
@@ -282,7 +289,7 @@ done
 # Restore arguments
 set -- "${ARGS[@]}"
 
-# Get version - don't fall back to VERSION file if provided argument is invalid
+# Get version from CLI argument or git describe
 if [ $# -gt 0 ]; then
     # Check if the provided argument is empty first
     if [ -n "$1" ]; then

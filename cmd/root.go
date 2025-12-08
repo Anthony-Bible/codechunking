@@ -48,22 +48,6 @@ The system supports:
 - Embedding generation with Google Gemini
 - Vector storage and similarity search with PostgreSQL/pgvector
 - Asynchronous job processing with NATS JetStream`,
-		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
-			// Check for version flag before running config initialization
-			versionFlag, err := c.Flags().GetBool("version")
-			if err != nil {
-				return fmt.Errorf("error getting version flag: %w", err)
-			}
-			if versionFlag {
-				err := runVersion(c, false)
-				if err == nil {
-					// Prevent further execution after showing version
-					c.Run = func(_ *cobra.Command, _ []string) {}
-				}
-				return err
-			}
-			return nil
-		},
 		Run: func(c *cobra.Command, _ []string) {
 			// Default behavior: show help when no command provided
 			_ = c.Help() // Help prints to stdout and returns an error we can ignore
@@ -116,7 +100,8 @@ func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for root com
 
 func initConfig() {
 	// Check if we're just showing version - if so, skip config initialization
-	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+	// This handles both the --version/-v flag and the "version" subcommand
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v" || os.Args[1] == "version") {
 		return
 	}
 
@@ -169,12 +154,14 @@ func initConfig() {
 		})
 	}
 
-	// Load configuration unless we're showing version
-	// For simplicity in green phase, only load config if we have database.user configured
+	// Load full configuration only if required database settings are present.
+	// This intentional design allows version/help commands and tests to work
+	// without requiring full database configuration, improving CLI usability.
+	// Commands that need database access will fail gracefully if config is missing.
 	if v.IsSet("database.user") {
 		cmdConfig.cfg = config.New(v)
 	} else {
-		// Create a minimal config for version commands or tests
+		// Create minimal config for commands that don't need database (version, help)
 		cmdConfig.cfg = &config.Config{}
 	}
 }
@@ -292,6 +279,7 @@ func SetTestConfig(c *config.Config) {
 
 // handleConfigError handles configuration file loading errors with detailed logging.
 func handleConfigError(err error, configFile string, searchPaths []string) {
+	// Check if it's a config file not found error
 	var configFileNotFoundError viper.ConfigFileNotFoundError
 	if errors.As(err, &configFileNotFoundError) {
 		handleConfigNotFound(err, searchPaths)

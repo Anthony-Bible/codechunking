@@ -59,22 +59,16 @@ type VersionInfo struct {
 
 // NewVersionInfo creates a new VersionInfo instance with values from build-time variables
 // and appropriate defaults for empty values.
+//
+// Version information can be set via:
+// 1. Build-time ldflags injection (preferred): -X codechunking/internal/version.version=v1.0.0
+// 2. Runtime via SetBuildVars() for backward compatibility with cmd package.
 func NewVersionInfo() *VersionInfo {
-	// Check if legacy variables might be set (if this package is used from cmd)
-	// This ensures backward compatibility with ldflags injection in cmd package
-	if version == "" && commit == "" && buildTime == "" {
-		// If our internal vars are empty, try to sync from package-level variables
-		// that might have been set via ldflags in importing packages
-		// Note: This is a safety net - the proper sync should happen in cmd/init()
-		// but we provide this fallback for direct package use
-	}
-
-	info := &VersionInfo{
+	return &VersionInfo{
 		Version:   getVersionWithDefault(),
 		Commit:    getCommitWithDefault(),
 		BuildTime: getBuildTimeWithDefault(),
 	}
-	return info
 }
 
 // getVersionWithDefault returns the version with a default value if empty.

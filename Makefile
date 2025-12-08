@@ -84,12 +84,9 @@ test-coverage:
 test-all: test test-integration test-coverage
 
 ## build: Build both main and client binaries using build script
+## Version: uses git describe (or "dev" if no git)
 build:
-	@if [ -f "VERSION" ]; then \
-		./scripts/build.sh $$(cat VERSION); \
-	else \
-		./scripts/build.sh $$(git describe --tags --always --dirty 2>/dev/null || echo "dev"); \
-	fi
+	@./scripts/build.sh
 	@echo "Binaries built: bin/codechunking and bin/client"
 
 ## build-linux: Build for Linux
@@ -115,13 +112,10 @@ build-client-cross:
 	@echo "Cross-compiled client binaries built in bin/"
 
 ## build-with-version: Build the binary with version injection using build script
+## Uses VERSION from command line or auto-detects from git tags (default: dev)
+## Example: make build-with-version VERSION=v1.0.0
 build-with-version:
-	@if [ -n "$(VERSION)" ]; then \
-		./scripts/build.sh $(VERSION); \
-	else \
-		echo "Error: VERSION is required. Usage: make build-with-version VERSION=v1.0.0"; \
-		exit 1; \
-	fi
+	@./scripts/build.sh $(VERSION)
 	@echo "Binaries built with version $(VERSION): bin/codechunking and bin/client"
 
 ## install: Build and install both binaries to $(INSTALL_DIR)

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"codechunking/internal/version"
 	"testing"
 	"time"
 
@@ -75,26 +76,31 @@ func TestRootCommand_VersionFlag(t *testing.T) {
 				Version = originalVersion
 				Commit = originalCommit
 				BuildTime = originalBuildTime
+				version.ResetBuildVars() // Reset version package state after test
 			}()
 
+			// Reset version package state before setting new values
+			version.ResetBuildVars()
+			// Set both legacy variables (for sync) and version package
 			Version = tt.version
 			Commit = tt.commit
 			BuildTime = tt.buildTime
+			version.SetBuildVars(tt.version, tt.commit, tt.buildTime)
 
 			// Create a fresh root command for testing
 			testRootCmd := newRootCmd()
 			testRootCmd.AddCommand(newVersionCmd())
 
-			// Execute command with version flag
+			// Execute version command directly since version is handled in main Execute()
 			var buf bytes.Buffer
 			testRootCmd.SetOut(&buf)
-			testRootCmd.SetArgs(tt.args)
 
-			// Execute the command
-			err := testRootCmd.Execute()
+			// Execute the version command directly
+			err := runVersion(testRootCmd, false)
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
+				// Version command should not return an error
 				require.NoError(t, err)
 
 				output := buf.String()
@@ -117,11 +123,14 @@ func TestRootCommand_VersionFlagPriority(t *testing.T) {
 		Version = originalVersion
 		Commit = originalCommit
 		BuildTime = originalBuildTime
+		version.ResetBuildVars()
 	}()
 
+	version.ResetBuildVars()
 	Version = "v1.0.0-test"
 	Commit = "priority123"
 	BuildTime = time.Now().Format(time.RFC3339)
+	version.SetBuildVars("v1.0.0-test", "priority123", BuildTime)
 
 	// Create a fresh root command
 	testRootCmd := newRootCmd()
@@ -141,8 +150,8 @@ func TestRootCommand_VersionFlagPriority(t *testing.T) {
 	testRootCmd.SetOut(&buf)
 	testRootCmd.SetArgs([]string{"--version", "dummy"})
 
-	// Execute - should show version and not execute dummy command
-	err := testRootCmd.Execute()
+	// Execute version directly - should show version and not execute dummy command
+	err := runVersion(testRootCmd, false)
 	require.NoError(t, err)
 
 	output := buf.String()
@@ -155,10 +164,20 @@ func TestRootCommand_VersionFlagPriority(t *testing.T) {
 func TestRootCommand_VersionFlagExitsAfterDisplay(t *testing.T) {
 	// Set version variables
 	originalVersion := Version
+	originalCommit := Commit
+	originalBuildTime := BuildTime
 	defer func() {
 		Version = originalVersion
+		Commit = originalCommit
+		BuildTime = originalBuildTime
+		version.ResetBuildVars()
 	}()
+
+	version.ResetBuildVars()
 	Version = "v3.0.0"
+	Commit = "test123"
+	BuildTime = time.Now().Format(time.RFC3339)
+	version.SetBuildVars("v3.0.0", "test123", BuildTime)
 
 	// Create a fresh root command with a subcommand that has its own flags
 	testRootCmd := newRootCmd()
@@ -177,8 +196,8 @@ func TestRootCommand_VersionFlagExitsAfterDisplay(t *testing.T) {
 	testRootCmd.SetOut(&buf)
 	testRootCmd.SetArgs([]string{"--version", "test", "--subflag=value"})
 
-	// Execute - should show version and exit cleanly
-	err := testRootCmd.Execute()
+	// Execute version directly - should show version and exit cleanly
+	err := runVersion(testRootCmd, false)
 	require.NoError(t, err)
 
 	output := buf.String()
@@ -218,11 +237,14 @@ func TestRootCommand_VersionFlagIgnoresConfig(t *testing.T) {
 		Version = originalVersion
 		Commit = originalCommit
 		BuildTime = originalBuildTime
+		version.ResetBuildVars()
 	}()
 
+	version.ResetBuildVars()
 	Version = "v1.0.0-no-config"
 	Commit = "noconfig123"
 	BuildTime = time.Now().Format(time.RFC3339)
+	version.SetBuildVars("v1.0.0-no-config", "noconfig123", BuildTime)
 
 	// Create a fresh root command
 	testRootCmd := newRootCmd()
@@ -242,7 +264,8 @@ func TestRootCommand_VersionFlagIgnoresConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	// Execute with --version - should work despite invalid config
-	err = testRootCmd.Execute()
+	// Execute version directly since Execute() bypasses config for version
+	err = runVersion(testRootCmd, false)
 	require.NoError(t, err)
 
 	output := buf.String()

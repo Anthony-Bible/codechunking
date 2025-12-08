@@ -14,7 +14,6 @@ cd "$SCRIPT_DIR/.." || {
 
 # Default values
 VERSION=""
-VERSION_FILE="${VERSION_FILE:-VERSION}"
 RELEASE_DIR="${RELEASE_DIR:-releases}"
 BUILD_DIR="${BUILD_DIR:-bin}"
 DRY_RUN="${DRY_RUN:-false}"
@@ -70,34 +69,20 @@ validate_version() {
         return 1
     fi
     # Check version format: v<semver> (e.g., v1.0.0, v2.1.0-beta)
-    if ! echo "$version" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9\.\-]*)?$' > /dev/null; then
+    if ! echo "$version" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$' > /dev/null; then
         print_error "Invalid version format: $version"
-        print_error "Version must match format: v1.0.0, v2.1.0-beta, etc."
+        print_error "Version must match format: v1.0.0, v2.1.0-beta, v2.1.0-beta.1, v2.1.0+build, etc."
         return 1
     fi
 }
 
 # Function to run command (or display in dry-run mode)
 run_cmd() {
-    local cmd="$*"
-
     if [ "$DRY_RUN" = true ]; then
-        print_info "DRY: $cmd"
+        print_info "DRY: $*"
     else
-        print_info "Running: $cmd"
-        eval "$cmd"
-    fi
-}
-
-# Function to update VERSION file
-update_version_file() {
-    local version="$1"
-
-    if [ "$DRY_RUN" = true ]; then
-        print_info "DRY: Would update VERSION with version $version"
-    else
-        print_info "Updating VERSION with version $version"
-        echo "$version" > "$VERSION_FILE"
+        print_info "Running: $*"
+        "$@"
     fi
 }
 
@@ -136,37 +121,24 @@ copy_binaries() {
     else
         print_info "Copying binaries with version names"
 
-        # Check if binaries already exist in version directory (for tests)
         local main_binary="$BUILD_DIR/codechunking"
         local client_binary="$BUILD_DIR/client"
         local versioned_main="$version_dir/codechunking-$version"
         local versioned_client="$version_dir/client-$version"
 
-        # For the test scenario, if main binary already exists in release directory,
-        # just create the client binary
-        if [ -f "$versioned_main" ]; then
-            print_info "Main binary already exists, checking client"
-            if [ ! -f "$versioned_client" ]; then
-                # Create a dummy client binary for the test
-                echo "client binary" > "$versioned_client"
-            fi
-            return
-        fi
-
-        # Normal flow: copy from build directory
+        # Copy main binary
         if [ ! -f "$main_binary" ]; then
             print_error "Main binary not found: $main_binary"
             exit 1
         fi
-
         cp "$main_binary" "$versioned_main"
 
+        # Copy client binary
         if [ ! -f "$client_binary" ]; then
-            # Create a dummy client binary if build directory doesn't have it
-            echo "client binary" > "$versioned_client"
-        else
-            cp "$client_binary" "$versioned_client"
+            print_error "Client binary not found: $client_binary"
+            exit 1
         fi
+        cp "$client_binary" "$versioned_client"
     fi
 }
 
@@ -185,31 +157,30 @@ generate_checksums() {
     fi
 }
 
-# Function to create git tag
+# Function to create git tag (source of truth for version)
 create_git_tag() {
     local version="$1"
 
     if [ "$NO_TAG" = true ]; then
         print_info "Skipping git tag creation (--no-tag specified)"
-        return
-    fi
-
-    if [ "${CREATE_GIT_TAG:-false}" != "true" ]; then
-        print_info "Skipping git tag creation (CREATE_GIT_TAG not set to true)"
-        return
+        print_warn "Note: Without a tag, build will use git describe output"
+        return 0
     fi
 
     if [ "$DRY_RUN" = true ]; then
         print_info "DRY: Would create git tag $version"
-    else
-        print_info "Creating git tag $version"
-        if ! git rev-parse "refs/tags/$version" >/dev/null 2>&1; then
-            run_cmd "git tag -a $version -m \"Release $version\""
-            print_info "Git tag created: $version"
-        else
-            print_warn "Git tag $version already exists"
-        fi
+        return 0
     fi
+
+    # Check if tag already exists
+    if git rev-parse "refs/tags/$version" >/dev/null 2>&1; then
+        print_warn "Git tag $version already exists, using existing tag"
+        return 0
+    fi
+
+    print_info "Creating git tag $version (source of truth)"
+    git tag -a "$version" -m "Release $version"
+    print_info "Git tag created: $version"
 }
 
 # Parse command line arguments
@@ -261,10 +232,10 @@ if [ "$DRY_RUN" = true ]; then
     print_warn "DRY RUN MODE - No changes will be made"
 fi
 
-# Step 1: Update VERSION file
-update_version_file "$VERSION"
+# Step 1: Create git tag (source of truth for version)
+create_git_tag "$VERSION"
 
-# Step 2: Run build
+# Step 2: Run build (uses git describe for version)
 run_build "$VERSION"
 
 # Step 3: Create release directories
@@ -276,8 +247,7 @@ copy_binaries "$VERSION"
 # Step 5: Generate checksums
 generate_checksums "$VERSION"
 
-# Step 6: Create git tag
-create_git_tag "$VERSION"
-
 # Success message
 printf "${GREEN}✓${NC} Release created successfully\n"
+printf "Version: %s\n" "$VERSION"
+printf "Release artifacts: %s/%s/\n" "$RELEASE_DIR" "$VERSION"

@@ -310,14 +310,15 @@ docker-compose down
 # Full version information
 codechunking version
 
-# Output format:
-codechunking version 1.0.0
-commit: abc123def456
-built: 2024-01-15T10:30:00Z
+# Example output:
+CodeChunking CLI
+Version: v1.0.0
+Commit: abc123def456
+Built: <build time>
 
 # Short version
 codechunking version --short
-# Output: 1.0.0
+# Output: v1.0.0
 ```
 
 ### Installing Specific Versions
@@ -429,12 +430,12 @@ export GOARCH=arm64
 
 5. **Version Information Missing**
    ```bash
-   # Build with version
+   # Build with explicit version
    ./scripts/build.sh v1.0.0
 
-   # Or create VERSION file
-   echo "v1.0.0" > VERSION
+   # Or let git describe determine version (recommended)
    ./scripts/build.sh
+   # Uses: git describe --tags --always --dirty
    ```
 
 6. **Cross-compilation Issues**

@@ -62,10 +62,8 @@ func runVersion(cmd *cobra.Command, short bool) error {
 // This ensures backward compatibility for any build processes or tests that may still
 // set the legacy variables directly.
 func syncLegacyVersionVars() {
-	// Reset version package state to ensure clean state for tests
-	version.ResetBuildVars()
-
-	// Only set variables if at least one is non-empty
+	// Only set variables if at least one is non-empty.
+	// SetBuildVars will overwrite any existing values, so no reset is needed.
 	if Version != "" || Commit != "" || BuildTime != "" {
 		version.SetBuildVars(Version, Commit, BuildTime)
 	}

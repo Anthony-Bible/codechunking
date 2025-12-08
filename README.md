@@ -374,17 +374,18 @@ Check installed version:
 # Main binary
 codechunking version
 
-# With expected output:
-codechunking version 1.0.0
-commit: abc123def456
-built: 2024-01-15T10:30:00Z
+# Example output:
+CodeChunking CLI
+Version: v3.0.0
+Commit: abc123def456
+Built: 2024-06-01T12:00:00Z
 
 # Client binary
 codechunking-client version
 
 # Short version output
 codechunking version --short
-1.0.0
+v1.0.0
 ```
 
 ### Binary Differences
@@ -420,13 +421,14 @@ make migrate-create name=add_new_feature
 # Show version
 codechunking version
 # Expected output:
-# codechunking version 1.0.0
-# commit: abc123def456
-# built: 2024-01-15T10:30:00Z
+# CodeChunking CLI
+# Version: v1.0.0
+# Commit: abc123def456
+# Built: <build-date>
 
 # Short version
 codechunking version --short
-# Expected output: 1.0.0
+# Expected output: v1.0.0
 ```
 
 #### Chunk Command

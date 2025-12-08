@@ -79,3 +79,6 @@ scripts/*.go
 
 # Local analysis files
 countTokens.py
+
+# VERSION file is not used - version comes from git tags
+VERSION

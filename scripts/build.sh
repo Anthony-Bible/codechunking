@@ -94,7 +94,8 @@ validate_version() {
     fi
 }
 
-# Function to get version
+# Function to get version from VERSION file
+# shellcheck disable=SC2120 # Function designed for optional argument, called without args
 get_version() {
     local version="${1:-}"
 
@@ -194,6 +195,15 @@ build_binary() {
         print_always "Cross-compiling for $GOOS/$GOARCH"
     fi
 
+    # Add test mode optimizations (must be before adding ldflags to build_args)
+    if [ "$TEST_MODE" = true ]; then
+        # In test mode, use faster linking and disable some optimizations
+        ldflags="$ldflags -w -s"
+        # Use smaller build cache for tests
+        export GOCACHE=/tmp/go-cache-test
+        export GOMODCACHE=/tmp/go-mod-cache-test
+    fi
+
     # Add output and ldflags
     build_args+=("-o" "$OUTPUT_DIR/$output_name")
     build_args+=("-ldflags" "$ldflags")
@@ -205,15 +215,6 @@ build_binary() {
     if [ "$VERBOSE" = true ]; then
         build_args+=("-v")
         echo "Running: go build ${build_args[*]} $main_path"
-    fi
-
-    # Add test mode optimizations
-    if [ "$TEST_MODE" = true ]; then
-        # In test mode, use faster linking and disable some optimizations
-        ldflags="$ldflags -w -s"
-        # Use smaller build cache for tests
-        export GOCACHE=/tmp/go-cache-test
-        export GOMODCACHE=/tmp/go-mod-cache-test
     fi
 
     # Execute build command

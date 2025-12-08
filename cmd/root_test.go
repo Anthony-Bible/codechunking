@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"codechunking/internal/version"
 	"testing"
 	"time"
 
@@ -75,8 +76,11 @@ func TestRootCommand_VersionFlag(t *testing.T) {
 				Version = originalVersion
 				Commit = originalCommit
 				BuildTime = originalBuildTime
+				version.ResetBuildVars() // Reset version package state after test
 			}()
 
+			// Reset version package state before setting new values
+			version.ResetBuildVars()
 			Version = tt.version
 			Commit = tt.commit
 			BuildTime = tt.buildTime

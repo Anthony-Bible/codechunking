@@ -79,13 +79,11 @@ validate_version() {
 
 # Function to run command (or display in dry-run mode)
 run_cmd() {
-    local cmd="$*"
-
     if [ "$DRY_RUN" = true ]; then
-        print_info "DRY: $cmd"
+        print_info "DRY: $*"
     else
-        print_info "Running: $cmd"
-        eval "$cmd"
+        print_info "Running: $*"
+        "$@"
     fi
 }
 
@@ -136,37 +134,24 @@ copy_binaries() {
     else
         print_info "Copying binaries with version names"
 
-        # Check if binaries already exist in version directory (for tests)
         local main_binary="$BUILD_DIR/codechunking"
         local client_binary="$BUILD_DIR/client"
         local versioned_main="$version_dir/codechunking-$version"
         local versioned_client="$version_dir/client-$version"
 
-        # For the test scenario, if main binary already exists in release directory,
-        # just create the client binary
-        if [ -f "$versioned_main" ]; then
-            print_info "Main binary already exists, checking client"
-            if [ ! -f "$versioned_client" ]; then
-                # Create a dummy client binary for the test
-                echo "client binary" > "$versioned_client"
-            fi
-            return
-        fi
-
-        # Normal flow: copy from build directory
+        # Copy main binary
         if [ ! -f "$main_binary" ]; then
             print_error "Main binary not found: $main_binary"
             exit 1
         fi
-
         cp "$main_binary" "$versioned_main"
 
+        # Copy client binary
         if [ ! -f "$client_binary" ]; then
-            # Create a dummy client binary if build directory doesn't have it
-            echo "client binary" > "$versioned_client"
-        else
-            cp "$client_binary" "$versioned_client"
+            print_error "Client binary not found: $client_binary"
+            exit 1
         fi
+        cp "$client_binary" "$versioned_client"
     fi
 }
 

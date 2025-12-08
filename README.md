@@ -375,9 +375,10 @@ Check installed version:
 codechunking version
 
 # With expected output:
-codechunking version 1.0.0
-commit: abc123def456
-built: 2024-01-15T10:30:00Z
+CodeChunking CLI
+Version: 1.0.0
+Commit: abc123def456
+Built: 2024-01-15T10:30:00Z
 
 # Client binary
 codechunking-client version
@@ -420,9 +421,10 @@ make migrate-create name=add_new_feature
 # Show version
 codechunking version
 # Expected output:
-# codechunking version 1.0.0
-# commit: abc123def456
-# built: 2024-01-15T10:30:00Z
+# CodeChunking CLI
+# Version: 1.0.0
+# Commit: abc123def456
+# Built: 2024-01-15T10:30:00Z
 
 # Short version
 codechunking version --short

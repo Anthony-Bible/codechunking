@@ -49,18 +49,20 @@ The system supports:
 - Vector storage and similarity search with PostgreSQL/pgvector
 - Asynchronous job processing with NATS JetStream`,
 		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
-			// Check for version flag before running config initialization
+			// Handle --version/-v flag when used with other commands (e.g., "codechunking api --version")
+			// Note: Execute() also handles this for early exit, but this catches cases where
+			// --version is used with subcommands.
 			versionFlag, err := c.Flags().GetBool("version")
 			if err != nil {
 				return fmt.Errorf("error getting version flag: %w", err)
 			}
 			if versionFlag {
-				err := runVersion(c, false)
-				if err == nil {
-					// Prevent further execution after showing version
-					c.Run = func(_ *cobra.Command, _ []string) {}
+				// Show version and prevent further command execution
+				if err := runVersion(c, false); err != nil {
+					return err
 				}
-				return err
+				// Set empty Run to prevent the actual command from executing
+				c.Run = func(_ *cobra.Command, _ []string) {}
 			}
 			return nil
 		},
@@ -116,7 +118,8 @@ func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for root com
 
 func initConfig() {
 	// Check if we're just showing version - if so, skip config initialization
-	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+	// This handles both the --version/-v flag and the "version" subcommand
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v" || os.Args[1] == "version") {
 		return
 	}
 
@@ -169,12 +172,12 @@ func initConfig() {
 		})
 	}
 
-	// Load configuration unless we're showing version
-	// For simplicity in green phase, only load config if we have database.user configured
+	// Load configuration only if required database settings are present.
+	// This allows version commands and tests to work without full database configuration.
 	if v.IsSet("database.user") {
 		cmdConfig.cfg = config.New(v)
 	} else {
-		// Create a minimal config for version commands or tests
+		// Create minimal config for commands that don't need database (version, help)
 		cmdConfig.cfg = &config.Config{}
 	}
 }

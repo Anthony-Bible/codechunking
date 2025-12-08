@@ -57,9 +57,9 @@ jobs:
 
           # Build with version, commit, and build time ldflags
           CGO_ENABLED=1 go build -ldflags="-s -w \
-            -X cmd.Version=${{ github.ref_name }} \
-            -X cmd.Commit=${{ github.sha }} \
-            -X cmd.BuildTime=${{ steps.build_time.outputs.build_time }}" \
+            -X codechunking/cmd.Version=${{ github.ref_name }} \
+            -X codechunking/cmd.Commit=${{ github.sha }} \
+            -X codechunking/cmd.BuildTime=${{ steps.build_time.outputs.build_time }}" \
             -o "$binary_name" main.go
 
           # Create tarball

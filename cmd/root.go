@@ -21,6 +21,10 @@ const (
 	defaultNATSMaxReconnects      = 5
 )
 
+// errVersionShown is a sentinel error used to signal that version info was displayed
+// and command execution should stop without showing an error message.
+var errVersionShown = errors.New("version shown")
+
 // Config holds the command configuration.
 type Config struct {
 	cfgFile string
@@ -49,20 +53,17 @@ The system supports:
 - Vector storage and similarity search with PostgreSQL/pgvector
 - Asynchronous job processing with NATS JetStream`,
 		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
-			// Handle --version/-v flag when used with other commands (e.g., "codechunking api --version")
-			// Note: Execute() also handles this for early exit, but this catches cases where
-			// --version is used with subcommands.
-			versionFlag, err := c.Flags().GetBool("version")
-			if err != nil {
-				return fmt.Errorf("error getting version flag: %w", err)
-			}
+			// Handle --version/-v flag to show version and exit
+			// This handles "codechunking --version" and "codechunking <cmd> --version"
+			versionFlag, _ := c.Flags().GetBool("version")
 			if versionFlag {
-				// Show version and prevent further command execution
 				if err := runVersion(c, false); err != nil {
 					return err
 				}
-				// Set empty Run to prevent the actual command from executing
-				c.Run = func(_ *cobra.Command, _ []string) {}
+				// Return a sentinel error to signal early exit without error message
+				// Cobra treats nil errors as success, but we need to prevent further execution
+				// The Execute() function will filter this out
+				return errVersionShown
 			}
 			return nil
 		},
@@ -94,6 +95,10 @@ func Execute() {
 
 	err := rootCmd.Execute()
 	if err != nil {
+		// Don't exit with error if version was shown successfully
+		if errors.Is(err, errVersionShown) {
+			os.Exit(0)
+		}
 		os.Exit(1)
 	}
 }
@@ -172,8 +177,10 @@ func initConfig() {
 		})
 	}
 
-	// Load configuration only if required database settings are present.
-	// This allows version commands and tests to work without full database configuration.
+	// Load full configuration only if required database settings are present.
+	// This intentional design allows version/help commands and tests to work
+	// without requiring full database configuration, improving CLI usability.
+	// Commands that need database access will fail gracefully if config is missing.
 	if v.IsSet("database.user") {
 		cmdConfig.cfg = config.New(v)
 	} else {

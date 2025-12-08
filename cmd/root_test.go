@@ -99,7 +99,11 @@ func TestRootCommand_VersionFlag(t *testing.T) {
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
-				require.NoError(t, err)
+				// Version flag returns errVersionShown sentinel error to prevent further execution
+				// This is expected behavior, not a real error
+				if err != nil {
+					require.ErrorIs(t, err, errVersionShown, "expected errVersionShown sentinel, got: %v", err)
+				}
 
 				output := buf.String()
 				// Verify all expected strings are in the output
@@ -146,8 +150,9 @@ func TestRootCommand_VersionFlagPriority(t *testing.T) {
 	testRootCmd.SetArgs([]string{"--version", "dummy"})
 
 	// Execute - should show version and not execute dummy command
+	// Returns errVersionShown sentinel error to prevent further execution
 	err := testRootCmd.Execute()
-	require.NoError(t, err)
+	require.ErrorIs(t, err, errVersionShown, "expected errVersionShown sentinel")
 
 	output := buf.String()
 	assert.Contains(t, output, "CodeChunking CLI")
@@ -182,8 +187,9 @@ func TestRootCommand_VersionFlagExitsAfterDisplay(t *testing.T) {
 	testRootCmd.SetArgs([]string{"--version", "test", "--subflag=value"})
 
 	// Execute - should show version and exit cleanly
+	// Returns errVersionShown sentinel error to prevent subcommand execution
 	err := testRootCmd.Execute()
-	require.NoError(t, err)
+	require.ErrorIs(t, err, errVersionShown, "expected errVersionShown sentinel")
 
 	output := buf.String()
 	assert.Contains(t, output, "v3.0.0")
@@ -246,8 +252,9 @@ func TestRootCommand_VersionFlagIgnoresConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	// Execute with --version - should work despite invalid config
+	// Returns errVersionShown sentinel error to prevent further execution
 	err = testRootCmd.Execute()
-	require.NoError(t, err)
+	require.ErrorIs(t, err, errVersionShown, "expected errVersionShown sentinel")
 
 	output := buf.String()
 	assert.Contains(t, output, "CodeChunking CLI")

@@ -76,7 +76,6 @@ tokens.txt
 
 # Temporary test scripts
 scripts/*.go
-scripts/*.sh
 
 # Local analysis files
 countTokens.py

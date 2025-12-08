@@ -18,6 +18,8 @@ OUTPUT_DIR="${OUTPUT_DIR:-bin}"
 VERBOSE=false
 CLEAN=false
 PLATFORM=""
+# Enable test mode optimizations
+TEST_MODE="${TEST_MODE:-false}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -88,7 +90,7 @@ validate_version() {
     if ! echo "$version" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9\.\-]*)?$' > /dev/null; then
         print_error "Invalid version format: $version"
         print_error "Version must match format: v1.0.0, v2.1.0-beta, etc."
-        exit 1
+        return 1
     fi
 }
 
@@ -205,6 +207,15 @@ build_binary() {
         echo "Running: go build ${build_args[*]} $main_path"
     fi
 
+    # Add test mode optimizations
+    if [ "$TEST_MODE" = true ]; then
+        # In test mode, use faster linking and disable some optimizations
+        ldflags="$ldflags -w -s"
+        # Use smaller build cache for tests
+        export GOCACHE=/tmp/go-cache-test
+        export GOMODCACHE=/tmp/go-mod-cache-test
+    fi
+
     # Execute build command
     go build "${build_args[@]}" "$main_path"
 
@@ -240,6 +251,10 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -p|--platform)
+            if [ -z "${2:-}" ]; then
+                print_error "Platform option requires a value (e.g., linux/amd64)"
+                exit 1
+            fi
             PLATFORM="$2"
             shift 2
             ;;
@@ -253,9 +268,9 @@ while [[ $# -gt 0 ]]; do
             exit 1
             ;;
         "")
-            # Empty argument - treat as invalid
-            print_error "Version argument cannot be empty"
-            exit 1
+            # Empty argument - add as empty to be handled later (for validation tests)
+            ARGS+=("")
+            shift
             ;;
         *)
             ARGS+=("$1")
@@ -267,9 +282,20 @@ done
 # Restore arguments
 set -- "${ARGS[@]}"
 
-# Get version
+# Get version - don't fall back to VERSION file if provided argument is invalid
 if [ $# -gt 0 ]; then
-    VERSION=$(get_version "$1")
+    # Check if the provided argument is empty first
+    if [ -n "$1" ]; then
+        # Validate version first, before capturing
+        validate_version "$1" || {
+            print_error "Version validation failed"
+            exit 1
+        }
+        VERSION="$1"
+    else
+        print_error "Version argument cannot be empty"
+        exit 1
+    fi
 else
     VERSION=$(get_version)
 fi

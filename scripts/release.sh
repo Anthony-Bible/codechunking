@@ -64,12 +64,16 @@ EOF
 
 # Function to validate version format
 validate_version() {
-    local version="$1"
+    local version="${1:-}"
+    if [ -z "$version" ]; then
+        print_error "Version parameter is empty"
+        return 1
+    fi
     # Check version format: v<semver> (e.g., v1.0.0, v2.1.0-beta)
     if ! echo "$version" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9\.\-]*)?$' > /dev/null; then
         print_error "Invalid version format: $version"
         print_error "Version must match format: v1.0.0, v2.1.0-beta, etc."
-        exit 1
+        return 1
     fi
 }
 

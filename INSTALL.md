@@ -312,13 +312,13 @@ codechunking version
 
 # Output format:
 CodeChunking CLI
-Version: 1.0.0
+Version: v1.0.0
 Commit: abc123def456
 Built: 2024-01-15T10:30:00Z
 
 # Short version
 codechunking version --short
-# Output: 1.0.0
+# Output: v1.0.0
 ```
 
 ### Installing Specific Versions

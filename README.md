@@ -376,7 +376,7 @@ codechunking version
 
 # With expected output:
 CodeChunking CLI
-Version: 1.0.0
+Version: v1.0.0
 Commit: abc123def456
 Built: 2024-01-15T10:30:00Z
 
@@ -385,7 +385,7 @@ codechunking-client version
 
 # Short version output
 codechunking version --short
-1.0.0
+v1.0.0
 ```
 
 ### Binary Differences
@@ -422,13 +422,13 @@ make migrate-create name=add_new_feature
 codechunking version
 # Expected output:
 # CodeChunking CLI
-# Version: 1.0.0
+# Version: v1.0.0
 # Commit: abc123def456
 # Built: 2024-01-15T10:30:00Z
 
 # Short version
 codechunking version --short
-# Expected output: 1.0.0
+# Expected output: v1.0.0
 ```
 
 #### Chunk Command

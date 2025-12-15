@@ -21,10 +21,6 @@ const (
 	defaultNATSMaxReconnects      = 5
 )
 
-// errVersionShown is a sentinel error used to signal that version info was displayed
-// and command execution should stop without showing an error message.
-var errVersionShown = errors.New("version shown")
-
 // Config holds the command configuration.
 type Config struct {
 	cfgFile string
@@ -52,21 +48,6 @@ The system supports:
 - Embedding generation with Google Gemini
 - Vector storage and similarity search with PostgreSQL/pgvector
 - Asynchronous job processing with NATS JetStream`,
-		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
-			// Handle --version/-v flag to show version and exit
-			// This handles "codechunking --version" and "codechunking <cmd> --version"
-			versionFlag, _ := c.Flags().GetBool("version")
-			if versionFlag {
-				if err := runVersion(c, false); err != nil {
-					return err
-				}
-				// Return a sentinel error to signal early exit without error message
-				// Cobra treats nil errors as success, but we need to prevent further execution
-				// The Execute() function will filter this out
-				return errVersionShown
-			}
-			return nil
-		},
 		Run: func(c *cobra.Command, _ []string) {
 			// Default behavior: show help when no command provided
 			_ = c.Help() // Help prints to stdout and returns an error we can ignore
@@ -95,10 +76,6 @@ func Execute() {
 
 	err := rootCmd.Execute()
 	if err != nil {
-		// Don't exit with error if version was shown successfully
-		if errors.Is(err, errVersionShown) {
-			os.Exit(0)
-		}
 		os.Exit(1)
 	}
 }
@@ -302,6 +279,7 @@ func SetTestConfig(c *config.Config) {
 
 // handleConfigError handles configuration file loading errors with detailed logging.
 func handleConfigError(err error, configFile string, searchPaths []string) {
+	// Check if it's a config file not found error
 	var configFileNotFoundError viper.ConfigFileNotFoundError
 	if errors.As(err, &configFileNotFoundError) {
 		handleConfigNotFound(err, searchPaths)

@@ -189,7 +189,7 @@ create_git_tag() {
     else
         print_info "Creating git tag $version"
         if ! git rev-parse "refs/tags/$version" >/dev/null 2>&1; then
-            run_cmd "git tag -a $version -m \"Release $version\""
+            run_cmd git tag -a "$version" -m "Release $version"
             print_info "Git tag created: $version"
         else
             print_warn "Git tag $version already exists"

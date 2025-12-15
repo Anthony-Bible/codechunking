@@ -374,11 +374,11 @@ Check installed version:
 # Main binary
 codechunking version
 
-# With expected output:
+# Example output:
 CodeChunking CLI
-Version: v1.0.0
+Version: v3.0.0
 Commit: abc123def456
-Built: 2024-01-15T10:30:00Z
+Built: 2024-06-01T12:00:00Z
 
 # Client binary
 codechunking-client version

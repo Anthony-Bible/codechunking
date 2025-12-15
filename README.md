@@ -424,7 +424,7 @@ codechunking version
 # CodeChunking CLI
 # Version: v1.0.0
 # Commit: abc123def456
-# Built: 2024-01-15T10:30:00Z
+# Built: <build-date>
 
 # Short version
 codechunking version --short

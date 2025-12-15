@@ -119,7 +119,7 @@ build-with-version:
 	@if [ -n "$(VERSION)" ]; then \
 		./scripts/build.sh $(VERSION); \
 	else \
-		echo "Error: VERSION is required. Usage: make build-with-version VERSION=v1.0.0"; \
+		echo "Warning: VERSION not set. Using default: latest git tag or 'dev'. Usage: make build-with-version VERSION=v1.0.0"; \
 		exit 1; \
 	fi
 	@echo "Binaries built with version $(VERSION): bin/codechunking and bin/client"

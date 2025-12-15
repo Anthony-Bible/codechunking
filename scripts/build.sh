@@ -87,9 +87,10 @@ validate_version() {
         return 1
     fi
     # Check version format: v<semver> (e.g., v1.0.0, v2.1.0-beta)
-    if ! echo "$version" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+([a-zA-Z0-9\.\-]*)?$' > /dev/null; then
+    # Strict semver: vMAJOR.MINOR.PATCH(-PRERELEASE)?(+BUILD)?
+    if ! echo "$version" | grep -Eq '^v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*)?(\+[0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*)?$'; then
         print_error "Invalid version format: $version"
-        print_error "Version must match format: v1.0.0, v2.1.0-beta, etc."
+        print_error "Version must match format: v1.0.0, v2.1.0-beta, v2.1.0+build, etc."
         return 1
     fi
 }

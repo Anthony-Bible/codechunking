@@ -1,10 +1,22 @@
-.PHONY: dev test build migrate clean help build-client build-client-cross test-client
+.PHONY: dev test build migrate clean help build-client build-client-cross test-client install install-client build-with-version
 
 # Variables
 BINARY_NAME=codechunking
 DOCKER_COMPOSE=docker compose
 GO_CMD=go
 MIGRATE_CMD=migrate
+
+# Version and installation variables
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+LDFLAGS = -ldflags "-X codechunking/cmd.Version=$(VERSION) -X codechunking/cmd.Commit=$(shell git rev-parse HEAD 2>/dev/null || echo unknown) -X codechunking/cmd.BuildTime=$(BUILD_TIME)"
+
+# Installation directory detection
+ifeq ($(OS),Windows_NT)
+    INSTALL_DIR ?= $(shell echo $$USERPROFILE/bin)
+else
+    INSTALL_DIR ?= $(shell $(GO_CMD) env GOPATH)/bin
+endif
 
 # Default target
 all: build
@@ -71,10 +83,11 @@ test-coverage:
 ## test-all: Run all tests with coverage
 test-all: test test-integration test-coverage
 
-## build: Build the binary
+## build: Build both main and client binaries using build script
+## Version: uses git describe (or "dev" if no git)
 build:
-	CGO_ENABLED=1 $(GO_CMD) build -o bin/$(BINARY_NAME) main.go
-	@echo "Binary built: bin/$(BINARY_NAME)"
+	@./scripts/build.sh
+	@echo "Binaries built: bin/codechunking and bin/client"
 
 ## build-linux: Build for Linux
 build-linux:
@@ -97,6 +110,37 @@ build-client-cross:
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GO_CMD) build -o bin/codechunking-client-darwin-amd64 ./cmd/client
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO_CMD) build -o bin/codechunking-client-darwin-arm64 ./cmd/client
 	@echo "Cross-compiled client binaries built in bin/"
+
+## build-with-version: Build the binary with version injection using build script
+## Uses VERSION from command line or auto-detects from git tags (default: dev)
+## Example: make build-with-version VERSION=v1.0.0
+build-with-version:
+	@./scripts/build.sh $(VERSION)
+	@echo "Binaries built with version $(VERSION): bin/codechunking and bin/client"
+
+## install: Build and install both binaries to $(INSTALL_DIR)
+install: build
+	@mkdir -p $(INSTALL_DIR)
+	@if [ -f "bin/codechunking" ]; then \
+		cp bin/codechunking $(INSTALL_DIR)/; \
+		echo "Installed codechunking to $(INSTALL_DIR)/codechunking"; \
+	else \
+		echo "Warning: bin/codechunking not found"; \
+	fi
+	@if [ -f "bin/client" ]; then \
+		cp bin/client $(INSTALL_DIR)/codechunking-client; \
+		echo "Installed codechunking-client to $(INSTALL_DIR)/codechunking-client"; \
+	else \
+		echo "Warning: bin/client not found"; \
+	fi
+	@echo "Make sure $(INSTALL_DIR) is in your PATH"
+
+## install-client: Build and install client binary to $(INSTALL_DIR)
+install-client: build-client
+	@mkdir -p $(INSTALL_DIR)
+	@cp bin/codechunking-client $(INSTALL_DIR)/
+	@echo "Installed codechunking-client to $(INSTALL_DIR)/codechunking-client"
+	@echo "Make sure $(INSTALL_DIR) is in your PATH"
 
 ## migrate-up: Apply all database migrations
 migrate-up:

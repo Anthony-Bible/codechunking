@@ -315,25 +315,85 @@ For detailed API documentation, see the [wiki](wiki/).
 
 ## Installation
 
-### Using Go
+### Option 1: Go Install (Recommended for Development)
 
 ```bash
-go install github.com/Anthony-Bible/codechunking@latest
+# Install main binary (requires CGO_ENABLED=1 for tree-sitter)
+CGO_ENABLED=1 go install github.com/Anthony-Bible/codechunking/cmd/codechunking@latest
+
+# Install client binary only (lightweight, no CGO required)
+go install github.com/Anthony-Bible/codechunking/cmd/client@latest
 ```
 
-### Using Docker
+**Note**: The main binary requires CGO_ENABLED=1 due to tree-sitter dependencies. The client binary is standalone and doesn't require CGO.
+
+### Option 2: Download Pre-built Binaries
+
+Download pre-compiled binaries from GitHub releases:
 
 ```bash
-docker pull yourusername/codechunking:latest
+# Example for Linux amd64
+wget https://github.com/Anthony-Bible/codechunking/releases/latest/download/codechunking-v1.0.0
+chmod +x codechunking-v1.0.0
+sudo mv codechunking-v1.0.0 /usr/local/bin/codechunking
+
+# Client binary
+wget https://github.com/Anthony-Bible/codechunking/releases/latest/download/client-v1.0.0
+chmod +x client-v1.0.0
+sudo mv client-v1.0.0 /usr/local/bin/codechunking-client
 ```
 
-### From source
+Available platforms:
+- Linux (amd64, arm64)
+- macOS (amd64, arm64)
+- Windows (amd64)
+
+### Option 3: Build from Source
 
 ```bash
 git clone https://github.com/Anthony-Bible/codechunking.git
 cd codechunking
 make build
 ```
+
+The build script creates two binaries in `./bin/`:
+- `codechunking` - Main application with tree-sitter support
+- `client` - Lightweight client binary
+
+### Option 4: Using Docker
+
+```bash
+docker pull ghcr.io/anthony-bible/codechunking:latest
+```
+
+### Version Verification
+
+Check installed version:
+
+```bash
+# Main binary
+codechunking version
+
+# Example output:
+CodeChunking CLI
+Version: v3.0.0
+Commit: abc123def456
+Built: 2024-06-01T12:00:00Z
+
+# Client binary
+codechunking-client version
+
+# Short version output
+codechunking version --short
+v1.0.0
+```
+
+### Binary Differences
+
+- **Main Binary (`codechunking`)**: Full-featured application including API server, worker, and file processing. Requires CGO for tree-sitter code parsing.
+- **Client Binary (`codechunking-client`)**: Lightweight standalone CLI for API interaction. No dependencies, ideal for CI/CD and AI agents.
+
+For detailed installation instructions and troubleshooting, see [INSTALL.md](INSTALL.md).
 
 ## Usage
 
@@ -360,6 +420,15 @@ make migrate-create name=add_new_feature
 
 # Show version
 codechunking version
+# Expected output:
+# CodeChunking CLI
+# Version: v1.0.0
+# Commit: abc123def456
+# Built: <build-date>
+
+# Short version
+codechunking version --short
+# Expected output: v1.0.0
 ```
 
 #### Chunk Command

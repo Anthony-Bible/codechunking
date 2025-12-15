@@ -34,10 +34,12 @@ var rootCmd = newRootCmd() //nolint:gochecknoglobals // Standard Cobra CLI patte
 
 // newRootCmd creates and returns the root command.
 func newRootCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "codechunking",
 		Short: "A code chunking and retrieval system",
-		Long: `CodeChunking is a production-grade system for indexing code repositories,
+		Long: `CodeChunking - A code chunking and retrieval system
+
+CodeChunking is a production-grade system for indexing code repositories,
 generating embeddings, and providing semantic code search capabilities.
 
 The system supports:
@@ -46,12 +48,32 @@ The system supports:
 - Embedding generation with Google Gemini
 - Vector storage and similarity search with PostgreSQL/pgvector
 - Asynchronous job processing with NATS JetStream`,
+		Run: func(c *cobra.Command, _ []string) {
+			// Default behavior: show help when no command provided
+			_ = c.Help() // Help prints to stdout and returns an error we can ignore
+		},
 	}
+
+	// Add version flag to root command
+	cmd.PersistentFlags().BoolP("version", "v", false, "Show version information")
+
+	return cmd
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
+	// Check for version flag before running command to bypass config initialization
+	args := os.Args[1:]
+	if len(args) > 0 && (args[0] == "--version" || args[0] == "-v") {
+		err := runVersion(rootCmd, false)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
@@ -77,6 +99,12 @@ func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for root com
 }
 
 func initConfig() {
+	// Check if we're just showing version - if so, skip config initialization
+	// This handles both the --version/-v flag and the "version" subcommand
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v" || os.Args[1] == "version") {
+		return
+	}
+
 	v := viper.New()
 
 	// Set defaults
@@ -126,8 +154,16 @@ func initConfig() {
 		})
 	}
 
-	// Load configuration
-	cmdConfig.cfg = config.New(v)
+	// Load full configuration only if required database settings are present.
+	// This intentional design allows version/help commands and tests to work
+	// without requiring full database configuration, improving CLI usability.
+	// Commands that need database access will fail gracefully if config is missing.
+	if v.IsSet("database.user") {
+		cmdConfig.cfg = config.New(v)
+	} else {
+		// Create minimal config for commands that don't need database (version, help)
+		cmdConfig.cfg = &config.Config{}
+	}
 }
 
 // bindMiddlewareEnvVars explicitly binds middleware environment variables to Viper configuration keys.
@@ -243,6 +279,7 @@ func SetTestConfig(c *config.Config) {
 
 // handleConfigError handles configuration file loading errors with detailed logging.
 func handleConfigError(err error, configFile string, searchPaths []string) {
+	// Check if it's a config file not found error
 	var configFileNotFoundError viper.ConfigFileNotFoundError
 	if errors.As(err, &configFileNotFoundError) {
 		handleConfigNotFound(err, searchPaths)

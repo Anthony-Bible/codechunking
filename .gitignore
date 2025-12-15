@@ -76,7 +76,9 @@ tokens.txt
 
 # Temporary test scripts
 scripts/*.go
-scripts/*.sh
 
 # Local analysis files
 countTokens.py
+
+# VERSION file is not used - version comes from git tags
+VERSION

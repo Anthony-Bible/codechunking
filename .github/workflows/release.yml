@@ -15,20 +15,35 @@ permissions:
 jobs:
   build:
     name: Build Release Assets
-    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
+          # Linux builds on Ubuntu (native amd64, cross-compile arm64)
           - os: linux
             arch: amd64
+            runner: ubuntu-latest
+            cross_compile: false
           - os: linux
             arch: arm64
+            runner: ubuntu-latest
+            cross_compile: true
+          # macOS builds on native macOS runners (CGO required for tree-sitter)
           - os: darwin
             arch: amd64
+            runner: macos-13  # Intel Mac
+            cross_compile: false
           - os: darwin
             arch: arm64
+            runner: macos-14  # Apple Silicon
+            cross_compile: false
+          # Windows builds cross-compiled from Linux with mingw
           - os: windows
             arch: amd64
+            runner: ubuntu-latest
+            cross_compile: true
+
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout code
@@ -41,10 +56,10 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Install cross-compilation dependencies
+      - name: Install cross-compilation dependencies (Linux)
+        if: runner.os == 'Linux' && matrix.cross_compile
         run: |
           sudo apt-get update
-          # Install cross-compilers for different platforms
           if [ "${{ matrix.os }}" = "windows" ]; then
             sudo apt-get install -y gcc-mingw-w64-x86-64
           elif [ "${{ matrix.os }}" = "linux" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
@@ -53,9 +68,11 @@ jobs:
 
       - name: Get build time
         id: build_time
+        shell: bash
         run: echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
       - name: Build main binary
+        shell: bash
         env:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
@@ -65,18 +82,17 @@ jobs:
             binary_name="${binary_name}.exe"
           fi
 
-          # Set CC for cross-compilation
-          if [ "${{ matrix.os }}" = "windows" ]; then
-            export CC=x86_64-w64-mingw32-gcc
-          elif [ "${{ matrix.os }}" = "linux" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
-            export CC=aarch64-linux-gnu-gcc
-          elif [ "${{ matrix.os }}" = "darwin" ]; then
-            # Darwin cross-compilation requires Xcode - skip CGO for macOS
-            export CGO_ENABLED=0
+          # Set CC for cross-compilation on Linux
+          if [ "${{ matrix.cross_compile }}" = "true" ]; then
+            if [ "${{ matrix.os }}" = "windows" ]; then
+              export CC=x86_64-w64-mingw32-gcc
+            elif [ "${{ matrix.os }}" = "linux" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
+              export CC=aarch64-linux-gnu-gcc
+            fi
           fi
 
           # Build with version, commit, and build time ldflags
-          CGO_ENABLED=${CGO_ENABLED:-1} go build -ldflags="-s -w \
+          CGO_ENABLED=1 go build -ldflags="-s -w \
             -X codechunking/cmd.Version=${{ github.ref_name }} \
             -X codechunking/cmd.Commit=${{ github.sha }} \
             -X codechunking/cmd.BuildTime=${{ steps.build_time.outputs.build_time }}" \
@@ -86,6 +102,7 @@ jobs:
           tar czf "${binary_name}.tar.gz" "$binary_name"
 
       - name: Build client binary
+        shell: bash
         env:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
@@ -103,14 +120,19 @@ jobs:
           tar czf "${client_binary}.tar.gz" "$client_binary"
 
       - name: Generate checksums
+        shell: bash
         run: |
           # Create checksums file
           echo "# Checksums for ${{ github.ref_name }}" > checksums.txt
 
-          # Add checksums for all artifacts
+          # Add checksums for all artifacts (use shasum on macOS, sha256sum on Linux)
           for file in *.tar.gz; do
             if [ -f "$file" ]; then
-              sha256sum "$file" >> checksums.txt
+              if command -v sha256sum &> /dev/null; then
+                sha256sum "$file" >> checksums.txt
+              else
+                shasum -a 256 "$file" >> checksums.txt
+              fi
             fi
           done
 
@@ -161,23 +183,23 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -189,7 +211,7 @@ jobs:
             type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-      
+
       - name: Get build time
         id: docker_build_time
         run: echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT

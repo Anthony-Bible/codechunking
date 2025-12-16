@@ -55,15 +55,12 @@ jobs:
         run: echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
       - name: Build main binary
+        # Skip main binary on Windows due to go-sitter-forest upstream bugs
+        # (missing #include <stdint.h> in some tree-sitter parsers)
+        if: matrix.os != 'windows'
         shell: bash
         run: |
           binary_name="codechunking-${{ matrix.os }}-${{ matrix.arch }}"
-          if [ "${{ matrix.os }}" = "windows" ]; then
-            binary_name="${binary_name}.exe"
-            # Workaround for go-sitter-forest bugs: some parsers missing #include <stdint.h>
-            # Force include stdint.h via compiler flags
-            export CGO_CFLAGS="-include stdint.h"
-          fi
 
           # Build with version, commit, and build time ldflags
           # All builds are native - no cross-compilation needed

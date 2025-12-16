@@ -19,29 +19,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux builds on Ubuntu (native amd64, cross-compile arm64)
+          # All builds use native runners (CGO required for tree-sitter)
           - os: linux
             arch: amd64
             runner: ubuntu-latest
-            cross_compile: false
           - os: linux
             arch: arm64
-            runner: ubuntu-latest
-            cross_compile: true
-          # macOS builds on native macOS runners (CGO required for tree-sitter)
+            runner: ubuntu-24.04-arm  # Native ARM64 runner
           - os: darwin
             arch: amd64
             runner: macos-15-intel  # Intel Mac (last x86_64 image, until Aug 2027)
-            cross_compile: false
           - os: darwin
             arch: arm64
             runner: macos-latest  # Apple Silicon (macos-15 arm64)
-            cross_compile: false
-          # Windows builds on native Windows runner (CGO required for tree-sitter)
           - os: windows
             arch: amd64
             runner: windows-latest
-            cross_compile: false
 
     runs-on: ${{ matrix.runner }}
 
@@ -56,16 +49,6 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Install cross-compilation dependencies (Linux)
-        if: runner.os == 'Linux' && matrix.cross_compile
-        run: |
-          sudo apt-get update
-          if [ "${{ matrix.os }}" = "windows" ]; then
-            sudo apt-get install -y gcc-mingw-w64-x86-64
-          elif [ "${{ matrix.os }}" = "linux" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu
-          fi
-
       - name: Get build time
         id: build_time
         shell: bash
@@ -73,25 +56,14 @@ jobs:
 
       - name: Build main binary
         shell: bash
-        env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
         run: |
           binary_name="codechunking-${{ matrix.os }}-${{ matrix.arch }}"
           if [ "${{ matrix.os }}" = "windows" ]; then
             binary_name="${binary_name}.exe"
           fi
 
-          # Set CC for cross-compilation on Linux
-          if [ "${{ matrix.cross_compile }}" = "true" ]; then
-            if [ "${{ matrix.os }}" = "windows" ]; then
-              export CC=x86_64-w64-mingw32-gcc
-            elif [ "${{ matrix.os }}" = "linux" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
-              export CC=aarch64-linux-gnu-gcc
-            fi
-          fi
-
           # Build with version, commit, and build time ldflags
+          # All builds are native - no cross-compilation needed
           CGO_ENABLED=1 go build -ldflags="-s -w \
             -X codechunking/cmd.Version=${{ github.ref_name }} \
             -X codechunking/cmd.Commit=${{ github.sha }} \
@@ -103,16 +75,13 @@ jobs:
 
       - name: Build client binary
         shell: bash
-        env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
         run: |
           client_binary="codechunking-client-${{ matrix.os }}-${{ matrix.arch }}"
           if [ "${{ matrix.os }}" = "windows" ]; then
             client_binary="${client_binary}.exe"
           fi
 
-          # Build client binary (static, no CGO)
+          # Build client binary (static, no CGO - native build)
           CGO_ENABLED=0 go build -ldflags="-s -w" \
             -o "$client_binary" ./cmd/client
 

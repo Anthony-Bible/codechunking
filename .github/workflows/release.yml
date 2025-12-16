@@ -31,17 +31,17 @@ jobs:
           # macOS builds on native macOS runners (CGO required for tree-sitter)
           - os: darwin
             arch: amd64
-            runner: macos-13  # Intel Mac
+            runner: macos-15-intel  # Intel Mac (last x86_64 image, until Aug 2027)
             cross_compile: false
           - os: darwin
             arch: arm64
-            runner: macos-14  # Apple Silicon
+            runner: macos-latest  # Apple Silicon (macos-15 arm64)
             cross_compile: false
-          # Windows builds cross-compiled from Linux with mingw
+          # Windows builds on native Windows runner (CGO required for tree-sitter)
           - os: windows
             arch: amd64
-            runner: ubuntu-latest
-            cross_compile: true
+            runner: windows-latest
+            cross_compile: false
 
     runs-on: ${{ matrix.runner }}
 
@@ -125,13 +125,18 @@ jobs:
           # Create checksums file
           echo "# Checksums for ${{ github.ref_name }}" > checksums.txt
 
-          # Add checksums for all artifacts (use shasum on macOS, sha256sum on Linux)
+          # Add checksums for all artifacts
+          # sha256sum: Linux, Git Bash on Windows
+          # shasum: macOS
           for file in *.tar.gz; do
             if [ -f "$file" ]; then
               if command -v sha256sum &> /dev/null; then
                 sha256sum "$file" >> checksums.txt
-              else
+              elif command -v shasum &> /dev/null; then
                 shasum -a 256 "$file" >> checksums.txt
+              else
+                # PowerShell fallback for Windows
+                powershell -Command "(Get-FileHash -Algorithm SHA256 '$file').Hash.ToLower() + '  $file'" >> checksums.txt
               fi
             fi
           done

@@ -41,6 +41,16 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Install cross-compilation dependencies
+        run: |
+          sudo apt-get update
+          # Install cross-compilers for different platforms
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            sudo apt-get install -y gcc-mingw-w64-x86-64
+          elif [ "${{ matrix.os }}" = "linux" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+          fi
+
       - name: Get build time
         id: build_time
         run: echo "build_time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
@@ -55,8 +65,18 @@ jobs:
             binary_name="${binary_name}.exe"
           fi
 
+          # Set CC for cross-compilation
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            export CC=x86_64-w64-mingw32-gcc
+          elif [ "${{ matrix.os }}" = "linux" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
+            export CC=aarch64-linux-gnu-gcc
+          elif [ "${{ matrix.os }}" = "darwin" ]; then
+            # Darwin cross-compilation requires Xcode - skip CGO for macOS
+            export CGO_ENABLED=0
+          fi
+
           # Build with version, commit, and build time ldflags
-          CGO_ENABLED=1 go build -ldflags="-s -w \
+          CGO_ENABLED=${CGO_ENABLED:-1} go build -ldflags="-s -w \
             -X codechunking/cmd.Version=${{ github.ref_name }} \
             -X codechunking/cmd.Commit=${{ github.sha }} \
             -X codechunking/cmd.BuildTime=${{ steps.build_time.outputs.build_time }}" \

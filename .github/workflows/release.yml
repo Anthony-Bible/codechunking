@@ -60,6 +60,9 @@ jobs:
           binary_name="codechunking-${{ matrix.os }}-${{ matrix.arch }}"
           if [ "${{ matrix.os }}" = "windows" ]; then
             binary_name="${binary_name}.exe"
+            # Workaround for go-sitter-forest bugs: some parsers missing #include <stdint.h>
+            # Force include stdint.h via compiler flags
+            export CGO_CFLAGS="-include stdint.h"
           fi
 
           # Build with version, commit, and build time ldflags

@@ -454,12 +454,12 @@ func generateLargeValidGoSource(functionCount int) string {
 	builder.WriteString("package main\n\nimport \"fmt\"\n\n")
 
 	for i := range functionCount {
-		builder.WriteString(fmt.Sprintf("func function%d() {\n    fmt.Println(\"Function %d\")\n}\n\n", i, i))
+		fmt.Fprintf(&builder, "func function%d() {\n    fmt.Println(\"Function %d\")\n}\n\n", i, i)
 	}
 
 	builder.WriteString("func main() {\n")
 	for i := range functionCount {
-		builder.WriteString(fmt.Sprintf("    function%d()\n", i))
+		fmt.Fprintf(&builder, "    function%d()\n", i)
 	}
 	builder.WriteString("}")
 

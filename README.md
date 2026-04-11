@@ -466,16 +466,41 @@ make build-client
 # Add and index a repository (wait for completion)
 ./bin/codechunking-client repos add https://github.com/user/repo --wait
 
-# Search for code semantically
-./bin/codechunking-client search "authentication middleware" --limit 10
-
 # List repositories
 ./bin/codechunking-client repos list --status completed
+
+# Get a repository by ID
+./bin/codechunking-client repos get <repo-uuid>
+
+# Delete a repository by ID
+./bin/codechunking-client repos delete <repo-uuid>
+
+# List indexing jobs for a repository
+./bin/codechunking-client repos jobs <repo-uuid>
+./bin/codechunking-client repos jobs <repo-uuid> --limit 20 --offset 0
+
+# Search within a specific repository (scoped search)
+./bin/codechunking-client repos query <repo-uuid> "authentication middleware"
+./bin/codechunking-client repos query <repo-uuid> "error handling" --limit 5 --languages go
+
+# Search for code semantically across all repositories
+./bin/codechunking-client search "authentication middleware" --limit 10
 ```
 
 **Global Flags:**
 - `--api-url` (default: `http://localhost:8080`) - API server URL
 - `--timeout` (default: `30s`) - Request timeout
+
+**`repos jobs` Flags:**
+- `-l, --limit` - Maximum number of jobs to return
+- `-o, --offset` - Number of jobs to skip for pagination
+
+**`repos query` Flags:**
+- `-l, --limit` - Maximum number of results
+- `-o, --offset` - Pagination offset
+- `--threshold` - Similarity threshold (0.0–1.0)
+- `--languages` - Filter by language (e.g. `go,python`)
+- `--types` - Filter by construct type (e.g. `function,method`)
 
 **JSON Output Format:**
 ```json
@@ -502,6 +527,16 @@ The `codechunking-client` is designed for seamless AI agent integration with str
 
 # Agent: Find all Go functions in a repo
 ./bin/codechunking-client search "function" --types function --languages go
+
+# Agent: Search within a specific repo (scoped search)
+REPO_ID=$(./bin/codechunking-client repos list | jq -r '.data.repositories[0].id')
+./bin/codechunking-client repos query "$REPO_ID" "authentication logic" --limit 10
+
+# Agent: Inspect indexing job history for a repo
+./bin/codechunking-client repos jobs "$REPO_ID"
+
+# Agent: Remove a repository
+./bin/codechunking-client repos delete "$REPO_ID"
 ```
 
 For complete agent integration patterns, see the [Client CLI Guide](wiki/Client-CLI-Guide.md#agent-integration).
@@ -599,15 +634,19 @@ Add this to your project's `agents.md` or `claude.md` file for instant AI agent 
 - Health check: `codechunking-client health`
 - Add repo: `codechunking-client repos add <url> --wait`
 - List repos: `codechunking-client repos list --status completed`
-- Search: `codechunking-client search "<query>" --limit N --languages L`
+- Delete repo: `codechunking-client repos delete <uuid>`
+- List jobs: `codechunking-client repos jobs <uuid>`
+- Search (scoped): `codechunking-client repos query <uuid> "<query>" --limit N --languages L`
+- Search (global): `codechunking-client search "<query>" --limit N --languages L`
 
 **JSON Output Pattern:**
 All commands return: `{"success": true/false, "data": {...}|error: {...}, "timestamp": "..."}`
 
 **Common Workflows:**
 1. Index repository → wait for completion → search code
-2. Parse results with `jq -r '.data.results[].file_path'`
-3. Check success with `jq -e '.success'`
+2. Scoped search: `repos query <uuid> "<query>"` to target a single repo
+3. Parse results with `jq -r '.data.results[].file_path'`
+4. Check success with `jq -e '.success'`
 
 **Error Codes:** INVALID_CONFIG, CONNECTION_ERROR, TIMEOUT_ERROR, NOT_FOUND, SERVER_ERROR
 ````

@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	// Default pagination settings for indexing jobs.
-	defaultIndexingJobListLimit = 10
+	// DefaultIndexingJobListLimit is the default number of jobs to return in a list query.
+	DefaultIndexingJobListLimit = 10
 )
 
 // IndexingJobResponse represents the response containing indexing job information.
@@ -41,7 +41,7 @@ type IndexingJobListQuery struct {
 // DefaultIndexingJobListQuery returns default values for indexing job list query.
 func DefaultIndexingJobListQuery() IndexingJobListQuery {
 	return IndexingJobListQuery{
-		Limit:  defaultIndexingJobListLimit,
+		Limit:  DefaultIndexingJobListLimit,
 		Offset: 0,
 	}
 }

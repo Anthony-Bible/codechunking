@@ -4,7 +4,6 @@ import (
 	"codechunking/internal/client"
 	"context"
 
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -73,53 +72,29 @@ func NewJobsGetCmd() *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Skip execution if validation already failed.
-			// This check ensures we don't proceed after Args validation error.
 			if len(args) != requiredJobsGetArgs {
 				return nil
 			}
 
-			// Parse and validate repository ID UUID.
-			// Invalid UUIDs are reported immediately without attempting the API call.
-			repoID, err := uuid.Parse(args[0])
-			if err != nil {
-				_ = client.WriteError(
-					cmd.OutOrStdout(),
-					errCodeInvalidArgument,
-					errMsgInvalidUUID,
-					nil,
-				)
+			repoID, ok := parseUUIDArg(cmd, args[0], errMsgInvalidUUID)
+			if !ok {
 				return nil
 			}
 
-			// Parse and validate job ID UUID.
-			// Invalid UUIDs are reported immediately without attempting the API call.
-			jobID, err := uuid.Parse(args[1])
-			if err != nil {
-				_ = client.WriteError(
-					cmd.OutOrStdout(),
-					errCodeInvalidArgument,
-					errMsgInvalidJobID,
-					nil,
-				)
+			jobID, ok := parseUUIDArg(cmd, args[1], errMsgInvalidJobID)
+			if !ok {
 				return nil
 			}
 
-			// Create API client from global flags (--api-url, etc.).
-			// Returns false if client creation fails (already writes error).
 			c, ok := createClientFromFlags(cmd, cmd.OutOrStdout())
 			if !ok {
 				return nil
 			}
 
-			// Apply timeout from global --timeout flag.
-			// Context ensures the API call respects the timeout.
 			timeout, _ := cmd.Flags().GetDuration("timeout")
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 
-			// Retrieve job from API and handle response.
-			// Error codes are determined based on HTTP status and error type.
 			result, err := c.GetIndexingJob(ctx, repoID, jobID)
 			if err != nil {
 				code := determineErrorCode(err)

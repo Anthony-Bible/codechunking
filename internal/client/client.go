@@ -216,3 +216,37 @@ func (c *Client) GetIndexingJob(ctx context.Context, repoID, jobID uuid.UUID) (*
 	}
 	return &result, nil
 }
+
+// DeleteRepository archives/deletes a repository by ID.
+// Returns nil on success or an error if the repository is not found or the request fails.
+func (c *Client) DeleteRepository(ctx context.Context, id uuid.UUID) error {
+	path := fmt.Sprintf("/repositories/%s", id.String())
+	return c.doRequest(ctx, http.MethodDelete, path, nil, nil)
+}
+
+// ListRepositoryJobs retrieves the list of indexing jobs for a repository.
+// Returns the jobs list with pagination metadata or an error.
+func (c *Client) ListRepositoryJobs(
+	ctx context.Context,
+	repoID uuid.UUID,
+	query dto.IndexingJobListQuery,
+) (*dto.IndexingJobListResponse, error) {
+	params := url.Values{}
+	if query.Limit >= 0 {
+		params.Add("limit", strconv.Itoa(query.Limit))
+	}
+	if query.Offset >= 0 {
+		params.Add("offset", strconv.Itoa(query.Offset))
+	}
+
+	path := fmt.Sprintf("/repositories/%s/jobs", repoID.String())
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	var result dto.IndexingJobListResponse
+	if err := c.doRequest(ctx, http.MethodGet, path, nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}

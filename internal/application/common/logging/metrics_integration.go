@@ -154,16 +154,16 @@ func (m *metricsApplicationLogger) LogMetric(ctx context.Context, metric Prometh
 	}
 
 	// Generate Prometheus format string
-	prometheusFormat := fmt.Sprintf("%s{", metric.Name)
-	var prometheusFormatSb157 strings.Builder
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%s{", metric.Name)
 	for key, value := range metric.Labels {
-		prometheusFormatSb157.WriteString(fmt.Sprintf(`%s="%s",`, key, value))
+		fmt.Fprintf(&sb, `%s="%s",`, key, value)
 	}
-	prometheusFormat += prometheusFormatSb157.String()
+	metricPrefix := sb.String()
 	if len(metric.Labels) > 0 {
-		prometheusFormat = prometheusFormat[:len(prometheusFormat)-1] // Remove trailing comma
+		metricPrefix = metricPrefix[:len(metricPrefix)-1] // Remove trailing comma
 	}
-	prometheusFormat += fmt.Sprintf("} %g", metric.Value)
+	prometheusFormat := fmt.Sprintf("%s} %g", metricPrefix, metric.Value)
 	fields["prometheus_format"] = prometheusFormat
 
 	operation := "metric_logged"

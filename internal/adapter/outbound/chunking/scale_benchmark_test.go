@@ -496,9 +496,10 @@ func runChunkingStrategy(
 		return runSizeBasedChunking(ctx, chunks, config)
 	case outbound.StrategyHybrid:
 		return runHybridChunking(ctx, chunks, config)
-	default:
+	case outbound.StrategyModule, outbound.StrategyFile, outbound.StrategyAdaptive, outbound.StrategyHierarchy:
 		return runFunctionChunking(ctx, chunks, config)
 	}
+	return nil
 }
 
 func runFunctionChunking(
@@ -582,17 +583,13 @@ func generateMediumClassContent(size int) string {
 %s
 `
 
-	methods := ""
-	var methodsSb585 strings.Builder
+	var methods strings.Builder
 	for i := range size / 500 {
-		methodsSb585.WriteString(fmt.Sprintf(
-			"    def method%d(self, param):\n        return param + '_processed_%d'\n",
-			i, i,
-		))
+		fmt.Fprintf(&methods, "    def method%d(self, param):\n        return param + '_processed_%d'\n",
+			i, i)
 	}
-	methods += methodsSb585.String()
 
-	return fmt.Sprintf(template, size/1000, methods)
+	return fmt.Sprintf(template, size/1000, methods.String())
 }
 
 func generateLargeModuleContent(size int) string {
@@ -618,18 +615,14 @@ func generateLargeModuleContent(size int) string {
 }
 `
 
-	processing := ""
-	var processingSb619 strings.Builder
+	var processing strings.Builder
 	for i := range size / 100 {
-		processingSb619.WriteString(fmt.Sprintf(
-			"// Processing step %d\nif err := processStep%d(data[i:i+100]); err != nil {\n    return err\n}\ni += 100\n",
+		fmt.Fprintf(&processing, "// Processing step %d\nif err := processStep%d(data[i:i+100]); err != nil {\n    return err\n}\ni += 100\n",
 			i,
-			i,
-		))
+			i)
 	}
-	processing += processingSb619.String()
 
-	return fmt.Sprintf(template, size/1000, processing)
+	return fmt.Sprintf(template, size/1000, processing.String())
 }
 
 func generateClassWithMethods(level, class, methods int) string {
@@ -644,17 +637,13 @@ func generateClassWithMethods(level, class, methods int) string {
 %s
 `
 
-	methodContent := ""
-	var methodContentSb643 strings.Builder
+	var methodContent strings.Builder
 	for i := range methods {
-		methodContentSb643.WriteString(fmt.Sprintf(
-			"    def method%d(self, param):\n        return f'processed_{param}_{%d}'\n",
-			i, i,
-		))
+		fmt.Fprintf(&methodContent, "    def method%d(self, param):\n        return f'processed_{param}_{%d}'\n",
+			i, i)
 	}
-	methodContent += methodContentSb643.String()
 
-	return fmt.Sprintf(template, level, class, level, class, level, class, methodContent)
+	return fmt.Sprintf(template, level, class, level, class, level, class, methodContent.String())
 }
 
 func generateMethodContent(index int) string {
@@ -679,15 +668,11 @@ func generateLargeFunctionContent(size int) string {
     return nil
 }`
 
-	processing := ""
-	var processingSb676 strings.Builder
+	var processing strings.Builder
 	for i := range size / 500 {
-		processingSb676.WriteString(fmt.Sprintf(
-			"chunk := data[i:min(i+500, len(data))]\nif err := processChunk%d(chunk); err != nil {\n    return err\n}\nresult = append(result, chunk...)\ni += 500\n",
-			i,
-		))
+		fmt.Fprintf(&processing, "chunk := data[i:min(i+500, len(data))]\nif err := processChunk%d(chunk); err != nil {\n    return err\n}\nresult = append(result, chunk...)\ni += 500\n",
+			i)
 	}
-	processing += processingSb676.String()
 
-	return fmt.Sprintf(template, size/1000, processing)
+	return fmt.Sprintf(template, size/1000, processing.String())
 }

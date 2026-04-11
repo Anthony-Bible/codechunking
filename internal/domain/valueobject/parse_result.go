@@ -335,8 +335,8 @@ func (pr *ParseResult) FormatErrors() string {
 	var formatted strings.Builder
 	formatted.WriteString("Parse Errors:\n")
 	for i, err := range pr.errors {
-		formatted.WriteString(fmt.Sprintf("%d. %s: %s (Line: %d, Column: %d)\n",
-			i+1, err.Type, err.Message, err.Position.Row, err.Position.Column))
+		fmt.Fprintf(&formatted, "%d. %s: %s (Line: %d, Column: %d)\n",
+			i+1, err.Type, err.Message, err.Position.Row, err.Position.Column)
 	}
 	return formatted.String()
 }
@@ -363,7 +363,7 @@ func (pr *ParseResult) ExportSummary() (string, error) {
 	var summary strings.Builder
 	summary.WriteString("Parse Result Summary\n")
 	summary.WriteString("===================\n")
-	summary.WriteString(fmt.Sprintf("Language: %s\n", pr.parseOptions.Language.Name()))
+	fmt.Fprintf(&summary, "Language: %s\n", pr.parseOptions.Language.Name())
 
 	if pr.success {
 		summary.WriteString("Status: Success\n")
@@ -371,9 +371,9 @@ func (pr *ParseResult) ExportSummary() (string, error) {
 		summary.WriteString("Status: Failed\n")
 	}
 
-	summary.WriteString(fmt.Sprintf("Duration: %v\n", pr.duration))
-	summary.WriteString(fmt.Sprintf("Errors: %d\n", len(pr.errors)))
-	summary.WriteString(fmt.Sprintf("Warnings: %d\n", len(pr.warnings)))
+	fmt.Fprintf(&summary, "Duration: %v\n", pr.duration)
+	fmt.Fprintf(&summary, "Errors: %d\n", len(pr.errors))
+	fmt.Fprintf(&summary, "Warnings: %d\n", len(pr.warnings))
 
 	return summary.String(), nil
 }
@@ -387,14 +387,14 @@ func (pr *ParseResult) ExportDetailedReport() (string, error) {
 	report.WriteString("Parse Tree Structure\n")
 	report.WriteString("-------------------\n")
 	if pr.parseTree != nil {
-		report.WriteString(fmt.Sprintf("Total Nodes: %d\n", pr.statistics.TotalNodes))
-		report.WriteString(fmt.Sprintf("Max Depth: %d\n", pr.statistics.MaxDepth))
+		fmt.Fprintf(&report, "Total Nodes: %d\n", pr.statistics.TotalNodes)
+		fmt.Fprintf(&report, "Max Depth: %d\n", pr.statistics.MaxDepth)
 	}
 
 	report.WriteString("\nPerformance Statistics\n")
 	report.WriteString("---------------------\n")
-	report.WriteString(fmt.Sprintf("Parse Duration: %v\n", pr.statistics.ParseDuration))
-	report.WriteString(fmt.Sprintf("Memory Used: %d bytes\n", pr.statistics.MemoryUsed))
+	fmt.Fprintf(&report, "Parse Duration: %v\n", pr.statistics.ParseDuration)
+	fmt.Fprintf(&report, "Memory Used: %d bytes\n", pr.statistics.MemoryUsed)
 
 	return report.String(), nil
 }

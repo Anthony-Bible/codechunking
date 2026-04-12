@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -36,7 +37,7 @@ func (p *AzureDevOpsProvider) ListRepositories(
 	}
 
 	// Azure DevOps: GET /{org}/{project}/_apis/git/repositories
-	apiURL := fmt.Sprintf("%s/%s/_apis/git/repositories?api-version=7.1", baseURL, connector.Name())
+	apiURL := fmt.Sprintf("%s/%s/_apis/git/repositories?api-version=7.1", baseURL, url.PathEscape(connector.Name()))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {

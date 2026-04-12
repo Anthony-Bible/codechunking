@@ -299,7 +299,7 @@ func buildConnectorFilterConditions(filters outbound.ConnectorFilters) ([]string
 	if filters.Status != nil {
 		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, filters.Status.String())
-		argIdx++ //nolint:ineffassign // argIdx incremented for future use
+		argIdx++
 	}
 
 	return conditions, args

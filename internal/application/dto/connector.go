@@ -2,6 +2,7 @@ package dto
 
 import (
 	"errors"
+	"net/url"
 	"time"
 
 	"codechunking/internal/domain/valueobject"
@@ -38,6 +39,10 @@ func (r CreateConnectorRequest) Validate() error {
 	}
 	if r.BaseURL == "" {
 		return errors.New("base_url is required")
+	}
+	u, err := url.ParseRequestURI(r.BaseURL)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
+		return errors.New("base_url must be a valid http or https URL")
 	}
 	return nil
 }

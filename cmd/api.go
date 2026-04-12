@@ -222,6 +222,19 @@ func (sf *ServiceFactory) CreateHealthService() inbound.HealthService {
 	return service.NewHealthServiceAdapter(repositoryRepo, indexingJobRepo, messagePublisher, serviceVersion)
 }
 
+// CreateConnectorService creates a connector service instance.
+func (sf *ServiceFactory) CreateConnectorService() inbound.ConnectorService {
+	dbPool, err := sf.GetDatabasePool()
+	if err != nil {
+		slogger.ErrorNoCtx("Failed to create database connection for connector service", slogger.Fields{
+			"error": err.Error(),
+		})
+		os.Exit(1)
+	}
+	connectorRepo := repository.NewPostgreSQLConnectorRepository(dbPool)
+	return service.NewConnectorServiceAdapter(connectorRepo)
+}
+
 // CreateRepositoryService creates a repository service instance with fail-fast error handling.
 //
 // This method uses buildDependencies to create the required database repositories and message publisher.
@@ -433,6 +446,7 @@ func (sf *ServiceFactory) CreateServer() (*api.Server, error) {
 	// Create all services
 	healthService := sf.CreateHealthService()
 	repositoryService := sf.CreateRepositoryService()
+	connectorService := sf.CreateConnectorService()
 	errorHandler := sf.CreateErrorHandler()
 
 	// Create search service - fail fast if creation fails (e.g., missing Gemini API key)
@@ -449,6 +463,7 @@ func (sf *ServiceFactory) CreateServer() (*api.Server, error) {
 	serverBuilder := api.NewServerBuilder(sf.config).
 		WithHealthService(healthService).
 		WithRepositoryService(repositoryService).
+		WithConnectorService(connectorService).
 		WithErrorHandler(errorHandler)
 
 	// Add search service if available

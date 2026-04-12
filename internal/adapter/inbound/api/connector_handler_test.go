@@ -155,7 +155,7 @@ func TestConnectorHandler_CreateConnector(t *testing.T) {
 		validateFunc   func(t *testing.T, rec *httptest.ResponseRecorder)
 	}{
 		{
-			name: "successful_creation_returns_202_accepted",
+			name: "successful_creation_returns_201_created",
 			requestBody: dto.CreateConnectorRequest{
 				Name:          "my-org",
 				ConnectorType: "github_org",
@@ -167,7 +167,7 @@ func TestConnectorHandler_CreateConnector(t *testing.T) {
 					return &resp, nil
 				}
 			},
-			expectedStatus: http.StatusAccepted,
+			expectedStatus: http.StatusCreated,
 			validateFunc: func(t *testing.T, rec *httptest.ResponseRecorder) {
 				assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 
@@ -273,7 +273,7 @@ func TestConnectorHandler_CreateConnector(t *testing.T) {
 				tt.validateFunc(t, recorder)
 			}
 
-			if tt.expectedStatus == http.StatusAccepted {
+			if tt.expectedStatus == http.StatusCreated {
 				assert.Len(t, mockService.CreateConnectorCalls, 1)
 			}
 		})

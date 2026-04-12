@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -46,12 +47,29 @@ func (h *ConnectorHandler) CreateConnector(w http.ResponseWriter, r *http.Reques
 	}
 
 	slogger.Info(r.Context(), "Connector created", slogger.Fields{"id": response.ID})
-	h.writeJSON(w, http.StatusAccepted, response)
+	h.writeJSON(w, http.StatusCreated, response)
 }
 
 // ListConnectors handles GET /connectors.
 func (h *ConnectorHandler) ListConnectors(w http.ResponseWriter, r *http.Request) {
 	query := dto.DefaultConnectorListQuery()
+
+	if ct := r.URL.Query().Get("connector_type"); ct != "" {
+		query.ConnectorType = ct
+	}
+	if status := r.URL.Query().Get("status"); status != "" {
+		query.Status = status
+	}
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if v, err := strconv.Atoi(limitStr); err == nil {
+			query.Limit = v
+		}
+	}
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		if v, err := strconv.Atoi(offsetStr); err == nil {
+			query.Offset = v
+		}
+	}
 
 	response, err := h.connectorService.ListConnectors(r.Context(), query)
 	if err != nil {

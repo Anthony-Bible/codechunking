@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -39,15 +40,13 @@ func (p *GenericGitProvider) ListRepositories(
 		return nil, fmt.Errorf("generic git provider: base_url is required")
 	}
 
-	apiURL := fmt.Sprintf("%s/%s", baseURL, connector.Name())
+	apiURL := fmt.Sprintf("%s/%s", baseURL, url.PathEscape(connector.Name()))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build generic list-repos request: %w", err)
 	}
-	if connector.AuthToken() != nil && *connector.AuthToken() != "" {
-		req.Header.Set("Authorization", "Bearer "+*connector.AuthToken())
-	}
+	addBearerAuth(req, connector.AuthToken())
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
@@ -91,9 +90,7 @@ func (p *GenericGitProvider) ValidateCredentials(ctx context.Context, connector 
 	if err != nil {
 		return fmt.Errorf("build generic validate request: %w", err)
 	}
-	if connector.AuthToken() != nil && *connector.AuthToken() != "" {
-		req.Header.Set("Authorization", "Bearer "+*connector.AuthToken())
-	}
+	addBearerAuth(req, connector.AuthToken())
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {

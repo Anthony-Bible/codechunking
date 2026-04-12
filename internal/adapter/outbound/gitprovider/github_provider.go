@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -39,13 +40,13 @@ func (p *GitHubProvider) ListRepositories(
 	}
 
 	// GitHub organisations endpoint: GET /orgs/{org}/repos
-	url := fmt.Sprintf("%s/orgs/%s/repos?per_page=100&type=all", baseURL, connector.Name())
+	url := fmt.Sprintf("%s/orgs/%s/repos?per_page=100&type=all", baseURL, url.PathEscape(connector.Name()))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build github list-repos request: %w", err)
 	}
-	p.addAuthHeader(req, connector)
+	addBearerAuth(req, connector.AuthToken())
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
@@ -91,7 +92,7 @@ func (p *GitHubProvider) ValidateCredentials(ctx context.Context, connector *ent
 	if err != nil {
 		return fmt.Errorf("build github validate request: %w", err)
 	}
-	p.addAuthHeader(req, connector)
+	addBearerAuth(req, connector.AuthToken())
 	req.Header.Set("Accept", "application/vnd.github+json")
 
 	resp, err := p.httpClient.Do(req)
@@ -100,12 +101,6 @@ func (p *GitHubProvider) ValidateCredentials(ctx context.Context, connector *ent
 	}
 	defer resp.Body.Close()
 	return checkHTTPStatus(resp, "github validate credentials")
-}
-
-func (p *GitHubProvider) addAuthHeader(req *http.Request, connector *entity.Connector) {
-	if connector.AuthToken() != nil && *connector.AuthToken() != "" {
-		req.Header.Set("Authorization", "Bearer "+*connector.AuthToken())
-	}
 }
 
 // githubRepository is the minimal GitHub API repository shape we need.

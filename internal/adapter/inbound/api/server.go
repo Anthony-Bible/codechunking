@@ -15,28 +15,30 @@ import (
 
 // Server represents the HTTP API server.
 type Server struct {
-	config          *config.Config
-	httpServer      *http.Server
-	routeRegistry   *RouteRegistry
-	healthService   inbound.HealthService
-	repoService     inbound.RepositoryService
-	searchService   inbound.SearchService
-	errorHandler    ErrorHandler
-	listener        net.Listener
-	isRunning       bool
-	mu              sync.RWMutex
-	middleware      map[string]bool
-	middlewareCount int
+	config           *config.Config
+	httpServer       *http.Server
+	routeRegistry    *RouteRegistry
+	healthService    inbound.HealthService
+	repoService      inbound.RepositoryService
+	searchService    inbound.SearchService
+	connectorService inbound.ConnectorService
+	errorHandler     ErrorHandler
+	listener         net.Listener
+	isRunning        bool
+	mu               sync.RWMutex
+	middleware       map[string]bool
+	middlewareCount  int
 }
 
 // ServerBuilder provides a fluent interface for building Server instances.
 type ServerBuilder struct {
-	config        *config.Config
-	healthService inbound.HealthService
-	repoService   inbound.RepositoryService
-	searchService inbound.SearchService
-	errorHandler  ErrorHandler
-	middleware    []MiddlewareFunc
+	config           *config.Config
+	healthService    inbound.HealthService
+	repoService      inbound.RepositoryService
+	searchService    inbound.SearchService
+	connectorService inbound.ConnectorService
+	errorHandler     ErrorHandler
+	middleware       []MiddlewareFunc
 }
 
 // MiddlewareFunc defines the middleware function signature.
@@ -65,6 +67,12 @@ func (b *ServerBuilder) WithRepositoryService(service inbound.RepositoryService)
 // WithSearchService sets the search service.
 func (b *ServerBuilder) WithSearchService(service inbound.SearchService) *ServerBuilder {
 	b.searchService = service
+	return b
+}
+
+// WithConnectorService sets the connector service.
+func (b *ServerBuilder) WithConnectorService(service inbound.ConnectorService) *ServerBuilder {
+	b.connectorService = service
 	return b
 }
 
@@ -144,6 +152,12 @@ func (b *ServerBuilder) buildServer() *Server {
 		}
 	}
 
+	// Register connector routes if connector service is provided
+	if b.connectorService != nil {
+		connectorHandler := NewConnectorHandler(b.connectorService, b.errorHandler)
+		registry.RegisterConnectorRoutes(connectorHandler)
+	}
+
 	// Build ServeMux
 	mux := registry.BuildServeMux()
 
@@ -169,15 +183,16 @@ func (b *ServerBuilder) buildServer() *Server {
 	httpServer := b.createHTTPServer(handler)
 
 	return &Server{
-		config:          b.config,
-		httpServer:      httpServer,
-		routeRegistry:   registry,
-		healthService:   b.healthService,
-		repoService:     b.repoService,
-		searchService:   b.searchService,
-		errorHandler:    b.errorHandler,
-		middleware:      middlewareMap,
-		middlewareCount: middlewareCount,
+		config:           b.config,
+		httpServer:       httpServer,
+		routeRegistry:    registry,
+		healthService:    b.healthService,
+		repoService:      b.repoService,
+		searchService:    b.searchService,
+		connectorService: b.connectorService,
+		errorHandler:     b.errorHandler,
+		middleware:       middlewareMap,
+		middlewareCount:  middlewareCount,
 	}
 }
 

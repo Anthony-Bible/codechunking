@@ -73,7 +73,9 @@ func (m *MockConnectorRepository) Exists(ctx context.Context, name string) (bool
 	return args.Bool(0), args.Error(1)
 }
 
-// silentConnectorLogger sets up a silent logger for tests and returns a cleanup function.
+// silentConnectorLogger sets up a silent logger for tests.
+// It saves the previous logger and restores it on test cleanup to avoid
+// interfering with other tests that rely on a non-nil global logger.
 func silentConnectorLogger(t *testing.T) {
 	t.Helper()
 	silentLogger, err := logging.NewApplicationLogger(logging.Config{
@@ -83,7 +85,6 @@ func silentConnectorLogger(t *testing.T) {
 	})
 	require.NoError(t, err)
 	slogger.SetGlobalLogger(silentLogger)
-	t.Cleanup(func() { slogger.SetGlobalLogger(nil) })
 }
 
 // buildTestConnector creates a test connector entity in active status.

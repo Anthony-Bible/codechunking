@@ -98,6 +98,25 @@ func NewRouteRegistry() *RouteRegistry {
 	}
 }
 
+// RegisterConnectorRoutes registers all connector-related API routes.
+func (r *RouteRegistry) RegisterConnectorRoutes(connectorHandler *ConnectorHandler) {
+	if err := r.RegisterRoute("POST /connectors", http.HandlerFunc(connectorHandler.CreateConnector)); err != nil {
+		panic(fmt.Errorf("failed to register create connector route: %w", err))
+	}
+	if err := r.RegisterRoute("GET /connectors", http.HandlerFunc(connectorHandler.ListConnectors)); err != nil {
+		panic(fmt.Errorf("failed to register list connectors route: %w", err))
+	}
+	if err := r.RegisterRoute("GET /connectors/{id}", http.HandlerFunc(connectorHandler.GetConnector)); err != nil {
+		panic(fmt.Errorf("failed to register get connector route: %w", err))
+	}
+	if err := r.RegisterRoute("DELETE /connectors/{id}", http.HandlerFunc(connectorHandler.DeleteConnector)); err != nil {
+		panic(fmt.Errorf("failed to register delete connector route: %w", err))
+	}
+	if err := r.RegisterRoute("POST /connectors/{id}/sync", http.HandlerFunc(connectorHandler.SyncConnector)); err != nil {
+		panic(fmt.Errorf("failed to register sync connector route: %w", err))
+	}
+}
+
 // RegisterAPIRoutes registers all API routes with their handlers.
 func (r *RouteRegistry) RegisterAPIRoutes(healthHandler *HealthHandler, repositoryHandler *RepositoryHandler) {
 	// Health endpoint

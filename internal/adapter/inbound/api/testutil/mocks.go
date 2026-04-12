@@ -352,6 +352,12 @@ func (m *MockErrorHandler) HandleServiceError(w http.ResponseWriter, r *http.Req
 		http.Error(w, "service error", http.StatusConflict)
 	case errors.Is(err, domain.ErrJobNotFound):
 		http.Error(w, "service error", http.StatusNotFound)
+	case errors.Is(err, domain.ErrConnectorNotFound):
+		http.Error(w, "service error", http.StatusNotFound)
+	case errors.Is(err, domain.ErrConnectorAlreadyExists):
+		http.Error(w, "service error", http.StatusConflict)
+	case errors.Is(err, domain.ErrConnectorSyncing):
+		http.Error(w, "service error", http.StatusConflict)
 	default:
 		http.Error(w, "service error", http.StatusInternalServerError)
 	}

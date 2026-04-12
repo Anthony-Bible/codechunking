@@ -18,6 +18,13 @@ var (
 	ErrJobFailed   = errors.New("indexing job failed")
 )
 
+// Connector-related errors.
+var (
+	ErrConnectorNotFound      = errors.New("connector not found")
+	ErrConnectorAlreadyExists = errors.New("connector already exists")
+	ErrConnectorSyncing       = errors.New("connector is currently syncing")
+)
+
 // General domain errors.
 var (
 	ErrInvalidInput = errors.New("invalid input")

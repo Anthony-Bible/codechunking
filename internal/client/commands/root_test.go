@@ -204,6 +204,44 @@ func TestRootCmd_HelpFlag(t *testing.T) {
 	assert.Contains(t, output, "Flags:", "help output should list flags")
 }
 
+// TestRootCmd_ConfigFlag verifies that the --config flag is registered as a persistent flag.
+func TestRootCmd_ConfigFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := commands.NewRootCmd()
+
+	configFlag := cmd.PersistentFlags().Lookup("config")
+	require.NotNil(t, configFlag, "--config flag should be defined as a persistent flag")
+	assert.Equal(t, "string", configFlag.Value.Type(), "--config should be a string flag")
+	assert.Empty(t, configFlag.DefValue, "--config default should be empty string")
+}
+
+// TestRootCmd_ConfigFileNotFound verifies that an explicit --config pointing to a
+// non-existent file surfaces an error rather than silently falling back to defaults.
+//
+// NOTE: t.Parallel() is intentionally omitted. This test executes the "health"
+// subcommand, which triggers PersistentPreRunE. PersistentPreRunE calls
+// newClientViper, which adds $HOME and the current working directory to viper's
+// config search paths. If a real ~/.codechunking.* or ./.codechunking.* file
+// exists on the host, it could interfere with other tests that also reach
+// PersistentPreRunE. We isolate HOME via t.Setenv (which requires a sequential
+// test) to prevent cross-test contamination from auto-discovered config files.
+func TestRootCmd_ConfigFileNotFound(t *testing.T) {
+	// Redirect HOME to an empty temp dir so viper's auto-discovery finds nothing.
+	t.Setenv("HOME", t.TempDir())
+
+	var stderr bytes.Buffer
+	cmd := commands.NewRootCmd()
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"--config", "/nonexistent/path/config.yaml", "health"})
+
+	err := cmd.Execute()
+
+	require.Error(t, err, "--config with nonexistent file should return an error")
+	assert.Contains(t, err.Error(), "failed to read config file", "error should identify config file problem")
+	assert.Contains(t, err.Error(), "/nonexistent/path/config.yaml", "error should include the provided path")
+}
+
 // Helper function to find a subcommand by name.
 func findSubcommand(cmd *cobra.Command, name string) *cobra.Command {
 	for _, subCmd := range cmd.Commands() {

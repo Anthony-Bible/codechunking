@@ -80,3 +80,19 @@ batch_processing:
 log:
   level: info
   format: json
+
+# Client CLI configuration
+# NOTE: The CLI client auto-discovers config files named ".codechunking" (e.g.
+# ~/.codechunking.yaml or ./.codechunking.yaml). This file (config.yaml) is NOT
+# loaded automatically by the client; use --config configs/config.yaml or set
+# CODECHUNK_* environment variables to supply these values to the CLI.
+client:
+  api_url: http://localhost:8080
+  timeout: 30s
+  search:
+    limit: 10
+    threshold: 0.7
+    sort: similarity:desc
+  repos:
+    poll_interval: 5s   # matches client.DefaultPollInterval
+    wait_timeout: 30m   # matches client.DefaultMaxWait

@@ -91,7 +91,7 @@ func NewJobsGetCmd() *cobra.Command {
 				return nil
 			}
 
-			timeout, _ := cmd.Flags().GetDuration("timeout")
+			timeout := getDurationFlag(cmd, "timeout", viperKeyTimeout)
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 

@@ -66,13 +66,13 @@ func NewSearchCmd() *cobra.Command {
 
 			// Build search request from query argument and filter flags.
 			// All filter parameters are optional and applied as AND conditions.
-			limit, _ := cmd.Flags().GetInt("limit")
+			limit := getIntFlag(cmd, "limit", viperKeySearchLimit)
 			offset, _ := cmd.Flags().GetInt("offset")
 			repoNames, _ := cmd.Flags().GetStringSlice("repo-names")
 			languages, _ := cmd.Flags().GetStringSlice("languages")
 			fileTypes, _ := cmd.Flags().GetStringSlice("file-types")
-			threshold, _ := cmd.Flags().GetFloat64("threshold")
-			sort, _ := cmd.Flags().GetString("sort")
+			threshold := getFloat64Flag(cmd, "threshold", viperKeySearchThresh)
+			sort := getStringFlag(cmd, "sort", viperKeySearchSort)
 			types, _ := cmd.Flags().GetStringSlice("types")
 			entityName, _ := cmd.Flags().GetString("entity-name")
 			visibility, _ := cmd.Flags().GetStringSlice("visibility")
@@ -97,7 +97,7 @@ func NewSearchCmd() *cobra.Command {
 				return nil
 			}
 
-			timeout, _ := cmd.Flags().GetDuration("timeout")
+			timeout := getDurationFlag(cmd, "timeout", viperKeyTimeout)
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 

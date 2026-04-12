@@ -33,8 +33,8 @@ func parseUUIDArg(cmd *cobra.Command, raw, errMsg string) (uuid.UUID, bool) {
 // to the provided output if validation or creation fails.
 // Returns the client and true if successful, or nil and false on failure.
 func createClientFromFlags(cmd *cobra.Command, out io.Writer) (*client.Client, bool) {
-	apiURL, _ := cmd.Flags().GetString("api-url")
-	timeout, _ := cmd.Flags().GetDuration("timeout")
+	apiURL := getStringFlag(cmd, "api-url", viperKeyAPIURL)
+	timeout := getDurationFlag(cmd, "timeout", viperKeyTimeout)
 
 	cfg := &client.Config{APIURL: apiURL, Timeout: timeout}
 	if err := cfg.Validate(); err != nil {
@@ -101,7 +101,7 @@ func NewReposListCmd() *cobra.Command {
 				Sort:   sort,
 			}
 
-			timeout, _ := cmd.Flags().GetDuration("timeout")
+			timeout := getDurationFlag(cmd, "timeout", viperKeyTimeout)
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 
@@ -153,7 +153,7 @@ func NewReposGetCmd() *cobra.Command {
 				return nil
 			}
 
-			timeout, _ := cmd.Flags().GetDuration("timeout")
+			timeout := getDurationFlag(cmd, "timeout", viperKeyTimeout)
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 
@@ -210,7 +210,7 @@ func NewReposAddCmd() *cobra.Command {
 				req.DefaultBranch = &branch
 			}
 
-			timeout, _ := cmd.Flags().GetDuration("timeout")
+			timeout := getDurationFlag(cmd, "timeout", viperKeyTimeout)
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 
@@ -223,8 +223,8 @@ func NewReposAddCmd() *cobra.Command {
 
 			wait, _ := cmd.Flags().GetBool("wait")
 			if wait {
-				pollInterval, _ := cmd.Flags().GetDuration("poll-interval")
-				waitTimeout, _ := cmd.Flags().GetDuration("wait-timeout")
+				pollInterval := getDurationFlag(cmd, "poll-interval", viperKeyPollInterval)
+				waitTimeout := getDurationFlag(cmd, "wait-timeout", viperKeyWaitTimeout)
 
 				pollerConfig := &client.PollerConfig{
 					Interval: pollInterval,
@@ -288,7 +288,7 @@ func NewReposDeleteCmd() *cobra.Command {
 				return nil
 			}
 
-			timeout, _ := cmd.Flags().GetDuration("timeout")
+			timeout := getDurationFlag(cmd, "timeout", viperKeyTimeout)
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 
@@ -341,7 +341,7 @@ func NewReposJobsCmd() *cobra.Command {
 
 			query := dto.IndexingJobListQuery{Limit: limit, Offset: offset}
 
-			timeout, _ := cmd.Flags().GetDuration("timeout")
+			timeout := getDurationFlag(cmd, "timeout", viperKeyTimeout)
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 
@@ -397,12 +397,12 @@ func NewReposQueryCmd() *cobra.Command {
 				return nil
 			}
 
-			limit, _ := cmd.Flags().GetInt("limit")
+			limit := getIntFlag(cmd, "limit", viperKeySearchLimit)
 			offset, _ := cmd.Flags().GetInt("offset")
-			threshold, _ := cmd.Flags().GetFloat64("threshold")
+			threshold := getFloat64Flag(cmd, "threshold", viperKeySearchThresh)
 			languages, _ := cmd.Flags().GetStringSlice("languages")
 			types, _ := cmd.Flags().GetStringSlice("types")
-			sort, _ := cmd.Flags().GetString("sort")
+			sort := getStringFlag(cmd, "sort", viperKeySearchSort)
 
 			req := dto.SearchRequestDTO{
 				Query:               args[1],
@@ -415,7 +415,7 @@ func NewReposQueryCmd() *cobra.Command {
 				Sort:                sort,
 			}
 
-			timeout, _ := cmd.Flags().GetDuration("timeout")
+			timeout := getDurationFlag(cmd, "timeout", viperKeyTimeout)
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 

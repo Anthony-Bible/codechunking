@@ -36,21 +36,12 @@ func NewHealthCmd() *cobra.Command {
 		Use:   "health",
 		Short: "Check API server health",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			apiURL, _ := cmd.Flags().GetString("api-url")
-			timeout, _ := cmd.Flags().GetDuration("timeout")
-
-			cfg := &client.Config{APIURL: apiURL, Timeout: timeout}
-			if err := cfg.Validate(); err != nil {
-				_ = client.WriteError(cmd.OutOrStdout(), errCodeInvalidConfig, err.Error(), nil)
+			c, ok := createClientFromFlags(cmd, cmd.OutOrStdout())
+			if !ok {
 				return nil
 			}
 
-			c, err := client.NewClient(cfg)
-			if err != nil {
-				_ = client.WriteError(cmd.OutOrStdout(), errCodeClientError, err.Error(), nil)
-				return nil
-			}
-
+			timeout := getDurationFlag(cmd, "timeout", viperKeyTimeout)
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 			defer cancel()
 

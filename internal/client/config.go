@@ -50,6 +50,8 @@ func DefaultConfig() Config {
 	}
 }
 
+// Deprecated: Use viper-based configuration in the commands package instead.
+//
 // LoadConfig loads configuration from environment variables, falling back to defaults.
 //
 // Environment variables:

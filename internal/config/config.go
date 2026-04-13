@@ -8,6 +8,17 @@ import (
 	"github.com/spf13/viper"
 )
 
+// ConnectorConfig holds configuration for a single git connector.
+// Auth tokens may reference environment variables using ${VAR_NAME} syntax.
+type ConnectorConfig struct {
+	Name      string   `mapstructure:"name"`
+	Type      string   `mapstructure:"type"`
+	BaseURL   string   `mapstructure:"base_url"`
+	AuthToken string   `mapstructure:"auth_token"`
+	Groups    []string `mapstructure:"groups"`
+	Projects  []string `mapstructure:"projects"`
+}
+
 // Config holds the complete application configuration.
 type Config struct {
 	API             APIConfig             `mapstructure:"api"`
@@ -18,6 +29,7 @@ type Config struct {
 	Gemini          GeminiConfig          `mapstructure:"gemini"`
 	BatchProcessing BatchProcessingConfig `mapstructure:"batch_processing"`
 	Log             LogConfig             `mapstructure:"log"`
+	Connectors      []ConnectorConfig     `mapstructure:"connectors"`
 }
 
 // APIConfig holds API server configuration.

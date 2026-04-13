@@ -96,3 +96,17 @@ client:
   repos:
     poll_interval: 5s   # matches client.DefaultPollInterval
     wait_timeout: 30m   # matches client.DefaultMaxWait
+
+# Connectors are managed declaratively here; the API is read-only for connectors.
+# Auth tokens support environment variable expansion: ${GITLAB_TOKEN}
+#
+# connectors:
+#   - name: "my-gitlab"
+#     type: "gitlab"
+#     base_url: "https://gitlab.com"
+#     auth_token: "${GITLAB_TOKEN}"
+#     groups:
+#       - "my-group"
+#       - "another-group"
+#     projects:
+#       - "my-group/my-project"

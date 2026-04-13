@@ -8,6 +8,21 @@ import (
 	"strings"
 )
 
+// EntityToConnectorResponse converts a Connector entity to a ConnectorResponse DTO.
+func EntityToConnectorResponse(c *entity.Connector) *dto.ConnectorResponse {
+	return &dto.ConnectorResponse{
+		ID:              c.ID(),
+		Name:            c.Name(),
+		ConnectorType:   c.ConnectorType().String(),
+		BaseURL:         c.BaseURL(),
+		Status:          c.Status().String(),
+		RepositoryCount: c.RepositoryCount(),
+		LastSyncAt:      c.LastSyncAt(),
+		CreatedAt:       c.CreatedAt(),
+		UpdatedAt:       c.UpdatedAt(),
+	}
+}
+
 const (
 	// MinURLPartsForOwnerRepo is the minimum number of URL parts needed to extract owner/repo format.
 	MinURLPartsForOwnerRepo = 2

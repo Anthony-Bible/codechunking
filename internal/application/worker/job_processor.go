@@ -202,14 +202,19 @@ func (p *DefaultJobProcessor) ProcessJob(ctx context.Context, message messaging.
 	workspacePath := filepath.Join(p.config.WorkspaceDir, message.MessageID)
 	defer p.cleanupWorkspace(workspacePath, message.MessageID)
 
+	job := p.persistJobStart(jobCtx, message.IndexingJobID)
+
 	chunks, err := p.executeJobPipeline(jobCtx, message, workspacePath, execution)
 	if err != nil {
+		p.persistJobFail(jobCtx, job, err.Error())
 		return err
 	}
 
 	// If chunks is nil, job was skipped (completed/archived state)
 	if chunks != nil {
-		p.finalizeJobCompletion(jobCtx, message, execution, chunks)
+		p.finalizeJobCompletion(jobCtx, message, execution, chunks, job)
+	} else {
+		p.persistJobSkip(jobCtx, job)
 	}
 
 	return nil
@@ -493,6 +498,7 @@ func (p *DefaultJobProcessor) finalizeJobCompletion(
 	message messaging.EnhancedIndexingJobMessage,
 	execution *JobExecution,
 	chunks []outbound.CodeChunk,
+	job *entity.IndexingJob,
 ) {
 	p.updateJobStatus(message.MessageID, jobStatusCompleted)
 	if execution.Progress != nil {
@@ -502,6 +508,73 @@ func (p *DefaultJobProcessor) finalizeJobCompletion(
 	fileCount := len(chunks)
 	p.markRepositoryCompleted(ctx, message.RepositoryID, unknownCommitHash, fileCount, len(chunks))
 	p.updateMetrics(int64(len(chunks)))
+	p.persistJobComplete(ctx, job, fileCount, len(chunks))
+}
+
+// persistJobStart loads the IndexingJob from the DB, marks it as started, and persists it.
+// Returns nil (and logs) if the job cannot be loaded or transitioned, so callers can proceed.
+func (p *DefaultJobProcessor) persistJobStart(ctx context.Context, jobID uuid.UUID) *entity.IndexingJob {
+	if jobID == uuid.Nil {
+		slogger.Warn(ctx, "persistJobStart: IndexingJobID is nil, skipping job status persistence", nil)
+		return nil
+	}
+	job, err := p.indexingJobRepo.FindByID(ctx, jobID)
+	if err != nil || job == nil {
+		slogger.Warn(ctx, "persistJobStart: failed to load indexing job", slogger.Fields{"job_id": jobID, "error": fmt.Sprintf("%v", err)})
+		return nil
+	}
+	if err := job.Start(); err != nil {
+		slogger.Warn(ctx, "persistJobStart: cannot transition job to running", slogger.Fields{"job_id": jobID, "error": err.Error()})
+		return job
+	}
+	if err := p.indexingJobRepo.Update(ctx, job); err != nil {
+		slogger.Error(ctx, "persistJobStart: failed to persist job start", slogger.Fields{"job_id": jobID, "error": err.Error()})
+	}
+	return job
+}
+
+// persistJobFail marks the job as failed and persists it.
+func (p *DefaultJobProcessor) persistJobFail(ctx context.Context, job *entity.IndexingJob, errMsg string) {
+	if job == nil {
+		return
+	}
+	if err := job.Fail(errMsg); err != nil {
+		slogger.Warn(ctx, "persistJobFail: cannot transition job to failed", slogger.Fields{"job_id": job.ID(), "error": err.Error()})
+		return
+	}
+	if err := p.indexingJobRepo.Update(ctx, job); err != nil {
+		slogger.Error(ctx, "persistJobFail: failed to persist job failure", slogger.Fields{"job_id": job.ID(), "error": err.Error()})
+	}
+}
+
+// persistJobComplete marks the job as completed and persists it.
+func (p *DefaultJobProcessor) persistJobComplete(ctx context.Context, job *entity.IndexingJob, filesProcessed, chunksCreated int) {
+	if job == nil {
+		return
+	}
+	if err := job.Complete(filesProcessed, chunksCreated); err != nil {
+		slogger.Warn(ctx, "persistJobComplete: cannot transition job to completed", slogger.Fields{"job_id": job.ID(), "error": err.Error()})
+		return
+	}
+	if err := p.indexingJobRepo.Update(ctx, job); err != nil {
+		slogger.Error(ctx, "persistJobComplete: failed to persist job completion", slogger.Fields{"job_id": job.ID(), "error": err.Error()})
+	}
+}
+
+// persistJobSkip marks a skipped job as completed with zero counts.
+// This is called when executeJobPipeline returns (nil, nil), meaning the repository
+// was already in completed or archived state and processing was intentionally skipped.
+func (p *DefaultJobProcessor) persistJobSkip(ctx context.Context, job *entity.IndexingJob) {
+	if job == nil {
+		return
+	}
+	if err := job.Complete(0, 0); err != nil {
+		slogger.Warn(ctx, "persistJobSkip: cannot transition job to completed", slogger.Fields{"job_id": job.ID(), "error": err.Error()})
+		return
+	}
+	if err := p.indexingJobRepo.Update(ctx, job); err != nil {
+		slogger.Error(ctx, "persistJobSkip: failed to persist job skip", slogger.Fields{"job_id": job.ID(), "error": err.Error()})
+	}
 }
 
 // GetHealthStatus returns the current health status.

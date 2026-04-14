@@ -126,6 +126,16 @@ func (m *MockEnhancedGitClient) CancelClone(
 	return args.Error(0)
 }
 
+// newTestMockJobRepo returns a MockIndexingJobRepository with permissive default
+// expectations for FindByID and Update, so tests that don't care about job
+// persistence don't need to wire these up explicitly.
+func newTestMockJobRepo() *MockIndexingJobRepository {
+	m := &MockIndexingJobRepository{}
+	m.On("FindByID", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
+	m.On("Update", mock.Anything, mock.Anything).Return(nil).Maybe()
+	return m
+}
+
 // MockIndexingJobRepository mocks the indexing job repository interface.
 type MockIndexingJobRepository struct {
 	mock.Mock
@@ -755,7 +765,8 @@ const (
 type JobProcessorTestSuite struct {
 	suite.Suite
 
-	processor *DefaultJobProcessor
+	processor       *DefaultJobProcessor
+	mockIndexingJob *MockIndexingJobRepository
 }
 
 // SetupTest sets up the test suite.
@@ -771,10 +782,16 @@ func (suite *JobProcessorTestSuite) SetupTest() {
 		RetryBackoff:      5 * time.Second,
 	}
 
+	suite.mockIndexingJob = &MockIndexingJobRepository{}
+	// Allow FindByID and Update to be called by persistJobStart/persistJobComplete/persistJobFail
+	// without a specific expectation in each test — returning nil means persistence is a no-op.
+	suite.mockIndexingJob.On("FindByID", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
+	suite.mockIndexingJob.On("Update", mock.Anything, mock.Anything).Return(nil).Maybe()
+
 	// Use the constructor to ensure proper initialization including semaphore
 	jobProcessor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		suite.mockIndexingJob,
 		&MockRepositoryRepository{},
 		&MockEnhancedGitClient{},
 		&MockCodeParser{},
@@ -934,7 +951,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_ConcurrentJobs_ExceedsLimit()
 	// Use constructor to ensure proper initialization
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		&MockRepositoryRepository{},
 		&MockEnhancedGitClient{},
 		&MockCodeParser{},
@@ -996,7 +1013,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_JobTimeout_Enforcement() {
 	// Use constructor to ensure proper initialization
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		&MockRepositoryRepository{},
 		&MockEnhancedGitClient{},
 		&MockCodeParser{},
@@ -1070,7 +1087,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_MemoryLimit_Enforcement() {
 
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		&MockRepositoryRepository{},
 		&MockEnhancedGitClient{},
 		&MockCodeParser{},
@@ -1161,7 +1178,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_EnhancedGitClient_Integration
 
 	processor := NewDefaultJobProcessor(
 		suite.processor.config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		&MockRepositoryRepository{},
 		mockGitClient,
 		&MockCodeParser{},
@@ -1232,7 +1249,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_EmbeddingService_Integration(
 
 	processor := NewDefaultJobProcessor(
 		suite.processor.config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		&MockRepositoryRepository{},
 		&MockEnhancedGitClient{},
 		&MockCodeParser{},
@@ -1264,7 +1281,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_IntegrationFailure_ErrorPropa
 
 	processor := NewDefaultJobProcessor(
 		suite.processor.config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		&MockRepositoryRepository{},
 		mockGitClient,
 		&MockCodeParser{},
@@ -1439,7 +1456,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_RetryLogic_WithBackoff() {
 
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		&MockRepositoryRepository{},
 		&MockEnhancedGitClient{},
 		&MockCodeParser{},
@@ -1502,7 +1519,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_ErrorPropagation_WithStructur
 
 // TestProcessJob_IndexingJobRepo_PersistenceOperations tests persistence operations.
 func (suite *JobProcessorTestSuite) TestProcessJob_IndexingJobRepo_PersistenceOperations() {
-	mockIndexingJobRepo := &MockIndexingJobRepository{}
+	mockIndexingJobRepo := newTestMockJobRepo()
 	mockIndexingJobRepo.On("Save", mock.Anything, mock.Anything).Return(nil)
 	mockIndexingJobRepo.On("FindByID", mock.Anything, mock.Anything).Return(&entity.IndexingJob{}, nil)
 	mockIndexingJobRepo.On("Update", mock.Anything, mock.Anything).Return(nil)
@@ -1544,7 +1561,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_RepositoryRepo_MetadataUpdate
 
 	processor := NewDefaultJobProcessor(
 		suite.processor.config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		mockRepositoryRepo,
 		&MockEnhancedGitClient{},
 		&MockCodeParser{},
@@ -1582,7 +1599,7 @@ func (suite *JobProcessorTestSuite) TestProcessJob_TransactionHandling_MultiStep
 
 // TestProcessJob_DatabaseFailure_Handling tests database failure handling.
 func (suite *JobProcessorTestSuite) TestProcessJob_DatabaseFailure_Handling() {
-	mockIndexingJobRepo := &MockIndexingJobRepository{}
+	mockIndexingJobRepo := newTestMockJobRepo()
 	mockIndexingJobRepo.On("Save", mock.Anything, mock.Anything).Return(errors.New("database error"))
 
 	processor := NewDefaultJobProcessor(
@@ -1632,7 +1649,7 @@ func (suite *JobProcessorTestSuite) TestJobProcessor_WorkspaceDir_Management() {
 
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		&MockRepositoryRepository{},
 		&MockEnhancedGitClient{},
 		&MockCodeParser{},
@@ -1662,7 +1679,7 @@ func (suite *JobProcessorTestSuite) TestJobProcessor_ResourceLimits_Enforcement(
 	// Use constructor to ensure proper initialization
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		&MockRepositoryRepository{},
 		&MockEnhancedGitClient{},
 		&MockCodeParser{},
@@ -1811,7 +1828,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInFailedSta
 
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		mockRepoRepo,
 		mockGitClient,
 		mockCodeParser,
@@ -1885,7 +1902,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInCompleted
 
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		mockRepoRepo,
 		&MockEnhancedGitClient{},
 		&MockCodeParser{},
@@ -1963,7 +1980,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInArchivedS
 
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		mockRepoRepo,
 		&MockEnhancedGitClient{},
 		&MockCodeParser{},
@@ -2060,7 +2077,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInCloningSt
 
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		mockRepoRepo,
 		mockGitClient,
 		mockCodeParser,
@@ -2143,7 +2160,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInProcessin
 
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		mockRepoRepo,
 		mockGitClient,
 		mockCodeParser,
@@ -2219,7 +2236,7 @@ func (suite *JobProcessorTestSuite) TestTransitionToCloning_AlreadyFailed_DoesNo
 
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		mockRepoRepo,
 		&MockEnhancedGitClient{},
 		&MockCodeParser{},
@@ -2329,7 +2346,7 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_IdempotentRedelivery_
 
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		newTestMockJobRepo(),
 		mockRepoRepo,
 		mockGitClient,
 		mockCodeParser,
@@ -2423,9 +2440,13 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryNotFound_Re
 		RetryBackoff:      5 * time.Second,
 	}
 
+	mockJobRepo := &MockIndexingJobRepository{}
+	mockJobRepo.On("FindByID", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
+	mockJobRepo.On("Update", mock.Anything, mock.Anything).Return(nil).Maybe()
+
 	processor := NewDefaultJobProcessor(
 		config,
-		&MockIndexingJobRepository{},
+		mockJobRepo,
 		mockRepoRepo,
 		mockGitClient,
 		mockCodeParser,
@@ -2480,4 +2501,71 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryNotFound_Re
 
 	// Verify repository was not updated (no state transitions on non-existent repository)
 	mockRepoRepo.AssertNotCalled(suite.T(), "Update", mock.Anything, mock.Anything)
+}
+
+// TestProcessJob_SkippedJob_CompletesIndexingJob verifies that when executeJobPipeline returns
+// (nil, nil) — meaning the repository was already completed/archived and processing was skipped —
+// the indexing job is persisted as completed (not left stuck in "running" state).
+func (suite *JobProcessorTestSuite) TestProcessJob_SkippedJob_CompletesIndexingJob() {
+	repoID := uuid.New()
+	jobID := uuid.New()
+	repoURL, err := valueobject.NewRepositoryURL("https://github.com/example/completed-repo.git")
+	suite.Require().NoError(err)
+
+	// Repository already completed — executeJobPipeline will return (nil, nil)
+	completedRepo := entity.NewRepository(repoURL, "completed-repo", nil, nil)
+	err = completedRepo.UpdateStatus(valueobject.RepositoryStatusCloning)
+	suite.Require().NoError(err)
+	err = completedRepo.UpdateStatus(valueobject.RepositoryStatusProcessing)
+	suite.Require().NoError(err)
+	err = completedRepo.MarkIndexingCompleted("abc123", 10, 50)
+	suite.Require().NoError(err)
+
+	// Indexing job starts as pending so it can be transitioned to running then completed.
+	indexingJob := entity.NewIndexingJob(repoID)
+
+	mockRepoRepo := &MockRepositoryRepository{}
+	mockRepoRepo.On("FindByID", mock.Anything, repoID).Return(completedRepo, nil)
+
+	mockJobRepo := &MockIndexingJobRepository{}
+	mockJobRepo.On("FindByID", mock.Anything, jobID).Return(indexingJob, nil)
+	mockJobRepo.On("Update", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
+
+	config := JobProcessorConfig{
+		WorkspaceDir:      "/tmp/workspace-skip-test",
+		MaxConcurrentJobs: 5,
+		JobTimeout:        5 * time.Minute,
+		MaxMemoryMB:       0,
+		MaxDiskUsageMB:    0,
+		CleanupInterval:   1 * time.Hour,
+		RetryAttempts:     3,
+		RetryBackoff:      5 * time.Second,
+	}
+
+	processor := NewDefaultJobProcessor(
+		config,
+		mockJobRepo,
+		mockRepoRepo,
+		&MockEnhancedGitClient{},
+		&MockCodeParser{},
+		&MockEmbeddingService{},
+		&MockChunkStorageRepository{},
+		nil,
+	).(*DefaultJobProcessor)
+
+	message := messaging.EnhancedIndexingJobMessage{
+		IndexingJobID: jobID,
+		MessageID:     "skip-test",
+		RepositoryID:  repoID,
+		RepositoryURL: "https://github.com/example/completed-repo.git",
+	}
+
+	ctx := context.Background()
+	err = processor.ProcessJob(ctx, message)
+
+	suite.Require().NoError(err, "skipped job should not return an error")
+
+	// The indexing job must have been updated (transitioned to completed via persistJobSkip)
+	mockJobRepo.AssertCalled(suite.T(), "Update", mock.Anything, mock.AnythingOfType("*entity.IndexingJob"))
+	suite.Equal(valueobject.JobStatusCompleted, indexingJob.Status())
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -118,7 +119,11 @@ func (p *GitLabProvider) listGroupProjects(
 		if nextPage == "" {
 			break
 		}
-		page++
+		if n, err := strconv.Atoi(nextPage); err == nil {
+			page = n
+		} else {
+			break
+		}
 	}
 
 	return result, nil

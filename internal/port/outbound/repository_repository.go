@@ -78,6 +78,7 @@ type RepositoryFilters struct {
 
 // IndexingJobFilters represents filters for indexing job queries.
 type IndexingJobFilters struct {
+	Status *valueobject.JobStatus
 	Limit  int
 	Offset int
 }

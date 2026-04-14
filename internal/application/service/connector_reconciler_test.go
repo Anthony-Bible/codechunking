@@ -294,6 +294,85 @@ func TestConnectorReconciler_AlreadyInactive_NotInConfig_NoUpdate(t *testing.T) 
 	assert.Equal(t, 0, repo.updateCalled, "already-inactive connector should not be updated")
 }
 
+func restoreConnectorSyncing(name string, repositoryCount int) *entity.Connector {
+	now := time.Now()
+	c := entity.RestoreConnector(
+		uuid.New(), name, valueobject.ConnectorTypeGitLab,
+		"https://gitlab.com", nil,
+		valueobject.ConnectorStatusSyncing, repositoryCount, nil,
+		now, now,
+		[]string{"my-group"}, []string{},
+	)
+	return c
+}
+
+// Case 10: connector stuck in syncing status that IS in config → recovered to active.
+func TestReconciler_RecoversSyncingConnector(t *testing.T) {
+	initReconcilerLogger(t)
+	repo := &memConnectorRepo{}
+	stuck := restoreConnectorSyncing("my-gitlab", 42)
+	repo.connectors = []*entity.Connector{stuck}
+
+	r := appservice.NewConnectorReconciler(repo)
+	err := r.Reconcile(context.Background(), []config.ConnectorConfig{gitlabCfg("my-gitlab")})
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, repo.updateCalled, "stuck syncing connector should trigger an update")
+
+	c := repo.connectorByName("my-gitlab")
+	require.NotNil(t, c)
+	assert.Equal(t, valueobject.ConnectorStatusActive, c.Status(),
+		"syncing connector present in config should be recovered to active")
+}
+
+// Case 10b: recovery path must NOT modify lastSyncAt (no sync actually completed).
+func TestReconciler_RecoversSyncingConnector_DoesNotModifyLastSyncAt(t *testing.T) {
+	initReconcilerLogger(t)
+	repo := &memConnectorRepo{}
+
+	// Record a known lastSyncAt before the connector got stuck.
+	pastSync := time.Now().Add(-2 * time.Hour)
+	stuck := entity.RestoreConnector(
+		uuid.New(), "my-gitlab", valueobject.ConnectorTypeGitLab,
+		"https://gitlab.com", nil,
+		valueobject.ConnectorStatusSyncing, 42, &pastSync,
+		time.Now(), time.Now(),
+		[]string{"my-group"}, []string{},
+	)
+	repo.connectors = []*entity.Connector{stuck}
+
+	r := appservice.NewConnectorReconciler(repo)
+	err := r.Reconcile(context.Background(), []config.ConnectorConfig{gitlabCfg("my-gitlab")})
+
+	require.NoError(t, err)
+	c := repo.connectorByName("my-gitlab")
+	require.NotNil(t, c)
+	assert.Equal(t, valueobject.ConnectorStatusActive, c.Status())
+	require.NotNil(t, c.LastSyncAt(), "lastSyncAt should still be set")
+	assert.Equal(t, pastSync.UTC(), c.LastSyncAt().UTC(),
+		"recovery must not falsify lastSyncAt — no sync actually completed")
+}
+
+// Case 11: connector stuck in syncing status that is NOT in config → marked inactive.
+func TestReconciler_RecoversSyncingConnector_NotInConfig(t *testing.T) {
+	initReconcilerLogger(t)
+	repo := &memConnectorRepo{}
+	stuck := restoreConnectorSyncing("orphaned-gitlab", 7)
+	repo.connectors = []*entity.Connector{stuck}
+
+	r := appservice.NewConnectorReconciler(repo)
+	// Reconcile with empty config → orphaned syncing connector should be deactivated.
+	err := r.Reconcile(context.Background(), nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, repo.updateCalled, "stuck syncing connector not in config should trigger an update")
+
+	c := repo.connectorByName("orphaned-gitlab")
+	require.NotNil(t, c)
+	assert.Equal(t, valueobject.ConnectorStatusInactive, c.Status(),
+		"syncing connector absent from config should be marked inactive")
+}
+
 // Case 9: invalid type in config → logged and skipped, rest still reconciles.
 func TestConnectorReconciler_InvalidTypeInConfig_SkipsAndContinues(t *testing.T) {
 	initReconcilerLogger(t)

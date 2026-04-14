@@ -129,11 +129,6 @@ func (n *NATSMessagePublisher) validateRepositoryURL(repositoryURL string) error
 		return errors.New("unsupported URL scheme")
 	}
 
-	// Ensure it ends with .git for git operations
-	if !strings.HasSuffix(repositoryURL, ".git") {
-		return errors.New("repository URL must end with .git")
-	}
-
 	return nil
 }
 

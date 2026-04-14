@@ -1,6 +1,7 @@
 package valueobject
 
 import (
+	"codechunking/internal/application/common/security"
 	"strings"
 	"testing"
 
@@ -261,15 +262,103 @@ func TestRepositoryURL_Methods(t *testing.T) {
 }
 
 func TestRepositoryURL_Equal(t *testing.T) {
-	url1, _ := NewRepositoryURL("https://github.com/golang/go")
-	url2, _ := NewRepositoryURL("https://github.com/golang/go")
-	url3, _ := NewRepositoryURL("https://github.com/golang/tools")
-
-	if !url1.Equal(url2) {
-		t.Errorf("Equal URLs should be equal")
+	tests := []struct {
+		name      string
+		a         string
+		b         string
+		wantEqual bool
+	}{
+		{
+			name:      "identical URLs are equal",
+			a:         "https://github.com/golang/go",
+			b:         "https://github.com/golang/go",
+			wantEqual: true,
+		},
+		{
+			name:      "different repo names are not equal",
+			a:         "https://github.com/golang/go",
+			b:         "https://github.com/golang/tools",
+			wantEqual: false,
+		},
 	}
 
-	if url1.Equal(url3) {
-		t.Errorf("Different URLs should not be equal")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a, err := NewRepositoryURL(tt.a)
+			require.NoError(t, err)
+			b, err := NewRepositoryURL(tt.b)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantEqual, a.Equal(b))
+		})
+	}
+}
+
+func TestNewRepositoryURLWithConfig_AdditionalAllowedHosts(t *testing.T) {
+	tests := []struct {
+		name          string
+		allowedHosts  []string
+		input         string
+		useDefaultCfg bool // when true, call NewRepositoryURL (no extra hosts)
+		wantError     bool
+		wantURL       string
+	}{
+		{
+			name:         "self-hosted host passes when listed in AdditionalAllowedHosts",
+			allowedHosts: []string{"gitlab.mycompany.com"},
+			input:        "https://gitlab.mycompany.com/org/repo",
+			wantError:    false,
+		},
+		{
+			name:          "same self-hosted host fails without config",
+			useDefaultCfg: true,
+			input:         "https://gitlab.mycompany.com/org/repo",
+			wantError:     true,
+		},
+		{
+			name:         "allowlist matching is case-insensitive",
+			allowedHosts: []string{"GitLab.MyCompany.COM"},
+			input:        "https://gitlab.mycompany.com/org/repo",
+			wantError:    false,
+		},
+		{
+			name:         "normalization strips .git suffix for additional host",
+			allowedHosts: []string{"gitlab.mycompany.com"},
+			input:        "https://gitlab.mycompany.com/org/repo.git",
+			wantError:    false,
+			wantURL:      "https://gitlab.mycompany.com/org/repo",
+		},
+		{
+			name:         "host not in allowlist is rejected even with config",
+			allowedHosts: []string{"gitlab.mycompany.com"},
+			input:        "https://other.example.com/org/repo",
+			wantError:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var (
+				url RepositoryURL
+				err error
+			)
+			if tt.useDefaultCfg {
+				url, err = NewRepositoryURL(tt.input)
+			} else {
+				cfg := security.TestConfig()
+				cfg.AdditionalAllowedHosts = tt.allowedHosts
+				url, err = NewRepositoryURLWithConfig(tt.input, cfg)
+			}
+
+			if tt.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			if tt.wantURL != "" {
+				assert.Equal(t, tt.wantURL, url.String())
+			} else {
+				assert.NotEmpty(t, url.String())
+			}
+		})
 	}
 }

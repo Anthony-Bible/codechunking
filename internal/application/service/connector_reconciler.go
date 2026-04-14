@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 )
 
 // reconcilerFetchLimit is a high limit used to load all connectors from the DB in a single pass.
@@ -34,24 +35,20 @@ func (r *ConnectorReconciler) Reconcile(ctx context.Context, cfgConnectors []con
 		return fmt.Errorf("loading connectors from db: %w", err)
 	}
 
-	// Build name → entity map from DB.
 	dbByName := make(map[string]*entity.Connector, len(dbConnectors))
 	for _, c := range dbConnectors {
 		dbByName[c.Name()] = c
 	}
 
-	// Build config name set for removal detection.
 	configNames := make(map[string]bool, len(cfgConnectors))
 	for _, cfg := range cfgConnectors {
 		configNames[cfg.Name] = true
 	}
 
-	// Upsert pass: create or update each config connector.
 	for _, cfg := range cfgConnectors {
 		r.upsertConnector(ctx, cfg, dbByName)
 	}
 
-	// Deactivation pass: mark DB connectors absent from config as inactive.
 	for name, connector := range dbByName {
 		if configNames[name] {
 			continue
@@ -110,7 +107,7 @@ func (r *ConnectorReconciler) upsertConnector(
 		return
 	}
 
-	r.updateConnectorIfChanged(ctx, existing, cfg.BaseURL, authTokenPtr, authToken, groups, projects)
+	r.updateConnectorIfChanged(ctx, existing, cfg.BaseURL, authTokenPtr, groups, projects)
 }
 
 // createConnector creates and persists a new connector entity.
@@ -146,10 +143,21 @@ func (r *ConnectorReconciler) updateConnectorIfChanged(
 	existing *entity.Connector,
 	baseURL string,
 	authTokenPtr *string,
-	authTokenPlain string,
 	groups, projects []string,
 ) {
 	changed := false
+
+	if existing.Status() == valueobject.ConnectorStatusSyncing {
+		if err := existing.Activate(); err != nil {
+			slogger.Error(ctx, "connector reconciler: failed to recover stuck syncing connector", slogger.Fields{
+				"name":  existing.Name(),
+				"error": err.Error(),
+			})
+		} else {
+			changed = true
+			slogger.Warn(ctx, "connector reconciler: recovered connector stuck in syncing state after restart", slogger.Fields{"name": existing.Name()})
+		}
+	}
 
 	if existing.Status() == valueobject.ConnectorStatusInactive {
 		if err := existing.Activate(); err != nil {
@@ -168,21 +176,25 @@ func (r *ConnectorReconciler) updateConnectorIfChanged(
 		changed = true
 	}
 
+	newToken := ""
+	if authTokenPtr != nil {
+		newToken = *authTokenPtr
+	}
 	existingToken := ""
 	if existing.AuthToken() != nil {
 		existingToken = *existing.AuthToken()
 	}
-	if existingToken != authTokenPlain {
+	if existingToken != newToken {
 		existing.SetAuthToken(authTokenPtr)
 		changed = true
 	}
 
-	if !stringSlicesEqual(existing.Groups(), groups) {
+	if !slices.Equal(existing.Groups(), groups) {
 		existing.SetGroups(groups)
 		changed = true
 	}
 
-	if !stringSlicesEqual(existing.Projects(), projects) {
+	if !slices.Equal(existing.Projects(), projects) {
 		existing.SetProjects(projects)
 		changed = true
 	}
@@ -199,17 +211,4 @@ func (r *ConnectorReconciler) updateConnectorIfChanged(
 		return
 	}
 	slogger.Info(ctx, "connector reconciler: connector updated from config", slogger.Fields{"name": existing.Name()})
-}
-
-// stringSlicesEqual reports whether two string slices are equal element-by-element.
-func stringSlicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

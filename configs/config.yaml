@@ -20,6 +20,16 @@ database:
   max_connections: 25
   max_idle_connections: 5
 
+# Connectors are managed declaratively here; keep defaults commented to avoid
+# unintentionally reconciling organization-specific integrations on startup.
+# connectors:
+#   - name: "my-gitlab"
+#     type: gitlab
+#     base_url: https://gitlab.example.com
+#     auth_token: "${GITLAB_TOKEN}"
+#     groups:
+#       - my-group
+
 nats:
   url: nats://localhost:4222
   max_reconnects: 5

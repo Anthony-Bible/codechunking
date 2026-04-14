@@ -8,6 +8,7 @@ import (
 	"codechunking/internal/adapter/inbound/api"
 	"codechunking/internal/adapter/inbound/service"
 	"codechunking/internal/adapter/outbound/gemini"
+	"codechunking/internal/adapter/outbound/gitprovider"
 	"codechunking/internal/adapter/outbound/messaging"
 	"codechunking/internal/adapter/outbound/mock"
 	"codechunking/internal/adapter/outbound/repository"
@@ -20,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -232,7 +234,11 @@ func (sf *ServiceFactory) CreateConnectorService() inbound.ConnectorService {
 		os.Exit(1)
 	}
 	connectorRepo := repository.NewPostgreSQLConnectorRepository(dbPool)
-	return service.NewConnectorServiceAdapter(connectorRepo)
+	repositoryRepo := repository.NewPostgreSQLRepositoryRepository(dbPool)
+	indexingJobRepo := repository.NewPostgreSQLIndexingJobRepository(dbPool)
+	messagePublisher := sf.createMessagePublisher()
+	gitProvider := gitprovider.NewGitLabProvider(&http.Client{Timeout: 30 * time.Second})
+	return service.NewConnectorServiceAdapter(connectorRepo, gitProvider, repositoryRepo, indexingJobRepo, messagePublisher)
 }
 
 // ReconcileConnectors runs config-driven connector reconciliation at startup.
@@ -591,9 +597,7 @@ func runAPIServer(_ *cobra.Command, _ []string) {
 	// Create service factory
 	serviceFactory := NewServiceFactory(cfg)
 
-	// Reconcile connectors from config before serving traffic.
-	reconcileCtx := context.Background()
-	serviceFactory.ReconcileConnectors(reconcileCtx)
+	serviceFactory.ReconcileConnectors(context.Background())
 
 	// Create server using the factory
 	server, err := serviceFactory.CreateServer()

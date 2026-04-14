@@ -20,11 +20,17 @@ type ConnectorServiceAdapter struct {
 }
 
 // NewConnectorServiceAdapter creates a new ConnectorServiceAdapter.
-func NewConnectorServiceAdapter(connectorRepo outbound.ConnectorRepository) inbound.ConnectorService {
+func NewConnectorServiceAdapter(
+	connectorRepo outbound.ConnectorRepository,
+	gitProvider outbound.GitProvider,
+	repositoryRepo outbound.RepositoryRepository,
+	indexingJobRepo outbound.IndexingJobRepository,
+	messagePublisher outbound.MessagePublisher,
+) inbound.ConnectorService {
 	return &ConnectorServiceAdapter{
 		getSvc:  appservice.NewGetConnectorService(connectorRepo),
 		listSvc: appservice.NewListConnectorsService(connectorRepo),
-		syncSvc: appservice.NewSyncConnectorService(connectorRepo),
+		syncSvc: appservice.NewSyncConnectorService(connectorRepo, gitProvider, repositoryRepo, indexingJobRepo, messagePublisher),
 	}
 }
 

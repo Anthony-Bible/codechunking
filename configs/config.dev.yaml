@@ -7,6 +7,16 @@ log:
   level: debug
   format: text
 
+# Connectors are intentionally disabled by default in dev config to avoid
+# accidental reconciliation in shared dev/test environments or when this repo
+# is used as a template. Uncomment and customize locally if needed.
+# connectors:
+#   - name: "my-gitlab"
+#     type: gitlab
+#     base_url: https://gitlab.example.com
+#     auth_token: "${GITLAB_TOKEN}"
+#     groups:
+#       - my-group
 # Gemini API key should be set via environment variable:
 # export CODECHUNK_GEMINI_API_KEY=your-api-key
 

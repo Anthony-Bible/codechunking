@@ -26,6 +26,10 @@ type Config struct {
 	// URL validation settings
 	MaxURLLength int
 
+	// AdditionalAllowedHosts extends the default supported host allowlist with extra
+	// hostnames (e.g. self-hosted GitLab instances discovered via a connector).
+	AdditionalAllowedHosts []string
+
 	// Request body settings
 	MaxBodySize int64
 

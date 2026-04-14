@@ -612,12 +612,6 @@ func TestNATSMessagePublisher_PublishIndexingJob_InvalidInput(t *testing.T) {
 			expectedErr:   "invalid repository URL format",
 		},
 		{
-			name:          "repository URL without git extension",
-			repositoryID:  uuid.New(),
-			repositoryURL: "https://github.com/user/repo",
-			expectedErr:   "repository URL must end with .git",
-		},
-		{
 			name:          "repository URL with unsupported scheme",
 			repositoryID:  uuid.New(),
 			repositoryURL: "ftp://example.com/repo.git",

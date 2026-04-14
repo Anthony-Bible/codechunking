@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -171,7 +173,7 @@ func TestListGroupProjects_ThreePages(t *testing.T) {
 		callCount++
 		w.Header().Set("Content-Type", "application/json")
 		if idx < len(pages)-1 {
-			w.Header().Set("X-Next-Page", "next")
+			w.Header().Set("X-Next-Page", strconv.Itoa(idx+2))
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(encodeJSON(t, pages[idx]))
@@ -541,7 +543,7 @@ func TestListGroupProjects_MultipleGroupsAggregated(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		if contains(r.URL.Path, "group-a") {
+		if strings.Contains(r.URL.Path, "group-a") {
 			_, _ = w.Write(encodeJSON(t, groupResponses["group-a"]))
 		} else {
 			_, _ = w.Write(encodeJSON(t, groupResponses["group-b"]))
@@ -563,18 +565,4 @@ func TestListGroupProjects_MultipleGroupsAggregated(t *testing.T) {
 	}
 	assert.Contains(t, names, "a1")
 	assert.Contains(t, names, "b1")
-}
-
-// contains is a simple substring check used as a routing aid in test handlers.
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && stringContains(s, substr))
-}
-
-func stringContains(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

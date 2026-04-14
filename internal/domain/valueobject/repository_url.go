@@ -43,6 +43,12 @@ func newURLValidator() *URLValidator {
 	}
 }
 
+// RestoreRepositoryURL reconstructs a RepositoryURL from already-persisted raw and normalized
+// forms without re-running validation. Use this only when reading from a trusted store (e.g. DB).
+func RestoreRepositoryURL(raw, normalized string) RepositoryURL {
+	return RepositoryURL{raw: raw, normalized: normalized}
+}
+
 // NewRepositoryURL creates a new RepositoryURL after comprehensive validation.
 // Performs normalization once during creation and caches both raw and normalized forms,
 // eliminating redundant normalization operations in subsequent method calls.
@@ -97,8 +103,13 @@ func (uv *URLValidator) validateAndCreate(rawURL string) (RepositoryURL, error) 
 		return RepositoryURL{}, validateErr
 	}
 
-	// Use comprehensive normalization
-	normalizedURL, err := normalization.NormalizeRepositoryURL(rawURL)
+	// Use comprehensive normalization, forwarding any additional allowed hosts from the config.
+	var normalizedURL string
+	if uv.config != nil && len(uv.config.AdditionalAllowedHosts) > 0 {
+		normalizedURL, err = normalization.NormalizeRepositoryURLWithExtraHosts(rawURL, uv.config.AdditionalAllowedHosts)
+	} else {
+		normalizedURL, err = normalization.NormalizeRepositoryURL(rawURL)
+	}
 	if err != nil {
 		return RepositoryURL{}, err
 	}
@@ -254,7 +265,16 @@ func (uv *URLValidator) validateURLStructure(rawURL string, parsedURL *url.URL) 
 
 	// Extract hostname without port and normalize to lowercase for supported host check
 	hostname := strings.ToLower(parsedURL.Hostname())
-	if !security.GetSupportedHosts()[hostname] {
+	allowed := security.GetSupportedHosts()[hostname]
+	if !allowed && uv.config != nil {
+		for _, h := range uv.config.AdditionalAllowedHosts {
+			if strings.ToLower(h) == hostname {
+				allowed = true
+				break
+			}
+		}
+	}
+	if !allowed {
 		return fmt.Errorf(
 			"invalid repository URL: unsupported host %s: %w",
 			hostname,

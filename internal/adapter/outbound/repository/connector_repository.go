@@ -33,13 +33,9 @@ func (r *PostgreSQLConnectorRepository) Save(ctx context.Context, connector *ent
 		return ErrInvalidArgument
 	}
 
-	groupsJSON, err := json.Marshal(connector.Groups())
+	groupsJSON, projectsJSON, err := marshalConnectorSlices(connector)
 	if err != nil {
-		return fmt.Errorf("marshal connector groups: %w", err)
-	}
-	projectsJSON, err := json.Marshal(connector.Projects())
-	if err != nil {
-		return fmt.Errorf("marshal connector projects: %w", err)
+		return err
 	}
 
 	query := `
@@ -186,13 +182,9 @@ func (r *PostgreSQLConnectorRepository) Update(ctx context.Context, connector *e
 		return ErrInvalidArgument
 	}
 
-	groupsJSON, err := json.Marshal(connector.Groups())
+	groupsJSON, projectsJSON, err := marshalConnectorSlices(connector)
 	if err != nil {
-		return fmt.Errorf("marshal connector groups: %w", err)
-	}
-	projectsJSON, err := json.Marshal(connector.Projects())
-	if err != nil {
-		return fmt.Errorf("marshal connector projects: %w", err)
+		return err
 	}
 
 	query := `
@@ -260,6 +252,19 @@ func (r *PostgreSQLConnectorRepository) Exists(ctx context.Context, name string)
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+
+// marshalConnectorSlices marshals a connector's groups and projects to JSON for DB storage.
+func marshalConnectorSlices(connector *entity.Connector) ([]byte, []byte, error) {
+	g, err := json.Marshal(connector.Groups())
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal connector groups: %w", err)
+	}
+	p, err := json.Marshal(connector.Projects())
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal connector projects: %w", err)
+	}
+	return g, p, nil
+}
 
 // rowScanner is satisfied by both pgx.Row and pgx.Rows so that scanConnector
 // can be used in both FindByID/FindByName (single row) and FindAll (multi row).

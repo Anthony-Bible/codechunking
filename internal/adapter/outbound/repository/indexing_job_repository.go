@@ -134,14 +134,17 @@ func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(
 	baseQuery := `FROM codechunking.indexing_jobs WHERE repository_id = $1 AND deleted_at IS NULL`
 	args = append(args, repositoryID)
 
-	// Build where clause (currently no additional filters, but structure is ready)
+	if filters.Status != nil {
+		n := len(args) + 1
+		whereConditions = append(whereConditions, fmt.Sprintf("status = $%d", n))
+		args = append(args, filters.Status.String())
+	}
+
+	// Build where clause
 	whereClause := ""
 	if len(whereConditions) > 0 {
 		whereClause = " AND " + strings.Join(whereConditions, " AND ")
 	}
-
-	// Set up pagination parameters
-	orderBy := "ORDER BY created_at DESC"
 
 	limit := 50 // default
 	if filters.Limit > 0 {
@@ -153,25 +156,38 @@ func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(
 		offset = filters.Offset
 	}
 
-	// Execute count and data queries using shared helper
 	qi := GetQueryInterface(ctx, r.pool)
-	selectColumns := `SELECT id, repository_id, status, started_at, completed_at, 
-				  error_message, files_processed, chunks_created, 
+	selectColumns := `SELECT id, repository_id, status, started_at, completed_at,
+				  error_message, files_processed, chunks_created,
 				  created_at, updated_at, deleted_at`
 
 	totalCount, rows, err := executeCountAndDataQuery(
-		ctx, qi, baseQuery, selectColumns, whereClause, orderBy, args, limit, offset,
+		ctx, qi, baseQuery, selectColumns, whereClause, "ORDER BY created_at DESC", args, limit, offset,
 	)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// If offset is beyond total count or no rows, return empty results
 	if rows == nil {
 		return []*entity.IndexingJob{}, totalCount, nil
 	}
 	defer rows.Close()
 
+	jobs, err := r.scanJobRows(rows)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return jobs, totalCount, nil
+}
+
+// scanJobRows iterates database rows and scans each into an IndexingJob entity.
+func (r *PostgreSQLIndexingJobRepository) scanJobRows(rows interface {
+	Next() bool
+	Scan(dest ...any) error
+	Err() error
+},
+) ([]*entity.IndexingJob, error) {
 	var jobs []*entity.IndexingJob
 	for rows.Next() {
 		var id, repoID uuid.UUID
@@ -181,40 +197,26 @@ func (r *PostgreSQLIndexingJobRepository) FindByRepositoryID(
 		var filesProcessed, chunksCreated int
 		var createdAt, updatedAt time.Time
 
-		scanErr := rows.Scan(
+		if err := rows.Scan(
 			&id, &repoID, &statusStr, &startedAt, &completedAt,
 			&errorMessage, &filesProcessed, &chunksCreated,
 			&createdAt, &updatedAt, &deletedAt,
-		)
-		if scanErr != nil {
-			return nil, 0, WrapError(scanErr, "scan indexing job row")
+		); err != nil {
+			return nil, WrapError(err, "scan indexing job row")
 		}
 
-		job, scanJobErr := r.scanIndexingJob(
-			id,
-			repoID,
-			statusStr,
-			startedAt,
-			completedAt,
-			errorMessage,
-			filesProcessed,
-			chunksCreated,
-			createdAt,
-			updatedAt,
-			deletedAt,
-		)
-		if scanJobErr != nil {
-			return nil, 0, scanJobErr
+		job, err := r.scanIndexingJob(id, repoID, statusStr, startedAt, completedAt,
+			errorMessage, filesProcessed, chunksCreated, createdAt, updatedAt, deletedAt)
+		if err != nil {
+			return nil, err
 		}
-
 		jobs = append(jobs, job)
 	}
 
-	if rowsErr := rows.Err(); rowsErr != nil {
-		return nil, 0, WrapError(rowsErr, "iterate indexing job rows")
+	if err := rows.Err(); err != nil {
+		return nil, WrapError(err, "iterate indexing job rows")
 	}
-
-	return jobs, totalCount, nil
+	return jobs, nil
 }
 
 // Update updates an indexing job in the database.

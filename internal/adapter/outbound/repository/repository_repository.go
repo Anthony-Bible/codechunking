@@ -96,23 +96,23 @@ func (r *PostgreSQLRepositoryRepository) FindByID(ctx context.Context, id uuid.U
 	}
 
 	query := `
-		SELECT id, url, name, description, default_branch, last_indexed_at, 
-			   last_commit_hash, total_files, total_chunks, status, 
+		SELECT id, url, normalized_url, name, description, default_branch, last_indexed_at,
+			   last_commit_hash, total_files, total_chunks, status,
 			   created_at, updated_at, deleted_at
-		FROM codechunking.repositories 
+		FROM codechunking.repositories
 		WHERE id = $1 AND deleted_at IS NULL`
 
 	qi := GetQueryInterface(ctx, r.pool)
 	row := qi.QueryRow(ctx, query, id)
 
-	var repoURL, name, statusStr string
+	var repoURL, normalizedURL, name, statusStr string
 	var description, defaultBranch, lastCommitHash *string
 	var lastIndexedAt, deletedAt *time.Time
 	var totalFiles, totalChunks int
 	var createdAt, updatedAt time.Time
 
 	err := row.Scan(
-		&id, &repoURL, &name, &description, &defaultBranch, &lastIndexedAt,
+		&id, &repoURL, &normalizedURL, &name, &description, &defaultBranch, &lastIndexedAt,
 		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
 		&createdAt, &updatedAt, &deletedAt,
 	)
@@ -126,6 +126,7 @@ func (r *PostgreSQLRepositoryRepository) FindByID(ctx context.Context, id uuid.U
 	return r.scanRepositoryFromTime(
 		id,
 		repoURL,
+		normalizedURL,
 		name,
 		description,
 		defaultBranch,
@@ -152,10 +153,10 @@ func (r *PostgreSQLRepositoryRepository) FindByURL(
 	url valueobject.RepositoryURL,
 ) (*entity.Repository, error) {
 	query := `
-		SELECT id, url, name, description, default_branch, last_indexed_at, 
-			   last_commit_hash, total_files, total_chunks, status, 
+		SELECT id, url, normalized_url, name, description, default_branch, last_indexed_at,
+			   last_commit_hash, total_files, total_chunks, status,
 			   created_at, updated_at, deleted_at
-		FROM codechunking.repositories 
+		FROM codechunking.repositories
 		WHERE url = $1 AND deleted_at IS NULL`
 
 	return r.queryRepositoryByRawURL(ctx, url, query)
@@ -316,7 +317,7 @@ func (r *PostgreSQLRepositoryRepository) executeQuery(
 	limit, offset := r.getPaginationParams(filters)
 
 	qi := GetQueryInterface(ctx, r.pool)
-	selectColumns := `SELECT id, url, name, description, default_branch, last_indexed_at,
+	selectColumns := `SELECT id, url, normalized_url, name, description, default_branch, last_indexed_at,
 				  last_commit_hash, total_files, total_chunks, status,
 				  created_at, updated_at, deleted_at`
 
@@ -364,14 +365,14 @@ func (r *PostgreSQLRepositoryRepository) scanRow(
 	rows pgx.Rows,
 ) (*entity.Repository, error) {
 	var id uuid.UUID
-	var repoURL, name, statusStr string
+	var repoURL, normalizedURL, name, statusStr string
 	var description, defaultBranch, lastCommitHash *string
 	var lastIndexedAt, deletedAt *time.Time
 	var totalFiles, totalChunks int
 	var createdAt, updatedAt time.Time
 
 	if err := rows.Scan(
-		&id, &repoURL, &name, &description, &defaultBranch, &lastIndexedAt,
+		&id, &repoURL, &normalizedURL, &name, &description, &defaultBranch, &lastIndexedAt,
 		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
 		&createdAt, &updatedAt, &deletedAt,
 	); err != nil {
@@ -380,7 +381,7 @@ func (r *PostgreSQLRepositoryRepository) scanRow(
 	}
 
 	repo, err := r.scanRepositoryFromTime(
-		id, repoURL, name, description, defaultBranch, lastIndexedAt,
+		id, repoURL, normalizedURL, name, description, defaultBranch, lastIndexedAt,
 		lastCommitHash, totalFiles, totalChunks, statusStr, createdAt, updatedAt, deletedAt,
 	)
 	if err != nil {
@@ -500,10 +501,10 @@ func (r *PostgreSQLRepositoryRepository) FindByNormalizedURL(
 	url valueobject.RepositoryURL,
 ) (*entity.Repository, error) {
 	query := `
-		SELECT id, url, name, description, default_branch, last_indexed_at, 
-			   last_commit_hash, total_files, total_chunks, status, 
+		SELECT id, url, normalized_url, name, description, default_branch, last_indexed_at,
+			   last_commit_hash, total_files, total_chunks, status,
 			   created_at, updated_at, deleted_at
-		FROM codechunking.repositories 
+		FROM codechunking.repositories
 		WHERE normalized_url = $1 AND deleted_at IS NULL`
 
 	return r.queryRepositoryByNormalizedURL(ctx, url, query)
@@ -512,7 +513,7 @@ func (r *PostgreSQLRepositoryRepository) FindByNormalizedURL(
 // scanRepositoryFromTime is a helper function to convert database row to Repository entity when timestamps are already parsed.
 func (r *PostgreSQLRepositoryRepository) scanRepositoryFromTime(
 	id uuid.UUID,
-	urlStr, name string,
+	rawURL, normalizedURL, name string,
 	description, defaultBranch *string,
 	lastIndexedAt *time.Time,
 	lastCommitHash *string,
@@ -521,11 +522,8 @@ func (r *PostgreSQLRepositoryRepository) scanRepositoryFromTime(
 	createdAt, updatedAt time.Time,
 	deletedAt *time.Time,
 ) (*entity.Repository, error) {
-	// Parse URL
-	url, err := valueobject.NewRepositoryURL(urlStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid repository URL: %w", err)
-	}
+	// Reconstruct from trusted DB values — skip re-validation.
+	url := valueobject.RestoreRepositoryURL(rawURL, normalizedURL)
 
 	// Parse status
 	status, err := valueobject.NewRepositoryStatus(statusStr)
@@ -556,14 +554,14 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByRawURL(
 	row := qi.QueryRow(ctx, query, url.Raw())
 
 	var id uuid.UUID
-	var repoURL, name, statusStr string
+	var repoURL, normalizedURL, name, statusStr string
 	var description, defaultBranch, lastCommitHash *string
 	var lastIndexedAt, deletedAt *time.Time
 	var totalFiles, totalChunks int
 	var createdAt, updatedAt time.Time
 
 	err := row.Scan(
-		&id, &repoURL, &name, &description, &defaultBranch, &lastIndexedAt,
+		&id, &repoURL, &normalizedURL, &name, &description, &defaultBranch, &lastIndexedAt,
 		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
 		&createdAt, &updatedAt, &deletedAt,
 	)
@@ -575,7 +573,7 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByRawURL(
 	}
 
 	return r.scanRepositoryFromTime(
-		id, repoURL, name, description, defaultBranch,
+		id, repoURL, normalizedURL, name, description, defaultBranch,
 		lastIndexedAt, lastCommitHash, totalFiles, totalChunks,
 		statusStr, createdAt, updatedAt, deletedAt,
 	)
@@ -597,7 +595,7 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByNormalizedURL(
 	row := qi.QueryRow(ctx, query, url.Normalized())
 
 	var id uuid.UUID
-	var urlStr, name, statusStr string
+	var rawURL, normalizedURL, name, statusStr string
 	var description, defaultBranch, lastCommitHash *string
 	var totalFiles, totalChunks int
 	var lastIndexedAt *time.Time
@@ -605,7 +603,7 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByNormalizedURL(
 	var deletedAt *time.Time
 
 	err := row.Scan(
-		&id, &urlStr, &name, &description, &defaultBranch, &lastIndexedAt,
+		&id, &rawURL, &normalizedURL, &name, &description, &defaultBranch, &lastIndexedAt,
 		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
 		&createdAt, &updatedAt, &deletedAt,
 	)
@@ -617,7 +615,7 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByNormalizedURL(
 	}
 
 	return r.scanRepositoryFromTime(
-		id, urlStr, name, description, defaultBranch,
+		id, rawURL, normalizedURL, name, description, defaultBranch,
 		lastIndexedAt, lastCommitHash, totalFiles, totalChunks,
 		statusStr, createdAt, updatedAt, deletedAt,
 	)

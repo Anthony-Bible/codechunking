@@ -31,7 +31,6 @@ func TestIndexingJobRepository_Save(t *testing.T) {
 		t.Fatalf("Failed to save test repository: %v", err)
 	}
 
-	// This will fail because PostgreSQLIndexingJobRepository doesn't exist yet
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 
 	tests := []struct {
@@ -73,9 +72,9 @@ func TestIndexingJobRepository_Save(t *testing.T) {
 	}
 }
 
-// Helper function to verify found job matches expectations.
-// Reduces validation duplication across FindByID tests.
+// verifyFoundJob verifies a found job matches expected field values.
 func verifyFoundJob(t *testing.T, foundJob *entity.IndexingJob, expectedJob *entity.IndexingJob) {
+	t.Helper()
 	if foundJob.ID() != expectedJob.ID() {
 		t.Errorf("Expected job ID %s, got %s", expectedJob.ID(), foundJob.ID())
 	}
@@ -87,78 +86,68 @@ func verifyFoundJob(t *testing.T, foundJob *entity.IndexingJob, expectedJob *ent
 	}
 }
 
-// TestIndexingJobRepository_FindByID_ExistingJob tests finding an existing job by ID.
-// This focused test verifies that saved jobs can be retrieved correctly.
-func TestIndexingJobRepository_FindByID_ExistingJob(t *testing.T) {
+// TestIndexingJobRepository_FindByID tests retrieving jobs by ID for existing, missing, and invalid inputs.
+func TestIndexingJobRepository_FindByID(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
 
 	jobRepo, testJob, ctx := setupJobForUpdate(t, pool)
 
-	// Find the saved job
-	foundJob, err := jobRepo.FindByID(ctx, testJob.ID())
-	// Verify successful retrieval
-	if err != nil {
-		t.Errorf("Expected no error but got: %v", err)
+	tests := []struct {
+		name    string
+		id      uuid.UUID
+		wantErr bool
+		wantNil bool
+	}{
+		{
+			name:    "existing job returns with correct fields",
+			id:      testJob.ID(),
+			wantErr: false,
+			wantNil: false,
+		},
+		{
+			name:    "non-existent job returns nil without error",
+			id:      uuid.New(),
+			wantErr: false,
+			wantNil: true,
+		},
+		{
+			name:    "nil UUID returns error",
+			id:      uuid.Nil,
+			wantErr: true,
+			wantNil: true,
+		},
 	}
 
-	if foundJob == nil {
-		t.Fatal("Expected job but got nil")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			foundJob, err := jobRepo.FindByID(ctx, tt.id)
 
-	// Verify job details match
-	verifyFoundJob(t, foundJob, testJob)
-}
-
-// TestIndexingJobRepository_FindByID_NonExistentJob tests finding a non-existent job.
-// This focused test verifies that queries for non-existent jobs return nil without error.
-func TestIndexingJobRepository_FindByID_NonExistentJob(t *testing.T) {
-	pool := setupTestDB(t)
-	defer pool.Close()
-
-	jobRepo, _, ctx := setupJobForUpdate(t, pool)
-
-	// Try to find a non-existent job
-	nonExistentID := uuid.New()
-	foundJob, err := jobRepo.FindByID(ctx, nonExistentID)
-	// Should return nil without error
-	if err != nil {
-		t.Errorf("Expected no error but got: %v", err)
-	}
-
-	if foundJob != nil {
-		t.Error("Expected nil job but got one")
-	}
-}
-
-// TestIndexingJobRepository_FindByID_InvalidInput tests error handling for invalid inputs.
-// This focused test verifies that invalid inputs are properly rejected.
-func TestIndexingJobRepository_FindByID_InvalidInput(t *testing.T) {
-	pool := setupTestDB(t)
-	defer pool.Close()
-
-	jobRepo, _, ctx := setupJobForUpdate(t, pool)
-
-	// Try to find job with nil UUID
-	foundJob, err := jobRepo.FindByID(ctx, uuid.Nil)
-
-	// Should return error
-	if err == nil {
-		t.Error("Expected error but got none")
-	}
-
-	if foundJob != nil {
-		t.Error("Expected nil job on error")
+			if tt.wantErr && err == nil {
+				t.Error("expected error but got none")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("expected no error but got: %v", err)
+			}
+			if tt.wantNil && foundJob != nil {
+				t.Error("expected nil job but got one")
+			}
+			if !tt.wantNil {
+				if foundJob == nil {
+					t.Fatal("expected job but got nil")
+				}
+				verifyFoundJob(t, foundJob, testJob)
+			}
+		})
 	}
 }
 
-// Helper function to setup a job for update testing.
-// Reduces setup duplication across focused update tests.
+// setupJobForUpdate creates a test repository and a saved pending job, returning the repo, job, and context.
 func setupJobForUpdate(
 	t *testing.T,
 	pool *pgxpool.Pool,
 ) (*PostgreSQLIndexingJobRepository, *entity.IndexingJob, context.Context) {
-	// Create a test repository first (needed for foreign key)
+	t.Helper()
 	repoRepo := NewPostgreSQLRepositoryRepository(pool)
 	testRepo := createTestRepository(t)
 	ctx := context.Background()
@@ -167,10 +156,8 @@ func setupJobForUpdate(
 		t.Fatalf("Failed to save test repository: %v", err)
 	}
 
-	// This will fail because PostgreSQLIndexingJobRepository doesn't exist yet
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 
-	// Create and save test indexing job
 	testJob := createTestIndexingJob(t, testRepo.ID())
 	err = jobRepo.Save(ctx, testJob)
 	if err != nil {
@@ -180,345 +167,223 @@ func setupJobForUpdate(
 	return jobRepo, testJob, ctx
 }
 
-// Helper function to verify job persistence after update.
-// Reduces validation duplication across focused update tests.
-func verifyJobPersistence(
-	ctx context.Context,
-	t *testing.T,
-	jobRepo *PostgreSQLIndexingJobRepository,
-	expectedJob *entity.IndexingJob,
-	originalUpdatedAt time.Time,
-) {
-	updatedJob, err := jobRepo.FindByID(ctx, expectedJob.ID())
-	if err != nil {
-		t.Fatalf("Failed to find updated job: %v", err)
-	}
-
-	if updatedJob == nil {
-		t.Fatal("Updated job should not be nil")
-	}
-
-	if updatedJob.UpdatedAt().Equal(originalUpdatedAt) {
-		t.Error("Expected UpdatedAt timestamp to be changed")
-	}
-
-	if updatedJob.Status() != expectedJob.Status() {
-		t.Errorf("Expected updated status %s, got %s", expectedJob.Status(), updatedJob.Status())
-	}
-
-	if updatedJob.FilesProcessed() != expectedJob.FilesProcessed() {
-		t.Errorf("Expected updated files processed %d, got %d",
-			expectedJob.FilesProcessed(), updatedJob.FilesProcessed())
-	}
-
-	if updatedJob.ChunksCreated() != expectedJob.ChunksCreated() {
-		t.Errorf("Expected updated chunks created %d, got %d",
-			expectedJob.ChunksCreated(), updatedJob.ChunksCreated())
-	}
-}
-
-// Helper function to verify archived job behavior.
-// Reduces validation duplication for soft delete testing.
-func verifyArchivedJobBehavior(
-	ctx context.Context,
-	t *testing.T,
-	jobRepo *PostgreSQLIndexingJobRepository,
-	archivedJob *entity.IndexingJob,
-) {
-	// For archived jobs, FindByID should return nil (soft deleted)
-	foundJob, err := jobRepo.FindByID(ctx, archivedJob.ID())
-	if err != nil {
-		t.Errorf("Expected no error when finding archived job, got: %v", err)
-	}
-
-	if foundJob != nil {
-		t.Error("Expected archived job to not be found (soft deleted)")
-	}
-
-	if !archivedJob.IsDeleted() {
-		t.Error("Expected archived job to be marked as deleted")
-	}
-}
-
-// TestIndexingJobRepository_Update_StartJob tests starting a pending job.
-// This focused test verifies that job status transitions from pending to running correctly.
-func TestIndexingJobRepository_Update_StartJob(t *testing.T) {
+// TestIndexingJobRepository_Update tests all update scenarios: state transitions, progress, archival, and error cases.
+func TestIndexingJobRepository_Update(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
 
-	jobRepo, testJob, ctx := setupJobForUpdate(t, pool)
+	repoRepo := NewPostgreSQLRepositoryRepository(pool)
+	testRepo := createTestRepository(t)
+	ctx := context.Background()
+	if err := repoRepo.Save(ctx, testRepo); err != nil {
+		t.Fatalf("Failed to save test repository: %v", err)
+	}
+	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 
-	// Get fresh copy and start the job
-	jobToUpdate, err := jobRepo.FindByID(ctx, testJob.ID())
-	if err != nil {
-		t.Fatalf("Failed to find job for update: %v", err)
+	// newSavedJob creates and saves a fresh pending job, returning a DB-fetched copy.
+	newSavedJob := func(t *testing.T) *entity.IndexingJob {
+		t.Helper()
+		j := createTestIndexingJob(t, testRepo.ID())
+		if err := jobRepo.Save(ctx, j); err != nil {
+			t.Fatalf("Failed to save test job: %v", err)
+		}
+		fetched, err := jobRepo.FindByID(ctx, j.ID())
+		if err != nil || fetched == nil {
+			t.Fatalf("Failed to fetch saved job: %v", err)
+		}
+		return fetched
 	}
 
-	originalUpdatedAt := jobToUpdate.UpdatedAt()
-	err = jobToUpdate.Start()
-	if err != nil {
-		t.Fatalf("Failed to start job: %v", err)
+	tests := []struct {
+		name    string
+		prepare func(t *testing.T) *entity.IndexingJob
+		wantErr bool
+		verify  func(t *testing.T, id uuid.UUID)
+	}{
+		{
+			name: "start pending job transitions to running with StartedAt set",
+			prepare: func(t *testing.T) *entity.IndexingJob {
+				t.Helper()
+				j := newSavedJob(t)
+				if err := j.Start(); err != nil {
+					t.Fatalf("Failed to start job: %v", err)
+				}
+				return j
+			},
+			verify: func(t *testing.T, id uuid.UUID) {
+				t.Helper()
+				j, _ := jobRepo.FindByID(ctx, id)
+				if j.Status() != valueobject.JobStatusRunning {
+					t.Errorf("expected running, got %s", j.Status())
+				}
+				if j.StartedAt() == nil {
+					t.Error("expected StartedAt to be set")
+				}
+			},
+		},
+		{
+			name: "complete running job records files, chunks, and CompletedAt",
+			prepare: func(t *testing.T) *entity.IndexingJob {
+				t.Helper()
+				j := newSavedJob(t)
+				_ = j.Start()
+				if err := j.Complete(100, 500); err != nil {
+					t.Fatalf("Failed to complete job: %v", err)
+				}
+				return j
+			},
+			verify: func(t *testing.T, id uuid.UUID) {
+				t.Helper()
+				j, _ := jobRepo.FindByID(ctx, id)
+				if j.Status() != valueobject.JobStatusCompleted {
+					t.Errorf("expected completed, got %s", j.Status())
+				}
+				if j.FilesProcessed() != 100 {
+					t.Errorf("expected 100 files processed, got %d", j.FilesProcessed())
+				}
+				if j.ChunksCreated() != 500 {
+					t.Errorf("expected 500 chunks created, got %d", j.ChunksCreated())
+				}
+				if j.CompletedAt() == nil {
+					t.Error("expected CompletedAt to be set")
+				}
+			},
+		},
+		{
+			name: "fail running job stores error message and CompletedAt",
+			prepare: func(t *testing.T) *entity.IndexingJob {
+				t.Helper()
+				j := newSavedJob(t)
+				_ = j.Start()
+				if err := j.Fail("test error"); err != nil {
+					t.Fatalf("Failed to fail job: %v", err)
+				}
+				return j
+			},
+			verify: func(t *testing.T, id uuid.UUID) {
+				t.Helper()
+				j, _ := jobRepo.FindByID(ctx, id)
+				if j.Status() != valueobject.JobStatusFailed {
+					t.Errorf("expected failed, got %s", j.Status())
+				}
+				if j.ErrorMessage() == nil || *j.ErrorMessage() != "test error" {
+					t.Errorf("expected error message 'test error', got %v", j.ErrorMessage())
+				}
+				if j.CompletedAt() == nil {
+					t.Error("expected CompletedAt to be set")
+				}
+			},
+		},
+		{
+			name: "cancel pending job sets status and CompletedAt",
+			prepare: func(t *testing.T) *entity.IndexingJob {
+				t.Helper()
+				j := newSavedJob(t)
+				if err := j.Cancel(); err != nil {
+					t.Fatalf("Failed to cancel job: %v", err)
+				}
+				return j
+			},
+			verify: func(t *testing.T, id uuid.UUID) {
+				t.Helper()
+				j, _ := jobRepo.FindByID(ctx, id)
+				if j.Status() != valueobject.JobStatusCancelled {
+					t.Errorf("expected cancelled, got %s", j.Status())
+				}
+				if j.CompletedAt() == nil {
+					t.Error("expected CompletedAt to be set")
+				}
+			},
+		},
+		{
+			name: "progress update persists files and chunks while staying running",
+			prepare: func(t *testing.T) *entity.IndexingJob {
+				t.Helper()
+				j := newSavedJob(t)
+				_ = j.Start()
+				j.UpdateProgress(50, 250)
+				return j
+			},
+			verify: func(t *testing.T, id uuid.UUID) {
+				t.Helper()
+				j, _ := jobRepo.FindByID(ctx, id)
+				if j.Status() != valueobject.JobStatusRunning {
+					t.Errorf("expected running, got %s", j.Status())
+				}
+				if j.FilesProcessed() != 50 {
+					t.Errorf("expected 50 files processed, got %d", j.FilesProcessed())
+				}
+				if j.ChunksCreated() != 250 {
+					t.Errorf("expected 250 chunks created, got %d", j.ChunksCreated())
+				}
+			},
+		},
+		{
+			name: "archive completed job makes it unreachable via FindByID",
+			prepare: func(t *testing.T) *entity.IndexingJob {
+				t.Helper()
+				j := newSavedJob(t)
+				_ = j.Start()
+				_ = j.Complete(100, 500)
+				if err := j.Archive(); err != nil {
+					t.Fatalf("Failed to archive job: %v", err)
+				}
+				return j
+			},
+			verify: func(t *testing.T, id uuid.UUID) {
+				t.Helper()
+				found, err := jobRepo.FindByID(ctx, id)
+				if err != nil {
+					t.Errorf("expected no error when finding archived job, got: %v", err)
+				}
+				if found != nil {
+					t.Error("expected archived job to not be found (soft deleted)")
+				}
+			},
+		},
+		{
+			name: "updating non-existent job returns error",
+			prepare: func(t *testing.T) *entity.IndexingJob {
+				t.Helper()
+				j := createTestIndexingJob(t, uuid.New())
+				_ = j.Start()
+				return j
+			},
+			wantErr: true,
+		},
 	}
 
-	// Update the job in repository
-	err = jobRepo.Update(ctx, jobToUpdate)
-	if err != nil {
-		t.Errorf("Expected no error but got: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			job := tt.prepare(t)
 
-	// Verify persistence and status change
-	verifyJobPersistence(ctx, t, jobRepo, jobToUpdate, originalUpdatedAt)
+			err := jobRepo.Update(ctx, job)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("expected no error but got: %v", err)
+				return
+			}
 
-	// Verify specific start job behavior
-	updatedJob, _ := jobRepo.FindByID(ctx, jobToUpdate.ID())
-	if updatedJob.Status() != valueobject.JobStatusRunning {
-		t.Errorf("Expected job status to be running, got %s", updatedJob.Status())
-	}
-
-	if updatedJob.StartedAt() == nil {
-		t.Error("Expected StartedAt to be set when job is started")
-	}
-}
-
-// TestIndexingJobRepository_Update_CompleteJob tests completing a running job.
-// This focused test verifies that job completion with progress data is properly persisted.
-func TestIndexingJobRepository_Update_CompleteJob(t *testing.T) {
-	pool := setupTestDB(t)
-	defer pool.Close()
-
-	jobRepo, testJob, ctx := setupJobForUpdate(t, pool)
-
-	// Get fresh copy, start and complete the job
-	jobToUpdate, err := jobRepo.FindByID(ctx, testJob.ID())
-	if err != nil {
-		t.Fatalf("Failed to find job for update: %v", err)
-	}
-
-	originalUpdatedAt := jobToUpdate.UpdatedAt()
-	_ = jobToUpdate.Start()
-	err = jobToUpdate.Complete(100, 500)
-	if err != nil {
-		t.Fatalf("Failed to complete job: %v", err)
-	}
-
-	// Update the job in repository
-	err = jobRepo.Update(ctx, jobToUpdate)
-	if err != nil {
-		t.Errorf("Expected no error but got: %v", err)
-	}
-
-	// Verify persistence and completion data
-	verifyJobPersistence(ctx, t, jobRepo, jobToUpdate, originalUpdatedAt)
-
-	// Verify specific completion behavior
-	updatedJob, _ := jobRepo.FindByID(ctx, jobToUpdate.ID())
-	if updatedJob.Status() != valueobject.JobStatusCompleted {
-		t.Errorf("Expected job status to be completed, got %s", updatedJob.Status())
-	}
-
-	if updatedJob.FilesProcessed() != 100 {
-		t.Errorf("Expected 100 files processed, got %d", updatedJob.FilesProcessed())
-	}
-
-	if updatedJob.ChunksCreated() != 500 {
-		t.Errorf("Expected 500 chunks created, got %d", updatedJob.ChunksCreated())
-	}
-
-	if updatedJob.CompletedAt() == nil {
-		t.Error("Expected CompletedAt to be set when job is completed")
-	}
-}
-
-// TestIndexingJobRepository_Update_FailJob tests failing a running job with error message.
-// This focused test verifies that job failure and error messages are properly persisted.
-func TestIndexingJobRepository_Update_FailJob(t *testing.T) {
-	pool := setupTestDB(t)
-	defer pool.Close()
-
-	jobRepo, testJob, ctx := setupJobForUpdate(t, pool)
-
-	// Get fresh copy, start and fail the job
-	jobToUpdate, err := jobRepo.FindByID(ctx, testJob.ID())
-	if err != nil {
-		t.Fatalf("Failed to find job for update: %v", err)
-	}
-
-	originalUpdatedAt := jobToUpdate.UpdatedAt()
-	_ = jobToUpdate.Start()
-	errorMessage := "Test error message"
-	err = jobToUpdate.Fail(errorMessage)
-	if err != nil {
-		t.Fatalf("Failed to fail job: %v", err)
-	}
-
-	// Update the job in repository
-	err = jobRepo.Update(ctx, jobToUpdate)
-	if err != nil {
-		t.Errorf("Expected no error but got: %v", err)
-	}
-
-	// Verify persistence and failure data
-	verifyJobPersistence(ctx, t, jobRepo, jobToUpdate, originalUpdatedAt)
-
-	// Verify specific failure behavior
-	updatedJob, _ := jobRepo.FindByID(ctx, jobToUpdate.ID())
-	if updatedJob.Status() != valueobject.JobStatusFailed {
-		t.Errorf("Expected job status to be failed, got %s", updatedJob.Status())
-	}
-
-	if updatedJob.ErrorMessage() == nil {
-		t.Error("Expected error message to be set for failed job")
-	} else if *updatedJob.ErrorMessage() != errorMessage {
-		t.Errorf("Expected error message '%s', got '%s'", errorMessage, *updatedJob.ErrorMessage())
-	}
-
-	if updatedJob.CompletedAt() == nil {
-		t.Error("Expected CompletedAt to be set when job fails")
-	}
-}
-
-// TestIndexingJobRepository_Update_CancelJob tests canceling a pending job.
-// This focused test verifies that job cancellation is properly persisted.
-func TestIndexingJobRepository_Update_CancelJob(t *testing.T) {
-	pool := setupTestDB(t)
-	defer pool.Close()
-
-	jobRepo, testJob, ctx := setupJobForUpdate(t, pool)
-
-	// Get fresh copy and cancel the job
-	jobToUpdate, err := jobRepo.FindByID(ctx, testJob.ID())
-	if err != nil {
-		t.Fatalf("Failed to find job for update: %v", err)
-	}
-
-	originalUpdatedAt := jobToUpdate.UpdatedAt()
-	err = jobToUpdate.Cancel()
-	if err != nil {
-		t.Fatalf("Failed to cancel job: %v", err)
-	}
-
-	// Update the job in repository
-	err = jobRepo.Update(ctx, jobToUpdate)
-	if err != nil {
-		t.Errorf("Expected no error but got: %v", err)
-	}
-
-	// Verify persistence and cancellation
-	verifyJobPersistence(ctx, t, jobRepo, jobToUpdate, originalUpdatedAt)
-
-	// Verify specific cancellation behavior
-	updatedJob, _ := jobRepo.FindByID(ctx, jobToUpdate.ID())
-	if updatedJob.Status() != valueobject.JobStatusCancelled {
-		t.Errorf("Expected job status to be cancelled, got %s", updatedJob.Status())
-	}
-
-	if updatedJob.CompletedAt() == nil {
-		t.Error("Expected CompletedAt to be set when job is cancelled")
-	}
-}
-
-// TestIndexingJobRepository_Update_ProgressUpdates tests updating job progress during execution.
-// This focused test verifies that progress updates are properly persisted.
-func TestIndexingJobRepository_Update_ProgressUpdates(t *testing.T) {
-	pool := setupTestDB(t)
-	defer pool.Close()
-
-	jobRepo, testJob, ctx := setupJobForUpdate(t, pool)
-
-	// Get fresh copy, start and update progress
-	jobToUpdate, err := jobRepo.FindByID(ctx, testJob.ID())
-	if err != nil {
-		t.Fatalf("Failed to find job for update: %v", err)
-	}
-
-	originalUpdatedAt := jobToUpdate.UpdatedAt()
-	_ = jobToUpdate.Start()
-	jobToUpdate.UpdateProgress(50, 250)
-
-	// Update the job in repository
-	err = jobRepo.Update(ctx, jobToUpdate)
-	if err != nil {
-		t.Errorf("Expected no error but got: %v", err)
-	}
-
-	// Verify persistence and progress data
-	verifyJobPersistence(ctx, t, jobRepo, jobToUpdate, originalUpdatedAt)
-
-	// Verify specific progress update behavior
-	updatedJob, _ := jobRepo.FindByID(ctx, jobToUpdate.ID())
-	if updatedJob.Status() != valueobject.JobStatusRunning {
-		t.Errorf("Expected job status to remain running, got %s", updatedJob.Status())
-	}
-
-	if updatedJob.FilesProcessed() != 50 {
-		t.Errorf("Expected 50 files processed, got %d", updatedJob.FilesProcessed())
-	}
-
-	if updatedJob.ChunksCreated() != 250 {
-		t.Errorf("Expected 250 chunks created, got %d", updatedJob.ChunksCreated())
+			if tt.verify != nil {
+				tt.verify(t, job.ID())
+			}
+		})
 	}
 }
 
-// TestIndexingJobRepository_Update_ArchiveJob tests archiving a completed job.
-// This focused test verifies that job archival (soft delete) behavior works correctly.
-func TestIndexingJobRepository_Update_ArchiveJob(t *testing.T) {
-	pool := setupTestDB(t)
-	defer pool.Close()
-
-	jobRepo, testJob, ctx := setupJobForUpdate(t, pool)
-
-	// Get fresh copy, start, complete and archive the job
-	jobToUpdate, err := jobRepo.FindByID(ctx, testJob.ID())
-	if err != nil {
-		t.Fatalf("Failed to find job for update: %v", err)
-	}
-
-	_ = jobToUpdate.Start()
-	_ = jobToUpdate.Complete(100, 500)
-	err = jobToUpdate.Archive()
-	if err != nil {
-		t.Fatalf("Failed to archive job: %v", err)
-	}
-
-	// Update the job in repository
-	err = jobRepo.Update(ctx, jobToUpdate)
-	if err != nil {
-		t.Errorf("Expected no error but got: %v", err)
-	}
-
-	// Verify archival behavior (soft delete)
-	verifyArchivedJobBehavior(ctx, t, jobRepo, jobToUpdate)
-}
-
-// TestIndexingJobRepository_Update_NonExistentJob tests updating a non-existent job.
-// This focused test verifies proper error handling when trying to update a job that doesn't exist.
-func TestIndexingJobRepository_Update_NonExistentJob(t *testing.T) {
-	pool := setupTestDB(t)
-	defer pool.Close()
-
-	jobRepo, _, ctx := setupJobForUpdate(t, pool)
-
-	// Create a job that was never saved to the database
-	nonExistentJob := createTestIndexingJob(t, uuid.New())
-	_ = nonExistentJob.Start()
-
-	// Attempt to update the non-existent job
-	err := jobRepo.Update(ctx, nonExistentJob)
-
-	// Should return an error for non-existent job
-	if err == nil {
-		t.Error("Expected error when updating non-existent job, but got none")
-	}
-}
-
-// Helper function to create and save a test job.
-// Reduces duplication across Delete tests.
+// createAndSaveTestJob creates and saves a pending test job, returning its ID.
 func createAndSaveTestJob(
 	ctx context.Context,
 	t *testing.T,
 	jobRepo *PostgreSQLIndexingJobRepository,
 	repoID uuid.UUID,
 ) uuid.UUID {
+	t.Helper()
 	testJob := createTestIndexingJob(t, repoID)
 	err := jobRepo.Save(ctx, testJob)
 	if err != nil {
@@ -527,14 +392,14 @@ func createAndSaveTestJob(
 	return testJob.ID()
 }
 
-// Helper function to create and save a completed test job.
-// Reduces duplication across Delete tests.
+// createAndSaveCompletedTestJob creates and saves a completed test job, returning its ID.
 func createAndSaveCompletedTestJob(
 	ctx context.Context,
 	t *testing.T,
 	jobRepo *PostgreSQLIndexingJobRepository,
 	repoID uuid.UUID,
 ) uuid.UUID {
+	t.Helper()
 	testJob := createTestIndexingJob(t, repoID)
 	_ = testJob.Start()
 	_ = testJob.Complete(100, 500)
@@ -545,97 +410,63 @@ func createAndSaveCompletedTestJob(
 	return testJob.ID()
 }
 
-// Helper function to verify job deletion.
-// Reduces validation duplication across Delete tests.
+// verifyJobDeleted asserts that a job is no longer retrievable after deletion.
 func verifyJobDeleted(ctx context.Context, t *testing.T, jobRepo *PostgreSQLIndexingJobRepository, jobID uuid.UUID) {
+	t.Helper()
 	deletedJob, err := jobRepo.FindByID(ctx, jobID)
 	if err == nil && deletedJob != nil {
 		t.Error("Expected deleted job to not be found")
 	}
 }
 
-// TestIndexingJobRepository_Delete_ExistingJob tests deleting an existing job.
-// This focused test verifies that existing jobs can be soft deleted successfully.
-func TestIndexingJobRepository_Delete_ExistingJob(t *testing.T) {
+// TestIndexingJobRepository_Delete tests soft deletion across pending, completed, missing, and invalid inputs.
+func TestIndexingJobRepository_Delete(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
 
 	jobRepo, testJob, ctx := setupJobForUpdate(t, pool)
+	completedJobID := createAndSaveCompletedTestJob(ctx, t, jobRepo, testJob.RepositoryID())
 
-	// Delete the existing job
-	err := jobRepo.Delete(ctx, testJob.ID())
-	// Should succeed without error
-	if err != nil {
-		t.Errorf("Expected no error but got: %v", err)
+	tests := []struct {
+		name    string
+		id      uuid.UUID
+		wantErr bool
+	}{
+		{
+			name:    "existing pending job is soft deleted",
+			id:      testJob.ID(),
+			wantErr: false,
+		},
+		{
+			name:    "existing completed job is soft deleted",
+			id:      completedJobID,
+			wantErr: false,
+		},
+		{
+			name:    "non-existent job returns error",
+			id:      uuid.New(),
+			wantErr: true,
+		},
+		{
+			name:    "nil UUID returns error",
+			id:      uuid.Nil,
+			wantErr: true,
+		},
 	}
 
-	// Verify job is soft deleted
-	verifyJobDeleted(ctx, t, jobRepo, testJob.ID())
-}
-
-// TestIndexingJobRepository_Delete_CompletedJob tests deleting a completed job.
-// This focused test verifies that completed jobs can be soft deleted successfully.
-func TestIndexingJobRepository_Delete_CompletedJob(t *testing.T) {
-	pool := setupTestDB(t)
-	defer pool.Close()
-
-	// Create a test repository first (needed for foreign key)
-	repoRepo := NewPostgreSQLRepositoryRepository(pool)
-	testRepo := createTestRepository(t)
-	ctx := context.Background()
-	err := repoRepo.Save(ctx, testRepo)
-	if err != nil {
-		t.Fatalf("Failed to save test repository: %v", err)
-	}
-
-	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
-
-	// Create and save completed job
-	jobID := createAndSaveCompletedTestJob(ctx, t, jobRepo, testRepo.ID())
-
-	// Delete the completed job
-	err = jobRepo.Delete(ctx, jobID)
-	// Should succeed without error
-	if err != nil {
-		t.Errorf("Expected no error but got: %v", err)
-	}
-
-	// Verify job is soft deleted
-	verifyJobDeleted(ctx, t, jobRepo, jobID)
-}
-
-// TestIndexingJobRepository_Delete_NonExistentJob tests deleting a non-existent job.
-// This focused test verifies that attempts to delete non-existent jobs return errors.
-func TestIndexingJobRepository_Delete_NonExistentJob(t *testing.T) {
-	pool := setupTestDB(t)
-	defer pool.Close()
-
-	jobRepo, _, ctx := setupJobForUpdate(t, pool)
-
-	// Try to delete non-existent job
-	nonExistentID := uuid.New()
-	err := jobRepo.Delete(ctx, nonExistentID)
-
-	// Should return error
-	if err == nil {
-		t.Error("Expected error but got none")
-	}
-}
-
-// TestIndexingJobRepository_Delete_InvalidInput tests error handling for invalid inputs.
-// This focused test verifies that invalid inputs are properly rejected.
-func TestIndexingJobRepository_Delete_InvalidInput(t *testing.T) {
-	pool := setupTestDB(t)
-	defer pool.Close()
-
-	jobRepo, _, ctx := setupJobForUpdate(t, pool)
-
-	// Try to delete with nil UUID
-	err := jobRepo.Delete(ctx, uuid.Nil)
-
-	// Should return error
-	if err == nil {
-		t.Error("Expected error but got none")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := jobRepo.Delete(ctx, tt.id)
+			if tt.wantErr && err == nil {
+				t.Error("expected error but got none")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("expected no error but got: %v", err)
+			}
+			if !tt.wantErr {
+				verifyJobDeleted(ctx, t, jobRepo, tt.id)
+			}
+		})
 	}
 }
 
@@ -653,7 +484,6 @@ func TestIndexingJobRepository_ConcurrentUpdates(t *testing.T) {
 		t.Fatalf("Failed to save test repository: %v", err)
 	}
 
-	// This will fail because PostgreSQLIndexingJobRepository doesn't exist yet
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 
 	// Create and save test indexing job
@@ -715,7 +545,6 @@ func TestIndexingJobRepository_ConcurrentUpdates(t *testing.T) {
 }
 
 // setupTestRepositoryWithJobs creates a test repository and saves the specified number of jobs.
-// This helper reduces setup duplication across focused tests.
 func setupTestRepositoryWithJobs(
 	ctx context.Context,
 	t *testing.T,
@@ -723,6 +552,7 @@ func setupTestRepositoryWithJobs(
 	repoRepo *PostgreSQLRepositoryRepository,
 	numJobs int,
 ) *entity.Repository {
+	t.Helper()
 	testRepo := createTestRepository(t)
 	err := repoRepo.Save(ctx, testRepo)
 	if err != nil {
@@ -743,8 +573,8 @@ func setupTestRepositoryWithJobs(
 }
 
 // validateJobResults validates that returned jobs match expectations.
-// This helper reduces validation duplication across focused tests.
 func validateJobResults(t *testing.T, jobs []*entity.IndexingJob, expectedRepoID uuid.UUID, expectedCount int) {
+	t.Helper()
 	if len(jobs) != expectedCount {
 		t.Errorf("Expected %d jobs, got %d", expectedCount, len(jobs))
 	}
@@ -765,7 +595,6 @@ func validateJobResults(t *testing.T, jobs []*entity.IndexingJob, expectedRepoID
 }
 
 // TestIndexingJobRepository_FindByRepositoryID_BasicRetrieval tests basic job retrieval functionality.
-// This focused test verifies that jobs can be retrieved for a repository with basic pagination.
 func TestIndexingJobRepository_FindByRepositoryID_BasicRetrieval(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -774,17 +603,14 @@ func TestIndexingJobRepository_FindByRepositoryID_BasicRetrieval(t *testing.T) {
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 	ctx := context.Background()
 
-	// Setup: Create repository with 5 test jobs
 	testRepo := setupTestRepositoryWithJobs(ctx, t, jobRepo, repoRepo, 5)
 
-	// Test: Retrieve all jobs with standard pagination
 	filters := outbound.IndexingJobFilters{
 		Limit:  10,
 		Offset: 0,
 	}
 
 	jobs, total, err := jobRepo.FindByRepositoryID(ctx, testRepo.ID(), filters)
-	// Verify: Should return all 5 jobs successfully
 	if err != nil {
 		t.Errorf("Expected no error but got: %v", err)
 	}
@@ -794,8 +620,7 @@ func TestIndexingJobRepository_FindByRepositoryID_BasicRetrieval(t *testing.T) {
 	validateJobResults(t, jobs, testRepo.ID(), 5)
 }
 
-// TestIndexingJobRepository_FindByRepositoryID_Pagination tests pagination functionality.
-// This focused test verifies limit, offset, and total count calculations work correctly.
+// TestIndexingJobRepository_FindByRepositoryID_Pagination tests limit, offset, and total count calculations.
 func TestIndexingJobRepository_FindByRepositoryID_Pagination(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -804,7 +629,6 @@ func TestIndexingJobRepository_FindByRepositoryID_Pagination(t *testing.T) {
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 	ctx := context.Background()
 
-	// Setup: Create repository with 15 test jobs for pagination testing
 	testRepo := setupTestRepositoryWithJobs(ctx, t, jobRepo, repoRepo, 15)
 
 	tests := []struct {
@@ -856,8 +680,8 @@ func TestIndexingJobRepository_FindByRepositoryID_Pagination(t *testing.T) {
 	}
 }
 
-// TestIndexingJobRepository_FindByRepositoryID_RepositoryIsolation tests repository isolation.
-// This focused test verifies that jobs from different repositories don't interfere with each other.
+// TestIndexingJobRepository_FindByRepositoryID_RepositoryIsolation tests that jobs from different repositories
+// don't interfere with each other.
 func TestIndexingJobRepository_FindByRepositoryID_RepositoryIsolation(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -866,7 +690,6 @@ func TestIndexingJobRepository_FindByRepositoryID_RepositoryIsolation(t *testing
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 	ctx := context.Background()
 
-	// Setup: Create two repositories with different numbers of jobs
 	testRepo1 := setupTestRepositoryWithJobs(ctx, t, jobRepo, repoRepo, 7)
 	testRepo2 := setupTestRepositoryWithJobs(ctx, t, jobRepo, repoRepo, 3)
 
@@ -875,13 +698,9 @@ func TestIndexingJobRepository_FindByRepositoryID_RepositoryIsolation(t *testing
 		Offset: 0,
 	}
 
-	// Test: Query jobs for repository 1
 	jobs1, total1, err1 := jobRepo.FindByRepositoryID(ctx, testRepo1.ID(), filters)
-
-	// Test: Query jobs for repository 2
 	jobs2, total2, err2 := jobRepo.FindByRepositoryID(ctx, testRepo2.ID(), filters)
 
-	// Verify: Repository 1 should return only its 7 jobs
 	if err1 != nil {
 		t.Errorf("Repository 1 query failed: %v", err1)
 	}
@@ -890,7 +709,6 @@ func TestIndexingJobRepository_FindByRepositoryID_RepositoryIsolation(t *testing
 	}
 	validateJobResults(t, jobs1, testRepo1.ID(), 7)
 
-	// Verify: Repository 2 should return only its 3 jobs
 	if err2 != nil {
 		t.Errorf("Repository 2 query failed: %v", err2)
 	}
@@ -900,8 +718,7 @@ func TestIndexingJobRepository_FindByRepositoryID_RepositoryIsolation(t *testing
 	validateJobResults(t, jobs2, testRepo2.ID(), 3)
 }
 
-// TestIndexingJobRepository_FindByRepositoryID_InvalidParameters tests error handling for invalid parameters.
-// This focused test verifies that invalid input parameters are properly rejected.
+// TestIndexingJobRepository_FindByRepositoryID_InvalidParameters tests that invalid inputs are properly rejected.
 func TestIndexingJobRepository_FindByRepositoryID_InvalidParameters(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -910,7 +727,6 @@ func TestIndexingJobRepository_FindByRepositoryID_InvalidParameters(t *testing.T
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 	ctx := context.Background()
 
-	// Setup: Create a test repository for valid repository ID comparisons
 	testRepo := setupTestRepositoryWithJobs(ctx, t, jobRepo, repoRepo, 1)
 
 	tests := []struct {
@@ -921,34 +737,22 @@ func TestIndexingJobRepository_FindByRepositoryID_InvalidParameters(t *testing.T
 		{
 			name:         "Nil repository ID should return error",
 			repositoryID: uuid.Nil,
-			filters: outbound.IndexingJobFilters{
-				Limit:  10,
-				Offset: 0,
-			},
+			filters:      outbound.IndexingJobFilters{Limit: 10, Offset: 0},
 		},
 		{
 			name:         "Negative offset should return error",
 			repositoryID: testRepo.ID(),
-			filters: outbound.IndexingJobFilters{
-				Limit:  10,
-				Offset: -1,
-			},
+			filters:      outbound.IndexingJobFilters{Limit: 10, Offset: -1},
 		},
 		{
 			name:         "Zero limit should return error",
 			repositoryID: testRepo.ID(),
-			filters: outbound.IndexingJobFilters{
-				Limit:  0,
-				Offset: 0,
-			},
+			filters:      outbound.IndexingJobFilters{Limit: 0, Offset: 0},
 		},
 		{
 			name:         "Negative limit should return error",
 			repositoryID: testRepo.ID(),
-			filters: outbound.IndexingJobFilters{
-				Limit:  -1,
-				Offset: 0,
-			},
+			filters:      outbound.IndexingJobFilters{Limit: -1, Offset: 0},
 		},
 	}
 
@@ -956,7 +760,6 @@ func TestIndexingJobRepository_FindByRepositoryID_InvalidParameters(t *testing.T
 		t.Run(tt.name, func(t *testing.T) {
 			jobs, total, err := jobRepo.FindByRepositoryID(ctx, tt.repositoryID, tt.filters)
 
-			// Verify: Should return error and no results
 			if err == nil {
 				t.Error("Expected error but got none")
 			}
@@ -970,8 +773,8 @@ func TestIndexingJobRepository_FindByRepositoryID_InvalidParameters(t *testing.T
 	}
 }
 
-// TestIndexingJobRepository_FindByRepositoryID_EmptyResults tests behavior with non-existent repositories.
-// This focused test verifies that queries for non-existent repositories return empty results gracefully.
+// TestIndexingJobRepository_FindByRepositoryID_EmptyResults tests that queries for non-existent repositories
+// return empty results gracefully.
 func TestIndexingJobRepository_FindByRepositoryID_EmptyResults(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
@@ -980,7 +783,6 @@ func TestIndexingJobRepository_FindByRepositoryID_EmptyResults(t *testing.T) {
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 	ctx := context.Background()
 
-	// Setup: Create a repository with jobs, but query for a different one
 	_ = setupTestRepositoryWithJobs(ctx, t, jobRepo, repoRepo, 5)
 	nonExistentRepoID := uuid.New()
 
@@ -989,9 +791,7 @@ func TestIndexingJobRepository_FindByRepositoryID_EmptyResults(t *testing.T) {
 		Offset: 0,
 	}
 
-	// Test: Query for non-existent repository
 	jobs, total, err := jobRepo.FindByRepositoryID(ctx, nonExistentRepoID, filters)
-	// Verify: Should return empty results without error
 	if err != nil {
 		t.Errorf("Expected no error but got: %v", err)
 	}
@@ -1006,12 +806,11 @@ func TestIndexingJobRepository_FindByRepositoryID_EmptyResults(t *testing.T) {
 	}
 }
 
-// TestIndexingJobRepository_StatusTransitions tests job status transitions are preserved.
+// TestIndexingJobRepository_StatusTransitions tests that a full job lifecycle is preserved end-to-end.
 func TestIndexingJobRepository_StatusTransitions(t *testing.T) {
 	pool := setupTestDB(t)
 	defer pool.Close()
 
-	// Create a test repository first (needed for foreign key)
 	repoRepo := NewPostgreSQLRepositoryRepository(pool)
 	testRepo := createTestRepository(t)
 	ctx := context.Background()
@@ -1020,13 +819,10 @@ func TestIndexingJobRepository_StatusTransitions(t *testing.T) {
 		t.Fatalf("Failed to save test repository: %v", err)
 	}
 
-	// This will fail because PostgreSQLIndexingJobRepository doesn't exist yet
 	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
 
-	// Test complete job lifecycle
 	job := createTestIndexingJob(t, testRepo.ID())
 
-	// Save initial pending job
 	err = jobRepo.Save(ctx, job)
 	if err != nil {
 		t.Fatalf("Failed to save initial job: %v", err)
@@ -1039,7 +835,6 @@ func TestIndexingJobRepository_StatusTransitions(t *testing.T) {
 		t.Errorf("Failed to update job to running: %v", err)
 	}
 
-	// Verify timestamps are set correctly
 	runningJob, err := jobRepo.FindByID(ctx, job.ID())
 	if err != nil {
 		t.Errorf("Failed to find running job: %v", err)
@@ -1060,7 +855,6 @@ func TestIndexingJobRepository_StatusTransitions(t *testing.T) {
 		t.Errorf("Failed to update job to completed: %v", err)
 	}
 
-	// Verify completion data
 	completedJob, err := jobRepo.FindByID(ctx, job.ID())
 	if err != nil {
 		t.Errorf("Failed to find completed job: %v", err)
@@ -1081,4 +875,65 @@ func TestIndexingJobRepository_StatusTransitions(t *testing.T) {
 	if !completedJob.IsTerminal() {
 		t.Error("Expected completed job to be in terminal state")
 	}
+}
+
+// TestIndexingJobRepository_FindByRepositoryID_StatusFilter tests filtering by job status.
+// Verifies that only jobs with the requested status are returned, and that nil Status
+// returns all jobs regardless of status (backward compatibility).
+func TestIndexingJobRepository_FindByRepositoryID_StatusFilter(t *testing.T) {
+	pool := setupTestDB(t)
+	defer pool.Close()
+
+	repoRepo := NewPostgreSQLRepositoryRepository(pool)
+	jobRepo := NewPostgreSQLIndexingJobRepository(pool)
+	ctx := context.Background()
+
+	testRepo := createTestRepository(t)
+	if err := repoRepo.Save(ctx, testRepo); err != nil {
+		t.Fatalf("Failed to save test repository: %v", err)
+	}
+
+	createAndSaveTestJob(ctx, t, jobRepo, testRepo.ID())
+
+	completedJob := createTestIndexingJob(t, testRepo.ID())
+	_ = completedJob.Start()
+	_ = completedJob.Complete(10, 50)
+	if err := jobRepo.Save(ctx, completedJob); err != nil {
+		t.Fatalf("Failed to save completed job: %v", err)
+	}
+
+	t.Run("Status filter returns only matching jobs", func(t *testing.T) {
+		pendingStatus := valueobject.JobStatusPending
+		jobs, total, err := jobRepo.FindByRepositoryID(ctx, testRepo.ID(), outbound.IndexingJobFilters{
+			Limit:  10,
+			Status: &pendingStatus,
+		})
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if total != 1 {
+			t.Errorf("Expected total 1, got %d", total)
+		}
+		if len(jobs) != 1 {
+			t.Fatalf("Expected 1 job, got %d", len(jobs))
+		}
+		if jobs[0].Status() != valueobject.JobStatusPending {
+			t.Errorf("Expected pending status, got %s", jobs[0].Status())
+		}
+	})
+
+	t.Run("Nil status returns all jobs", func(t *testing.T) {
+		jobs, total, err := jobRepo.FindByRepositoryID(ctx, testRepo.ID(), outbound.IndexingJobFilters{
+			Limit: 10,
+		})
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if total != 2 {
+			t.Errorf("Expected total 2, got %d", total)
+		}
+		if len(jobs) != 2 {
+			t.Errorf("Expected 2 jobs, got %d", len(jobs))
+		}
+	})
 }

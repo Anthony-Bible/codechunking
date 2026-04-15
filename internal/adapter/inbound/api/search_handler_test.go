@@ -59,6 +59,7 @@ func TestSearchHandler(t *testing.T) {
 		// Setup test request
 		searchRequest := dto.SearchRequestDTO{
 			Query:               "implement authentication middleware",
+			Mode:                dto.SearchModeSemantic,
 			Limit:               10,
 			Offset:              0,
 			SimilarityThreshold: 0.7,
@@ -138,6 +139,7 @@ func TestSearchHandler(t *testing.T) {
 		repoID2 := uuid.New()
 		searchRequest := dto.SearchRequestDTO{
 			Query:               "database connection",
+			Mode:                dto.SearchModeSemantic,
 			Limit:               20,
 			Offset:              10,
 			RepositoryIDs:       []uuid.UUID{repoID1, repoID2},
@@ -199,6 +201,7 @@ func TestSearchHandler(t *testing.T) {
 		// Setup request with repository names
 		searchRequest := dto.SearchRequestDTO{
 			Query:               "authentication middleware",
+			Mode:                dto.SearchModeSemantic,
 			Limit:               10,
 			Offset:              0,
 			RepositoryNames:     []string{"golang/go", "facebook/react"},
@@ -257,6 +260,7 @@ func TestSearchHandler(t *testing.T) {
 		repoID2 := uuid.New()
 		searchRequest := dto.SearchRequestDTO{
 			Query:               "mixed filtering",
+			Mode:                dto.SearchModeSemantic,
 			Limit:               15,
 			Offset:              0,
 			RepositoryIDs:       []uuid.UUID{repoID1, repoID2},
@@ -515,6 +519,7 @@ func TestSearchHandler(t *testing.T) {
 		// Create expected request with defaults applied (this is what the service will receive)
 		expectedRequest := dto.SearchRequestDTO{
 			Query:               "test query",
+			Mode:                dto.SearchModeSemantic,
 			Limit:               10, // Default applied
 			Offset:              0,
 			SimilarityThreshold: 0.7,               // Default applied
@@ -556,6 +561,7 @@ func TestSearchHandler(t *testing.T) {
 		// Create expected request with defaults applied (this is what the service will receive)
 		expectedRequest := dto.SearchRequestDTO{
 			Query:               "test query",
+			Mode:                dto.SearchModeSemantic,
 			Limit:               10, // Default applied
 			Offset:              0,
 			SimilarityThreshold: 0.7,               // Default applied
@@ -644,6 +650,7 @@ func TestSearchHandler(t *testing.T) {
 		// Create expected request with defaults applied (this is what the service will receive)
 		expectedRequest := dto.SearchRequestDTO{
 			Query:               "test query",
+			Mode:                dto.SearchModeSemantic,
 			Limit:               10, // Default applied
 			Offset:              0,
 			SimilarityThreshold: 0.7,               // Default applied
@@ -712,6 +719,7 @@ func TestSearchHandler(t *testing.T) {
 		// Create expected request with defaults applied (this is what the service will receive)
 		expectedRequest := dto.SearchRequestDTO{
 			Query:               largeQuery,
+			Mode:                dto.SearchModeSemantic,
 			Limit:               10, // Default applied
 			Offset:              0,
 			RepositoryIDs:       searchRequest.RepositoryIDs, // Copy the generated UUIDs
@@ -882,6 +890,7 @@ func TestSearchHandler_HTTPMethods(t *testing.T) {
 		// Create expected request with defaults applied (this is what the service will receive)
 		expectedRequest := dto.SearchRequestDTO{
 			Query:               "test query",
+			Mode:                dto.SearchModeSemantic,
 			Limit:               10, // Default applied
 			Offset:              0,
 			SimilarityThreshold: 0.7,               // Default applied

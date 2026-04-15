@@ -93,6 +93,11 @@ func (s *SearchService) Search(ctx context.Context, request dto.SearchRequestDTO
 		return nil, fmt.Errorf("invalid search request: %w", err)
 	}
 
+	// Reject modes that are not yet supported
+	if request.Mode != dto.SearchModeSemantic {
+		return nil, fmt.Errorf("search mode %q is not yet supported; only %q is currently available", request.Mode, dto.SearchModeSemantic)
+	}
+
 	// Generate embedding for query
 	embeddingResult, err := s.generateQueryEmbedding(ctx, request.Query)
 	if err != nil {
@@ -358,6 +363,14 @@ func (s *SearchService) buildResponse(
 ) *dto.SearchResponseDTO {
 	executionTime := time.Since(startTime).Milliseconds()
 
+	enginesUsed := []string{"embedding"}
+	sourceEngine := "embedding"
+
+	for i := range results {
+		results[i].SourceEngine = sourceEngine
+		results[i].EngineScore = results[i].SimilarityScore
+	}
+
 	return &dto.SearchResponseDTO{
 		Results: results,
 		Pagination: dto.PaginationResponse{
@@ -368,6 +381,11 @@ func (s *SearchService) buildResponse(
 		},
 		Metadata: dto.SearchMetadata{
 			Query:           request.Query,
+			ExecutionTimeMs: executionTime,
+		},
+		EngineInfo: dto.SearchEngineInfo{
+			Mode:            dto.SearchModeSemantic,
+			EnginesUsed:     enginesUsed,
 			ExecutionTimeMs: executionTime,
 		},
 	}

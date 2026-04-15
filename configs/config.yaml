@@ -40,6 +40,33 @@ search:
                                        # Options: "off", "strict_order", "relaxed_order"
                                        # relaxed_order recommended for best recall/performance
 
+# Zoekt full-text search configuration
+zoekt:
+  webserver:
+    host: zoekt-webserver
+    port: 6071
+    timeout: 30s
+
+  indexing:
+    git_index_path: zoekt-git-index
+    index_dir: /data/index
+    max_file_size: 10485760  # 10MB
+    include_tests: true
+    include_vendor: false
+    default_priority: 1.0
+    timeout: 30m
+
+  search:
+    max_results: 100
+    max_match_per_file: 1000
+    context_lines: 2
+    timeout: 10s
+
+  concurrent_indexing:
+    enabled: true
+    max_concurrent_jobs: 5
+    retry_attempts: 3
+
 gemini:
   model: gemini-embedding-001
   max_retries: 3

@@ -24,6 +24,19 @@ const (
 
 	// MaxRepositoryNames is the maximum number of repository names that can be filtered.
 	MaxRepositoryNames = 50
+
+	// DefaultSearchMode is the default search mode.
+	DefaultSearchMode = SearchModeSemantic
+)
+
+// SearchMode represents the search engine mode to use.
+type SearchMode string
+
+// Search mode constants.
+const (
+	SearchModeSemantic SearchMode = "semantic" // Vector embeddings based search
+	SearchModeText     SearchMode = "text"     // Full-text search via Zoekt
+	SearchModeHybrid   SearchMode = "hybrid"   // Combined semantic + text search
 )
 
 // getValidSortOptions returns the valid sort options for search requests.
@@ -46,22 +59,6 @@ func validateStringArray(arr []string, fieldName string) error {
 	return nil
 }
 
-// validateStringArrayWithDuplicates validates a string array and checks for duplicates.
-func validateStringArrayWithDuplicates(arr []string, fieldName string) error {
-	if err := validateStringArray(arr, fieldName); err != nil {
-		return err
-	}
-
-	seen := make(map[string]bool)
-	for _, item := range arr {
-		if seen[item] {
-			return fmt.Errorf("%s cannot contain duplicates", fieldName)
-		}
-		seen[item] = true
-	}
-	return nil
-}
-
 // validateRepositoryNameFormat validates that a repository name is in the format "org/repo".
 func validateRepositoryNameFormat(repoName string) error {
 	parts := strings.Split(repoName, "/")
@@ -74,25 +71,29 @@ func validateRepositoryNameFormat(repoName string) error {
 	return nil
 }
 
-// SearchRequestDTO represents a semantic search request.
+// SearchRequestDTO represents a search request.
 type SearchRequestDTO struct {
-	Query               string      `json:"query"                          validate:"required,min=1"                                                              example:"implement authentication middleware"`
-	Limit               int         `json:"limit,omitempty"                validate:"omitempty,min=1,max=100"                                                     example:"10"`
-	Offset              int         `json:"offset,omitempty"               validate:"omitempty,min=0"                                                             example:"0"`
-	RepositoryIDs       []uuid.UUID `json:"repository_ids,omitempty"                                                                                              example:"["123e4567-e89b-12d3-a456-426614174000"]"`
-	RepositoryNames     []string    `json:"repository_names,omitempty"                                                                                            example:"["golang/go", "gin-gonic/gin"]"`
-	Languages           []string    `json:"languages,omitempty"                                                                                                   example:"["go", "python"]"`
-	FileTypes           []string    `json:"file_types,omitempty"                                                                                                  example:"[".go", ".py"]"`
-	SimilarityThreshold float64     `json:"similarity_threshold,omitempty" validate:"omitempty,min=0,max=1"                                                       example:"0.8"`
-	Sort                string      `json:"sort,omitempty"                 validate:"omitempty,oneof=similarity:desc similarity:asc file_path:asc file_path:desc" example:"similarity:desc"`
+	Query               string      `json:"query"                                                  validate:"required,min=1"                                                  example:"implement authentication middleware"`
+	Mode                SearchMode  `json:"mode,omitempty"                                          validate:"omitempty,oneof=semantic text hybrid"                              example:"semantic"` // Search mode: semantic, text, or hybrid
+	Limit               int         `json:"limit,omitempty"                                        validate:"omitempty,min=1,max=100"                                          example:"10"`
+	Offset              int         `json:"offset,omitempty"                                       validate:"omitempty,min=0"                                                 example:"0"`
+	RepositoryIDs       []uuid.UUID `json:"repository_ids,omitempty"                                                                                               example:"[\"123e4567-e89b-12d3-a456-426614174000\"]"`
+	RepositoryNames     []string    `json:"repository_names,omitempty"                                                                                             example:"[\"golang/go\",\"gin-gonic/gin\"]"`
+	Languages           []string    `json:"languages,omitempty"                                                                                                    example:"[\"go\",\"python\"]"`
+	FileTypes           []string    `json:"file_types,omitempty"                                                                                                   example:"[\".go\",\".py\"]"`
+	SimilarityThreshold float64     `json:"similarity_threshold,omitempty"   validate:"omitempty,min=0,max=1"                                                example:"0.8"`
+	Sort                string      `json:"sort,omitempty"                                         validate:"omitempty,oneof=similarity:desc similarity:asc file_path:asc file_path:desc" example:"similarity:desc"`
 	// Enhanced type filtering
-	Types      []string `json:"types,omitempty"                                                                                                       example:"["function", "method"]"` // Filter by semantic construct types (function, class, method, etc.)
-	EntityName string   `json:"entity_name,omitempty"                                                                                                 example:"connect"`                // Filter by specific entity name
-	Visibility []string `json:"visibility,omitempty"                                                                                                  example:"["public"]"`             // Filter by visibility (public, private, protected)
+	Types      []string `json:"types,omitempty"                                                                                                       example:"[\"function\",\"method\"]"` // Filter by semantic construct types (function, class, method, etc.)
+	EntityName string   `json:"entity_name,omitempty"                                                                                                 example:"connect"`                   // Filter by specific entity name
+	Visibility []string `json:"visibility,omitempty"                                                                                                  example:"[\"public\",\"private\"]"`  // Filter by visibility (public, private, protected)
 }
 
 // ApplyDefaults sets default values for optional fields.
 func (s *SearchRequestDTO) ApplyDefaults() {
+	if s.Mode == "" {
+		s.Mode = DefaultSearchMode
+	}
 	if s.Limit == 0 {
 		s.Limit = DefaultSearchLimit
 	}
@@ -113,6 +114,21 @@ func (s *SearchRequestDTO) Validate() error {
 	}
 	if strings.TrimSpace(s.Query) == "" {
 		return errors.New("query cannot be empty or whitespace only")
+	}
+
+	// Validate mode
+	if s.Mode != "" {
+		validModes := []SearchMode{SearchModeSemantic, SearchModeText, SearchModeHybrid}
+		validMode := false
+		for _, m := range validModes {
+			if s.Mode == m {
+				validMode = true
+				break
+			}
+		}
+		if !validMode {
+			return fmt.Errorf("mode must be one of: %s, %s, %s", SearchModeSemantic, SearchModeText, SearchModeHybrid)
+		}
 	}
 
 	// Validate limit based on context - this is the minimal green phase implementation
@@ -202,19 +218,18 @@ func (s *SearchRequestDTO) Validate() error {
 // SearchResponseDTO represents the response from a semantic search operation.
 //
 //	@Description	Response containing search results and metadata
-//	@Example		{"results": [{"chunk_id": "chunk-uuid-1", "content": "func authenticateUser() {}", "similarity_score": 0.95, "repository": {"id": "123e4567-e89b-12d3-a456-426614174000", "name": "auth-service", "url": "https://github.com/example/auth-service"}, "file_path": "/middleware/auth.go", "language": "go", "start_line": 15, "end_line": 25, "type": "function", "entity_name": "authenticateUser", "qualified_name": "middleware.authenticateUser", "signature": "func authenticateUser(token string) (*User, error)", "visibility": "public"}], "pagination": {"limit": 10, "offset": 0, "total": 42, "has_more": true}, "search_metadata": {"query": "implement authentication middleware", "execution_time_ms": 150}}
+//	@Example		{"results": [{"chunk_id": "chunk-uuid-1", "content": "func authenticateUser() {}", "similarity_score": 0.95, "repository": {"id": "123e4567-e89b-12d3-a456-426614174000", "name": "auth-service", "url": "https://github.com/example/auth-service"}, "file_path": "/middleware/auth.go", "language": "go", "start_line": 15, "end_line": 25, "type": "function", "entity_name": "authenticateUser", "qualified_name": "middleware.authenticateUser", "signature": "func authenticateUser(token string) (*User, error)", "visibility": "public"}], "pagination": {"limit": 10, "offset": 0, "total": 42, "has_more": true}, "search_metadata": {"query": "implement authentication middleware", "execution_time_ms": 150}, "engine_info": {"mode": "semantic", "engines_used": ["embedding"], "execution_time_ms": 150}}
 type SearchResponseDTO struct {
 	Results    []SearchResultDTO  `json:"results"`
 	Pagination PaginationResponse `json:"pagination"`
 	Metadata   SearchMetadata     `json:"search_metadata"`
+	EngineInfo SearchEngineInfo   `json:"engine_info"`
 }
 
 // SearchResultDTO represents a single search result.
 type SearchResultDTO struct {
-	ChunkID uuid.UUID `json:"chunk_id"                 example:"chunk-uuid-1"`
-	Content string    `json:"content"                  example:"func authenticateUser(token string) (*User, error) {
-	// Implementation
-}"`
+	ChunkID         uuid.UUID      `json:"chunk_id"                 example:"chunk-uuid-1"`
+	Content         string         `json:"content"                  example:"func authenticateUser(token string) (*User, error) { ... }"`
 	SimilarityScore float64        `json:"similarity_score"         example:"0.95"`
 	Repository      RepositoryInfo `json:"repository"`
 	FilePath        string         `json:"file_path"                example:"/middleware/auth.go"`
@@ -228,6 +243,9 @@ type SearchResultDTO struct {
 	QualifiedName string `json:"qualified_name,omitempty" example:"middleware.AuthMiddleware.authenticateUser"`         // Fully qualified name
 	Signature     string `json:"signature,omitempty"      example:"func authenticateUser(token string) (*User, error)"` // Function/method signature
 	Visibility    string `json:"visibility,omitempty"     example:"public"`                                             // Visibility modifier
+	// Multi-engine search fields
+	SourceEngine string  `json:"source_engine,omitempty"  example:"embedding"` // Which search engine provided this result (embedding zoekt)
+	EngineScore  float64 `json:"engine_score,omitempty"   example:"0.95"`      // Score from the source engine
 }
 
 // Validate performs validation on SearchResultDTO.
@@ -279,4 +297,11 @@ func (r *RepositoryInfo) Validate() error {
 type SearchMetadata struct {
 	Query           string `json:"query"`
 	ExecutionTimeMs int64  `json:"execution_time_ms"`
+}
+
+// SearchEngineInfo contains information about which search engines were used.
+type SearchEngineInfo struct {
+	Mode            SearchMode `json:"mode"`              // Search mode used (semantic, text, hybrid)
+	EnginesUsed     []string   `json:"engines_used"`      // Names of engines used (e.g., "embedding", "zoekt")
+	ExecutionTimeMs int64      `json:"execution_time_ms"` // Total execution time in milliseconds
 }

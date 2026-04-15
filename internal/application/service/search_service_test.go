@@ -441,7 +441,7 @@ func TestSearchService(t *testing.T) {
 		goURL, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
 		goRepo := entity.RestoreRepository(
 			resolvedRepoIDs[0], goURL, "golang/go", nil, nil, nil, nil, 0, 0,
-			valueobject.RepositoryStatusPending, time.Now(), time.Now(), nil,
+			valueobject.RepositoryStatusPending, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil,
 		)
 		mockRepoRepo.On("FindAll", ctx, outbound.RepositoryFilters{
 			Name:   "golang/go",
@@ -453,7 +453,7 @@ func TestSearchService(t *testing.T) {
 		reactURL, _ := valueobject.NewRepositoryURL("https://github.com/facebook/react")
 		reactRepo := entity.RestoreRepository(
 			resolvedRepoIDs[1], reactURL, "facebook/react", nil, nil, nil, nil, 0, 0,
-			valueobject.RepositoryStatusPending, time.Now(), time.Now(), nil,
+			valueobject.RepositoryStatusPending, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil,
 		)
 		mockRepoRepo.On("FindAll", ctx, outbound.RepositoryFilters{
 			Name:   "facebook/react",
@@ -524,7 +524,7 @@ func TestSearchService(t *testing.T) {
 		goURL, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
 		goRepo := entity.RestoreRepository(
 			resolvedRepoID, goURL, "golang/go", nil, nil, nil, nil, 0, 0,
-			valueobject.RepositoryStatusPending, time.Now(), time.Now(), nil,
+			valueobject.RepositoryStatusPending, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil,
 		)
 		mockRepoRepo.On("FindAll", ctx, outbound.RepositoryFilters{
 			Name:   "golang/go",

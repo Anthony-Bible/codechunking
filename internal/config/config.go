@@ -26,6 +26,7 @@ type Config struct {
 	Database        DatabaseConfig        `mapstructure:"database"`
 	NATS            NATSConfig            `mapstructure:"nats"`
 	Search          SearchConfig          `mapstructure:"search"`
+	Zoekt           ZoektConfig           `mapstructure:"zoekt"`
 	Gemini          GeminiConfig          `mapstructure:"gemini"`
 	BatchProcessing BatchProcessingConfig `mapstructure:"batch_processing"`
 	Log             LogConfig             `mapstructure:"log"`
@@ -81,6 +82,47 @@ type NATSConfig struct {
 // SearchConfig holds search configuration.
 type SearchConfig struct {
 	IterativeScanMode string `mapstructure:"iterative_scan_mode"`
+}
+
+// ZoektConfig holds Zoekt full-text search configuration.
+type ZoektConfig struct {
+	Webserver          ZoektWebserverConfig          `mapstructure:"webserver"`
+	Indexing           ZoektIndexingConfig           `mapstructure:"indexing"`
+	Search             ZoektSearchConfig             `mapstructure:"search"`
+	ConcurrentIndexing ZoektConcurrentIndexingConfig `mapstructure:"concurrent_indexing"`
+}
+
+// ZoektWebserverConfig holds Zoekt webserver connection configuration.
+type ZoektWebserverConfig struct {
+	Host    string        `mapstructure:"host"`
+	Port    int           `mapstructure:"port"`
+	Timeout time.Duration `mapstructure:"timeout"`
+}
+
+// ZoektIndexingConfig holds Zoekt indexing configuration.
+type ZoektIndexingConfig struct {
+	GitIndexPath    string        `mapstructure:"git_index_path"`   // Path to zoekt-git-index binary
+	IndexDir        string        `mapstructure:"index_dir"`        // Shard output directory
+	MaxFileSize     int64         `mapstructure:"max_file_size"`    // Max file size to index in bytes
+	IncludeTests    bool          `mapstructure:"include_tests"`    // Include test files
+	IncludeVendor   bool          `mapstructure:"include_vendor"`   // Include vendor directories
+	DefaultPriority float64       `mapstructure:"default_priority"` // Normalization priority
+	Timeout         time.Duration `mapstructure:"timeout"`          // Indexing timeout
+}
+
+// ZoektSearchConfig holds Zoekt search configuration.
+type ZoektSearchConfig struct {
+	MaxResults      int           `mapstructure:"max_results"`        // Max total results
+	MaxMatchPerFile int           `mapstructure:"max_match_per_file"` // Max matches per file
+	ContextLines    int           `mapstructure:"context_lines"`      // Lines of context around matches
+	Timeout         time.Duration `mapstructure:"timeout"`            // Search timeout
+}
+
+// ZoektConcurrentIndexingConfig holds concurrent indexing configuration.
+type ZoektConcurrentIndexingConfig struct {
+	Enabled           bool `mapstructure:"enabled"`             // Enable concurrent Zoekt + embedding indexing
+	MaxConcurrentJobs int  `mapstructure:"max_concurrent_jobs"` // Max concurrent indexing jobs
+	RetryAttempts     int  `mapstructure:"retry_attempts"`      // Retry attempts for failed indexing
 }
 
 // GeminiConfig holds Gemini API configuration.

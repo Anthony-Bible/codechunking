@@ -50,10 +50,10 @@ func (lm *LoggerManager) initLogger() {
 }
 
 // getLogger returns the logger instance, initializing it if necessary.
+// Always routes through once.Do to avoid a data race between the nil check
+// and the write inside initLogger when two goroutines call concurrently.
 func (lm *LoggerManager) getLogger() logging.ApplicationLogger {
-	if lm.logger == nil {
-		lm.initLogger()
-	}
+	lm.initLogger()
 	return lm.logger
 }
 

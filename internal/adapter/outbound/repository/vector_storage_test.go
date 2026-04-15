@@ -92,7 +92,7 @@ func TestVectorStorageSchema(t *testing.T) {
 			SELECT indexdef FROM pg_indexes
 			WHERE schemaname = 'codechunking'
 			AND tablename = 'embeddings_partitioned_0'
-			AND indexname LIKE '%embedding_idx'
+			AND indexname LIKE '%vector'
 			LIMIT 1
 		`).Scan(&indexDef)
 		require.NoError(t, err)

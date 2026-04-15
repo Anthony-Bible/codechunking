@@ -499,7 +499,7 @@ func TestSyncConnector_SkipsDuplicates(t *testing.T) {
 	// repo-b exists with no pending jobs (already indexed) — republishPendingJob finds nothing
 	repoBID := uuid.New()
 	repoBURL, _ := valueobject.NewRepositoryURL("https://gitlab.com/group/repo-b.git")
-	repoBEntity := entity.RestoreRepository(repoBID, repoBURL, "repo-b", nil, nil, nil, nil, 0, 0, valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil)
+	repoBEntity := entity.RestoreRepository(repoBID, repoBURL, "repo-b", nil, nil, nil, nil, 0, 0, valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusCompleted, nil, 0, nil, time.Now(), time.Now(), nil)
 	mockRepoRepo.On("FindByNormalizedURL", mock.Anything, mock.MatchedBy(func(u valueobject.RepositoryURL) bool {
 		return u.String() == "https://gitlab.com/group/repo-b"
 	})).Return(repoBEntity, nil)
@@ -609,7 +609,7 @@ func TestSyncConnector_AllReposExist(t *testing.T) {
 	for _, pr := range providerRepos {
 		repoID := uuid.New()
 		repoURL, _ := valueobject.NewRepositoryURL(pr.URL)
-		repoEntity := entity.RestoreRepository(repoID, repoURL, pr.Name, nil, nil, nil, nil, 0, 0, valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil)
+		repoEntity := entity.RestoreRepository(repoID, repoURL, pr.Name, nil, nil, nil, nil, 0, 0, valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusCompleted, nil, 0, nil, time.Now(), time.Now(), nil)
 		mockRepoRepo.On("FindByNormalizedURL", mock.Anything, mock.MatchedBy(func(u valueobject.RepositoryURL) bool {
 			return u.String() == repoURL.String()
 		})).Return(repoEntity, nil)

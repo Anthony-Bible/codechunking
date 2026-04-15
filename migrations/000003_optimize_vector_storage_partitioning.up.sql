@@ -147,13 +147,16 @@ RETURNS TABLE(
 BEGIN
     RETURN QUERY
     SELECT 
+        -- NOTE: `tablename` is the original column name used here but pg_stat_user_tables
+        -- actually exposes this column as `relname`. This query will return no rows on
+        -- standard PostgreSQL. The column reference is corrected in migration 000019.
         schemaname||'.'||tablename as partition_name,
         n_tup_ins - n_tup_del as row_count,
         pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size_pretty,
         pg_size_pretty(pg_indexes_size(schemaname||'.'||tablename)) as index_size_pretty
     FROM pg_stat_user_tables 
-    WHERE tablename LIKE 'embeddings_partitioned_%'
-    ORDER BY tablename;
+    WHERE tablename LIKE 'embeddings_partitioned_%'  -- fixed to `relname` in migration 000019
+    ORDER BY tablename;                              -- fixed to `relname` in migration 000019
 END;
 $$ LANGUAGE plpgsql;
 
@@ -161,12 +164,10 @@ $$ LANGUAGE plpgsql;
 -- 5. FOREIGN KEY CONSTRAINTS (DEFERRED FOR PERFORMANCE)
 -- ==============================================================================
 
--- Add foreign key constraint to code_chunks (with proper partitioning support)
--- Note: We reference chunk_id directly rather than using repository_id FK
--- to avoid cross-partition constraint issues
-ALTER TABLE embeddings_partitioned 
-ADD CONSTRAINT fk_embeddings_partitioned_chunk_id 
-FOREIGN KEY (chunk_id) REFERENCES code_chunks(id) ON DELETE CASCADE;
+-- Note: The FK constraint fk_embeddings_partitioned_chunk_id was intentionally
+-- removed from this migration to avoid a duplicate-constraint conflict with
+-- migration 000014 (add_foreign_keys_to_partitioned_embeddings), which adds
+-- the same constraint with proper DEFERRABLE semantics.
 
 -- ==============================================================================
 -- 6. COMMENTS AND DOCUMENTATION
@@ -189,9 +190,11 @@ COMMENT ON FUNCTION get_embeddings_partition_stats() IS
 -- ==============================================================================
 
 -- Create view for monitoring partition performance
+-- NOTE: `tablename` below is the original (non-functional) column reference;
+-- pg_stat_user_tables exposes this as `relname`. The view is corrected in migration 000019.
 CREATE OR REPLACE VIEW embeddings_partition_monitoring AS
 SELECT 
-    schemaname||'.'||tablename as partition_name,
+    schemaname||'.'||tablename as partition_name,   -- fixed to `relname` in migration 000019
     n_tup_ins - n_tup_del as row_count,
     pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size_pretty,
     pg_size_pretty(pg_indexes_size(schemaname||'.'||tablename)) as index_size_pretty,
@@ -203,8 +206,8 @@ SELECT
     n_tup_upd,
     n_tup_del
 FROM pg_stat_user_tables 
-WHERE tablename LIKE 'embeddings_partitioned_%'
-ORDER BY tablename;
+WHERE tablename LIKE 'embeddings_partitioned_%'  -- fixed to `relname` in migration 000019
+ORDER BY tablename;                              -- fixed to `relname` in migration 000019
 
 COMMENT ON VIEW embeddings_partition_monitoring IS 
 'Performance monitoring view for embeddings partitions showing size, usage, and access patterns.';

@@ -462,6 +462,11 @@ func TestGetRepositoryService_GetRepository_Success(t *testing.T) {
 		1250,
 		5000,
 		valueobject.RepositoryStatusCompleted,
+		valueobject.ZoektIndexStatusPending,
+		valueobject.EmbeddingIndexStatusPending,
+		nil,
+		0,
+		nil,
 		time.Now().Add(-24*time.Hour),
 		time.Now().Add(-time.Hour),
 		nil,
@@ -593,6 +598,11 @@ func TestUpdateRepositoryService_UpdateRepository_Success(t *testing.T) {
 		0,
 		0,
 		valueobject.RepositoryStatusPending,
+		valueobject.ZoektIndexStatusPending,
+		valueobject.EmbeddingIndexStatusPending,
+		nil,
+		0,
+		nil,
 		time.Now().Add(-24*time.Hour),
 		time.Now().Add(-time.Hour),
 		nil,
@@ -695,6 +705,11 @@ func TestUpdateRepositoryService_UpdateRepository_CannotUpdateProcessingReposito
 		0,
 		0,
 		valueobject.RepositoryStatusProcessing,
+		valueobject.ZoektIndexStatusPending,
+		valueobject.EmbeddingIndexStatusPending,
+		nil,
+		0,
+		nil,
 		time.Now().Add(-24*time.Hour),
 		time.Now().Add(-time.Hour),
 		nil,
@@ -752,6 +767,11 @@ func TestDeleteRepositoryService_DeleteRepository_Success(t *testing.T) {
 		0,
 		0,
 		valueobject.RepositoryStatusCompleted,
+		valueobject.ZoektIndexStatusPending,
+		valueobject.EmbeddingIndexStatusPending,
+		nil,
+		0,
+		nil,
 		time.Now().Add(-24*time.Hour),
 		time.Now().Add(-time.Hour),
 		nil,
@@ -837,6 +857,11 @@ func TestDeleteRepositoryService_DeleteRepository_CannotDeleteProcessingReposito
 		0,
 		0,
 		valueobject.RepositoryStatusProcessing,
+		valueobject.ZoektIndexStatusPending,
+		valueobject.EmbeddingIndexStatusPending,
+		nil,
+		0,
+		nil,
 		time.Now().Add(-24*time.Hour),
 		time.Now().Add(-time.Hour),
 		nil,
@@ -890,6 +915,11 @@ func TestListRepositoriesService_ListRepositories_Success(t *testing.T) {
 			0,
 			0,
 			valueobject.RepositoryStatusCompleted,
+			valueobject.ZoektIndexStatusPending,
+			valueobject.EmbeddingIndexStatusPending,
+			nil,
+			0,
+			nil,
 			time.Now().Add(-24*time.Hour),
 			time.Now().Add(-time.Hour),
 			nil,
@@ -905,6 +935,11 @@ func TestListRepositoriesService_ListRepositories_Success(t *testing.T) {
 			0,
 			0,
 			valueobject.RepositoryStatusPending,
+			valueobject.ZoektIndexStatusPending,
+			valueobject.EmbeddingIndexStatusPending,
+			nil,
+			0,
+			nil,
 			time.Now().Add(-12*time.Hour),
 			time.Now().Add(-30*time.Minute),
 			nil,
@@ -1108,6 +1143,11 @@ func TestListRepositoriesService_ListRepositories_FilterByName(t *testing.T) {
 						0,
 						0,
 						valueobject.RepositoryStatusCompleted,
+						valueobject.ZoektIndexStatusPending,
+						valueobject.EmbeddingIndexStatusPending,
+						nil,
+						0,
+						nil,
 						time.Now().Add(-24*time.Hour),
 						time.Now().Add(-time.Hour),
 						nil,
@@ -1125,9 +1165,9 @@ func TestListRepositoriesService_ListRepositories_FilterByName(t *testing.T) {
 				testURL2, _ := valueobject.NewRepositoryURL("https://github.com/golang/tools")
 				return []*entity.Repository{
 					entity.RestoreRepository(uuid.New(), testURL1, "golang/go", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 					entity.RestoreRepository(uuid.New(), testURL2, "golang/tools", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 				}
 			},
 			expectedCount: 2,
@@ -1140,7 +1180,7 @@ func TestListRepositoriesService_ListRepositories_FilterByName(t *testing.T) {
 				testURL, _ := valueobject.NewRepositoryURL("https://github.com/kubernetes/kubernetes")
 				return []*entity.Repository{
 					entity.RestoreRepository(uuid.New(), testURL, "kubernetes/kubernetes", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 				}
 			},
 			expectedCount: 1,
@@ -1162,7 +1202,7 @@ func TestListRepositoriesService_ListRepositories_FilterByName(t *testing.T) {
 				testURL, _ := valueobject.NewRepositoryURL("https://github.com/org/repo-name_v2")
 				return []*entity.Repository{
 					entity.RestoreRepository(uuid.New(), testURL, "org/repo-name_v2", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 				}
 			},
 			expectedCount: 1,
@@ -1236,7 +1276,7 @@ func TestListRepositoriesService_ListRepositories_FilterByURL(t *testing.T) {
 				testURL, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
 				return []*entity.Repository{
 					entity.RestoreRepository(uuid.New(), testURL, "golang/go", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 				}
 			},
 			expectedCount: 1,
@@ -1250,9 +1290,9 @@ func TestListRepositoriesService_ListRepositories_FilterByURL(t *testing.T) {
 				testURL2, _ := valueobject.NewRepositoryURL("https://github.com/kubernetes/kubernetes")
 				return []*entity.Repository{
 					entity.RestoreRepository(uuid.New(), testURL1, "golang/go", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 					entity.RestoreRepository(uuid.New(), testURL2, "kubernetes/kubernetes", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 				}
 			},
 			expectedCount: 2,
@@ -1266,9 +1306,9 @@ func TestListRepositoriesService_ListRepositories_FilterByURL(t *testing.T) {
 				testURL2, _ := valueobject.NewRepositoryURL("https://github.com/golang/tools")
 				return []*entity.Repository{
 					entity.RestoreRepository(uuid.New(), testURL1, "golang/go", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 					entity.RestoreRepository(uuid.New(), testURL2, "golang/tools", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 				}
 			},
 			expectedCount: 2,
@@ -1281,7 +1321,7 @@ func TestListRepositoriesService_ListRepositories_FilterByURL(t *testing.T) {
 				testURL, _ := valueobject.NewRepositoryURL("https://github.com/docker/docker")
 				return []*entity.Repository{
 					entity.RestoreRepository(uuid.New(), testURL, "docker/docker", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 				}
 			},
 			expectedCount: 1,
@@ -1303,7 +1343,7 @@ func TestListRepositoriesService_ListRepositories_FilterByURL(t *testing.T) {
 				testURL, _ := valueobject.NewRepositoryURL("https://github.com/example/repo.git")
 				return []*entity.Repository{
 					entity.RestoreRepository(uuid.New(), testURL, "example/repo", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 				}
 			},
 			expectedCount: 1,
@@ -1381,7 +1421,7 @@ func TestListRepositoriesService_ListRepositories_CombinedFilters(t *testing.T) 
 				testURL, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
 				return []*entity.Repository{
 					entity.RestoreRepository(uuid.New(), testURL, "golang/go", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 				}
 			},
 			expectedCount: 1,
@@ -1407,7 +1447,7 @@ func TestListRepositoriesService_ListRepositories_CombinedFilters(t *testing.T) 
 				testURL, _ := valueobject.NewRepositoryURL("https://github.com/kubernetes/kubernetes")
 				return []*entity.Repository{
 					entity.RestoreRepository(uuid.New(), testURL, "kubernetes/kubernetes", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 				}
 			},
 			expectedCount: 1,
@@ -1457,7 +1497,7 @@ func TestListRepositoriesService_ListRepositories_CombinedFilters(t *testing.T) 
 				testURL, _ := valueobject.NewRepositoryURL("https://github.com/prometheus/prometheus")
 				return []*entity.Repository{
 					entity.RestoreRepository(uuid.New(), testURL, "prometheus/prometheus", nil, nil, nil, nil, 0, 0,
-						valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+						valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 				}
 			},
 			expectedCount: 1,
@@ -1518,9 +1558,9 @@ func TestListRepositoriesService_ListRepositories_EdgeCases(t *testing.T) {
 
 		repositories := []*entity.Repository{
 			entity.RestoreRepository(uuid.New(), testURL1, "golang/go", nil, nil, nil, nil, 0, 0,
-				valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 			entity.RestoreRepository(uuid.New(), testURL2, "kubernetes/kubernetes", nil, nil, nil, nil, 0, 0,
-				valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 		}
 
 		query := dto.RepositoryListQuery{
@@ -1562,9 +1602,9 @@ func TestListRepositoriesService_ListRepositories_EdgeCases(t *testing.T) {
 
 		repositories := []*entity.Repository{
 			entity.RestoreRepository(uuid.New(), testURL1, "golang/go", nil, nil, nil, nil, 0, 0,
-				valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 			entity.RestoreRepository(uuid.New(), testURL2, "example/repo", nil, nil, nil, nil, 0, 0,
-				valueobject.RepositoryStatusCompleted, time.Now(), time.Now(), nil),
+				valueobject.RepositoryStatusCompleted, valueobject.ZoektIndexStatusPending, valueobject.EmbeddingIndexStatusPending, nil, 0, nil, time.Now(), time.Now(), nil),
 		}
 
 		query := dto.RepositoryListQuery{
@@ -1682,6 +1722,11 @@ func TestListRepositoriesService_ListRepositories_EdgeCases(t *testing.T) {
 			0,
 			0,
 			valueobject.RepositoryStatusCompleted,
+			valueobject.ZoektIndexStatusPending,
+			valueobject.EmbeddingIndexStatusPending,
+			nil,
+			0,
+			nil,
 			time.Now(),
 			time.Now(),
 			nil,
@@ -1735,6 +1780,11 @@ func TestListRepositoriesService_ListRepositories_EdgeCases(t *testing.T) {
 			0,
 			0,
 			valueobject.RepositoryStatusCompleted,
+			valueobject.ZoektIndexStatusPending,
+			valueobject.EmbeddingIndexStatusPending,
+			nil,
+			0,
+			nil,
 			time.Now(),
 			time.Now(),
 			nil,

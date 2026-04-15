@@ -60,9 +60,11 @@ func (r *PostgreSQLRepositoryRepository) Save(ctx context.Context, repository *e
 		INSERT INTO codechunking.repositories (
 			id, url, normalized_url, name, description, default_branch, last_indexed_at, 
 			last_commit_hash, total_files, total_chunks, status, 
-			created_at, updated_at, deleted_at
+			created_at, updated_at, deleted_at,
+			zoekt_index_status, embedding_index_status,
+			zoekt_last_indexed_at, zoekt_shard_count, zoekt_commit_hash
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
 		)`
 
 	qi := GetQueryInterface(ctx, r.pool)
@@ -81,6 +83,11 @@ func (r *PostgreSQLRepositoryRepository) Save(ctx context.Context, repository *e
 		repository.CreatedAt(),
 		repository.UpdatedAt(),
 		repository.DeletedAt(),
+		repository.ZoektIndexStatus().String(),
+		repository.EmbeddingIndexStatus().String(),
+		repository.ZoektLastIndexedAt(),
+		repository.ZoektShardCount(),
+		repository.ZoektCommitHash(),
 	)
 	if err != nil {
 		return WrapError(err, "save repository")
@@ -98,7 +105,9 @@ func (r *PostgreSQLRepositoryRepository) FindByID(ctx context.Context, id uuid.U
 	query := `
 		SELECT id, url, normalized_url, name, description, default_branch, last_indexed_at,
 			   last_commit_hash, total_files, total_chunks, status,
-			   created_at, updated_at, deleted_at
+			   created_at, updated_at, deleted_at,
+			   zoekt_index_status, embedding_index_status,
+			   zoekt_last_indexed_at, zoekt_shard_count, zoekt_commit_hash
 		FROM codechunking.repositories
 		WHERE id = $1 AND deleted_at IS NULL`
 
@@ -110,11 +119,17 @@ func (r *PostgreSQLRepositoryRepository) FindByID(ctx context.Context, id uuid.U
 	var lastIndexedAt, deletedAt *time.Time
 	var totalFiles, totalChunks int
 	var createdAt, updatedAt time.Time
+	var zoektIndexStatusStr, embeddingIndexStatusStr string
+	var zoektLastIndexedAt *time.Time
+	var zoektShardCount int
+	var zoektCommitHash *string
 
 	err := row.Scan(
 		&id, &repoURL, &normalizedURL, &name, &description, &defaultBranch, &lastIndexedAt,
 		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
 		&createdAt, &updatedAt, &deletedAt,
+		&zoektIndexStatusStr, &embeddingIndexStatusStr,
+		&zoektLastIndexedAt, &zoektShardCount, &zoektCommitHash,
 	)
 	if err != nil {
 		if IsNotFoundError(err) {
@@ -138,6 +153,11 @@ func (r *PostgreSQLRepositoryRepository) FindByID(ctx context.Context, id uuid.U
 		createdAt,
 		updatedAt,
 		deletedAt,
+		zoektIndexStatusStr,
+		embeddingIndexStatusStr,
+		zoektLastIndexedAt,
+		zoektShardCount,
+		zoektCommitHash,
 	)
 }
 
@@ -155,7 +175,9 @@ func (r *PostgreSQLRepositoryRepository) FindByURL(
 	query := `
 		SELECT id, url, normalized_url, name, description, default_branch, last_indexed_at,
 			   last_commit_hash, total_files, total_chunks, status,
-			   created_at, updated_at, deleted_at
+			   created_at, updated_at, deleted_at,
+			   zoekt_index_status, embedding_index_status,
+			   zoekt_last_indexed_at, zoekt_shard_count, zoekt_commit_hash
 		FROM codechunking.repositories
 		WHERE url = $1 AND deleted_at IS NULL`
 
@@ -319,7 +341,9 @@ func (r *PostgreSQLRepositoryRepository) executeQuery(
 	qi := GetQueryInterface(ctx, r.pool)
 	selectColumns := `SELECT id, url, normalized_url, name, description, default_branch, last_indexed_at,
 				  last_commit_hash, total_files, total_chunks, status,
-				  created_at, updated_at, deleted_at`
+				  created_at, updated_at, deleted_at,
+				  zoekt_index_status, embedding_index_status,
+				  zoekt_last_indexed_at, zoekt_shard_count, zoekt_commit_hash`
 
 	slogger.Info(ctx, "Executing query", slogger.Fields{
 		"limit": limit, "offset": offset, "where": whereClause, "order": orderBy,
@@ -370,11 +394,17 @@ func (r *PostgreSQLRepositoryRepository) scanRow(
 	var lastIndexedAt, deletedAt *time.Time
 	var totalFiles, totalChunks int
 	var createdAt, updatedAt time.Time
+	var zoektIndexStatusStr, embeddingIndexStatusStr string
+	var zoektLastIndexedAt *time.Time
+	var zoektShardCount int
+	var zoektCommitHash *string
 
 	if err := rows.Scan(
 		&id, &repoURL, &normalizedURL, &name, &description, &defaultBranch, &lastIndexedAt,
 		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
 		&createdAt, &updatedAt, &deletedAt,
+		&zoektIndexStatusStr, &embeddingIndexStatusStr,
+		&zoektLastIndexedAt, &zoektShardCount, &zoektCommitHash,
 	); err != nil {
 		slogger.Error(ctx, "Failed to scan row", slogger.Fields{"error": err.Error()})
 		return nil, WrapError(err, "scan repository row")
@@ -383,6 +413,8 @@ func (r *PostgreSQLRepositoryRepository) scanRow(
 	repo, err := r.scanRepositoryFromTime(
 		id, repoURL, normalizedURL, name, description, defaultBranch, lastIndexedAt,
 		lastCommitHash, totalFiles, totalChunks, statusStr, createdAt, updatedAt, deletedAt,
+		zoektIndexStatusStr, embeddingIndexStatusStr,
+		zoektLastIndexedAt, zoektShardCount, zoektCommitHash,
 	)
 	if err != nil {
 		slogger.Error(ctx, "Failed to convert to entity", slogger.Fields{
@@ -409,7 +441,9 @@ func (r *PostgreSQLRepositoryRepository) Update(ctx context.Context, repository 
 		UPDATE codechunking.repositories 
 		SET url = $2, normalized_url = $3, name = $4, description = $5, default_branch = $6, 
 			last_indexed_at = $7, last_commit_hash = $8, total_files = $9, 
-			total_chunks = $10, status = $11, updated_at = $12, deleted_at = $13
+			total_chunks = $10, status = $11, updated_at = $12, deleted_at = $13,
+			zoekt_index_status = $14, embedding_index_status = $15,
+			zoekt_last_indexed_at = $16, zoekt_shard_count = $17, zoekt_commit_hash = $18
 		WHERE id = $1 AND deleted_at IS NULL`
 
 	qi := GetQueryInterface(ctx, r.pool)
@@ -427,6 +461,11 @@ func (r *PostgreSQLRepositoryRepository) Update(ctx context.Context, repository 
 		repository.Status().String(),
 		repository.UpdatedAt(),
 		repository.DeletedAt(),
+		repository.ZoektIndexStatus().String(),
+		repository.EmbeddingIndexStatus().String(),
+		repository.ZoektLastIndexedAt(),
+		repository.ZoektShardCount(),
+		repository.ZoektCommitHash(),
 	)
 	if err != nil {
 		return WrapError(err, "update repository")
@@ -503,7 +542,9 @@ func (r *PostgreSQLRepositoryRepository) FindByNormalizedURL(
 	query := `
 		SELECT id, url, normalized_url, name, description, default_branch, last_indexed_at,
 			   last_commit_hash, total_files, total_chunks, status,
-			   created_at, updated_at, deleted_at
+			   created_at, updated_at, deleted_at,
+			   zoekt_index_status, embedding_index_status,
+			   zoekt_last_indexed_at, zoekt_shard_count, zoekt_commit_hash
 		FROM codechunking.repositories
 		WHERE normalized_url = $1 AND deleted_at IS NULL`
 
@@ -521,6 +562,10 @@ func (r *PostgreSQLRepositoryRepository) scanRepositoryFromTime(
 	statusStr string,
 	createdAt, updatedAt time.Time,
 	deletedAt *time.Time,
+	zoektIndexStatusStr, embeddingIndexStatusStr string,
+	zoektLastIndexedAt *time.Time,
+	zoektShardCount int,
+	zoektCommitHash *string,
 ) (*entity.Repository, error) {
 	// Reconstruct from trusted DB values — skip re-validation.
 	url := valueobject.RestoreRepositoryURL(rawURL, normalizedURL)
@@ -531,10 +576,28 @@ func (r *PostgreSQLRepositoryRepository) scanRepositoryFromTime(
 		return nil, fmt.Errorf("invalid repository status: %w", err)
 	}
 
+	// Parse Zoekt index status
+	zoektIndexStatus, err := valueobject.NewZoektIndexStatus(zoektIndexStatusStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid zoekt index status: %w", err)
+	}
+
+	// Parse embedding index status
+	embeddingIndexStatus, err := valueobject.NewEmbeddingIndexStatus(embeddingIndexStatusStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid embedding index status: %w", err)
+	}
+
 	return entity.RestoreRepository(
 		id, url, name, description, defaultBranch,
 		lastIndexedAt, lastCommitHash, totalFiles, totalChunks,
-		status, createdAt, updatedAt, deletedAt,
+		status,
+		zoektIndexStatus,
+		embeddingIndexStatus,
+		zoektLastIndexedAt,
+		zoektShardCount,
+		zoektCommitHash,
+		createdAt, updatedAt, deletedAt,
 	), nil
 }
 
@@ -559,11 +622,17 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByRawURL(
 	var lastIndexedAt, deletedAt *time.Time
 	var totalFiles, totalChunks int
 	var createdAt, updatedAt time.Time
+	var zoektIndexStatusStr, embeddingIndexStatusStr string
+	var zoektLastIndexedAt *time.Time
+	var zoektShardCount int
+	var zoektCommitHash *string
 
 	err := row.Scan(
 		&id, &repoURL, &normalizedURL, &name, &description, &defaultBranch, &lastIndexedAt,
 		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
 		&createdAt, &updatedAt, &deletedAt,
+		&zoektIndexStatusStr, &embeddingIndexStatusStr,
+		&zoektLastIndexedAt, &zoektShardCount, &zoektCommitHash,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -576,6 +645,8 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByRawURL(
 		id, repoURL, normalizedURL, name, description, defaultBranch,
 		lastIndexedAt, lastCommitHash, totalFiles, totalChunks,
 		statusStr, createdAt, updatedAt, deletedAt,
+		zoektIndexStatusStr, embeddingIndexStatusStr,
+		zoektLastIndexedAt, zoektShardCount, zoektCommitHash,
 	)
 }
 
@@ -601,11 +672,17 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByNormalizedURL(
 	var lastIndexedAt *time.Time
 	var createdAt, updatedAt time.Time
 	var deletedAt *time.Time
+	var zoektIndexStatusStr, embeddingIndexStatusStr string
+	var zoektLastIndexedAt *time.Time
+	var zoektShardCount int
+	var zoektCommitHash *string
 
 	err := row.Scan(
 		&id, &rawURL, &normalizedURL, &name, &description, &defaultBranch, &lastIndexedAt,
 		&lastCommitHash, &totalFiles, &totalChunks, &statusStr,
 		&createdAt, &updatedAt, &deletedAt,
+		&zoektIndexStatusStr, &embeddingIndexStatusStr,
+		&zoektLastIndexedAt, &zoektShardCount, &zoektCommitHash,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -618,6 +695,8 @@ func (r *PostgreSQLRepositoryRepository) queryRepositoryByNormalizedURL(
 		id, rawURL, normalizedURL, name, description, defaultBranch,
 		lastIndexedAt, lastCommitHash, totalFiles, totalChunks,
 		statusStr, createdAt, updatedAt, deletedAt,
+		zoektIndexStatusStr, embeddingIndexStatusStr,
+		zoektLastIndexedAt, zoektShardCount, zoektCommitHash,
 	)
 }
 

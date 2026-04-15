@@ -198,6 +198,9 @@ func TestNotFoundScenarios(t *testing.T) {
 		nonExistentRepo := entity.RestoreRepository(
 			uuid.New(), testURL, "Nonexistent Repo", nil, nil,
 			nil, nil, 0, 0, valueobject.RepositoryStatusPending,
+			valueobject.ZoektIndexStatusPending,
+			valueobject.EmbeddingIndexStatusPending,
+			nil, 0, nil,
 			time.Now(), time.Now(), nil,
 		)
 

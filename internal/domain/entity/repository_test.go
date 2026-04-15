@@ -123,7 +123,11 @@ func TestRestoreRepository(t *testing.T) {
 	repo := RestoreRepository(
 		id, testURL, name, &description, &defaultBranch,
 		&lastIndexedAt, &lastCommitHash, totalFiles, totalChunks,
-		status, createdAt, updatedAt, &deletedAt,
+		status,
+		valueobject.ZoektIndexStatusCompleted,
+		valueobject.EmbeddingIndexStatusCompleted,
+		&lastIndexedAt, 1, &lastCommitHash,
+		createdAt, updatedAt, &deletedAt,
 	)
 
 	// Verify all fields are restored correctly
@@ -591,6 +595,9 @@ func TestRepository_Equal(t *testing.T) {
 	restoredRepo := RestoreRepository(
 		repo1.ID(), testURL, "Different Name", nil, nil,
 		nil, nil, 0, 0, valueobject.RepositoryStatusPending,
+		valueobject.ZoektIndexStatusPending,
+		valueobject.EmbeddingIndexStatusPending,
+		nil, 0, nil,
 		time.Now(), time.Now(), nil,
 	)
 

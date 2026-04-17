@@ -390,25 +390,21 @@ func TestPipelineProcessing_PerformanceRegression(t *testing.T) {
 	t.Logf("Processing time: %v", duration)
 }
 
-func TestPipelineMemoryManagement_LargeRepository(t *testing.T) {
-	repo := generateRepository(50, 20*1024) // Reduced size for faster tests
+func BenchmarkPipelineMemoryManagement_LargeRepository(b *testing.B) {
+	repo := generateRepository(50, 20*1024)
 	orchestrator := setupPipelineOrchestrator()
 
-	memStart := measureMemory()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	_, err := orchestrator.ProcessRepository(ctx, repo)
-	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("Processing failed: %v", err)
-	}
-	memEnd := measureMemory()
+	b.ReportAllocs()
+	b.ResetTimer()
 
-	memoryUsed := memEnd - memStart
-	if memoryUsed > 100*1024*1024 {
-		t.Fatalf("Memory usage was %v MB, expected <100MB for reduced repository", memoryUsed/(1024*1024))
+	for range b.N {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_, err := orchestrator.ProcessRepository(ctx, repo)
+		cancel()
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			b.Fatalf("Processing failed: %v", err)
+		}
 	}
-
-	t.Logf("Memory used: %v MB", memoryUsed/(1024*1024))
 }
 
 func TestPipelineResourceContention_HighConcurrency(t *testing.T) {

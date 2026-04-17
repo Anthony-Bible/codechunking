@@ -11,6 +11,7 @@ import (
 	"codechunking/internal/adapter/outbound/queue"
 	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/adapter/outbound/treesitter"
+	zoektadapter "codechunking/internal/adapter/outbound/zoekt"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/service"
 	"codechunking/internal/application/worker"
@@ -367,6 +368,20 @@ func createWorkerService(
 		JobTimeout:        cfg.Worker.JobTimeout,
 	}
 
+	// Conditionally create ZoektIndexer when concurrent indexing is enabled.
+	var zoektOptions *worker.JobProcessorZoektOptions
+	if cfg.Zoekt.ConcurrentIndexing.Enabled {
+		zoektIndexer := zoektadapter.NewIndexer(zoektadapter.IndexerConfig{
+			GitIndexPath: cfg.Zoekt.Indexing.GitIndexPath,
+			IndexDir:     cfg.Zoekt.Indexing.IndexDir,
+			Timeout:      cfg.Zoekt.Indexing.Timeout,
+		})
+		zoektOptions = &worker.JobProcessorZoektOptions{
+			ZoektIndexer: zoektIndexer,
+			ZoektConfig:  cfg.Zoekt,
+		}
+	}
+
 	jobProcessor := worker.NewDefaultJobProcessor(
 		jobProcessorConfig,
 		indexingJobRepository,
@@ -381,6 +396,7 @@ func createWorkerService(
 			BatchProgressRepo:     batchProgressRepo,
 			BatchEmbeddingService: batchEmbeddingService,
 		},
+		zoektOptions,
 	)
 
 	// Create consumer

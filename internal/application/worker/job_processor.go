@@ -90,6 +90,13 @@ type JobProcessorBatchOptions struct {
 	BatchEmbeddingService outbound.BatchEmbeddingService
 }
 
+// JobProcessorZoektOptions contains optional Zoekt concurrent indexing dependencies.
+// When nil or when ZoektIndexer is nil, the processor falls back to embedding-only behavior.
+type JobProcessorZoektOptions struct {
+	ZoektIndexer outbound.ZoektIndexer
+	ZoektConfig  config.ZoektConfig
+}
+
 // JobExecution tracks the execution of a single job.
 type JobExecution struct {
 	JobID        uuid.UUID
@@ -123,6 +130,9 @@ type DefaultJobProcessor struct {
 	chunkStorageRepo      outbound.ChunkStorageRepository
 	batchQueueManager     outbound.BatchQueueManager
 	batchProgressRepo     outbound.BatchProgressRepository
+	zoektIndexer          outbound.ZoektIndexer
+	zoektConfig           config.ZoektConfig
+	embeddingFn           func(ctx context.Context, jobID, repoID uuid.UUID, chunks []outbound.CodeChunk) error
 	activeJobs            map[string]*JobExecution
 	jobsMu                sync.RWMutex
 	semaphore             chan struct{}
@@ -131,7 +141,8 @@ type DefaultJobProcessor struct {
 }
 
 // NewDefaultJobProcessor creates a new default job processor.
-// The batchOptions parameter is optional and can be nil for minimal configuration.
+// Both batchOptions and zoektOptions are optional and can be nil for minimal configuration.
+// zoektOptions is variadic so callers can omit it; only the first value is used.
 func NewDefaultJobProcessor(
 	processorConfig JobProcessorConfig,
 	indexingJobRepo outbound.IndexingJobRepository,
@@ -141,6 +152,7 @@ func NewDefaultJobProcessor(
 	embeddingService outbound.EmbeddingService,
 	chunkStorageRepo outbound.ChunkStorageRepository,
 	batchOptions *JobProcessorBatchOptions,
+	zoektOptions ...*JobProcessorZoektOptions,
 ) inbound.JobProcessor {
 	// Handle nil batch options
 	if batchOptions == nil {
@@ -178,6 +190,12 @@ func NewDefaultJobProcessor(
 		activeJobs:            make(map[string]*JobExecution),
 		semaphore:             make(chan struct{}, maxConcurrent),
 	}
+	processor.embeddingFn = processor.generateEmbeddings
+
+	if len(zoektOptions) > 0 && zoektOptions[0] != nil {
+		processor.zoektIndexer = zoektOptions[0].ZoektIndexer
+		processor.zoektConfig = zoektOptions[0].ZoektConfig
+	}
 
 	return processor
 }
@@ -204,7 +222,7 @@ func (p *DefaultJobProcessor) ProcessJob(ctx context.Context, message messaging.
 
 	job := p.persistJobStart(jobCtx, message.IndexingJobID)
 
-	chunks, err := p.executeJobPipeline(jobCtx, message, workspacePath, execution)
+	chunks, concResult, err := p.executeJobPipeline(jobCtx, message, workspacePath, execution)
 	if err != nil {
 		p.persistJobFail(jobCtx, job, err.Error())
 		return err
@@ -212,7 +230,7 @@ func (p *DefaultJobProcessor) ProcessJob(ctx context.Context, message messaging.
 
 	// If chunks is nil, job was skipped (completed/archived state)
 	if chunks != nil {
-		p.finalizeJobCompletion(jobCtx, message, execution, chunks, job)
+		p.finalizeJobCompletion(jobCtx, message, execution, chunks, concResult, job)
 	} else {
 		p.persistJobSkip(jobCtx, job)
 	}
@@ -263,73 +281,104 @@ func (p *DefaultJobProcessor) createJobExecution(message messaging.EnhancedIndex
 // executeJobPipeline executes the main job processing pipeline.
 // It implements idempotent processing by checking repository status before proceeding.
 // Returns nil chunks if the repository should be skipped (completed/archived).
+// When concurrent indexing is enabled, a non-nil ConcurrencyResult is returned
+// for use in finalizeJobCompletion.
 func (p *DefaultJobProcessor) executeJobPipeline(
 	ctx context.Context,
 	message messaging.EnhancedIndexingJobMessage,
 	workspacePath string,
 	execution *JobExecution,
-) ([]outbound.CodeChunk, error) {
+) ([]outbound.CodeChunk, *ConcurrencyResult, error) {
 	// Fetch repository to check current status for idempotent processing
 	repo, err := p.repositoryRepo.FindByID(ctx, message.RepositoryID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch repository for status check: %w", err)
+		return nil, nil, fmt.Errorf("failed to fetch repository for status check: %w", err)
 	}
 	if repo == nil {
-		return nil, fmt.Errorf("repository not found: %s", message.RepositoryID.String())
+		return nil, nil, fmt.Errorf("repository not found: %s", message.RepositoryID.String())
 	}
 
 	// Handle repository status - this enables idempotent message redelivery
 	shouldSkip, err := p.handleRepositoryStatus(ctx, repo, message.RepositoryID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if shouldSkip {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	if err := p.setupWorkspace(workspacePath); err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
 		p.markRepositoryFailed(ctx, message.RepositoryID)
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Transition to cloning if not already in cloning or processing state
 	if p.shouldTransitionFrom(repo.Status(), valueobject.RepositoryStatusCloning) {
 		if err := p.transitionToCloning(ctx, message.RepositoryID, message.MessageID); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	if err := p.cloneRepository(ctx, message, workspacePath); err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
 		p.markRepositoryFailed(ctx, message.RepositoryID)
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Transition to processing if not already in processing state
 	if p.shouldTransitionFrom(repo.Status(), valueobject.RepositoryStatusProcessing) {
 		if err := p.transitionToProcessing(ctx, message.RepositoryID, message.MessageID); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	chunkSize := p.getChunkSize(message)
-	config := outbound.CodeParsingConfig{ChunkSizeBytes: chunkSize}
+	parsingConfig := outbound.CodeParsingConfig{ChunkSizeBytes: chunkSize}
 
-	chunks, err := p.parseCode(ctx, workspacePath, config)
+	chunks, err := p.parseCode(ctx, workspacePath, parsingConfig)
 	if err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
 		p.markRepositoryFailed(ctx, message.RepositoryID)
-		return nil, err
+		return nil, nil, err
+	}
+
+	if p.shouldRunConcurrentIndexing() {
+		commitHash, hashErr := p.gitClient.GetCommitHash(ctx, workspacePath)
+		if hashErr != nil {
+			slogger.Warn(ctx, "Failed to get commit hash, falling back to unknown", slogger.Fields{
+				"workspace_path": workspacePath,
+				"error":          hashErr.Error(),
+			})
+			commitHash = unknownCommitHash
+		}
+		repoURL := repo.URL()
+		zoektRepoName := repoURL.Host() + "/" + repoURL.FullName()
+		result := p.runConcurrentIndexing(
+			ctx,
+			zoektRepoName,
+			workspacePath,
+			commitHash,
+			chunks,
+			message.IndexingJobID,
+			message.RepositoryID,
+		)
+		if result.BothFailed() {
+			p.updateJobStatus(message.MessageID, jobStatusFailed)
+			p.markRepositoryFailed(ctx, message.RepositoryID)
+			return nil, nil, fmt.Errorf("both indexing engines failed: zoekt=%w, embedding=%w",
+				result.ZoektErr, result.EmbeddingErr)
+		}
+		return chunks, &result, nil
 	}
 
 	if err := p.generateEmbeddings(ctx, message.IndexingJobID, message.RepositoryID, chunks); err != nil {
 		p.updateJobStatus(message.MessageID, jobStatusFailed)
 		p.markRepositoryFailed(ctx, message.RepositoryID)
-		return nil, err
+		return nil, nil, err
 	}
 
-	return chunks, nil
+	return chunks, nil, nil
 }
 
 // shouldUseBatchProcessing determines if batch processing should be used for the given chunks.
@@ -493,11 +542,14 @@ func (p *DefaultJobProcessor) transitionToProcessing(ctx context.Context, repoID
 }
 
 // finalizeJobCompletion marks the job and repository as completed.
+// When concResult is non-nil (concurrent indexing path), per-engine statuses are
+// written to the repository before persisting.
 func (p *DefaultJobProcessor) finalizeJobCompletion(
 	ctx context.Context,
 	message messaging.EnhancedIndexingJobMessage,
 	execution *JobExecution,
 	chunks []outbound.CodeChunk,
+	concResult *ConcurrencyResult,
 	job *entity.IndexingJob,
 ) {
 	p.updateJobStatus(message.MessageID, jobStatusCompleted)
@@ -506,9 +558,164 @@ func (p *DefaultJobProcessor) finalizeJobCompletion(
 	}
 
 	fileCount := len(chunks)
-	p.markRepositoryCompleted(ctx, message.RepositoryID, unknownCommitHash, fileCount, len(chunks))
-	p.updateMetrics(int64(len(chunks)))
-	p.persistJobComplete(ctx, job, fileCount, len(chunks))
+
+	if concResult != nil {
+		p.finalizeWithConcurrencyResult(ctx, message.RepositoryID, concResult, fileCount, fileCount)
+	} else {
+		p.markRepositoryCompleted(ctx, message.RepositoryID, unknownCommitHash, fileCount, fileCount)
+	}
+
+	p.updateMetrics(int64(fileCount))
+	p.persistJobComplete(ctx, job, fileCount, fileCount)
+}
+
+// finalizeWithConcurrencyResult updates per-engine statuses for a concurrent indexing run
+// and persists the repository. Called only when concurrent indexing was used and at least
+// one engine succeeded (BothFailed is handled earlier in executeJobPipeline).
+func (p *DefaultJobProcessor) finalizeWithConcurrencyResult(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	result *ConcurrencyResult,
+	fileCount, chunkCount int,
+) {
+	// Guard: if somehow both engines failed, persisting Completed would be inconsistent.
+	if result.BothFailed() {
+		slogger.Error(ctx, "finalizeWithConcurrencyResult: both engines failed; marking repository failed", slogger.Fields{
+			"repository_id":   repositoryID.String(),
+			"zoekt_error":     fmt.Sprintf("%v", result.ZoektErr),
+			"embedding_error": fmt.Sprintf("%v", result.EmbeddingErr),
+		})
+		p.markRepositoryFailed(ctx, repositoryID)
+		return
+	}
+
+	repo, err := p.repositoryRepo.FindByID(ctx, repositoryID)
+	if err != nil || repo == nil {
+		slogger.Error(ctx, "finalizeWithConcurrencyResult: failed to load repository", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"error":         fmt.Sprintf("%v", err),
+		})
+		return
+	}
+
+	// Determine terminal statuses and apply them via correct state-machine paths.
+	zoektTerminal := valueobject.ZoektIndexStatusCompleted
+	if result.ZoektErr != nil {
+		zoektTerminal = valueobject.ZoektIndexStatusFailed
+	}
+	var shardCount int
+	if result.ZoektResult != nil {
+		shardCount = result.ZoektResult.ShardCount
+	}
+	var zoektCommitHash *string
+	if result.ZoektErr == nil && result.CommitHash != "" {
+		zoektCommitHash = &result.CommitHash
+	}
+	zoektUpdateErr := applyZoektStatusTransition(repo, zoektTerminal, shardCount, zoektCommitHash)
+
+	embeddingTerminal := valueobject.EmbeddingIndexStatusCompleted
+	if result.EmbeddingErr != nil {
+		embeddingTerminal = valueobject.EmbeddingIndexStatusFailed
+	}
+	embUpdateErr := applyEmbeddingStatusTransition(repo, embeddingTerminal)
+
+	// If both per-engine transitions failed we cannot persist a consistent record.
+	if zoektUpdateErr != nil && embUpdateErr != nil {
+		slogger.Error(ctx, "finalizeWithConcurrencyResult: both engine status transitions failed; marking repository failed", slogger.Fields{
+			"repository_id":   repositoryID.String(),
+			"zoekt_error":     zoektUpdateErr.Error(),
+			"embedding_error": embUpdateErr.Error(),
+		})
+		p.markRepositoryFailed(ctx, repositoryID)
+		return
+	}
+	// Log individual failures so the inconsistency is observable even when one engine succeeded.
+	if zoektUpdateErr != nil {
+		slogger.Error(ctx, "finalizeWithConcurrencyResult: Zoekt status transition failed; embedding succeeded", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"error":         zoektUpdateErr.Error(),
+		})
+	}
+	if embUpdateErr != nil {
+		slogger.Error(ctx, "finalizeWithConcurrencyResult: embedding status transition failed; Zoekt succeeded", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"error":         embUpdateErr.Error(),
+		})
+	}
+
+	// Mark the overall repository as completed (at least one engine succeeded).
+	if err := repo.MarkIndexingCompleted(result.CommitHash, fileCount, chunkCount); err != nil {
+		slogger.Error(ctx, "Failed to mark repository as completed", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"error":         err.Error(),
+		})
+		return
+	}
+
+	if err := p.repositoryRepo.Update(ctx, repo); err != nil {
+		slogger.Error(ctx, "Failed to persist repository after concurrent indexing", slogger.Fields{
+			"repository_id": repositoryID.String(),
+			"error":         err.Error(),
+		})
+	}
+}
+
+// applyZoektStatusTransition advances repo's Zoekt engine status to terminal, inserting
+// intermediate hops (Pending, Indexing) as the state machine requires.
+func applyZoektStatusTransition(
+	repo *entity.Repository,
+	terminal valueobject.ZoektIndexStatus,
+	shardCount int,
+	commitHash *string,
+) error {
+	// Direct transition is valid — apply it immediately.
+	if repo.ZoektIndexStatus().CanTransitionTo(terminal) {
+		return repo.UpdateZoektStatus(terminal, shardCount, commitHash)
+	}
+	// Failed must reset to Pending before it can proceed through Indexing.
+	if repo.ZoektIndexStatus() == valueobject.ZoektIndexStatusFailed {
+		if err := repo.UpdateZoektStatus(valueobject.ZoektIndexStatusPending, 0, nil); err != nil {
+			return fmt.Errorf("applyZoektStatusTransition: reset Failed→Pending: %w", err)
+		}
+	}
+	// Transition through Indexing intermediate when needed.
+	if repo.ZoektIndexStatus().CanTransitionTo(valueobject.ZoektIndexStatusIndexing) {
+		if err := repo.UpdateZoektStatus(valueobject.ZoektIndexStatusIndexing, 0, nil); err != nil {
+			return fmt.Errorf("applyZoektStatusTransition: →Indexing: %w", err)
+		}
+	}
+	if err := repo.UpdateZoektStatus(terminal, shardCount, commitHash); err != nil {
+		return fmt.Errorf("applyZoektStatusTransition: →%v: %w", terminal, err)
+	}
+	return nil
+}
+
+// applyEmbeddingStatusTransition advances repo's embedding engine status to terminal,
+// inserting intermediate hops (Pending, Generating) as the state machine requires.
+func applyEmbeddingStatusTransition(
+	repo *entity.Repository,
+	terminal valueobject.EmbeddingIndexStatus,
+) error {
+	// Direct transition is valid — apply it immediately.
+	if repo.EmbeddingIndexStatus().CanTransitionTo(terminal) {
+		return repo.UpdateEmbeddingStatus(terminal)
+	}
+	// Failed must reset to Pending before it can proceed through Generating.
+	if repo.EmbeddingIndexStatus() == valueobject.EmbeddingIndexStatusFailed {
+		if err := repo.UpdateEmbeddingStatus(valueobject.EmbeddingIndexStatusPending); err != nil {
+			return fmt.Errorf("applyEmbeddingStatusTransition: reset Failed→Pending: %w", err)
+		}
+	}
+	// Transition through Generating intermediate when needed.
+	if repo.EmbeddingIndexStatus().CanTransitionTo(valueobject.EmbeddingIndexStatusGenerating) {
+		if err := repo.UpdateEmbeddingStatus(valueobject.EmbeddingIndexStatusGenerating); err != nil {
+			return fmt.Errorf("applyEmbeddingStatusTransition: →Generating: %w", err)
+		}
+	}
+	if err := repo.UpdateEmbeddingStatus(terminal); err != nil {
+		return fmt.Errorf("applyEmbeddingStatusTransition: →%v: %w", terminal, err)
+	}
+	return nil
 }
 
 // persistJobStart loads the IndexingJob from the DB, marks it as started, and persists it.

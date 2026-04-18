@@ -582,8 +582,8 @@ func (p *DefaultJobProcessor) finalizeWithConcurrencyResult(
 	if result.BothFailed() {
 		slogger.Error(ctx, "finalizeWithConcurrencyResult: both engines failed; marking repository failed", slogger.Fields{
 			"repository_id":   repositoryID.String(),
-			"zoekt_error":     fmt.Sprintf("%v", result.ZoektErr),
-			"embedding_error": fmt.Sprintf("%v", result.EmbeddingErr),
+			"zoekt_error":     result.ZoektErr.Error(),
+			"embedding_error": result.EmbeddingErr.Error(),
 		})
 		p.markRepositoryFailed(ctx, repositoryID)
 		return
@@ -591,9 +591,13 @@ func (p *DefaultJobProcessor) finalizeWithConcurrencyResult(
 
 	repo, err := p.repositoryRepo.FindByID(ctx, repositoryID)
 	if err != nil || repo == nil {
+		errMsg := "repository not found"
+		if err != nil {
+			errMsg = err.Error()
+		}
 		slogger.Error(ctx, "finalizeWithConcurrencyResult: failed to load repository", slogger.Fields{
 			"repository_id": repositoryID.String(),
-			"error":         fmt.Sprintf("%v", err),
+			"error":         errMsg,
 		})
 		return
 	}

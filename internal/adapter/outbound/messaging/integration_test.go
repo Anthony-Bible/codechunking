@@ -19,9 +19,10 @@ func TestNATSMessagePublisher_Integration_RealNATSServer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
+	url := requireNATS(t)
 
 	config := config.NATSConfig{
-		URL:           "nats://localhost:4222",
+		URL:           url,
 		MaxReconnects: 5,
 		ReconnectWait: 2 * time.Second,
 	}
@@ -77,9 +78,10 @@ func TestNATSMessagePublisher_Integration_StreamManagement(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
+	url := requireNATS(t)
 
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -141,9 +143,10 @@ func TestNATSMessagePublisher_Integration_MessageFlow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
+	url := requireNATS(t)
 
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -222,9 +225,10 @@ func TestNATSMessagePublisher_Integration_Performance(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
+	url := requireNATS(t)
 
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -344,9 +348,10 @@ func TestNATSMessagePublisher_Integration_Monitoring(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
+	url := requireNATS(t)
 
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented

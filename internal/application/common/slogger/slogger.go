@@ -11,8 +11,9 @@ type Fields = logging.Fields
 
 // LoggerManager manages logger instances with proper encapsulation.
 type LoggerManager struct {
-	logger logging.ApplicationLogger
-	once   sync.Once
+	mu          sync.RWMutex
+	logger      logging.ApplicationLogger
+	initialized bool
 }
 
 var (
@@ -28,38 +29,53 @@ func getDefaultManager() *LoggerManager {
 	return defaultManagerInstance
 }
 
-// initLogger initializes the logger instance.
+// initLogger initializes the logger using double-checked locking.
 func (lm *LoggerManager) initLogger() {
-	lm.once.Do(func() {
-		config := logging.Config{
-			Level:            "INFO",
-			Format:           "json",
-			Output:           "stdout",
-			EnableColors:     false,
-			TimestampFormat:  "",
-			EnableStackTrace: false,
-		}
+	lm.mu.RLock()
+	if lm.initialized {
+		lm.mu.RUnlock()
+		return
+	}
+	lm.mu.RUnlock()
 
-		logger, err := logging.NewApplicationLogger(config)
-		if err != nil {
-			// Fallback - this should not happen with valid config
-			panic("Failed to initialize logger: " + err.Error())
-		}
-		lm.logger = logger
-	})
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+	if lm.initialized {
+		return
+	}
+
+	config := logging.Config{
+		Level:            "INFO",
+		Format:           "json",
+		Output:           "stdout",
+		EnableColors:     false,
+		TimestampFormat:  "",
+		EnableStackTrace: false,
+	}
+
+	logger, err := logging.NewApplicationLogger(config)
+	if err != nil {
+		panic("Failed to initialize logger: " + err.Error())
+	}
+	lm.logger = logger
+	lm.initialized = true
 }
 
 // getLogger returns the logger instance, initializing it if necessary.
-// Always routes through once.Do to avoid a data race between the nil check
-// and the write inside initLogger when two goroutines call concurrently.
 func (lm *LoggerManager) getLogger() logging.ApplicationLogger {
 	lm.initLogger()
+	lm.mu.RLock()
+	defer lm.mu.RUnlock()
 	return lm.logger
 }
 
 // SetLogger allows setting a custom logger (useful for testing).
+// Passing nil resets the manager so it will auto-initialize on next use.
 func (lm *LoggerManager) SetLogger(logger logging.ApplicationLogger) {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
 	lm.logger = logger
+	lm.initialized = logger != nil
 }
 
 // getLogger returns the default logger instance.

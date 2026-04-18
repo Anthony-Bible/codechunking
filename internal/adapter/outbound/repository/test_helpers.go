@@ -5,27 +5,45 @@ import (
 	"codechunking/internal/domain/valueobject"
 	"context"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// setupTestDB creates a test database connection.
+func envOr(key, defaultVal string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultVal
+}
+
+func envIntOr(key string, defaultVal int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return defaultVal
+}
+
+// setupTestDB creates a test database connection, skipping if unavailable.
 func setupTestDB(t *testing.T) *pgxpool.Pool {
-	config := DatabaseConfig{
-		Host:     "localhost",
-		Port:     5432,
-		Database: "codechunking",
-		Username: "dev",
-		Password: "dev",
-		Schema:   "codechunking", // Changed from "public" to match pgvector extension schema
+	t.Helper()
+	cfg := DatabaseConfig{
+		Host:     envOr("CODECHUNK_DATABASE_HOST", "localhost"),
+		Port:     envIntOr("CODECHUNK_DATABASE_PORT", 5432),
+		Database: envOr("CODECHUNK_DATABASE_NAME", "codechunking"),
+		Username: envOr("CODECHUNK_DATABASE_USER", "dev"),
+		Password: envOr("CODECHUNK_DATABASE_PASSWORD", "dev"),
+		Schema:   envOr("CODECHUNK_DATABASE_SCHEMA", "codechunking"),
 	}
-	// This will fail because NewDatabaseConnection doesn't exist yet
-	pool, err := NewDatabaseConnection(config)
+	pool, err := NewDatabaseConnection(cfg)
 	if err != nil {
-		t.Fatalf("Failed to create test database connection: %v", err)
+		t.Skipf("skipping: postgres unavailable at %s:%d (%v)", cfg.Host, cfg.Port, err)
 	}
+	t.Cleanup(func() { pool.Close() })
 	return pool
 }
 

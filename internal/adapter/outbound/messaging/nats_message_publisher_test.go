@@ -4,6 +4,9 @@ import (
 	"codechunking/internal/config"
 	"context"
 	"fmt"
+	"net"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +14,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func requireNATS(t *testing.T) string {
+	t.Helper()
+	url := os.Getenv("CODECHUNK_NATS_URL")
+	if url == "" {
+		url = "nats://localhost:4222"
+	}
+	conn, err := net.DialTimeout("tcp", strings.TrimPrefix(url, "nats://"), 500*time.Millisecond)
+	if err != nil {
+		t.Skipf("skipping: NATS unavailable at %s (%v)", url, err)
+	}
+	_ = conn.Close()
+	return url
+}
 
 func TestNewNATSMessagePublisher_Success(t *testing.T) {
 	tests := []struct {
@@ -101,8 +118,9 @@ func TestNewNATSMessagePublisher_InvalidConfig(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_Connect_Success(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL:           "nats://localhost:4222",
+		URL:           url,
 		MaxReconnects: 5,
 		ReconnectWait: 2 * time.Second,
 	}
@@ -165,8 +183,9 @@ func TestNATSMessagePublisher_Connect_Failure(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_Disconnect_Success(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -198,8 +217,9 @@ func TestNATSMessagePublisher_Disconnect_WhenNotConnected(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_ConnectionResilience(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL:           "nats://localhost:4222",
+		URL:           url,
 		MaxReconnects: 3,
 		ReconnectWait: 100 * time.Millisecond,
 	}
@@ -249,8 +269,9 @@ func TestNATSMessagePublisher_ConnectionPooling(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_EnsureStream_Success(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -272,8 +293,9 @@ func TestNATSMessagePublisher_EnsureStream_Success(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_EnsureStream_StreamConfiguration(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -359,8 +381,9 @@ func TestNATSMessagePublisher_EnsureStream_Failures(t *testing.T) {
 		},
 	}
 
+	natsURL := requireNATS(t)
 	cfg := config.NATSConfig{
-		URL:      "nats://localhost:4222",
+		URL:      natsURL,
 		TestMode: true,
 	}
 
@@ -383,8 +406,9 @@ func TestNATSMessagePublisher_EnsureStream_Failures(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_StreamInfo(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -415,8 +439,9 @@ func TestNATSMessagePublisher_StreamInfo(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_ConsumerSetup(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -447,8 +472,9 @@ func TestNATSMessagePublisher_ConsumerSetup(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_PublishIndexingJob_Success(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -506,8 +532,9 @@ func TestNATSMessagePublisher_PublishIndexingJob_Success(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_PublishIndexingJob_MessageFormat(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -568,8 +595,9 @@ func TestNATSMessagePublisher_PublishIndexingJob_MessageFormat(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_PublishIndexingJob_InvalidInput(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -633,8 +661,9 @@ func TestNATSMessagePublisher_PublishIndexingJob_InvalidInput(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_PublishIndexingJob_ContextHandling(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -691,8 +720,9 @@ func TestNATSMessagePublisher_PublishIndexingJob_ContextHandling(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_PublishIndexingJob_Concurrency(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL: "nats://localhost:4222",
+		URL: url,
 	}
 
 	// This test will fail because NewNATSMessagePublisher is not implemented
@@ -751,6 +781,7 @@ func TestNATSMessagePublisher_PublishIndexingJob_Concurrency(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_ErrorHandling_NetworkFailures(t *testing.T) {
+	natsURL := requireNATS(t)
 	tests := []struct {
 		name         string
 		config       config.NATSConfig
@@ -760,7 +791,7 @@ func TestNATSMessagePublisher_ErrorHandling_NetworkFailures(t *testing.T) {
 		{
 			name: "server disconnection during publish",
 			config: config.NATSConfig{
-				URL:           "nats://localhost:4222",
+				URL:           natsURL,
 				MaxReconnects: 3,
 				ReconnectWait: 100 * time.Millisecond,
 			},
@@ -769,7 +800,7 @@ func TestNATSMessagePublisher_ErrorHandling_NetworkFailures(t *testing.T) {
 		{
 			name: "network timeout during publish",
 			config: config.NATSConfig{
-				URL:           "nats://localhost:4222",
+				URL:           natsURL,
 				MaxReconnects: 0, // No reconnection attempts
 			},
 			expectedErr: "network timeout",
@@ -777,7 +808,7 @@ func TestNATSMessagePublisher_ErrorHandling_NetworkFailures(t *testing.T) {
 		{
 			name: "connection lost before publish",
 			config: config.NATSConfig{
-				URL:           "nats://localhost:4222",
+				URL:           natsURL,
 				MaxReconnects: 1,
 				ReconnectWait: 50 * time.Millisecond,
 			},
@@ -829,8 +860,9 @@ func TestNATSMessagePublisher_ErrorHandling_NetworkFailures(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_ErrorHandling_RetryLogic(t *testing.T) {
+	url := requireNATS(t)
 	config := config.NATSConfig{
-		URL:           "nats://localhost:4222",
+		URL:           url,
 		MaxReconnects: 3,
 		ReconnectWait: 50 * time.Millisecond,
 	}
@@ -976,8 +1008,9 @@ func TestNATSMessagePublisher_ErrorHandling_CircuitBreaker(t *testing.T) {
 }
 
 func TestNATSMessagePublisher_ErrorHandling_JetStreamErrors(t *testing.T) {
+	url := requireNATS(t)
 	cfg := config.NATSConfig{
-		URL:      "nats://localhost:4222",
+		URL:      url,
 		TestMode: true,
 	}
 

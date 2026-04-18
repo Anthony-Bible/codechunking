@@ -60,7 +60,7 @@ func (c *GRPCClient) Search(ctx context.Context, query string, opts outbound.Zoe
 		defer cancel()
 	}
 
-	q := c.buildSearchQuery(query, opts)
+	q := applySearchOptions(BuildZoektQuery(query), opts)
 
 	searchOpts := &zoektgrpc.SearchOptions{
 		TotalMaxMatchCount:   int64(opts.MaxTotalResults),
@@ -249,21 +249,42 @@ func (c *GRPCClient) Close() error {
 	return nil
 }
 
-// buildSearchQuery builds a Zoekt Q proto from query and options.
-func (c *GRPCClient) buildSearchQuery(query string, opts outbound.ZoektSearchOptions) *zoektgrpc.Q {
-	q := &zoektgrpc.Q{
-		Query: &zoektgrpc.Q_Substring{
-			Substring: &zoektgrpc.Substring{
-				Pattern:       query,
-				CaseSensitive: false,
-				Content:       true,
-			},
-		},
+// applySearchOptions wraps a base query with AND clauses for repo, branch, and lang filters.
+func applySearchOptions(baseQ *zoektgrpc.Q, opts outbound.ZoektSearchOptions) *zoektgrpc.Q {
+	children := []*zoektgrpc.Q{baseQ}
+
+	if len(opts.Repos) > 0 {
+		var repoChildren []*zoektgrpc.Q
+		for _, repo := range opts.Repos {
+			repoChildren = append(repoChildren, &zoektgrpc.Q{
+				Query: &zoektgrpc.Q_Repo{Repo: &zoektgrpc.Repo{Regexp: repo}},
+			})
+		}
+		var repoQ *zoektgrpc.Q
+		if len(repoChildren) == 1 {
+			repoQ = repoChildren[0]
+		} else {
+			repoQ = &zoektgrpc.Q{Query: &zoektgrpc.Q_Or{Or: &zoektgrpc.Or{Children: repoChildren}}}
+		}
+		children = append(children, repoQ)
 	}
 
-	// TODO: Phase 2 - Add query building for repo, branch, language filters
+	if opts.Branch != "" {
+		children = append(children, &zoektgrpc.Q{
+			Query: &zoektgrpc.Q_Branch{Branch: &zoektgrpc.Branch{Pattern: opts.Branch}},
+		})
+	}
 
-	return q
+	if opts.Lang != "" {
+		children = append(children, &zoektgrpc.Q{
+			Query: &zoektgrpc.Q_Language{Language: &zoektgrpc.Language{Language: opts.Lang}},
+		})
+	}
+
+	if len(children) == 1 {
+		return baseQ
+	}
+	return &zoektgrpc.Q{Query: &zoektgrpc.Q_And{And: &zoektgrpc.And{Children: children}}}
 }
 
 // convertFileMatch converts a proto FileMatch to domain object.

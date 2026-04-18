@@ -30,12 +30,15 @@ func (p *DefaultJobProcessor) runConcurrentIndexing(
 	indexingJobID uuid.UUID,
 	repositoryID uuid.UUID,
 ) ConcurrencyResult {
-	result := ConcurrencyResult{
-		ChunksProcessed: len(chunks),
-		CommitHash:      commitHash,
-	}
+	var (
+		wg                sync.WaitGroup
+		zoektResult       *outbound.ZoektIndexResult
+		zoektErr          error
+		zoektDuration     time.Duration
+		embeddingErr      error
+		embeddingDuration time.Duration
+	)
 
-	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
@@ -47,20 +50,18 @@ func (p *DefaultJobProcessor) runConcurrentIndexing(
 			CommitHash: commitHash,
 			IndexDir:   p.zoektConfig.Indexing.IndexDir,
 		}
-		zoektResult, err := p.zoektIndexer.Index(ctx, zoektCfg)
-		result.ZoektDuration = time.Since(start)
-		result.ZoektResult = zoektResult
-		result.ZoektErr = err
-		if err != nil {
+		zoektResult, zoektErr = p.zoektIndexer.Index(ctx, zoektCfg)
+		zoektDuration = time.Since(start)
+		if zoektErr != nil {
 			slogger.Warn(ctx, "Zoekt indexing failed (partial failure allowed)", slogger.Fields{
 				"repo":     repoName,
-				"error":    err.Error(),
-				"duration": result.ZoektDuration,
+				"error":    zoektErr.Error(),
+				"duration": zoektDuration,
 			})
 		} else {
 			slogger.Info(ctx, "Zoekt indexing completed", slogger.Fields{
 				"repo":     repoName,
-				"duration": result.ZoektDuration,
+				"duration": zoektDuration,
 			})
 		}
 	}()
@@ -68,24 +69,31 @@ func (p *DefaultJobProcessor) runConcurrentIndexing(
 	go func() {
 		defer wg.Done()
 		start := time.Now()
-		err := p.embeddingFn(ctx, indexingJobID, repositoryID, chunks)
-		result.EmbeddingDuration = time.Since(start)
-		result.EmbeddingErr = err
-		if err != nil {
+		embeddingErr = p.embeddingFn(ctx, indexingJobID, repositoryID, chunks)
+		embeddingDuration = time.Since(start)
+		if embeddingErr != nil {
 			slogger.Warn(ctx, "Embedding generation failed (partial failure allowed)", slogger.Fields{
 				"repo":     repoName,
-				"error":    err.Error(),
-				"duration": result.EmbeddingDuration,
+				"error":    embeddingErr.Error(),
+				"duration": embeddingDuration,
 			})
 		} else {
 			slogger.Info(ctx, "Embedding generation completed", slogger.Fields{
 				"repo":     repoName,
-				"duration": result.EmbeddingDuration,
+				"duration": embeddingDuration,
 			})
 		}
 	}()
 
 	wg.Wait()
 
-	return result
+	return ConcurrencyResult{
+		ChunksProcessed:   len(chunks),
+		CommitHash:        commitHash,
+		ZoektResult:       zoektResult,
+		ZoektErr:          zoektErr,
+		ZoektDuration:     zoektDuration,
+		EmbeddingErr:      embeddingErr,
+		EmbeddingDuration: embeddingDuration,
+	}
 }

@@ -55,9 +55,9 @@ services:
       - tools
 
   zoekt-webserver:
-    image: ghcr.io/sourcegraph/zoekt:v0.0.0-20260410121455-f469edd14f92
+    image: ghcr.io/sourcegraph/zoekt:latest
     container_name: codechunking-zoekt-webserver
-    command: ["zoekt-webserver", "-index", "/data/index", "-pprof", "-rpc", "-grpc", ":6071"]  # HTTP on 6070, gRPC on 6071
+    command: ["zoekt-webserver", "-index", "/data/index", "-pprof", "-rpc" ]  # HTTP on 6070, gRPC on 6071
     ports:
       - name: zoekt-http
         target: 6070

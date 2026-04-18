@@ -223,7 +223,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 		require.NotNil(t, searchService, "SearchService should be created successfully")
 
@@ -360,7 +360,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -418,7 +418,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			mockRepoRepo,
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -500,7 +500,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			mockRepoRepo,
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -570,7 +570,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			mockRepoRepo,
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -617,7 +617,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -651,7 +651,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -692,7 +692,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -729,7 +729,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -767,7 +767,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -821,7 +821,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -880,7 +880,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -939,7 +939,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -1007,7 +1007,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -1032,7 +1032,7 @@ func TestSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -1097,7 +1097,7 @@ func TestNewSearchService(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		assert.NotNil(t, service, "SearchService should be created successfully")
@@ -1109,7 +1109,7 @@ func TestNewSearchService(t *testing.T) {
 		mockRepoRepo := new(MockRepositoryRepository)
 
 		assert.Panics(t, func() {
-			NewSearchService(nil, mockEmbeddingService, mockChunkRepo, mockRepoRepo, testConfig())
+			NewSearchService(nil, mockEmbeddingService, mockChunkRepo, mockRepoRepo, testConfig(), nil, nil)
 		}, "Should panic when vector repository is nil")
 	})
 
@@ -1119,7 +1119,7 @@ func TestNewSearchService(t *testing.T) {
 		mockRepoRepo := new(MockRepositoryRepository)
 
 		assert.Panics(t, func() {
-			NewSearchService(mockVectorRepo, nil, mockChunkRepo, mockRepoRepo, testConfig())
+			NewSearchService(mockVectorRepo, nil, mockChunkRepo, mockRepoRepo, testConfig(), nil, nil)
 		}, "Should panic when embedding service is nil")
 	})
 
@@ -1129,7 +1129,7 @@ func TestNewSearchService(t *testing.T) {
 		mockRepoRepo := new(MockRepositoryRepository)
 
 		assert.Panics(t, func() {
-			NewSearchService(mockVectorRepo, mockEmbeddingService, nil, mockRepoRepo, testConfig())
+			NewSearchService(mockVectorRepo, mockEmbeddingService, nil, mockRepoRepo, testConfig(), nil, nil)
 		}, "Should panic when chunk repository is nil")
 	})
 
@@ -1139,7 +1139,7 @@ func TestNewSearchService(t *testing.T) {
 		mockChunkRepo := new(MockChunkRepository)
 
 		assert.Panics(t, func() {
-			NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo, nil, testConfig())
+			NewSearchService(mockVectorRepo, mockEmbeddingService, mockChunkRepo, nil, testConfig(), nil, nil)
 		}, "Should panic when repository repository is nil")
 	})
 }
@@ -1167,7 +1167,7 @@ func TestSearchService_Performance(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		ctx := context.Background()
@@ -1210,7 +1210,7 @@ func TestSearchService_Performance(t *testing.T) {
 			mockEmbeddingService,
 			mockChunkRepo,
 			new(MockRepositoryRepository),
-			testConfig(),
+			testConfig(), nil, nil,
 		)
 
 		// Create cancelled context
@@ -1232,5 +1232,426 @@ func TestSearchService_Performance(t *testing.T) {
 		assert.Equal(t, context.Canceled, err, "Should return context cancellation error")
 
 		mockEmbeddingService.AssertExpectations(t)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Zoekt / Hybrid routing contract tests
+// ---------------------------------------------------------------------------
+
+// MockZoektSearcher satisfies the outbound.ZoektSearcher interface for testing.
+type MockZoektSearcher struct {
+	mock.Mock
+}
+
+func (m *MockZoektSearcher) Search(
+	ctx context.Context,
+	query string,
+	opts outbound.ZoektSearchOptions,
+) (*outbound.ZoektSearchResult, error) {
+	args := m.Called(ctx, query, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.ZoektSearchResult), args.Error(1)
+}
+
+func (m *MockZoektSearcher) List(
+	ctx context.Context,
+	query string,
+	opts outbound.ZoektListOptions,
+) (*outbound.ZoektListResult, error) {
+	args := m.Called(ctx, query, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.ZoektListResult), args.Error(1)
+}
+
+func (m *MockZoektSearcher) CheckHealth(ctx context.Context) (*outbound.ZoektHealthStatus, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*outbound.ZoektHealthStatus), args.Error(1)
+}
+
+// MockHybridRanker satisfies the HybridRanker interface for testing.
+type MockHybridRanker struct {
+	mock.Mock
+}
+
+func (m *MockHybridRanker) Rank(
+	semanticResults []dto.SearchResultDTO,
+	textResults []dto.SearchResultDTO,
+) []dto.SearchResultDTO {
+	args := m.Called(semanticResults, textResults)
+	return args.Get(0).([]dto.SearchResultDTO)
+}
+
+// TestSearchService_ZoektRouting verifies the routing contract when ZoektSearcher is wired in.
+func TestSearchService_ZoektRouting(t *testing.T) {
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR",
+		Format: "json",
+		Output: "buffer",
+	})
+	require.NoError(t, err)
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
+	t.Run("Text_Search_Mode_Routes_To_Zoekt", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+		mockZoekt := new(MockZoektSearcher)
+		mockRanker := new(MockHybridRanker)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), mockZoekt, mockRanker,
+		)
+		require.NotNil(t, svc)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "http handler",
+			Mode:  dto.SearchModeText,
+			Limit: 5,
+		}
+
+		zoektResult := &outbound.ZoektSearchResult{
+			FileMatches: []outbound.ZoektFileMatch{
+				{
+					Repository: "my-repo",
+					FileName:   "server/handler.go",
+					Language:   "Go",
+					Score:      0.9,
+					LineMatches: []outbound.ZoektLineMatch{
+						{LineNumber: 10, LineContent: "func ServeHTTP(w http.ResponseWriter, r *http.Request) {"},
+					},
+				},
+			},
+			TotalCount: 1,
+		}
+		mockZoekt.On("Search", ctx, req.Query, mock.AnythingOfType("outbound.ZoektSearchOptions")).
+			Return(zoektResult, nil)
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err, "text mode search must succeed when Zoekt is available")
+		require.NotNil(t, result)
+		assert.NotEmpty(t, result.Results, "results must be populated from Zoekt file matches")
+
+		// Vector search must NOT be called for text mode.
+		mockVectorRepo.AssertNotCalled(t, "VectorSimilaritySearch", mock.Anything, mock.Anything, mock.Anything)
+		mockEmbeddingService.AssertNotCalled(t, "GenerateEmbedding", mock.Anything, mock.Anything, mock.Anything)
+		mockZoekt.AssertExpectations(t)
+	})
+
+	t.Run("Text_Search_Mode_Returns_503_When_Zoekt_Nil", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), nil, nil,
+		)
+		require.NotNil(t, svc)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "find something",
+			Mode:  dto.SearchModeText,
+			Limit: 10,
+		}
+
+		result, err := svc.Search(ctx, req)
+
+		require.Error(t, err, "text mode with nil Zoekt must return an error")
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "text search unavailable",
+			"error must indicate that text search is unavailable")
+	})
+
+	t.Run("Hybrid_Search_Falls_Back_To_Semantic_When_Zoekt_Nil", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), nil, nil,
+		)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "authentication",
+			Mode:  dto.SearchModeHybrid,
+			Limit: 10,
+		}
+
+		queryVector := []float64{0.1, 0.2, 0.3}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, req.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(&outbound.EmbeddingResult{Vector: queryVector}, nil)
+		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, mock.AnythingOfType("outbound.SimilaritySearchOptions")).
+			Return([]outbound.VectorSimilarityResult{}, nil)
+		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
+			Return([]ChunkInfo{}, nil)
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err, "hybrid mode with nil Zoekt must NOT fail — it degrades to semantic")
+		assert.NotNil(t, result)
+
+		mockEmbeddingService.AssertExpectations(t)
+		mockVectorRepo.AssertExpectations(t)
+	})
+
+	t.Run("Hybrid_Search_Uses_Both_Engines", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+		mockZoekt := new(MockZoektSearcher)
+		mockRanker := new(MockHybridRanker)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), mockZoekt, mockRanker,
+		)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "database connection",
+			Mode:  dto.SearchModeHybrid,
+			Limit: 10,
+		}
+
+		// Semantic path.
+		queryVector := []float64{0.5, 0.6, 0.7}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, req.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(&outbound.EmbeddingResult{Vector: queryVector}, nil)
+		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, mock.AnythingOfType("outbound.SimilaritySearchOptions")).
+			Return([]outbound.VectorSimilarityResult{}, nil)
+		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
+			Return([]ChunkInfo{}, nil)
+
+		// Zoekt path.
+		mockZoekt.On("Search", ctx, req.Query, mock.AnythingOfType("outbound.ZoektSearchOptions")).
+			Return(&outbound.ZoektSearchResult{FileMatches: []outbound.ZoektFileMatch{}}, nil)
+
+		// Ranker receives both (possibly empty) result slices and returns merged results.
+		mockRanker.On("Rank", mock.AnythingOfType("[]dto.SearchResultDTO"), mock.AnythingOfType("[]dto.SearchResultDTO")).
+			Return([]dto.SearchResultDTO{})
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err, "hybrid mode must succeed when both engines are available")
+		assert.NotNil(t, result)
+
+		mockEmbeddingService.AssertExpectations(t)
+		mockVectorRepo.AssertExpectations(t)
+		mockZoekt.AssertExpectations(t)
+		mockRanker.AssertExpectations(t)
+	})
+
+	t.Run("Hybrid_Default_Sort_Preserves_Ranker_Order", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+		mockZoekt := new(MockZoektSearcher)
+		mockRanker := new(MockHybridRanker)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), mockZoekt, mockRanker,
+		)
+
+		ctx := context.Background()
+		// No Sort field — ApplyDefaults will set it to DefaultSearchSort.
+		req := dto.SearchRequestDTO{
+			Query: "ranker order test",
+			Mode:  dto.SearchModeHybrid,
+			Limit: 10,
+		}
+
+		queryVector := []float64{0.1, 0.2, 0.3}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, req.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(&outbound.EmbeddingResult{Vector: queryVector}, nil)
+		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, mock.AnythingOfType("outbound.SimilaritySearchOptions")).
+			Return([]outbound.VectorSimilarityResult{}, nil)
+		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
+			Return([]ChunkInfo{}, nil)
+		mockZoekt.On("Search", ctx, req.Query, mock.AnythingOfType("outbound.ZoektSearchOptions")).
+			Return(&outbound.ZoektSearchResult{FileMatches: []outbound.ZoektFileMatch{}}, nil)
+
+		// Ranker returns results in a specific order (low-to-high score — opposite of similarity:desc).
+		rankerOrdered := []dto.SearchResultDTO{
+			{FilePath: "b.go", SimilarityScore: 0.3},
+			{FilePath: "a.go", SimilarityScore: 0.9},
+		}
+		mockRanker.On("Rank", mock.AnythingOfType("[]dto.SearchResultDTO"), mock.AnythingOfType("[]dto.SearchResultDTO")).
+			Return(rankerOrdered)
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err)
+		require.Len(t, result.Results, 2)
+		// Ranker order must be preserved — sortResults must NOT have been called.
+		assert.Equal(t, "b.go", result.Results[0].FilePath, "ranker order must be preserved for default sort")
+		assert.Equal(t, "a.go", result.Results[1].FilePath, "ranker order must be preserved for default sort")
+
+		mockRanker.AssertExpectations(t)
+	})
+
+	t.Run("Hybrid_Explicit_FilePath_Sort_Overrides_Ranker", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+		mockZoekt := new(MockZoektSearcher)
+		mockRanker := new(MockHybridRanker)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), mockZoekt, mockRanker,
+		)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "explicit sort test",
+			Mode:  dto.SearchModeHybrid,
+			Sort:  "file_path:asc",
+			Limit: 10,
+		}
+
+		queryVector := []float64{0.4, 0.5, 0.6}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, req.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(&outbound.EmbeddingResult{Vector: queryVector}, nil)
+		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, mock.AnythingOfType("outbound.SimilaritySearchOptions")).
+			Return([]outbound.VectorSimilarityResult{}, nil)
+		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
+			Return([]ChunkInfo{}, nil)
+		mockZoekt.On("Search", ctx, req.Query, mock.AnythingOfType("outbound.ZoektSearchOptions")).
+			Return(&outbound.ZoektSearchResult{FileMatches: []outbound.ZoektFileMatch{}}, nil)
+
+		// Ranker returns results in reverse alphabetical order.
+		rankerOrdered := []dto.SearchResultDTO{
+			{FilePath: "z.go", SimilarityScore: 0.9},
+			{FilePath: "a.go", SimilarityScore: 0.3},
+		}
+		mockRanker.On("Rank", mock.AnythingOfType("[]dto.SearchResultDTO"), mock.AnythingOfType("[]dto.SearchResultDTO")).
+			Return(rankerOrdered)
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err)
+		require.Len(t, result.Results, 2)
+		// Explicit file_path:asc sort must override ranker order.
+		assert.Equal(t, "a.go", result.Results[0].FilePath, "explicit sort must override ranker order")
+		assert.Equal(t, "z.go", result.Results[1].FilePath, "explicit sort must override ranker order")
+
+		mockRanker.AssertExpectations(t)
+	})
+
+	t.Run("Semantic_Search_Unaffected_By_Zoekt", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+		mockZoekt := new(MockZoektSearcher) // provided but must NOT be called
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), mockZoekt, nil,
+		)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "sort algorithm",
+			Mode:  dto.SearchModeSemantic,
+			Limit: 10,
+		}
+
+		queryVector := []float64{0.1, 0.2, 0.3}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, req.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(&outbound.EmbeddingResult{Vector: queryVector}, nil)
+		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, mock.AnythingOfType("outbound.SimilaritySearchOptions")).
+			Return([]outbound.VectorSimilarityResult{}, nil)
+		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
+			Return([]ChunkInfo{}, nil)
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err)
+		assert.NotNil(t, result)
+
+		// Zoekt must not be called for semantic mode even when it is wired in.
+		mockZoekt.AssertNotCalled(t, "Search", mock.Anything, mock.Anything, mock.Anything)
+		mockEmbeddingService.AssertExpectations(t)
+		mockVectorRepo.AssertExpectations(t)
+	})
+
+	t.Run("Text_Search_Converts_ZoektFileMatch_To_SearchResultDTO", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+		mockZoekt := new(MockZoektSearcher)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), mockZoekt, nil,
+		)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "ServeHTTP",
+			Mode:  dto.SearchModeText,
+			Limit: 5,
+		}
+
+		zoektResult := &outbound.ZoektSearchResult{
+			FileMatches: []outbound.ZoektFileMatch{
+				{
+					Repository: "github.com/example/myrepo",
+					FileName:   "server/handler.go",
+					Language:   "Go",
+					Branch:     "main",
+					Score:      0.85,
+					LineMatches: []outbound.ZoektLineMatch{
+						{
+							LineNumber:  42,
+							LineContent: "func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {",
+						},
+					},
+				},
+			},
+			TotalCount: 1,
+		}
+		mockZoekt.On("Search", ctx, req.Query, mock.AnythingOfType("outbound.ZoektSearchOptions")).
+			Return(zoektResult, nil)
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Results, 1, "one ZoektFileMatch must produce one SearchResultDTO")
+
+		r := result.Results[0]
+		assert.Equal(t, "server/handler.go", r.FilePath,
+			"file_path must be mapped from ZoektFileMatch.FileName")
+		assert.Equal(t, "Go", r.Language,
+			"language must be mapped from ZoektFileMatch.Language")
+		assert.Equal(t, "zoekt", r.SourceEngine,
+			"source_engine must be 'zoekt' for text-mode results")
+		assert.NotEmpty(t, r.Content,
+			"content must be populated from line match content")
+		assert.Greater(t, r.EngineScore, 0.0,
+			"engine_score must carry the Zoekt match score")
+		assert.Equal(t, "github.com/example/myrepo", r.Repository.Name,
+			"repository name must be mapped from ZoektFileMatch.Repository")
+		assert.Empty(t, r.Repository.URL,
+			"repository URL must be empty; callers must resolve via RepositoryRepository")
+
+		mockZoekt.AssertExpectations(t)
 	})
 }

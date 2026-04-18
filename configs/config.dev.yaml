@@ -1,4 +1,17 @@
 # Development configuration overrides
+zoekt:
+  webserver:
+    host: localhost
+    port: 6070
+  indexing:
+    git_index_path: zoekt-git-index
+    index_dir: /tmp/zoekt-index
+    timeout: 10m
+  concurrent_indexing:
+    enabled: true
+    max_concurrent_jobs: 2
+    retry_attempts: 2
+
 database:
   user: dev
   password: dev

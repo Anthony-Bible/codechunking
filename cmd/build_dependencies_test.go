@@ -6,6 +6,9 @@ import (
 	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/config"
 	"codechunking/internal/port/outbound"
+	"net"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,26 +17,51 @@ import (
 	// These imports are used by the buildDependencies method tests.
 )
 
-// TestServiceFactory_BuildDependencies_Success tests that buildDependencies successfully
-// returns all three dependencies when database connection succeeds.
-func TestServiceFactory_BuildDependencies_Success(t *testing.T) {
-	// Arrange
-	cfg := &config.Config{
+func envOr(key, defaultVal string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultVal
+}
+
+func requireDBAndNATS(t *testing.T) {
+	t.Helper()
+	for _, svc := range []struct{ name, addr string }{
+		{"postgres", envOr("CODECHUNK_DATABASE_HOST", "localhost") + ":" + envOr("CODECHUNK_DATABASE_PORT", "5432")},
+		{"nats", strings.TrimPrefix(envOr("CODECHUNK_NATS_URL", "nats://localhost:4222"), "nats://")},
+	} {
+		c, err := net.DialTimeout("tcp", svc.addr, 500*time.Millisecond)
+		if err != nil {
+			t.Skipf("skipping: %s unavailable at %s (%v)", svc.name, svc.addr, err)
+		}
+		_ = c.Close()
+	}
+}
+
+func cfgFromEnv() *config.Config {
+	return &config.Config{
 		Database: config.DatabaseConfig{
-			Host:           "localhost",
+			Host:           envOr("CODECHUNK_DATABASE_HOST", "localhost"),
 			Port:           5432,
-			Name:           "codechunking",
-			User:           "dev",
-			Password:       "dev",
+			Name:           envOr("CODECHUNK_DATABASE_NAME", "codechunking"),
+			User:           envOr("CODECHUNK_DATABASE_USER", "dev"),
+			Password:       envOr("CODECHUNK_DATABASE_PASSWORD", "dev"),
 			MaxConnections: 10,
 			SSLMode:        "disable",
 		},
 		NATS: config.NATSConfig{
-			URL:           "nats://localhost:4222",
+			URL:           envOr("CODECHUNK_NATS_URL", "nats://localhost:4222"),
 			MaxReconnects: 5,
 			ReconnectWait: 2 * time.Second,
 		},
 	}
+}
+
+// TestServiceFactory_BuildDependencies_Success tests that buildDependencies successfully
+// returns all three dependencies when database connection succeeds.
+func TestServiceFactory_BuildDependencies_Success(t *testing.T) {
+	requireDBAndNATS(t)
+	cfg := cfgFromEnv()
 	serviceFactory := NewServiceFactory(cfg)
 
 	// Act
@@ -59,6 +87,7 @@ func TestServiceFactory_BuildDependencies_Success(t *testing.T) {
 // TestServiceFactory_BuildDependencies_DatabaseError tests that buildDependencies handles
 // database connection errors gracefully by returning nil repositories but valid message publisher.
 func TestServiceFactory_BuildDependencies_DatabaseError(t *testing.T) {
+	requireDBAndNATS(t)
 	// Arrange
 	cfg := &config.Config{
 		Database: config.DatabaseConfig{
@@ -70,11 +99,7 @@ func TestServiceFactory_BuildDependencies_DatabaseError(t *testing.T) {
 			MaxConnections: 10,
 			SSLMode:        "disable",
 		},
-		NATS: config.NATSConfig{
-			URL:           "nats://localhost:4222",
-			MaxReconnects: 5,
-			ReconnectWait: 2 * time.Second,
-		},
+		NATS: cfgFromEnv().NATS,
 	}
 	serviceFactory := NewServiceFactory(cfg)
 
@@ -95,23 +120,8 @@ func TestServiceFactory_BuildDependencies_DatabaseError(t *testing.T) {
 // TestServiceFactory_BuildDependencies_ReturnTypes tests that buildDependencies returns
 // the correct interface types that can be used by the service layer.
 func TestServiceFactory_BuildDependencies_ReturnTypes(t *testing.T) {
-	// Arrange
-	cfg := &config.Config{
-		Database: config.DatabaseConfig{
-			Host:           "localhost",
-			Port:           5432,
-			Name:           "codechunking",
-			User:           "dev",
-			Password:       "dev",
-			MaxConnections: 10,
-			SSLMode:        "disable",
-		},
-		NATS: config.NATSConfig{
-			URL:           "nats://localhost:4222",
-			MaxReconnects: 5,
-			ReconnectWait: 2 * time.Second,
-		},
-	}
+	requireDBAndNATS(t)
+	cfg := cfgFromEnv()
 	serviceFactory := NewServiceFactory(cfg)
 
 	// Act
@@ -230,21 +240,9 @@ func TestServiceFactory_CreateHealthService_UsesBuildDependencies(t *testing.T) 
 // TestServiceFactory_CreateRepositoryService_UsesBuildDependencies tests that the refactored
 // CreateRepositoryService method uses buildDependencies and properly handles dependencies.
 func TestServiceFactory_CreateRepositoryService_UsesBuildDependencies(t *testing.T) {
-	// Arrange
-	cfg := &config.Config{
-		Database: config.DatabaseConfig{
-			Host:           "localhost",
-			Port:           5432,
-			Name:           "codechunking",
-			User:           "dev",
-			Password:       "dev",
-			MaxConnections: 10,
-			SSLMode:        "disable",
-		},
-		NATS: config.NATSConfig{
-			TestMode: true, // Enable test mode to bypass URL validation
-		},
-	}
+	requireDBAndNATS(t)
+	cfg := cfgFromEnv()
+	cfg.NATS.TestMode = true
 	serviceFactory := NewServiceFactory(cfg)
 
 	// Act & Assert
@@ -312,18 +310,8 @@ func TestServiceFactory_BuildDependencies_Integration(t *testing.T) {
 	// 5. Error handling works correctly throughout the chain
 
 	t.Run("successful_dependency_creation", func(t *testing.T) {
-		// Arrange
-		cfg := &config.Config{
-			Database: config.DatabaseConfig{
-				Host:           "localhost",
-				Port:           5432,
-				Name:           "test_db",
-				User:           "test_user",
-				Password:       "test_pass",
-				MaxConnections: 10,
-				SSLMode:        "disable",
-			},
-		}
+		requireDBAndNATS(t)
+		cfg := cfgFromEnv()
 		serviceFactory := NewServiceFactory(cfg)
 
 		// Act

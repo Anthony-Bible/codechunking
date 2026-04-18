@@ -48,10 +48,11 @@ jobs:
       
       nats:
         image: nats:2.10-alpine
+        command: --jetstream --http_port 8222
         ports:
           - 4222:4222
         options: >-
-          --health-cmd "nc -z localhost 4222"
+          --health-cmd "wget -qO- http://localhost:8222/healthz || exit 1"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -89,8 +90,16 @@ jobs:
         run: go test -v -tags=integration ./...
       
       - name: Generate coverage report
+        env:
+          CODECHUNK_DATABASE_HOST: localhost
+          CODECHUNK_DATABASE_PORT: "5432"
+          CODECHUNK_DATABASE_USER: test
+          CODECHUNK_DATABASE_PASSWORD: test
+          CODECHUNK_DATABASE_NAME: codechunking_test
+          CODECHUNK_DATABASE_SCHEMA: codechunking
+          CODECHUNK_NATS_URL: nats://localhost:4222
         run: |
-          go test -v -coverprofile=coverage.out ./...
+          go test -tags=integration -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out
       
       - name: Upload coverage to Codecov

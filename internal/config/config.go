@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/spf13/viper"
@@ -81,7 +82,38 @@ type NATSConfig struct {
 
 // SearchConfig holds search configuration.
 type SearchConfig struct {
-	IterativeScanMode string `mapstructure:"iterative_scan_mode"`
+	IterativeScanMode string  `mapstructure:"iterative_scan_mode"`
+	SemanticWeight    float64 `mapstructure:"semantic_weight"`
+	TextWeight        float64 `mapstructure:"text_weight"`
+}
+
+// Validate checks that hybrid ranking weights are in range and, when both are
+// explicitly set (non-zero), that they sum to approximately 1.0.
+// When only one weight is set, normalizeHybridWeights derives the complement.
+func (s SearchConfig) Validate() error {
+	if s.SemanticWeight < 0 || s.SemanticWeight > 1 {
+		return fmt.Errorf("search.semantic_weight must be between 0 and 1, got %v", s.SemanticWeight)
+	}
+	if s.TextWeight < 0 || s.TextWeight > 1 {
+		return fmt.Errorf("search.text_weight must be between 0 and 1, got %v", s.TextWeight)
+	}
+
+	// Only enforce the sum constraint when both weights are explicitly provided.
+	if s.SemanticWeight != 0 && s.TextWeight != 0 {
+		const weightTolerance = 0.001
+		sum := s.SemanticWeight + s.TextWeight
+		if math.Abs(sum-1.0) > weightTolerance {
+			return fmt.Errorf(
+				"search.semantic_weight + search.text_weight must equal 1.0 (±%g), got semantic_weight=%v text_weight=%v sum=%v",
+				weightTolerance,
+				s.SemanticWeight,
+				s.TextWeight,
+				sum,
+			)
+		}
+	}
+
+	return nil
 }
 
 // ZoektConfig holds Zoekt full-text search configuration.
@@ -231,6 +263,10 @@ func (c *Config) Validate() error {
 
 	if c.Database.Port < 1 || c.Database.Port > 65535 {
 		return errors.New("database.port must be between 1 and 65535")
+	}
+
+	if err := c.Search.Validate(); err != nil {
+		return err
 	}
 
 	return nil

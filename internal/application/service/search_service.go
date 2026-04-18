@@ -22,6 +22,8 @@ type SearchService struct {
 	chunkRepo        ChunkRepository
 	repoRepo         outbound.RepositoryRepository
 	config           *config.Config
+	zoektSearcher    outbound.ZoektSearcher
+	hybridRanker     HybridRanker
 }
 
 // ChunkRepository defines the interface for retrieving chunk information.
@@ -47,13 +49,48 @@ type ChunkInfo struct {
 	Visibility    string `json:"visibility,omitempty"`     // Visibility modifier
 }
 
+const (
+	defaultHybridSemanticWeight = 0.7
+	defaultHybridTextWeight     = 0.3
+)
+
+func normalizeHybridWeights(semanticWeight, textWeight float64) (float64, float64) {
+	if semanticWeight < 0 || textWeight < 0 {
+		return defaultHybridSemanticWeight, defaultHybridTextWeight
+	}
+
+	if semanticWeight == 0 && textWeight == 0 {
+		return defaultHybridSemanticWeight, defaultHybridTextWeight
+	}
+
+	if semanticWeight == 0 && textWeight > 0 && textWeight < 1 {
+		return 1 - textWeight, textWeight
+	}
+
+	if textWeight == 0 && semanticWeight > 0 && semanticWeight < 1 {
+		return semanticWeight, 1 - semanticWeight
+	}
+
+	total := semanticWeight + textWeight
+	if total <= 0 {
+		return defaultHybridSemanticWeight, defaultHybridTextWeight
+	}
+
+	return semanticWeight / total, textWeight / total
+}
+
 // NewSearchService creates a new SearchService instance.
+// Pass nil for zoektSearcher to disable text search; text mode returns an error if nil.
+// Pass nil for hybridRanker to use the default NewHybridRankingService; hybrid mode
+// degrades to semantic-only when zoektSearcher is nil.
 func NewSearchService(
 	vectorRepo outbound.VectorStorageRepository,
 	embeddingService outbound.EmbeddingService,
 	chunkRepo ChunkRepository,
 	repoRepo outbound.RepositoryRepository,
 	cfg *config.Config,
+	zoektSearcher outbound.ZoektSearcher,
+	hybridRanker HybridRanker,
 ) *SearchService {
 	if vectorRepo == nil {
 		panic("vectorRepo cannot be nil")
@@ -71,12 +108,22 @@ func NewSearchService(
 		panic("cfg cannot be nil")
 	}
 
+	if hybridRanker == nil && zoektSearcher != nil {
+		semanticWeight, textWeight := normalizeHybridWeights(
+			cfg.Search.SemanticWeight,
+			cfg.Search.TextWeight,
+		)
+		hybridRanker = NewHybridRankingService(semanticWeight, textWeight)
+	}
+
 	return &SearchService{
 		vectorRepo:       vectorRepo,
 		embeddingService: embeddingService,
 		chunkRepo:        chunkRepo,
 		repoRepo:         repoRepo,
 		config:           cfg,
+		zoektSearcher:    zoektSearcher,
+		hybridRanker:     hybridRanker,
 	}
 }
 
@@ -93,38 +140,146 @@ func (s *SearchService) Search(ctx context.Context, request dto.SearchRequestDTO
 		return nil, fmt.Errorf("invalid search request: %w", err)
 	}
 
-	// Reject modes that are not yet supported
-	if request.Mode != dto.SearchModeSemantic {
-		return nil, fmt.Errorf("search mode %q is not yet supported; only %q is currently available", request.Mode, dto.SearchModeSemantic)
+	switch request.Mode { //nolint:exhaustive // DefaultSearchMode is an alias for SearchModeSemantic; default handles both
+	case dto.SearchModeText:
+		return s.searchText(ctx, request, startTime)
+	case dto.SearchModeHybrid:
+		return s.searchHybrid(ctx, request, startTime)
+	default:
+		return s.searchSemantic(ctx, request, startTime)
 	}
+}
 
-	// Generate embedding for query
+// searchSemantic is the original pure-embedding search path.
+func (s *SearchService) searchSemantic(ctx context.Context, request dto.SearchRequestDTO, startTime time.Time) (*dto.SearchResponseDTO, error) {
 	embeddingResult, err := s.generateQueryEmbedding(ctx, request.Query)
 	if err != nil {
 		return nil, err
 	}
 
-	// Perform vector similarity search
 	vectorResults, err := s.performVectorSearch(ctx, embeddingResult.Vector, request)
 	if err != nil {
 		return nil, err
 	}
 
-	// Retrieve and filter chunks
 	results, err := s.retrieveAndFilterChunks(ctx, vectorResults, request)
 	if err != nil {
 		return nil, err
 	}
 
-	// Sort and paginate results
 	s.sortResults(results, request.Sort)
 	paginatedResults, totalResults := s.paginateResults(results, request.Limit, request.Offset)
-
-	// Build and return response
-	return s.buildResponse(paginatedResults, totalResults, request, startTime), nil
+	return s.buildResponseFromResults(paginatedResults, totalResults, request, dto.SearchModeSemantic, []string{"embedding"}, startTime), nil
 }
 
-// generateQueryEmbedding generates an embedding for the search query.
+// zoektQuery returns the raw query string to pass to Zoekt.
+// Filters (repos, languages, file types) are applied via ZoektSearchOptions
+// so applySearchOptions in the gRPC client enforces them correctly.
+func (s *SearchService) zoektQuery(request dto.SearchRequestDTO) string {
+	return strings.TrimSpace(request.Query)
+}
+
+func (s *SearchService) searchText(ctx context.Context, request dto.SearchRequestDTO, startTime time.Time) (*dto.SearchResponseDTO, error) {
+	if s.zoektSearcher == nil {
+		return nil, errors.New("text search unavailable: zoekt is not configured")
+	}
+
+	opts := s.buildZoektSearchOptions(request)
+	zoektResult, err := s.zoektSearcher.Search(ctx, s.zoektQuery(request), opts)
+	if err != nil {
+		return nil, fmt.Errorf("text search failed: %w", err)
+	}
+
+	results := s.convertZoektResults(zoektResult)
+	s.sortResults(results, request.Sort)
+	paginatedResults, totalResults := s.paginateResults(results, request.Limit, request.Offset)
+	return s.buildResponseFromResults(paginatedResults, totalResults, request, dto.SearchModeText, []string{"zoekt"}, startTime), nil
+}
+
+// searchHybrid falls back to semantic-only when ZoektSearcher is nil or Zoekt fails.
+func (s *SearchService) searchHybrid(ctx context.Context, request dto.SearchRequestDTO, startTime time.Time) (*dto.SearchResponseDTO, error) {
+	embeddingResult, err := s.generateQueryEmbedding(ctx, request.Query)
+	if err != nil {
+		return nil, err
+	}
+	vectorResults, err := s.performVectorSearch(ctx, embeddingResult.Vector, request)
+	if err != nil {
+		return nil, err
+	}
+	semanticResults, err := s.retrieveAndFilterChunks(ctx, vectorResults, request)
+	if err != nil {
+		return nil, err
+	}
+
+	enginesUsed := []string{"embedding"}
+
+	if s.zoektSearcher == nil {
+		slogger.Info(ctx, "Zoekt not configured; hybrid search degraded to semantic-only", slogger.Fields{"query": request.Query})
+		s.sortResults(semanticResults, request.Sort)
+		paginatedResults, totalResults := s.paginateResults(semanticResults, request.Limit, request.Offset)
+		return s.buildResponseFromResults(paginatedResults, totalResults, request, dto.SearchModeHybrid, enginesUsed, startTime), nil
+	}
+
+	opts := s.buildZoektSearchOptions(request)
+	textResults, zoektOK := s.searchZoektWithFallback(ctx, s.zoektQuery(request), opts)
+	if zoektOK {
+		enginesUsed = []string{"embedding", "zoekt"}
+	}
+
+	merged := s.hybridRanker.Rank(semanticResults, textResults)
+
+	// Preserve ranker order when the caller accepted the default sort; only override for explicit sorts.
+	if request.Sort != dto.DefaultSearchSort {
+		s.sortResults(merged, request.Sort)
+	}
+	paginatedResults, totalResults := s.paginateResults(merged, request.Limit, request.Offset)
+	return s.buildResponseFromResults(paginatedResults, totalResults, request, dto.SearchModeHybrid, enginesUsed, startTime), nil
+}
+
+// searchZoektWithFallback calls Zoekt and returns results plus a boolean indicating success.
+// On error it logs and returns an empty slice so hybrid mode degrades gracefully to semantic-only.
+func (s *SearchService) searchZoektWithFallback(ctx context.Context, query string, opts outbound.ZoektSearchOptions) ([]dto.SearchResultDTO, bool) {
+	result, err := s.zoektSearcher.Search(ctx, query, opts)
+	if err != nil {
+		slogger.Info(ctx, "Zoekt search failed in hybrid mode; using semantic only", slogger.Fields{"error": err.Error()})
+		return []dto.SearchResultDTO{}, false
+	}
+	return s.convertZoektResults(result), true
+}
+
+// convertZoektResults converts ZoektFileMatch results to SearchResultDTO slice.
+func (s *SearchService) convertZoektResults(result *outbound.ZoektSearchResult) []dto.SearchResultDTO {
+	if result == nil {
+		return []dto.SearchResultDTO{}
+	}
+	out := make([]dto.SearchResultDTO, 0, len(result.FileMatches))
+	for _, fm := range result.FileMatches {
+		var content string
+		var startLine, endLine int
+		if len(fm.LineMatches) > 0 {
+			first := fm.LineMatches[0]
+			content = first.LineContent
+			startLine = first.LineNumber
+			endLine = fm.LineMatches[len(fm.LineMatches)-1].LineNumber
+		}
+		out = append(out, dto.SearchResultDTO{
+			FilePath:        fm.FileName,
+			Language:        fm.Language,
+			SourceEngine:    "zoekt",
+			EngineScore:     fm.Score,
+			SimilarityScore: fm.Score,
+			Content:         content,
+			// URL is left empty; callers needing the clone URL must resolve it via RepositoryRepository.
+			Repository: dto.RepositoryInfo{
+				Name: fm.Repository,
+			},
+			StartLine: startLine,
+			EndLine:   endLine,
+		})
+	}
+	return out
+}
+
 func (s *SearchService) generateQueryEmbedding(ctx context.Context, query string) (*outbound.EmbeddingResult, error) {
 	slogger.Info(ctx, "Starting embedding generation for search query", slogger.Fields{"query": query})
 
@@ -354,23 +509,16 @@ func (s *SearchService) paginateResults(
 	return results[offset:endIndex], totalResults
 }
 
-// buildResponse constructs the final search response.
-func (s *SearchService) buildResponse(
+// buildResponseFromResults constructs a SearchResponseDTO for any search mode.
+func (s *SearchService) buildResponseFromResults(
 	results []dto.SearchResultDTO,
 	totalResults int,
 	request dto.SearchRequestDTO,
+	mode dto.SearchMode,
+	enginesUsed []string,
 	startTime time.Time,
 ) *dto.SearchResponseDTO {
 	executionTime := time.Since(startTime).Milliseconds()
-
-	enginesUsed := []string{"embedding"}
-	sourceEngine := "embedding"
-
-	for i := range results {
-		results[i].SourceEngine = sourceEngine
-		results[i].EngineScore = results[i].SimilarityScore
-	}
-
 	return &dto.SearchResponseDTO{
 		Results: results,
 		Pagination: dto.PaginationResponse{
@@ -384,7 +532,7 @@ func (s *SearchService) buildResponse(
 			ExecutionTimeMs: executionTime,
 		},
 		EngineInfo: dto.SearchEngineInfo{
-			Mode:            dto.SearchModeSemantic,
+			Mode:            mode,
 			EnginesUsed:     enginesUsed,
 			ExecutionTimeMs: executionTime,
 		},
@@ -420,6 +568,8 @@ func (s *SearchService) buildSearchResults(
 			ChunkID:         chunk.ChunkID,
 			Content:         chunk.Content,
 			SimilarityScore: vectorResult.Similarity,
+			SourceEngine:    "embedding",
+			EngineScore:     vectorResult.Similarity,
 			Repository:      chunk.Repository,
 			FilePath:        chunk.FilePath,
 			Language:        chunk.Language,
@@ -492,6 +642,28 @@ func (s *SearchService) sortResults(results []dto.SearchResultDTO, sortOption st
 		sort.Slice(results, func(i, j int) bool {
 			return results[i].SimilarityScore > results[j].SimilarityScore
 		})
+	}
+}
+
+// buildZoektSearchOptions constructs ZoektSearchOptions from a request and config.
+// MaxTotalResults is set to Limit+Offset so pagination always has enough results to slice.
+// Repos and Lang are populated from the request so applySearchOptions enforces the same
+// filters as the semantic path.
+func (s *SearchService) buildZoektSearchOptions(request dto.SearchRequestDTO) outbound.ZoektSearchOptions {
+	cfg := s.config.Zoekt.Search
+
+	var lang string
+	if len(request.Languages) > 0 {
+		lang = request.Languages[0]
+	}
+
+	return outbound.ZoektSearchOptions{
+		MaxTotalResults: request.Limit + request.Offset,
+		MaxMatchPerFile: cfg.MaxMatchPerFile,
+		ContextLines:    cfg.ContextLines,
+		Timeout:         cfg.Timeout,
+		Repos:           request.RepositoryNames,
+		Lang:            lang,
 	}
 }
 

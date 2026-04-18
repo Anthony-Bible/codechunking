@@ -12,6 +12,7 @@ import (
 	"codechunking/internal/adapter/outbound/messaging"
 	"codechunking/internal/adapter/outbound/mock"
 	"codechunking/internal/adapter/outbound/repository"
+	"codechunking/internal/adapter/outbound/zoekt"
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/registry"
 	appservice "codechunking/internal/application/service"
@@ -397,8 +398,18 @@ func (sf *ServiceFactory) CreateSearchService() (inbound.SearchService, error) {
 		return nil, fmt.Errorf("failed to create embedding service: %w", err)
 	}
 
+	// Create Zoekt searcher only when Zoekt is configured.
+	var zoektSearcher outbound.ZoektSearcher
+	if sf.config.Zoekt.Webserver.Host != "" {
+		zoektClient, err := zoekt.NewGRPCClient(sf.config.Zoekt.Webserver)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Zoekt gRPC client: %w", err)
+		}
+		zoektSearcher = zoektClient
+	}
+
 	// Create search service - it already implements the inbound interface
-	searchService := appservice.NewSearchService(vectorRepo, embeddingService, chunkRepo, repoRepo, sf.config)
+	searchService := appservice.NewSearchService(vectorRepo, embeddingService, chunkRepo, repoRepo, sf.config, zoektSearcher, nil)
 
 	return searchService, nil
 }

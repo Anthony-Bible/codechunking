@@ -279,9 +279,16 @@ func (r *Repository) UpdateStatus(newStatus valueobject.RepositoryStatus) error 
 	return nil
 }
 
-// ResetForReindexing resets the repository status to pending to allow a full re-index.
+// ResetForReindexing resets the repository and all engine statuses to pending for a full re-index.
 func (r *Repository) ResetForReindexing() error {
-	return r.UpdateStatus(valueobject.RepositoryStatusPending)
+	if err := r.UpdateStatus(valueobject.RepositoryStatusPending); err != nil {
+		return err
+	}
+	r.zoektIndexStatus = valueobject.ZoektIndexStatusPending
+	r.embeddingIndexStatus = valueobject.EmbeddingIndexStatusPending
+	r.zoektShardCount = 0
+	r.updatedAt = time.Now()
+	return nil
 }
 
 // MarkIndexingCompleted marks the repository as successfully indexed.

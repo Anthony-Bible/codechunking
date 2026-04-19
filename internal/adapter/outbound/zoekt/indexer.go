@@ -86,6 +86,10 @@ func (i *Indexer) Index(ctx context.Context, config *outbound.ZoektRepositoryCon
 
 	result := i.parseIndexOutput(string(output))
 
+	// zoekt-git-index runs incrementally by default: if the shard is already up-to-date
+	// it exits successfully with no output. Fall back to disk to get actual shard count.
+	i.fillMissingShardStats(ctx, config.Name, result)
+
 	return &outbound.ZoektIndexResult{
 		FileCount:     result.FileCount,
 		ShardCount:    result.ShardCount,
@@ -169,9 +173,21 @@ func (i *Indexer) DeleteRepository(ctx context.Context, repoName string) error {
 }
 
 // findShards returns all shard file paths for a repository.
+// zoekt-git-index encodes the repo name using URL percent-encoding (e.g. "/" → "%2F"),
+// so we match both the encoded form and the legacy underscore form.
 func (i *Indexer) findShards(repoName string) ([]string, error) {
-	pattern := filepath.Join(i.indexDir, strings.ReplaceAll(repoName, "/", "_")) + "*.zoekt"
-	return filepath.Glob(pattern)
+	encodedName := strings.ReplaceAll(repoName, "/", "%2F")
+	pattern := filepath.Join(i.indexDir, encodedName) + "*.zoekt"
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+	if len(matches) > 0 {
+		return matches, nil
+	}
+	// Fallback: legacy underscore encoding used by older zoekt versions.
+	legacyPattern := filepath.Join(i.indexDir, strings.ReplaceAll(repoName, "/", "_")) + "*.zoekt"
+	return filepath.Glob(legacyPattern)
 }
 
 // buildIndexArgs constructs CLI arguments for zoekt-git-index.
@@ -203,23 +219,37 @@ func (i *Indexer) buildIndexArgs(config *outbound.ZoektRepositoryConfig) []strin
 }
 
 // parseIndexOutput extracts statistics from zoekt-git-index output.
+// zoekt-git-index writes to stderr lines like:
+//
+//	2006/01/02 15:04:05 finished shard /path/to/file.zoekt: 12345 index bytes (overhead 2.8), 701 files processed
+//
+// Each "finished shard" line represents one shard.
 func (i *Indexer) parseIndexOutput(output string) *outbound.ZoektIndexResult {
 	result := &outbound.ZoektIndexResult{}
 
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
+	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "indexed files:"):
-			_, _ = fmt.Sscanf(strings.TrimPrefix(line, "indexed files:"), "%d", &result.FileCount)
-		case strings.HasPrefix(line, "shards:"):
-			_, _ = fmt.Sscanf(strings.TrimPrefix(line, "shards:"), "%d", &result.ShardCount)
-		case strings.HasPrefix(line, "bytes indexed:"):
-			_, _ = fmt.Sscanf(strings.TrimPrefix(line, "bytes indexed:"), "%d", &result.BytesIndexed)
-		case strings.Contains(line, ".zoekt"):
-			shardPath := extractShardPath(line)
-			if shardPath != "" {
-				result.ShardPaths = append(result.ShardPaths, shardPath)
+		if !strings.Contains(line, "finished shard") {
+			continue
+		}
+		// Extract shard path (ends in .zoekt, appears before the colon after "finished shard")
+		shardPath := extractShardPath(line)
+		if shardPath != "" {
+			result.ShardPaths = append(result.ShardPaths, shardPath)
+			result.ShardCount++
+		}
+		// Extract file count: "..., 701 files processed"
+		if idx := strings.Index(line, ", "); idx >= 0 {
+			var fileCount int
+			if n, _ := fmt.Sscanf(line[idx+2:], "%d files processed", &fileCount); n == 1 {
+				result.FileCount += fileCount
+			}
+		}
+		// Extract bytes indexed: after the colon "... .zoekt: 29941290 index bytes ..."
+		if idx := strings.Index(line, ".zoekt:"); idx >= 0 {
+			var bytesIndexed int64
+			if n, _ := fmt.Sscanf(strings.TrimSpace(line[idx+7:]), "%d", &bytesIndexed); n == 1 {
+				result.BytesIndexed += bytesIndexed
 			}
 		}
 	}
@@ -231,11 +261,32 @@ func (i *Indexer) parseIndexOutput(output string) *outbound.ZoektIndexResult {
 func extractShardPath(line string) string {
 	fields := strings.Fields(line)
 	for _, field := range fields {
-		if strings.HasSuffix(field, ".zoekt") {
-			return field
+		// The field may have a trailing colon (e.g. "file.zoekt:") in zoekt-git-index output.
+		trimmed := strings.TrimSuffix(field, ":")
+		if strings.HasSuffix(trimmed, ".zoekt") {
+			return trimmed
 		}
 	}
 	return ""
+}
+
+// fillMissingShardStats populates result from disk when zoekt-git-index produced no output
+// (incremental mode skips indexing when the shard is already up-to-date).
+func (i *Indexer) fillMissingShardStats(_ context.Context, repoName string, result *outbound.ZoektIndexResult) {
+	if result.ShardCount != 0 {
+		return
+	}
+	status, err := i.CheckIndexStatus(context.Background(), repoName, "")
+	if err != nil || !status.Exists {
+		return
+	}
+	result.ShardCount = status.ShardCount
+	result.BytesIndexed = status.IndexSize
+	if len(result.ShardPaths) == 0 {
+		if paths, err := i.findShards(repoName); err == nil {
+			result.ShardPaths = paths
+		}
+	}
 }
 
 // getModTime returns the modification time of a file.

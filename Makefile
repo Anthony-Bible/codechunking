@@ -99,9 +99,9 @@ build-docker:
 	docker build -f docker/Dockerfile -t $(BINARY_NAME):latest .
 	@echo "Docker image built: $(BINARY_NAME):latest"
 
-## build-client: Build standalone client binary (no CGO, static binary)
+## build-client: Build standalone client binary
 build-client:
-	CGO_ENABLED=0 $(GO_CMD) build -o bin/codechunking-client ./cmd/client
+	CGO_ENABLED=1 $(GO_CMD) build -o bin/codechunking-client ./cmd/client
 	@echo "Client binary built: bin/codechunking-client"
 
 ## build-client-cross: Cross-compile client for Linux and macOS

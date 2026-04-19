@@ -236,8 +236,8 @@ func TestRepositoryService_SuccessfulURLValidation(t *testing.T) {
 			service := NewCreateRepositoryService(mockRepo, mockJobRepo, mockPublisher)
 
 			// Mock repository doesn't exist
-			mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).
-				Return(false, nil)
+			mockRepo.On("FindByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).
+				Return(nil, nil)
 
 			// Mock successful save
 			mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
@@ -375,8 +375,8 @@ func TestRepositoryService_URLValidationEdgeCases(t *testing.T) {
 
 			// Setup mocks for valid URLs BEFORE execution
 			if !tt.shouldFail {
-				mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).
-					Return(false, nil)
+				mockRepo.On("FindByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).
+					Return(nil, nil)
 				mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
 				mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
 				mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).

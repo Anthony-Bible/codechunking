@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	domainerrors "codechunking/internal/domain/errors/domain"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -101,15 +99,13 @@ func (m *MockRepositoryRepositoryWithNormalization) Exists(
 	return args.Bool(0), args.Error(1)
 }
 
-// TestCreateRepositoryService_DetectDuplicatesByNormalizedURL tests duplicate detection using normalized URLs
-// This test will FAIL initially as normalized duplicate detection doesn't exist yet.
+// TestCreateRepositoryService_DetectDuplicatesByNormalizedURL tests duplicate detection using normalized URLs.
 func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 	tests := []struct {
 		name                  string
 		existingURL           string
 		newURL                string
 		shouldDetectDuplicate bool
-		expectedError         error
 		description           string
 	}{
 		{
@@ -117,7 +113,6 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "https://github.com/owner/repo.git",
 			shouldDetectDuplicate: true,
-			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate when new URL has .git suffix but existing doesn't",
 		},
 		{
@@ -125,7 +120,6 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "https://GitHub.com/owner/repo",
 			shouldDetectDuplicate: true,
-			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate when hostname case differs",
 		},
 		{
@@ -133,7 +127,6 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "http://github.com/owner/repo",
 			shouldDetectDuplicate: true,
-			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate when protocol differs (http vs https)",
 		},
 		{
@@ -141,7 +134,6 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "https://github.com/owner/repo/",
 			shouldDetectDuplicate: true,
-			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate when new URL has trailing slash",
 		},
 		{
@@ -149,7 +141,6 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "https://github.com/owner/repo?branch=main",
 			shouldDetectDuplicate: true,
-			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate when new URL has query parameters",
 		},
 		{
@@ -157,7 +148,6 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "https://github.com/owner/repo#readme",
 			shouldDetectDuplicate: true,
-			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate when new URL has fragment identifier",
 		},
 		{
@@ -165,7 +155,6 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "HTTP://GitHub.COM/owner/repo.git/?branch=main#readme///",
 			shouldDetectDuplicate: true,
-			expectedError:         domainerrors.ErrRepositoryAlreadyExists,
 			description:           "Should detect duplicate with complex URL variations",
 		},
 		{
@@ -173,7 +162,6 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo1",
 			newURL:                "https://github.com/owner/repo2",
 			shouldDetectDuplicate: false,
-			expectedError:         nil,
 			description:           "Should allow different repositories from same owner",
 		},
 		{
@@ -181,7 +169,6 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner1/repo",
 			newURL:                "https://github.com/owner2/repo",
 			shouldDetectDuplicate: false,
-			expectedError:         nil,
 			description:           "Should allow same repository name with different owner",
 		},
 		{
@@ -189,7 +176,6 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			existingURL:           "https://github.com/owner/repo",
 			newURL:                "https://gitlab.com/owner/repo",
 			shouldDetectDuplicate: false,
-			expectedError:         nil,
 			description:           "Should allow same repo name on different hosting providers",
 		},
 	}
@@ -202,16 +188,22 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			mockJobRepo := new(MockIndexingJobRepository)
 			mockPublisher := &MockMessagePublisher{}
 
-			// Create service with enhanced duplicate detection - this will FAIL as the service doesn't use normalization yet
 			service := NewCreateRepositoryServiceWithNormalizedDuplicateDetection(mockRepo, mockJobRepo, mockPublisher)
 
 			// Setup mocks based on expected behavior
 			if tt.shouldDetectDuplicate {
-				// Mock should return true for duplicate check (the service uses regular Exists)
-				mockRepo.On("Exists", ctx, mock.AnythingOfType("valueobject.RepositoryURL")).Return(true, nil)
+				// Mock finding existing repository
+				existingURL, _ := valueobject.NewRepositoryURL(tt.existingURL)
+				existingRepo := entity.NewRepository(existingURL, "existing", nil, nil)
+				mockRepo.On("FindByNormalizedURL", ctx, mock.AnythingOfType("valueobject.RepositoryURL")).Return(existingRepo, nil)
+
+				// For duplicate, expect status reset (Update) and job publication
+				mockRepo.On("Update", ctx, mock.AnythingOfType("*entity.Repository")).Return(nil)
+				mockJobRepo.On("Save", ctx, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
+				mockPublisher.On("PublishIndexingJob", ctx, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("string")).Return(nil)
 			} else {
-				// Mock should return false (no duplicate found)
-				mockRepo.On("Exists", ctx, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
+				// Mock not finding repository
+				mockRepo.On("FindByNormalizedURL", ctx, mock.AnythingOfType("valueobject.RepositoryURL")).Return(nil, nil)
 				// If no duplicate, expect save and publish calls
 				mockRepo.On("Save", ctx, mock.AnythingOfType("*entity.Repository")).Return(nil)
 				mockJobRepo.On("Save", ctx, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
@@ -228,14 +220,13 @@ func TestCreateRepositoryService_DetectDuplicatesByNormalizedURL(t *testing.T) {
 			response, err := service.CreateRepository(ctx, request)
 
 			// Verify
+			require.NoError(t, err, tt.description)
+			assert.NotNil(t, response, "Response should not be nil")
+
 			if tt.shouldDetectDuplicate {
-				require.Error(t, err, tt.description)
-				assert.Equal(t, tt.expectedError, err, tt.description)
-				assert.Nil(t, response, "Response should be nil when duplicate is detected")
+				assert.Equal(t, "existing", response.Name, "Should return existing repository")
 			} else {
-				require.NoError(t, err, tt.description)
-				assert.NotNil(t, response, "Response should not be nil when repository is created successfully")
-				assert.Equal(t, "test-repo", response.Name, "Response should contain correct repository name")
+				assert.Equal(t, "test-repo", response.Name, "Should return new repository")
 			}
 
 			// Verify mock expectations
@@ -258,7 +249,7 @@ func TestCreateRepositoryService_NormalizedDuplicateDetectionWithDatabaseError(t
 
 	// Setup mock to return database error
 	expectedError := errors.New("database connection failed")
-	mockRepo.On("Exists", ctx, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, expectedError)
+	mockRepo.On("FindByNormalizedURL", ctx, mock.AnythingOfType("valueobject.RepositoryURL")).Return(nil, expectedError)
 
 	// Execute
 	request := dto.CreateRepositoryRequest{

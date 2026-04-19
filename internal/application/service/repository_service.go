@@ -75,8 +75,8 @@ func NewCreateRepositoryServiceWithNormalizedDuplicateDetection(
 }
 
 // CreateRepository creates a new repository and publishes an indexing job.
-// It validates the repository URL, ensures it doesn't already exist, creates the entity,
-// saves it to the repository, publishes an indexing job, and returns the response.
+// It validates the repository URL, handles existing repositories by triggering a re-index,
+// creates the entity if new, saves it, and publishes an indexing job.
 func (s *CreateRepositoryService) CreateRepository(
 	ctx context.Context,
 	request dto.CreateRepositoryRequest,
@@ -91,25 +91,51 @@ func (s *CreateRepositoryService) CreateRepository(
 		return nil, err
 	}
 
-	// Check if repository already exists
-	if err := s.checkRepositoryExists(ctx, repositoryURL); err != nil {
-		return nil, err
-	}
-
-	// Create and save repository
-	repository, err := s.createAndSaveRepository(ctx, request, repositoryURL)
+	// Check if repository already exists by normalized URL for idempotent re-indexing
+	existingRepo, err := s.repositoryRepo.FindByNormalizedURL(ctx, repositoryURL)
 	if err != nil {
-		return nil, err
+		slogger.Error(ctx, "DEBUG: Failed to check for existing repository", slogger.Fields{
+			"normalized_url": repositoryURL.String(), "error": err.Error(),
+		})
+		return nil, common.WrapServiceError(common.OpCheckRepositoryExists, err)
 	}
 
-	// Publish indexing job
+	var repository *entity.Repository
+	if existingRepo != nil {
+		slogger.Info(ctx, "DEBUG: Repository already exists, resetting status for re-index", slogger.Fields{
+			"normalized_url": repositoryURL.String(),
+			"repository_id":  existingRepo.ID().String(),
+		})
+		if err := existingRepo.ResetForReindexing(); err != nil {
+			slogger.Error(ctx, "DEBUG: Failed to reset repository for re-indexing", slogger.Fields{
+				"repository_id": existingRepo.ID().String(), "error": err.Error(),
+			})
+			return nil, common.WrapServiceError(common.OpUpdateRepository, err)
+		}
+		if err := s.repositoryRepo.Update(ctx, existingRepo); err != nil {
+			slogger.Error(ctx, "DEBUG: Failed to save repository after reset", slogger.Fields{
+				"repository_id": existingRepo.ID().String(), "error": err.Error(),
+			})
+			return nil, common.WrapServiceError(common.OpSaveRepository, err)
+		}
+		repository = existingRepo
+	} else {
+		// Create and save new repository
+		repository, err = s.createAndSaveRepository(ctx, request, repositoryURL)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Publish indexing job (new or re-index)
 	if err := s.publishIndexingJob(ctx, repository, repositoryURL.CloneURL()); err != nil {
 		return nil, err
 	}
 
 	response := common.EntityToRepositoryResponse(repository)
-	slogger.Info(ctx, "DEBUG: Repository creation completed successfully", slogger.Fields{
+	slogger.Info(ctx, "DEBUG: Repository processing completed successfully", slogger.Fields{
 		"repository_id": repository.ID().String(), "name": repository.Name(),
+		"is_reindex": existingRepo != nil,
 	})
 	return response, nil
 }
@@ -130,30 +156,6 @@ func (s *CreateRepositoryService) validateRepositoryURL(
 		"normalized_url": repositoryURL.String(),
 	})
 	return repositoryURL, nil
-}
-
-// checkRepositoryExists verifies that a repository doesn't already exist.
-func (s *CreateRepositoryService) checkRepositoryExists(ctx context.Context, url valueobject.RepositoryURL) error {
-	slogger.Info(ctx, "DEBUG: Checking if repository exists", slogger.Fields{
-		"normalized_url": url.String(),
-	})
-	exists, err := s.repositoryRepo.Exists(ctx, url)
-	if err != nil {
-		slogger.Error(ctx, "DEBUG: Failed to check repository existence", slogger.Fields{
-			"normalized_url": url.String(), "error": err.Error(),
-		})
-		return common.WrapServiceError(common.OpCheckRepositoryExists, err)
-	}
-	slogger.Info(ctx, "DEBUG: Repository existence check completed", slogger.Fields{
-		"normalized_url": url.String(), "exists": exists,
-	})
-	if exists {
-		slogger.Info(ctx, "DEBUG: Repository already exists, returning conflict", slogger.Fields{
-			"normalized_url": url.String(),
-		})
-		return domainerrors.ErrRepositoryAlreadyExists
-	}
-	return nil
 }
 
 // createAndSaveRepository creates a repository entity and saves it to the database.

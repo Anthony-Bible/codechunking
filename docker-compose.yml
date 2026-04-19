@@ -57,6 +57,7 @@ services:
   zoekt-webserver:
     image: ghcr.io/sourcegraph/zoekt:latest
     container_name: codechunking-zoekt-webserver
+    user: "1000:1000"
     command: ["zoekt-webserver", "-index", "/data/index", "-pprof", "-rpc" ]  # HTTP on 6070, gRPC on 6071
     ports:
       - name: zoekt-http
@@ -68,7 +69,7 @@ services:
         published: "6071"
         protocol: tcp
     volumes:
-      - zoekt_data:/data/index
+      - /tmp/zoekt-index:/data/index
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:6070/healthz || exit 1"]
       interval: 10s

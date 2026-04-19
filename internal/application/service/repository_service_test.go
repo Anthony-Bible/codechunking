@@ -137,7 +137,7 @@ func TestCreateRepositoryService_CreateRepository_Success(t *testing.T) {
 	}
 
 	// Mock expectations
-	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
+	mockRepo.On("FindByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(nil, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
 	mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
 	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
@@ -233,7 +233,17 @@ func TestCreateRepositoryService_CreateRepository_RepositoryAlreadyExists(t *tes
 	}
 
 	// Mock expectations
-	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(true, nil)
+	repoURL, _ := valueobject.NewRepositoryURL("https://github.com/golang/go")
+	existingRepo := entity.NewRepository(repoURL, "golang/go", nil, nil)
+	mockRepo.On("FindByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(existingRepo, nil)
+
+	// Expect status reset
+	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
+
+	// Expect job publication for the existing repository
+	mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
+	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
+		Return(nil)
 
 	ctx := context.Background()
 
@@ -241,13 +251,14 @@ func TestCreateRepositoryService_CreateRepository_RepositoryAlreadyExists(t *tes
 	response, err := service.CreateRepository(ctx, request)
 
 	// Assert
-	require.Error(t, err)
-	assert.Nil(t, response)
-	require.ErrorIs(t, err, domainerrors.ErrRepositoryAlreadyExists)
+	require.NoError(t, err)
+	assert.NotNil(t, response)
+	assert.Equal(t, existingRepo.ID(), response.ID)
 
 	mockRepo.AssertExpectations(t)
-	mockRepo.AssertNotCalled(t, "Save")
-	mockPublisher.AssertNotCalled(t, "PublishIndexingJob")
+	mockRepo.AssertNotCalled(t, "Save") // Should not call Save for existing repo
+	mockJobRepo.AssertExpectations(t)
+	mockPublisher.AssertExpectations(t)
 }
 
 func TestCreateRepositoryService_CreateRepository_RepositoryExistsCheckFails(t *testing.T) {
@@ -276,7 +287,7 @@ func TestCreateRepositoryService_CreateRepository_RepositoryExistsCheckFails(t *
 	}
 
 	dbError := errors.New("database connection failed")
-	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, dbError)
+	mockRepo.On("FindByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(nil, dbError)
 
 	ctx := context.Background()
 
@@ -320,7 +331,7 @@ func TestCreateRepositoryService_CreateRepository_SaveFails(t *testing.T) {
 	}
 
 	saveError := errors.New("database save failed")
-	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
+	mockRepo.On("FindByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(nil, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(saveError)
 
 	ctx := context.Background()
@@ -364,7 +375,7 @@ func TestCreateRepositoryService_CreateRepository_PublishJobFails(t *testing.T) 
 	}
 
 	publishError := errors.New("message queue unavailable")
-	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
+	mockRepo.On("FindByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(nil, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
 	mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
 	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
@@ -410,7 +421,7 @@ func TestCreateRepositoryService_CreateRepository_AutoGeneratesNameFromURL(t *te
 		// Name is empty - should be auto-generated from URL
 	}
 
-	mockRepo.On("Exists", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(false, nil)
+	mockRepo.On("FindByNormalizedURL", mock.Anything, mock.AnythingOfType("valueobject.RepositoryURL")).Return(nil, nil)
 	mockRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.Repository")).Return(nil)
 	mockJobRepo.On("Save", mock.Anything, mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
 	mockPublisher.On("PublishIndexingJob", mock.Anything, mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").

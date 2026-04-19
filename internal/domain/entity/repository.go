@@ -279,6 +279,11 @@ func (r *Repository) UpdateStatus(newStatus valueobject.RepositoryStatus) error 
 	return nil
 }
 
+// ResetForReindexing resets the repository status to pending to allow a full re-index.
+func (r *Repository) ResetForReindexing() error {
+	return r.UpdateStatus(valueobject.RepositoryStatusPending)
+}
+
 // MarkIndexingCompleted marks the repository as successfully indexed.
 func (r *Repository) MarkIndexingCompleted(commitHash string, totalFiles, totalChunks int) error {
 	if err := r.UpdateStatus(valueobject.RepositoryStatusCompleted); err != nil {

@@ -1,13 +1,14 @@
 package parsererrors
 
 import (
+	"codechunking/internal/adapter/outbound/treesitter"
 	"codechunking/internal/domain/valueobject"
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
-	forest "github.com/alexaandru/go-sitter-forest"
 	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
 )
 
@@ -120,20 +121,11 @@ func (v *GoValidator) createParseTreeWithoutValidation(ctx context.Context, sour
 	// For snippets without package declarations, wrap them to avoid ERROR nodes
 	wrappedSource, isWrapped := v.wrapSnippetIfNeeded(source)
 
-	// Use direct tree-sitter parsing without going through the validation layer
-	grammar := forest.GetLanguage("go")
-	if grammar == nil {
+	parser, parserErr := treesitter.GetCachedParser("go")
+	if parserErr != nil {
 		return nil
 	}
-
-	parser := tree_sitter.NewParser()
-	if parser == nil {
-		return nil
-	}
-
-	if ok := parser.SetLanguage(grammar); !ok {
-		return nil
-	}
+	defer treesitter.PutCachedParser("go", parser)
 
 	tree, err := parser.ParseString(ctx, nil, []byte(wrappedSource))
 	if err != nil {
@@ -587,6 +579,8 @@ func (v *GoValidator) validateSyntaxErrorNodes(parseTree *valueobject.ParseTree)
 }
 
 // analyzeErrorForSpecificPattern examines an ERROR node for specific patterns.
+//
+//nolint:gocognit // complex pattern matching requires multiple branches
 func analyzeErrorForSpecificPattern(errorNode *valueobject.ParseNode, parseTree *valueobject.ParseTree) string {
 	if errorNode == nil || parseTree == nil {
 		return "syntax error detected by tree-sitter parser"
@@ -1083,22 +1077,15 @@ type ComprehensiveErrorDetectionResult struct {
 // parseTreeWithTreeSitter parses source code using tree-sitter and returns the raw tree.
 // This is a common helper method to avoid duplicating tree-sitter setup code.
 func (v *GoValidator) parseTreeWithTreeSitter(source string) (*tree_sitter.Tree, error) {
-	grammar := forest.GetLanguage("go")
-	if grammar == nil {
-		return nil, errors.New("tree-sitter Go grammar not available")
-	}
-
-	parser := tree_sitter.NewParser()
-	if parser == nil {
-		return nil, errors.New("failed to create tree-sitter parser")
-	}
-
-	if ok := parser.SetLanguage(grammar); !ok {
-		return nil, errors.New("failed to set Go language for parser")
+	parser, err := treesitter.GetCachedParser("go")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cached parser: %w", err)
 	}
 
 	ctx := context.Background()
 	tree, err := parser.ParseString(ctx, nil, []byte(source))
+	// Return parser to pool immediately — tree-sitter trees are self-contained after ParseString.
+	treesitter.PutCachedParser("go", parser)
 	if err != nil {
 		return nil, err
 	}

@@ -417,6 +417,10 @@ type CodeParsingConfig struct {
 	FileFilters      []string
 	IncludeTests     bool
 	ExcludeVendor    bool
+	// ParseConcurrency controls how many files are parsed in parallel inside
+	// ParseDirectory. A value of 0 means "use runtime.GOMAXPROCS(0)". A value
+	// of 1 disables parallelism entirely. Values >1 bound the worker pool.
+	ParseConcurrency int
 }
 
 // ====================== CACHING INTERFACES ======================

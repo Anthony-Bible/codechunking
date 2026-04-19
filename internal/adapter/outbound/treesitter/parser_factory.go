@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	forest "github.com/alexaandru/go-sitter-forest"
+	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
 )
 
 // ParserFactoryImpl implements TreeSitterParserFactory using go-sitter-forest.
@@ -493,4 +496,68 @@ func GetRegisteredLanguages() []string {
 		languages = append(languages, lang)
 	}
 	return languages
+}
+
+// ============================================================================
+// Per-language sync.Pool for tree-sitter parsers
+// ============================================================================
+
+//nolint:gochecknoglobals // pool map requires global access for cross-goroutine reuse
+var parserPools sync.Map // map[string]*sync.Pool
+
+// GetCachedParser retrieves a pooled *tree_sitter.Parser pre-configured for
+// languageName, allocating a fresh one when the pool is empty.
+func GetCachedParser(languageName string) (*tree_sitter.Parser, error) {
+	pool := getOrCreateParserPool(languageName)
+	if p, ok := pool.Get().(*tree_sitter.Parser); ok && p != nil {
+		return p, nil
+	}
+	return newParserForLanguage(languageName)
+}
+
+// PutCachedParser returns a parser to its pool for reuse.
+// Reset is called first to clear any cancellation or partial-parse state left
+// by a previous context timeout or interruption, as the tree-sitter docs
+// require Reset before parsing a different document after an interruption.
+func PutCachedParser(languageName string, p *tree_sitter.Parser) {
+	if p == nil {
+		return
+	}
+	p.Reset()
+	pool := getOrCreateParserPool(languageName)
+	pool.Put(p)
+}
+
+func getOrCreateParserPool(languageName string) *sync.Pool {
+	if v, ok := parserPools.Load(languageName); ok {
+		p, _ := v.(*sync.Pool)
+		return p
+	}
+	newPool := &sync.Pool{
+		New: func() any {
+			p, err := newParserForLanguage(languageName)
+			if err != nil {
+				return nil
+			}
+			return p
+		},
+	}
+	actual, _ := parserPools.LoadOrStore(languageName, newPool)
+	p, _ := actual.(*sync.Pool)
+	return p
+}
+
+func newParserForLanguage(languageName string) (*tree_sitter.Parser, error) {
+	grammar := forest.GetLanguage(languageName)
+	if grammar == nil {
+		return nil, fmt.Errorf("no grammar available for language: %s", languageName)
+	}
+	p := tree_sitter.NewParser()
+	if p == nil {
+		return nil, fmt.Errorf("failed to allocate tree-sitter parser for: %s", languageName)
+	}
+	if !p.SetLanguage(grammar) {
+		return nil, fmt.Errorf("failed to set language %s on parser", languageName)
+	}
+	return p, nil
 }

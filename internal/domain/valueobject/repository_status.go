@@ -53,18 +53,22 @@ func (s RepositoryStatus) IsTerminal() bool {
 func (s RepositoryStatus) CanTransitionTo(target RepositoryStatus) bool {
 	transitions := map[RepositoryStatus][]RepositoryStatus{
 		RepositoryStatusPending: {
+			RepositoryStatusPending, // Allow re-triggering while pending
 			RepositoryStatusCloning,
 			RepositoryStatusFailed,
 		},
 		RepositoryStatusCloning: {
+			RepositoryStatusPending, // Allow re-triggering while cloning
 			RepositoryStatusProcessing,
 			RepositoryStatusFailed,
 		},
 		RepositoryStatusProcessing: {
+			RepositoryStatusPending, // Allow re-triggering while processing
 			RepositoryStatusCompleted,
 			RepositoryStatusFailed,
 		},
 		RepositoryStatusCompleted: {
+			RepositoryStatusPending,    // For re-indexing
 			RepositoryStatusProcessing, // For re-indexing
 			RepositoryStatusCompleted,  // Allow idempotent completion (re-indexing same commit)
 			RepositoryStatusArchived,

@@ -2,6 +2,7 @@
 zoekt:
   webserver:
     host: localhost
+    #grpc actually does run on 6070
     port: 6070
   indexing:
     git_index_path: zoekt-git-index
@@ -9,7 +10,7 @@ zoekt:
     timeout: 10m
   concurrent_indexing:
     enabled: true
-    max_concurrent_jobs: 2
+    max_concurrent_jobs: 12
     retry_attempts: 2
 
 database:
@@ -69,6 +70,6 @@ batch_processing:
   # Token counting configuration
   token_counting:
     enabled: true                    # Enable token counting
-    mode: "all"                      # Mode: "all", "sample", or "on_demand"
+    mode: "sample"                   # Mode: "all", "sample", or "on_demand"
     sample_percent: 10               # Percentage of chunks to sample (for "sample" mode)
     max_tokens_per_chunk: 8192       # Maximum tokens per chunk (Gemini embedding model limit)

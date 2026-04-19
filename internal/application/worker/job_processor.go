@@ -1982,8 +1982,9 @@ func (p *DefaultJobProcessor) processBatchEmbeddings(
 	// Convert UUID to string for backward compatibility with existing code
 	jobID := indexingJobID.String()
 
-	// PRE-FLIGHT: Count tokens before embedding generation (non-blocking)
-	p.countTokensForChunks(ctx, repositoryID, chunks)
+	// Fire token counting in a separate goroutine so it doesn't block embedding generation.
+	// Uses a detached context so job cancellation doesn't abort an in-progress count.
+	go p.countTokensForChunks(context.WithoutCancel(ctx), repositoryID, chunks)
 
 	// Check context before starting batch processing
 	if err := ctx.Err(); err != nil {
@@ -2248,8 +2249,9 @@ func (p *DefaultJobProcessor) processSequentialEmbeddings(
 	// Convert UUID to string for backward compatibility
 	jobID := indexingJobID.String()
 
-	// PRE-FLIGHT: Count tokens before embedding generation (non-blocking)
-	p.countTokensForChunks(ctx, repositoryID, chunks)
+	// Fire token counting in a separate goroutine so it doesn't block embedding generation.
+	// Uses a detached context so job cancellation doesn't abort an in-progress count.
+	go p.countTokensForChunks(context.WithoutCancel(ctx), repositoryID, chunks)
 
 	if p.batchConfig.UseTestEmbeddings {
 		// Test mode: use test embeddings

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -511,5 +513,175 @@ type EmptyInterface interface{}
 		assert.NotEmpty(t, chunk.Language, "Chunk should have a language")
 		assert.NotZero(t, chunk.Size, "Chunk should have a size")
 		assert.NotEmpty(t, chunk.Hash, "Chunk should have a hash")
+	}
+}
+
+// chunkKey produces a stable sort key for a CodeChunk so that two parses of the
+// same directory can be compared regardless of order.
+func chunkKey(c outbound.CodeChunk) string {
+	return fmt.Sprintf("%s:%d:%s", c.FilePath, c.StartLine, c.Hash)
+}
+
+// sortedChunkKeys returns a sorted slice of chunkKey values for the given chunks.
+func sortedChunkKeys(chunks []outbound.CodeChunk) []string {
+	keys := make([]string, len(chunks))
+	for i, c := range chunks {
+		keys[i] = chunkKey(c)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// makeGoFiles creates n minimal .go source files under dir and returns their paths.
+func makeGoFiles(t *testing.T, dir string, n int) {
+	t.Helper()
+	for i := range n {
+		content := fmt.Sprintf(`package bench
+
+// Func%d is a generated function used in concurrency tests.
+func Func%d(x int) int {
+	return x * %d
+}
+`, i, i, i+1)
+		path := filepath.Join(dir, fmt.Sprintf("file%d.go", i))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	}
+}
+
+// TestParseDirectory_ConcurrencyProducesIdenticalResults verifies that parsing with
+// ParseConcurrency=1 and ParseConcurrency=8 produces identical chunk sets.
+//
+// This test MUST FAIL initially because CodeParsingConfig does not yet have a
+// ParseConcurrency field.
+func TestParseDirectory_ConcurrencyProducesIdenticalResults(t *testing.T) {
+	t.Parallel()
+
+	const fileCount = 12
+
+	dir := t.TempDir()
+	makeGoFiles(t, dir, fileCount)
+
+	ctx := context.Background()
+	parser, err := NewTreeSitterCodeParser(ctx)
+	require.NoError(t, err)
+
+	baseConfig := outbound.CodeParsingConfig{
+		ChunkSizeBytes:   4096,
+		MaxFileSizeBytes: 1 << 20, // 1 MiB
+		IncludeTests:     true,
+		ExcludeVendor:    true,
+	}
+
+	// Parse serially (concurrency = 1).
+	serialConfig := baseConfig
+	serialConfig.ParseConcurrency = 1 // FAILS: field does not exist yet
+
+	serialChunks, err := parser.ParseDirectory(ctx, dir, serialConfig)
+	require.NoError(t, err, "serial parse (ParseConcurrency=1) should not error")
+	require.NotEmpty(t, serialChunks, "serial parse should return chunks")
+
+	// Parse in parallel (concurrency = 8).
+	parallelConfig := baseConfig
+	parallelConfig.ParseConcurrency = 8 // FAILS: field does not exist yet
+
+	parallelChunks, err := parser.ParseDirectory(ctx, dir, parallelConfig)
+	require.NoError(t, err, "parallel parse (ParseConcurrency=8) should not error")
+	require.NotEmpty(t, parallelChunks, "parallel parse should return chunks")
+
+	// The chunk sets must be identical when sorted by (FilePath, StartLine, Hash).
+	assert.Equal(t,
+		sortedChunkKeys(serialChunks),
+		sortedChunkKeys(parallelChunks),
+		"ParseDirectory with ParseConcurrency=1 and ParseConcurrency=8 must produce identical chunk sets",
+	)
+}
+
+// TestParseDirectory_DefaultConcurrency verifies that ParseDirectory works correctly
+// when ParseConcurrency=0, which should default to runtime.GOMAXPROCS(0) workers.
+//
+// This test MUST FAIL initially because CodeParsingConfig does not yet have a
+// ParseConcurrency field.
+func TestParseDirectory_DefaultConcurrency(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	makeGoFiles(t, dir, 5)
+
+	ctx := context.Background()
+	parser, err := NewTreeSitterCodeParser(ctx)
+	require.NoError(t, err)
+
+	config := outbound.CodeParsingConfig{
+		ChunkSizeBytes:   4096,
+		MaxFileSizeBytes: 1 << 20,
+		IncludeTests:     true,
+		ExcludeVendor:    true,
+		ParseConcurrency: 0, // FAILS: field does not exist yet; 0 should mean GOMAXPROCS
+	}
+
+	// Sanity-check that GOMAXPROCS is positive so the test assumption holds.
+	require.Positive(t, runtime.GOMAXPROCS(0),
+		"GOMAXPROCS must be positive for default concurrency to be meaningful")
+
+	chunks, err := parser.ParseDirectory(ctx, dir, config)
+	require.NoError(t, err, "ParseDirectory with ParseConcurrency=0 (default GOMAXPROCS) must not error")
+	require.NotEmpty(t, chunks, "ParseDirectory with default concurrency must return chunks")
+}
+
+// makeBenchGoFiles creates n minimal .go source files under dir for benchmarks.
+func makeBenchGoFiles(b *testing.B, dir string, n int) {
+	b.Helper()
+	for i := range n {
+		content := fmt.Sprintf(`package bench
+
+// Func%d is a generated benchmark function.
+func Func%d(x int) int { return x * %d }
+`, i, i, i+1)
+		path := filepath.Join(dir, fmt.Sprintf("file%d.go", i))
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkParseDirectory_Serial benchmarks ParseDirectory with a single worker.
+func BenchmarkParseDirectory_Serial(b *testing.B) {
+	dir := b.TempDir()
+	makeBenchGoFiles(b, dir, 50)
+	ctx := context.Background()
+	p, err := NewTreeSitterCodeParser(ctx)
+	if err != nil {
+		b.Fatal(err)
+	}
+	cfg := outbound.CodeParsingConfig{
+		ChunkSizeBytes: 4096, MaxFileSizeBytes: 1 << 20,
+		IncludeTests: true, ExcludeVendor: true, ParseConcurrency: 1,
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := p.ParseDirectory(ctx, dir, cfg); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkParseDirectory_Parallel benchmarks ParseDirectory with GOMAXPROCS workers.
+func BenchmarkParseDirectory_Parallel(b *testing.B) {
+	dir := b.TempDir()
+	makeBenchGoFiles(b, dir, 50)
+	ctx := context.Background()
+	p, err := NewTreeSitterCodeParser(ctx)
+	if err != nil {
+		b.Fatal(err)
+	}
+	cfg := outbound.CodeParsingConfig{
+		ChunkSizeBytes: 4096, MaxFileSizeBytes: 1 << 20,
+		IncludeTests: true, ExcludeVendor: true, ParseConcurrency: 0,
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		if _, err := p.ParseDirectory(ctx, dir, cfg); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

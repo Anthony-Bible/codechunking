@@ -1,3 +1,6 @@
+# Zoekt stage - extract indexing binary
+FROM ghcr.io/sourcegraph/zoekt:latest AS zoekt
+
 # Build stage - use Debian-based image to avoid musl libc issues
 FROM golang:1.24-bookworm AS builder
 
@@ -48,6 +51,9 @@ WORKDIR /app
 
 # Copy binary from builder
 COPY --from=builder /app/codechunking /app/codechunking
+
+# Copy zoekt indexing binary
+COPY --from=zoekt /usr/local/bin/zoekt-git-index /usr/local/bin/zoekt-git-index
 
 # Copy configuration files
 COPY --from=builder /app/configs /app/configs

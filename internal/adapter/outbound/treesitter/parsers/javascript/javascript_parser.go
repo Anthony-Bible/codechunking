@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	forest "github.com/alexaandru/go-sitter-forest"
 	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
 )
 
@@ -56,23 +55,11 @@ func (o *ObservableJavaScriptParser) Parse(ctx context.Context, source []byte) (
 		return nil, err
 	}
 
-	// Get JavaScript grammar from forest
-	grammar := forest.GetLanguage("javascript")
-	if grammar == nil {
-		return nil, errors.New("failed to get JavaScript grammar from forest")
+	parser, err := treesitter.GetCachedParser("javascript")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cached parser: %w", err)
 	}
-
-	// Create tree-sitter parser
-	parser := tree_sitter.NewParser()
-	if parser == nil {
-		return nil, errors.New("failed to create tree-sitter parser")
-	}
-
-	// Set language
-	success := parser.SetLanguage(grammar)
-	if !success {
-		return nil, errors.New("failed to set JavaScript language")
-	}
+	defer treesitter.PutCachedParser("javascript", parser)
 
 	// Parse the source code
 	tree, err := parser.ParseString(ctx, nil, source)
@@ -128,23 +115,11 @@ func (o *ObservableJavaScriptParser) ParseSource(
 ) (*treesitter.ParseResult, error) {
 	start := time.Now()
 
-	// Get JavaScript grammar from forest
-	grammar := forest.GetLanguage("javascript")
-	if grammar == nil {
-		return nil, errors.New("failed to get JavaScript grammar from forest")
+	parser, err := treesitter.GetCachedParser("javascript")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cached parser: %w", err)
 	}
-
-	// Create tree-sitter parser
-	parser := tree_sitter.NewParser()
-	if parser == nil {
-		return nil, errors.New("failed to create tree-sitter parser")
-	}
-
-	// Set language
-	success := parser.SetLanguage(grammar)
-	if !success {
-		return nil, errors.New("failed to set JavaScript language")
-	}
+	defer treesitter.PutCachedParser("javascript", parser)
 
 	// Parse the source code
 	tree, err := parser.ParseString(ctx, nil, source)
@@ -207,20 +182,11 @@ func (o *ObservableJavaScriptParser) Close() error {
 
 // validateJavaScriptSource performs comprehensive validation of JavaScript source code using tree-sitter.
 func (p *JavaScriptParser) validateJavaScriptSource(ctx context.Context, source []byte) error {
-	// Parse with tree-sitter first to get the AST
-	grammar := forest.GetLanguage("javascript")
-	if grammar == nil {
-		return errors.New("failed to get JavaScript grammar")
+	parser, err := treesitter.GetCachedParser("javascript")
+	if err != nil {
+		return fmt.Errorf("failed to get cached parser: %w", err)
 	}
-
-	parser := tree_sitter.NewParser()
-	if parser == nil {
-		return errors.New("failed to create tree-sitter parser")
-	}
-
-	if !parser.SetLanguage(grammar) {
-		return errors.New("failed to set JavaScript language")
-	}
+	defer treesitter.PutCachedParser("javascript", parser)
 
 	tree, err := parser.ParseString(ctx, nil, source)
 	if err != nil {

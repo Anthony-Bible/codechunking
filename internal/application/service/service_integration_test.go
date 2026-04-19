@@ -111,8 +111,8 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 				// Name is empty - should be generated
 			}
 
-			mockRepo.On("Exists", context.Background(), mock.AnythingOfType("valueobject.RepositoryURL")).
-				Return(false, nil)
+			mockRepo.On("FindByNormalizedURL", context.Background(), mock.AnythingOfType("valueobject.RepositoryURL")).
+				Return(nil, nil)
 			mockRepo.On("Save", context.Background(), mock.AnythingOfType("*entity.Repository")).Return(nil)
 			mockJobRepo.On("Save", context.Background(), mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
 			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").
@@ -136,8 +136,8 @@ func TestRepositoryServiceBehaviorSpecification(t *testing.T) {
 				Name: "golang/go",
 			}
 
-			mockRepo.On("Exists", context.Background(), mock.AnythingOfType("valueobject.RepositoryURL")).
-				Return(false, nil)
+			mockRepo.On("FindByNormalizedURL", context.Background(), mock.AnythingOfType("valueobject.RepositoryURL")).
+				Return(nil, nil)
 			mockRepo.On("Save", context.Background(), mock.AnythingOfType("*entity.Repository")).Return(nil)
 			mockJobRepo.On("Save", context.Background(), mock.AnythingOfType("*entity.IndexingJob")).Return(nil)
 			mockPublisher.On("PublishIndexingJob", context.Background(), mock.AnythingOfType("uuid.UUID"), mock.AnythingOfType("uuid.UUID"), "https://github.com/golang/go.git").

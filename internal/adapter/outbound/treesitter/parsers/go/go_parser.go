@@ -16,7 +16,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	forest "github.com/alexaandru/go-sitter-forest"
 	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
 )
 
@@ -104,19 +103,11 @@ func (p *GoParser) Parse(ctx context.Context, sourceCode string) (*valueobject.P
 		return nil, err
 	}
 
-	grammar := forest.GetLanguage("go")
-	if grammar == nil {
-		return nil, errors.New("failed to get Go grammar from forest")
+	parser, err := treesitter.GetCachedParser("go")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cached parser: %w", err)
 	}
-
-	parser := tree_sitter.NewParser()
-	if parser == nil {
-		return nil, errors.New("failed to create tree-sitter parser")
-	}
-
-	if ok := parser.SetLanguage(grammar); !ok {
-		return nil, errors.New("failed to set Go language in tree-sitter parser")
-	}
+	defer treesitter.PutCachedParser("go", parser)
 
 	tree, err := parser.ParseString(ctx, nil, source)
 	if err != nil {
@@ -673,21 +664,11 @@ func parseWithDirectTreeSitter(source string) *valueobject.ParseTree {
 		sourceBytes = []byte(" ")
 	}
 
-	// Get Go grammar directly
-	grammar := forest.GetLanguage("go")
-	if grammar == nil {
+	parser, parserErr := treesitter.GetCachedParser("go")
+	if parserErr != nil {
 		return nil
 	}
-
-	// Create parser without going through factory/validation
-	parser := tree_sitter.NewParser()
-	if parser == nil {
-		return nil
-	}
-
-	if ok := parser.SetLanguage(grammar); !ok {
-		return nil
-	}
+	defer treesitter.PutCachedParser("go", parser)
 
 	// Parse directly without validation
 	tree, err := parser.ParseString(ctx, nil, sourceBytes)
@@ -1456,6 +1437,24 @@ func containsErrorNodesInSubtree(node *valueobject.ParseNode) bool {
 // isValidGoIdentifier checks if a string is a valid Go identifier based on tree-sitter grammar rules.
 // Go identifier pattern (from tree-sitter-go): [_\p{XID_Start}][_\p{XID_Continue}]*
 // This means: starts with underscore or letter (including Unicode), followed by underscores, letters, or digits.
+// isRepeatedFieldPattern checks whether parts represents a sequence of repeated
+// "identifier type" pairs (e.g. stress-test inputs like "Name string Name string …").
+// It samples up to the first 10 pairs for efficiency.
+func isRepeatedFieldPattern(parts []string) bool {
+	if len(parts)%2 != 0 {
+		return false
+	}
+	samplesToCheck := min(10, len(parts)/2)
+	for i := range samplesToCheck {
+		nameIdx := i * 2
+		typeIdx := nameIdx + 1
+		if !isValidGoIdentifier(parts[nameIdx]) || !isValidGoIdentifier(parts[typeIdx]) {
+			return false
+		}
+	}
+	return true
+}
+
 func isValidGoIdentifier(s string) bool {
 	if s == "" {
 		return false
@@ -1580,28 +1579,7 @@ func isMinimalFieldPattern(trimmed string) bool {
 	// Example: "Name string Name string Name string..." (1000 times)
 	// This prevents false rejection of stress test inputs
 	if len(parts) > 3 {
-		// Check if this appears to be a repeated field pattern (pairs of identifier + type)
-		// We'll sample the first few pairs to validate the pattern
-		if len(parts)%2 == 0 {
-			// Even number of parts - could be repeated "Name string" pattern
-			allPairsValid := true
-			samplesToCheck := min(10, len(parts)/2) // Check first 10 pairs or fewer
-
-			for i := range samplesToCheck {
-				nameIdx := i * 2
-				typeIdx := nameIdx + 1
-
-				if !isValidGoIdentifier(parts[nameIdx]) || !isValidGoIdentifier(parts[typeIdx]) {
-					allPairsValid = false
-					break
-				}
-			}
-
-			if allPairsValid {
-				return true // Repeated valid field pattern
-			}
-		}
-		return false // Too many parts and not a recognized pattern
+		return isRepeatedFieldPattern(parts)
 	}
 
 	// Validate the first part is a valid Go identifier (field name or embedded type)
@@ -1681,18 +1659,11 @@ func (o *ObservableGoParser) Parse(ctx context.Context, source []byte) (*treesit
 		return nil, err
 	}
 
-	grammar := forest.GetLanguage("go")
-	if grammar == nil {
-		return nil, errors.New("failed to get Go grammar from forest")
+	parser, err := treesitter.GetCachedParser("go")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cached parser: %w", err)
 	}
-
-	parser := tree_sitter.NewParser()
-	if parser == nil {
-		return nil, errors.New("failed to create tree-sitter parser")
-	}
-	if ok := parser.SetLanguage(grammar); !ok {
-		return nil, errors.New("failed to set Go language in tree-sitter parser")
-	}
+	defer treesitter.PutCachedParser("go", parser)
 
 	tree, err := parser.ParseString(ctx, nil, source)
 	if err != nil {
@@ -1753,18 +1724,11 @@ func (o *ObservableGoParser) ParseSource(
 		return nil, err
 	}
 
-	grammar := forest.GetLanguage("go")
-	if grammar == nil {
-		return nil, errors.New("failed to get Go grammar from forest")
+	parser, err := treesitter.GetCachedParser("go")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cached parser: %w", err)
 	}
-
-	parser := tree_sitter.NewParser()
-	if parser == nil {
-		return nil, errors.New("failed to create tree-sitter parser")
-	}
-	if ok := parser.SetLanguage(grammar); !ok {
-		return nil, errors.New("failed to set Go language in tree-sitter parser")
-	}
+	defer treesitter.PutCachedParser("go", parser)
 
 	tree, err := parser.ParseString(ctx, nil, source)
 	if err != nil {
@@ -2827,18 +2791,8 @@ func (p *GoParser) detectErrorsWithNativeMethods(sourceCode string) *ErrorDetect
 	ctx := context.Background()
 
 	// Parse directly with tree-sitter to access native error detection
-	grammar := forest.GetLanguage("go")
-	if grammar == nil {
-		return &ErrorDetectionResult{
-			HasError:       true,
-			IsError:        true,
-			IsMissing:      false,
-			ErrorNodeTypes: []string{"GRAMMAR_ERROR"},
-		}
-	}
-
-	parser := tree_sitter.NewParser()
-	if parser == nil {
+	parser, parserErr := treesitter.GetCachedParser("go")
+	if parserErr != nil {
 		return &ErrorDetectionResult{
 			HasError:       true,
 			IsError:        true,
@@ -2846,15 +2800,7 @@ func (p *GoParser) detectErrorsWithNativeMethods(sourceCode string) *ErrorDetect
 			ErrorNodeTypes: []string{"PARSER_ERROR"},
 		}
 	}
-
-	if ok := parser.SetLanguage(grammar); !ok {
-		return &ErrorDetectionResult{
-			HasError:       true,
-			IsError:        true,
-			IsMissing:      false,
-			ErrorNodeTypes: []string{"LANGUAGE_ERROR"},
-		}
-	}
+	defer treesitter.PutCachedParser("go", parser)
 
 	tree, err := parser.ParseString(ctx, nil, []byte(sourceCode))
 	if err != nil {
@@ -2956,32 +2902,11 @@ type RealAPIResult struct {
 // detectSpecificSyntaxErrors analyzes source code for specific syntax error patterns
 // using tree-sitter's native error detection methods (HasError, IsError, IsMissing).
 func (p *GoParser) detectSpecificSyntaxErrors(sourceCode string) *SpecificSyntaxErrorResult {
-	// Parse with tree-sitter
-	grammar := forest.GetLanguage("go")
-	if grammar == nil {
-		return &SpecificSyntaxErrorResult{
-			HasSyntaxError: false,
-			ErrorType:      "",
-			ErrorLocation:  "",
-			RecoveryHint:   "",
-			UsedHasError:   false,
-			UsedIsError:    false,
-			UsedIsMissing:  false,
-		}
+	parser, parserErr := treesitter.GetCachedParser("go")
+	if parserErr != nil {
+		return &SpecificSyntaxErrorResult{HasSyntaxError: false}
 	}
-
-	parser := tree_sitter.NewParser()
-	if parser == nil {
-		return &SpecificSyntaxErrorResult{
-			HasSyntaxError: false,
-		}
-	}
-
-	if ok := parser.SetLanguage(grammar); !ok {
-		return &SpecificSyntaxErrorResult{
-			HasSyntaxError: false,
-		}
-	}
+	defer treesitter.PutCachedParser("go", parser)
 
 	tree, err := parser.ParseString(context.Background(), nil, []byte(sourceCode))
 	if err != nil || tree == nil {
@@ -3146,34 +3071,14 @@ func classifyMissingNode(node tree_sitter.Node, sourceCode string) (string, stri
 
 // validateWithRealTreeSitterAPI validates source code using the actual tree-sitter API.
 func (p *GoParser) validateWithRealTreeSitterAPI(ctx context.Context, sourceCode string) *RealAPIResult {
-	grammar := forest.GetLanguage("go")
-	if grammar == nil {
+	parser, parserErr := treesitter.GetCachedParser("go")
+	if parserErr != nil {
 		return &RealAPIResult{
-			Error:          errors.New("failed to get Go grammar from forest"),
-			CalledHasError: false,
-			ParseTree:      nil,
-			UsedNativeAPI:  false,
+			Error:         parserErr,
+			UsedNativeAPI: false,
 		}
 	}
-
-	parser := tree_sitter.NewParser()
-	if parser == nil {
-		return &RealAPIResult{
-			Error:          errors.New("failed to create tree-sitter parser"),
-			CalledHasError: false,
-			ParseTree:      nil,
-			UsedNativeAPI:  false,
-		}
-	}
-
-	if ok := parser.SetLanguage(grammar); !ok {
-		return &RealAPIResult{
-			Error:          errors.New("failed to set Go language in tree-sitter parser"),
-			CalledHasError: false,
-			ParseTree:      nil,
-			UsedNativeAPI:  false,
-		}
-	}
+	defer treesitter.PutCachedParser("go", parser)
 
 	tree, err := parser.ParseString(ctx, nil, []byte(sourceCode))
 	if err != nil {

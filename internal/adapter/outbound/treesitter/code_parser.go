@@ -12,17 +12,23 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 )
+
+// fileEntry holds an absolute and relative path pair collected during the walk phase.
+type fileEntry struct {
+	abs string
+	rel string
+}
 
 // TreeSitterCodeParser implements outbound.CodeParser using TreeSitter infrastructure.
 type TreeSitterCodeParser struct {
 	factory *ParserFactoryImpl
-	// Cache for cleaned base paths to avoid repeated operations
-	basePathCache map[string]string
 }
 
 // NewTreeSitterCodeParser creates a new TreeSitter-based code parser.
@@ -32,19 +38,17 @@ func NewTreeSitterCodeParser(ctx context.Context) (*TreeSitterCodeParser, error)
 		return nil, fmt.Errorf("failed to create parser factory: %w", err)
 	}
 
-	return &TreeSitterCodeParser{
-		factory:       factory,
-		basePathCache: make(map[string]string),
-	}, nil
+	return &TreeSitterCodeParser{factory: factory}, nil
 }
 
 // ParseDirectory implements outbound.CodeParser interface.
+// Phase A walks the directory collecting candidate file paths (single-threaded,
+// cache-friendly). Phase B dispatches parsing to a bounded errgroup worker pool.
 func (p *TreeSitterCodeParser) ParseDirectory(
 	ctx context.Context,
 	dirPath string,
 	config outbound.CodeParsingConfig,
 ) ([]outbound.CodeChunk, error) {
-	// Validate input parameters
 	if err := p.validateParseDirectoryInput(ctx, dirPath, config); err != nil {
 		return nil, fmt.Errorf("invalid input parameters: %w", err)
 	}
@@ -57,20 +61,20 @@ func (p *TreeSitterCodeParser) ParseDirectory(
 		"exclude_vendor":   config.ExcludeVendor,
 	})
 
-	var allChunks []outbound.CodeChunk
-	var processedFiles int
-	var skippedFiles int
+	// Phase A: collect candidate file paths.
+	cleanBase := filepath.Clean(dirPath)
+	var entries []fileEntry
+	var walkSkipped int
 
-	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			slogger.Warn(ctx, "Error walking directory", slogger.Fields{
 				"path":  path,
 				"error": err.Error(),
 			})
-			return err // Return the error to stop walking
+			return err
 		}
 
-		// Skip directories and files that are too large early to avoid unnecessary processing
 		if d.IsDir() {
 			if p.shouldSkipDirectory(path, config) {
 				slogger.Debug(ctx, "Skipping directory", slogger.Fields{"path": path})
@@ -79,61 +83,89 @@ func (p *TreeSitterCodeParser) ParseDirectory(
 			return nil
 		}
 
-		// Quick file size check before more expensive operations
-		if info, err := d.Info(); err == nil && config.MaxFileSizeBytes > 0 && info.Size() > config.MaxFileSizeBytes {
+		if info, infoErr := d.Info(); infoErr == nil && config.MaxFileSizeBytes > 0 && info.Size() > config.MaxFileSizeBytes {
 			slogger.Debug(ctx, "Skipping file due to size limit", slogger.Fields{
 				"path":      path,
 				"file_size": info.Size(),
 				"max_size":  config.MaxFileSizeBytes,
 			})
-			skippedFiles++
+			walkSkipped++
 			return nil
 		}
 
-		// Skip directories
-		if d.IsDir() {
-			if p.shouldSkipDirectory(path, config) {
-				slogger.Debug(ctx, "Skipping directory", slogger.Fields{"path": path})
-				return filepath.SkipDir
-			}
+		if !p.shouldProcessFile(path, d, config) {
+			walkSkipped++
 			return nil
 		}
 
-		// Process files
-		if p.shouldProcessFile(path, d, config) {
-			// Convert absolute path to repository-relative path with robust error handling
-			relativePath, err := p.calculateRelativePath(ctx, dirPath, path)
-			if err != nil {
-				slogger.Warn(ctx, "Failed to calculate relative path, skipping file", slogger.Fields{
-					"absolute_path": path,
-					"base_path":     dirPath,
-					"error":         err.Error(),
-				})
-				skippedFiles++
-				return nil // Continue walking other files
-			}
-
-			chunks, err := p.parseFile(ctx, path, relativePath, config)
-			if err != nil {
-				slogger.Warn(ctx, "Failed to parse file", slogger.Fields{
-					"file":          relativePath,
-					"absolute_path": path,
-					"error":         err.Error(),
-				})
-				skippedFiles++
-			} else {
-				allChunks = append(allChunks, chunks...)
-				processedFiles++
-			}
-		} else {
-			skippedFiles++
+		rel, relErr := filepath.Rel(cleanBase, filepath.Clean(path))
+		if relErr != nil {
+			slogger.Warn(ctx, "Failed to calculate relative path, skipping file", slogger.Fields{
+				"absolute_path": path,
+				"base_path":     dirPath,
+				"error":         relErr.Error(),
+			})
+			walkSkipped++
+			return nil //nolint:nilerr // intentionally skip unparseable paths to continue the walk
 		}
-
+		rel = filepath.ToSlash(rel)
+		entries = append(entries, fileEntry{abs: path, rel: rel})
 		return nil
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to walk directory %s: %w", dirPath, err)
+	if walkErr != nil {
+		return nil, fmt.Errorf("failed to walk directory %s: %w", dirPath, walkErr)
 	}
+
+	// Phase B: parse files in parallel with a bounded worker pool.
+	concurrency := config.ParseConcurrency
+	if concurrency <= 0 {
+		concurrency = runtime.GOMAXPROCS(0)
+	}
+
+	results := make(chan []outbound.CodeChunk, len(entries))
+	skippedCh := make(chan int, len(entries))
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(concurrency)
+
+	for _, e := range entries {
+		g.Go(func() error {
+			chunks, parseErr := p.parseFile(gCtx, e.abs, e.rel, config)
+			if parseErr != nil {
+				slogger.Warn(gCtx, "Failed to parse file", slogger.Fields{
+					"file":  e.rel,
+					"error": parseErr.Error(),
+				})
+				skippedCh <- 1
+				return nil //nolint:nilerr // file parse errors are skipped, not fatal
+			}
+			results <- chunks
+			return nil
+		})
+	}
+
+	// Close channels once all workers finish.
+	go func() {
+		_ = g.Wait()
+		close(results)
+		close(skippedCh)
+	}()
+
+	allChunks := make([]outbound.CodeChunk, 0, len(entries)*4)
+	for chunks := range results {
+		allChunks = append(allChunks, chunks...)
+	}
+
+	skippedFiles := walkSkipped
+	for range skippedCh {
+		skippedFiles++
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	processedFiles := len(entries) - (skippedFiles - walkSkipped)
 
 	slogger.Info(ctx, "Directory parsing completed", slogger.Fields{
 		"total_chunks":    len(allChunks),
@@ -142,7 +174,7 @@ func (p *TreeSitterCodeParser) ParseDirectory(
 		"directory":       dirPath,
 	})
 
-	// Filter out chunks with empty content to prevent validation errors later
+	// Filter out chunks with empty content to prevent validation errors later.
 	validChunks := make([]outbound.CodeChunk, 0, len(allChunks))
 	for _, chunk := range allChunks {
 		if strings.TrimSpace(chunk.Content) != "" {
@@ -167,116 +199,6 @@ func (p *TreeSitterCodeParser) ParseDirectory(
 	}
 
 	return validChunks, nil
-}
-
-// getCleanBasePath returns a cleaned base path, using cache for performance.
-func (p *TreeSitterCodeParser) getCleanBasePath(basePath string) string {
-	if cleaned, exists := p.basePathCache[basePath]; exists {
-		return cleaned
-	}
-
-	cleaned := filepath.Clean(basePath)
-	p.basePathCache[basePath] = cleaned
-	return cleaned
-}
-
-// calculateRelativePath converts an absolute file path to a repository-relative path
-// with robust error handling and validation.
-func (p *TreeSitterCodeParser) calculateRelativePath(
-	ctx context.Context,
-	basePath string,
-	absolutePath string,
-) (string, error) {
-	// Get cleaned base path from cache for performance
-	cleanBasePath := p.getCleanBasePath(basePath)
-	cleanAbsolutePath := filepath.Clean(absolutePath)
-
-	// Validate input parameters
-	if err := p.validatePathParameters(cleanBasePath, cleanAbsolutePath); err != nil {
-		return "", fmt.Errorf("invalid path parameters: %w", err)
-	}
-
-	// Calculate relative path using cleaned paths
-	relativePath, err := filepath.Rel(cleanBasePath, cleanAbsolutePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to calculate relative path from %s to %s: %w",
-			cleanBasePath, cleanAbsolutePath, err)
-	}
-
-	// Validate the calculated relative path
-	if err := p.validateRelativePath(relativePath, cleanBasePath, cleanAbsolutePath); err != nil {
-		return "", fmt.Errorf("invalid relative path calculated: %w", err)
-	}
-
-	// Normalize path separators for consistency
-	relativePath = filepath.ToSlash(relativePath)
-
-	slogger.Debug(ctx, "Successfully calculated relative path", slogger.Fields{
-		"base_path":      basePath,
-		"absolute_path":  absolutePath,
-		"clean_base":     cleanBasePath,
-		"clean_absolute": cleanAbsolutePath,
-		"relative_path":  relativePath,
-	})
-
-	return relativePath, nil
-}
-
-// validatePathParameters validates the input parameters for path calculation.
-func (p *TreeSitterCodeParser) validatePathParameters(basePath, absolutePath string) error {
-	if basePath == "" {
-		return errors.New("base path cannot be empty")
-	}
-	if absolutePath == "" {
-		return errors.New("absolute path cannot be empty")
-	}
-
-	// Ensure paths are absolute
-	if !filepath.IsAbs(basePath) {
-		return fmt.Errorf("base path must be absolute: %s", basePath)
-	}
-	if !filepath.IsAbs(absolutePath) {
-		return fmt.Errorf("absolute path must be absolute: %s", absolutePath)
-	}
-
-	// Clean paths to remove any redundant elements
-	basePath = filepath.Clean(basePath)
-	absolutePath = filepath.Clean(absolutePath)
-
-	return nil
-}
-
-// validateRelativePath validates the calculated relative path for correctness.
-func (p *TreeSitterCodeParser) validateRelativePath(relativePath, basePath, absolutePath string) error {
-	if relativePath == "" {
-		return errors.New("calculated relative path is empty")
-	}
-
-	// Check if the relative path contains directory traversal attempts
-	if strings.Contains(relativePath, "..") {
-		// This might be legitimate in some cases, but log it for investigation
-		// We'll allow it but ensure it's safe by reconstructing and verifying
-		reconstructed := filepath.Join(basePath, relativePath)
-		reconstructed = filepath.Clean(reconstructed)
-
-		absClean := filepath.Clean(absolutePath)
-		if reconstructed != absClean {
-			return fmt.Errorf("path traversal detected: reconstructed path %s doesn't match original %s",
-				reconstructed, absClean)
-		}
-	}
-
-	// Ensure the relative path doesn't contain the base path (indicating calculation error)
-	if strings.Contains(relativePath, basePath) {
-		return fmt.Errorf("relative path contains base path: %s contains %s", relativePath, basePath)
-	}
-
-	// Verify the path is actually relative
-	if filepath.IsAbs(relativePath) {
-		return fmt.Errorf("calculated path is not relative: %s", relativePath)
-	}
-
-	return nil
 }
 
 // validateParseDirectoryInput validates the input parameters for ParseDirectory.

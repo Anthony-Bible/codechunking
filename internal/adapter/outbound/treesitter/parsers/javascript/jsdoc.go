@@ -1,12 +1,12 @@
 package javascriptparser
 
 import (
+	"codechunking/internal/adapter/outbound/treesitter"
 	"codechunking/internal/domain/valueobject"
 	"codechunking/internal/port/outbound"
 	"context"
 	"strings"
 
-	forest "github.com/alexaandru/go-sitter-forest"
 	tree_sitter "github.com/alexaandru/go-tree-sitter-bare"
 )
 
@@ -60,9 +60,9 @@ func findJSDocComment(parseTree *valueobject.ParseTree, targetNode *valueobject.
 
 	// Calculate absolute byte positions.
 	// jsdocStart and jsdocEnd are bounded by beforeFunction length (max 500 bytes),
-	// so they are safe to convert to uint32.
-	absoluteStart := searchStart + uint32(jsdocStart)
-	absoluteEnd := searchStart + uint32(jsdocStart+jsdocEnd+2)
+	// so the int→uint32 conversion is safe.
+	absoluteStart := searchStart + uint32(jsdocStart)          //nolint:gosec // bounded by 500-byte window
+	absoluteEnd := searchStart + uint32(jsdocStart+jsdocEnd+2) //nolint:gosec // bounded by 500-byte window
 
 	// Create a synthetic ParseNode for the comment
 	// (This is a simplified approach - ideally we'd find the actual comment node from the tree)
@@ -79,22 +79,11 @@ func findJSDocComment(parseTree *valueobject.ParseTree, targetNode *valueobject.
 func parseJSDocComment(commentText string) *JSDocInfo {
 	ctx := context.Background()
 
-	// Get JSDoc grammar
-	grammar := forest.GetLanguage("jsdoc")
-	if grammar == nil {
+	parser, parserErr := treesitter.GetCachedParser("jsdoc")
+	if parserErr != nil {
 		return nil
 	}
-
-	// Create parser
-	parser := tree_sitter.NewParser()
-	if parser == nil {
-		return nil
-	}
-
-	// Set language
-	if !parser.SetLanguage(grammar) {
-		return nil
-	}
+	defer treesitter.PutCachedParser("jsdoc", parser)
 
 	// Parse the comment
 	tree, err := parser.ParseString(ctx, nil, []byte(commentText))

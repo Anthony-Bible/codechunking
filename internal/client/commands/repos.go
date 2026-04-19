@@ -3,7 +3,6 @@ package commands
 import (
 	"codechunking/internal/application/dto"
 	"codechunking/internal/client"
-	"codechunking/internal/domain/valueobject"
 	"context"
 	"io"
 
@@ -300,7 +299,7 @@ func NewReposDeleteCmd() *cobra.Command {
 
 			return client.WriteSuccess(cmd.OutOrStdout(), map[string]string{
 				"id":     id.String(),
-				"status": string(valueobject.RepositoryStatusArchived),
+				"status": "archived",
 			})
 		},
 	}

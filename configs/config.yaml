@@ -6,7 +6,7 @@ api:
   write_timeout: 10s
 
 worker:
-  concurrency: 5
+  concurrency: 12
   queue_group: workers
   job_timeout: 30m  # Overall timeout for complete job processing
                     # Must be larger than (gemini.timeout × max_chunks_per_repo)

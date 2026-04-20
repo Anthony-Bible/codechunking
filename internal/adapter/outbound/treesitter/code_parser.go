@@ -144,9 +144,11 @@ func (p *TreeSitterCodeParser) ParseDirectory(
 		})
 	}
 
-	// Close channels once all workers finish.
+	// Close the channels once all workers have finished so the main goroutine
+	// can range over results and skipped counts until completion.
+	// This is done in a goroutine because g.Wait() blocks until all workers exit.
 	go func() {
-		_ = g.Wait()
+		_ = g.Wait() // error captured by the outer g.Wait() below
 		close(results)
 		close(skippedCh)
 	}()

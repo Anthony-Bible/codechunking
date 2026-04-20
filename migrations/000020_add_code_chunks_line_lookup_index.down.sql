@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS codechunking.idx_code_chunks_repo_path_lines_active;

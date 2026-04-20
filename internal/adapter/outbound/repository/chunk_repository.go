@@ -51,6 +51,8 @@ const (
 		ON CONFLICT (repository_id, file_path, content_hash)
 		DO UPDATE SET
 			id = code_chunks.id,
+			start_line = EXCLUDED.start_line,
+			end_line = EXCLUDED.end_line,
 			token_count = COALESCE(EXCLUDED.token_count, code_chunks.token_count),
 			token_counted_at = COALESCE(EXCLUDED.token_counted_at, code_chunks.token_counted_at)
 		RETURNING id
@@ -138,11 +140,12 @@ func buildMultiRowChunkInsert(numRows int) string {
 		b.WriteString(`)`)
 	}
 
-	// ON CONFLICT clause - preserve existing token counts
 	b.WriteString(` ON CONFLICT (repository_id, file_path, content_hash) DO UPDATE SET `)
 	b.WriteString(`id = code_chunks.id, `)
-	b.WriteString(`token_count = COALESCE(code_chunks.token_count, EXCLUDED.token_count), `)
-	b.WriteString(`token_counted_at = COALESCE(code_chunks.token_counted_at, EXCLUDED.token_counted_at)`)
+	b.WriteString(`start_line = EXCLUDED.start_line, `)
+	b.WriteString(`end_line = EXCLUDED.end_line, `)
+	b.WriteString(`token_count = COALESCE(EXCLUDED.token_count, code_chunks.token_count), `)
+	b.WriteString(`token_counted_at = COALESCE(EXCLUDED.token_counted_at, code_chunks.token_counted_at)`)
 
 	// RETURNING clause
 	b.WriteString(` RETURNING id`)
@@ -363,6 +366,158 @@ func (r *PostgreSQLChunkRepository) FindChunksByIDs(
 		})
 	} else {
 		slogger.Debug(ctx, "All requested chunks found successfully", slogger.Field("chunks_count", len(chunks)))
+	}
+
+	return chunks, nil
+}
+
+func scanChunkRow(rows pgx.Rows) (service.ChunkInfo, error) {
+	var chunk service.ChunkInfo
+	err := rows.Scan(
+		&chunk.ChunkID,
+		&chunk.Content,
+		&chunk.FilePath,
+		&chunk.Language,
+		&chunk.StartLine,
+		&chunk.EndLine,
+		&chunk.Type,
+		&chunk.EntityName,
+		&chunk.ParentEntity,
+		&chunk.QualifiedName,
+		&chunk.Signature,
+		&chunk.Visibility,
+		&chunk.Repository.ID,
+		&chunk.Repository.Name,
+		&chunk.Repository.URL,
+	)
+	return chunk, err
+}
+
+// FindChunksByRepositoryPath retrieves active chunks for a repository file path.
+func (r *PostgreSQLChunkRepository) FindChunksByRepositoryPath(
+	ctx context.Context,
+	repositoryName string,
+	filePath string,
+) ([]service.ChunkInfo, error) {
+	if repositoryName == "" || filePath == "" {
+		return []service.ChunkInfo{}, nil
+	}
+
+	query := `
+		SELECT
+			c.id,
+			c.content,
+			c.file_path,
+			c.language,
+			c.start_line,
+			c.end_line,
+			c.chunk_type,
+			COALESCE(c.entity_name, ''),
+			COALESCE(c.parent_entity, ''),
+			COALESCE(c.qualified_name, ''),
+			COALESCE(c.signature, ''),
+			COALESCE(c.visibility, ''),
+			r.id,
+			r.name,
+			r.url
+		FROM codechunking.code_chunks c
+		JOIN codechunking.repositories r ON c.repository_id = r.id
+		WHERE LOWER(r.name) = LOWER($1)
+			AND c.file_path = $2
+			AND c.deleted_at IS NULL
+			AND r.deleted_at IS NULL
+		ORDER BY
+			c.start_line ASC,
+			c.end_line ASC,
+			c.id ASC
+	`
+
+	rows, err := r.pool.Query(ctx, query, repositoryName, filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query chunks by repository path: %w", err)
+	}
+	defer rows.Close()
+
+	var chunks []service.ChunkInfo
+	for rows.Next() {
+		chunk, err := scanChunkRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan chunk row: %w", err)
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating chunk rows: %w", err)
+	}
+
+	return chunks, nil
+}
+
+// FindChunksByRepositoryPathAndLineRange retrieves chunks overlapping a file line range.
+func (r *PostgreSQLChunkRepository) FindChunksByRepositoryPathAndLineRange(
+	ctx context.Context,
+	repositoryName string,
+	filePath string,
+	startLine int,
+	endLine int,
+) ([]service.ChunkInfo, error) {
+	if repositoryName == "" || filePath == "" || startLine <= 0 || endLine <= 0 {
+		return []service.ChunkInfo{}, nil
+	}
+
+	if startLine > endLine {
+		startLine, endLine = endLine, startLine
+	}
+
+	query := `
+		SELECT
+			c.id,
+			c.content,
+			c.file_path,
+			c.language,
+			c.start_line,
+			c.end_line,
+			c.chunk_type,
+			COALESCE(c.entity_name, ''),
+			COALESCE(c.parent_entity, ''),
+			COALESCE(c.qualified_name, ''),
+			COALESCE(c.signature, ''),
+			COALESCE(c.visibility, ''),
+			r.id,
+			r.name,
+			r.url
+		FROM codechunking.code_chunks c
+		JOIN codechunking.repositories r ON c.repository_id = r.id
+		WHERE LOWER(r.name) = LOWER($1)
+			AND c.file_path = $2
+			AND c.start_line <= $4
+			AND c.end_line >= $3
+			AND c.deleted_at IS NULL
+			AND r.deleted_at IS NULL
+		ORDER BY
+			LEAST(c.end_line, $4) - GREATEST(c.start_line, $3) DESC,
+			c.start_line ASC,
+			c.end_line ASC
+	`
+
+	rows, err := r.pool.Query(ctx, query, repositoryName, filePath, startLine, endLine)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query chunks by repository path and line range: %w", err)
+	}
+	defer rows.Close()
+
+	var chunks []service.ChunkInfo
+	for rows.Next() {
+		chunk, err := scanChunkRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan chunk row: %w", err)
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating chunk rows: %w", err)
 	}
 
 	return chunks, nil

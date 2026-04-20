@@ -81,7 +81,7 @@ func (s *CreateRepositoryService) CreateRepository(
 	ctx context.Context,
 	request dto.CreateRepositoryRequest,
 ) (*dto.RepositoryResponse, error) {
-	slogger.Info(ctx, "DEBUG: CreateRepository called", slogger.Fields{
+	slogger.Debug(ctx, "CreateRepository called", slogger.Fields{
 		"url": request.URL, "name": request.Name, "description": request.Description,
 	})
 
@@ -94,7 +94,7 @@ func (s *CreateRepositoryService) CreateRepository(
 	// Check if repository already exists by normalized URL for idempotent re-indexing
 	existingRepo, err := s.repositoryRepo.FindByNormalizedURL(ctx, repositoryURL)
 	if err != nil {
-		slogger.Error(ctx, "DEBUG: Failed to check for existing repository", slogger.Fields{
+		slogger.Error(ctx, "Failed to check for existing repository", slogger.Fields{
 			"normalized_url": repositoryURL.String(), "error": err.Error(),
 		})
 		return nil, common.WrapServiceError(common.OpCheckRepositoryExists, err)
@@ -102,18 +102,18 @@ func (s *CreateRepositoryService) CreateRepository(
 
 	var repository *entity.Repository
 	if existingRepo != nil {
-		slogger.Info(ctx, "DEBUG: Repository already exists, resetting status for re-index", slogger.Fields{
+		slogger.Debug(ctx, "Repository already exists, resetting status for re-index", slogger.Fields{
 			"normalized_url": repositoryURL.String(),
 			"repository_id":  existingRepo.ID().String(),
 		})
 		if err := existingRepo.ResetForReindexing(); err != nil {
-			slogger.Error(ctx, "DEBUG: Failed to reset repository for re-indexing", slogger.Fields{
+			slogger.Error(ctx, "Failed to reset repository for re-indexing", slogger.Fields{
 				"repository_id": existingRepo.ID().String(), "error": err.Error(),
 			})
 			return nil, common.WrapServiceError(common.OpUpdateRepository, err)
 		}
 		if err := s.repositoryRepo.Update(ctx, existingRepo); err != nil {
-			slogger.Error(ctx, "DEBUG: Failed to save repository after reset", slogger.Fields{
+			slogger.Error(ctx, "Failed to save repository after reset", slogger.Fields{
 				"repository_id": existingRepo.ID().String(), "error": err.Error(),
 			})
 			return nil, common.WrapServiceError(common.OpSaveRepository, err)
@@ -133,7 +133,7 @@ func (s *CreateRepositoryService) CreateRepository(
 	}
 
 	response := common.EntityToRepositoryResponse(repository)
-	slogger.Info(ctx, "DEBUG: Repository processing completed successfully", slogger.Fields{
+	slogger.Debug(ctx, "Repository processing completed successfully", slogger.Fields{
 		"repository_id": repository.ID().String(), "name": repository.Name(),
 		"is_reindex": existingRepo != nil,
 	})
@@ -147,12 +147,12 @@ func (s *CreateRepositoryService) validateRepositoryURL(
 ) (valueobject.RepositoryURL, error) {
 	repositoryURL, err := valueobject.NewRepositoryURL(url)
 	if err != nil {
-		slogger.Error(ctx, "DEBUG: Failed to create repository URL", slogger.Fields{
+		slogger.Error(ctx, "Failed to create repository URL", slogger.Fields{
 			"url": url, "error": err.Error(),
 		})
 		return valueobject.RepositoryURL{}, err
 	}
-	slogger.Info(ctx, "DEBUG: Repository URL created", slogger.Fields{
+	slogger.Debug(ctx, "Repository URL created", slogger.Fields{
 		"normalized_url": repositoryURL.String(),
 	})
 	return repositoryURL, nil
@@ -168,22 +168,19 @@ func (s *CreateRepositoryService) createAndSaveRepository(
 	if name == "" {
 		name = common.ExtractRepositoryNameFromURL(request.URL)
 	}
-	slogger.Info(ctx, "DEBUG: Repository name determined", slogger.Fields{
+	slogger.Debug(ctx, "Repository name determined", slogger.Fields{
 		"name": name, "was_auto_generated": request.Name == "",
 	})
 
 	repository := entity.NewRepository(repositoryURL, name, request.Description, request.DefaultBranch)
-	slogger.Info(ctx, "DEBUG: Repository entity created", slogger.Fields{
-		"id": repository.ID().String(), "name": repository.Name(),
-	})
 
 	if err := s.repositoryRepo.Save(ctx, repository); err != nil {
-		slogger.Error(ctx, "DEBUG: Failed to save repository", slogger.Fields{
+		slogger.Error(ctx, "Failed to save repository", slogger.Fields{
 			"id": repository.ID().String(), "error": err.Error(),
 		})
 		return nil, common.WrapServiceError(common.OpSaveRepository, err)
 	}
-	slogger.Info(ctx, "DEBUG: Repository saved successfully", slogger.Fields{
+	slogger.Debug(ctx, "Repository saved successfully", slogger.Fields{
 		"id": repository.ID().String(),
 	})
 	return repository, nil
@@ -195,7 +192,7 @@ func (s *CreateRepositoryService) publishIndexingJob(
 	repository *entity.Repository,
 	originalURL string,
 ) error {
-	slogger.Info(ctx, "DEBUG: Creating and publishing indexing job", slogger.Fields{
+	slogger.Debug(ctx, "Creating and publishing indexing job", slogger.Fields{
 		"repository_id": repository.ID().String(), "original_url": originalURL,
 	})
 
@@ -204,7 +201,7 @@ func (s *CreateRepositoryService) publishIndexingJob(
 
 	// Save indexing job to database
 	if err := s.indexingJobRepo.Save(ctx, job); err != nil {
-		slogger.Error(ctx, "DEBUG: Failed to save indexing job", slogger.Fields{
+		slogger.Error(ctx, "Failed to save indexing job", slogger.Fields{
 			"repository_id": repository.ID().String(), "error": err.Error(),
 		})
 		return common.WrapServiceError(common.OpSaveIndexingJob, err)
@@ -212,12 +209,12 @@ func (s *CreateRepositoryService) publishIndexingJob(
 
 	// Publish indexing job message with job ID
 	if err := s.messagePublisher.PublishIndexingJob(ctx, job.ID(), repository.ID(), originalURL); err != nil {
-		slogger.Error(ctx, "DEBUG: Failed to publish indexing job", slogger.Fields{
+		slogger.Error(ctx, "Failed to publish indexing job", slogger.Fields{
 			"repository_id": repository.ID().String(), "indexing_job_id": job.ID().String(), "error": err.Error(),
 		})
 		return common.WrapServiceError(common.OpPublishJob, err)
 	}
-	slogger.Info(ctx, "DEBUG: Indexing job created and published successfully", slogger.Fields{
+	slogger.Debug(ctx, "Indexing job created and published successfully", slogger.Fields{
 		"repository_id": repository.ID().String(), "indexing_job_id": job.ID().String(),
 	})
 	return nil

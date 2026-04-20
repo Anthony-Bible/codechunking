@@ -2,8 +2,10 @@ package service
 
 import (
 	"codechunking/internal/application/dto"
-	"math"
+	"codechunking/internal/application/service/ranking"
 	"sort"
+
+	"github.com/google/uuid"
 )
 
 // HybridRanker merges and ranks results from semantic and text search engines.
@@ -11,149 +13,150 @@ type HybridRanker interface {
 	Rank(semanticResults []dto.SearchResultDTO, textResults []dto.SearchResultDTO) []dto.SearchResultDTO
 }
 
-// HybridRankingService implements HybridRanker using weighted min-max normalization.
-type HybridRankingService struct {
-	semanticWeight float64
-	textWeight     float64
+// HybridRankingService implements HybridRanker using Reciprocal Rank Fusion (RRF).
+type HybridRankingService struct{}
+
+type engineHit struct {
+	result dto.SearchResultDTO
+	rank   int
 }
 
-// NewHybridRankingService creates a new HybridRankingService.
-// Panics if the weights do not sum to approximately 1.0 (tolerance ±0.001).
-func NewHybridRankingService(semanticWeight float64, textWeight float64) *HybridRankingService {
-	if math.Abs(semanticWeight+textWeight-1.0) > 0.001 {
-		panic("hybrid ranker weights must sum to 1.0")
-	}
-	return &HybridRankingService{
-		semanticWeight: semanticWeight,
-		textWeight:     textWeight,
-	}
+type mergedSearchResult struct {
+	semantic    *engineHit
+	text        *engineHit
+	hasSemantic bool
+	hasText     bool
 }
 
-// prepareResultsForNormalization returns a copy of results with EngineScore
-// populated from SimilarityScore when requested and EngineScore is not set.
-// This keeps normalization robust across callers that provide semantic scores
-// in SimilarityScore rather than EngineScore.
-func prepareResultsForNormalization(results []dto.SearchResultDTO, useSimilarityFallback bool) []dto.SearchResultDTO {
-	prepared := make([]dto.SearchResultDTO, len(results))
-	copy(prepared, results)
-
-	if !useSimilarityFallback {
-		return prepared
-	}
-
-	for i := range prepared {
-		if prepared[i].EngineScore == 0 && prepared[i].SimilarityScore != 0 {
-			prepared[i].EngineScore = prepared[i].SimilarityScore
-		}
-	}
-
-	return prepared
+// NewHybridRankingService creates a new HybridRankingService using Reciprocal Rank Fusion.
+func NewHybridRankingService() *HybridRankingService {
+	return &HybridRankingService{}
 }
 
-// Rank merges semantic and text results, normalizes scores, deduplicates by
-// FilePath, tags each result with its source engine, and returns results sorted
-// by combined EngineScore descending.
+// Rank merges semantic and text results using Reciprocal Rank Fusion (RRF).
+// It deduplicates by chunk ID when available, falls back to repository-qualified
+// file paths for unresolved chunks, tags each merged result with its source engine,
+// and returns results sorted by EngineScore descending.
 func (h *HybridRankingService) Rank(
 	semanticResults []dto.SearchResultDTO,
 	textResults []dto.SearchResultDTO,
 ) []dto.SearchResultDTO {
-	semanticResultsForNormalization := prepareResultsForNormalization(semanticResults, true)
-	semNorm := minMaxNormalize(semanticResultsForNormalization)
-	textNorm := minMaxNormalize(textResults)
-
-	// Build a map from FilePath → combined result.
-	type merged struct {
-		result      dto.SearchResultDTO
-		semScore    float64
-		textScore   float64
-		hasSemantic bool
-		hasText     bool
-	}
-	byPath := make(map[string]*merged)
-	// order preserves insertion sequence so the final sort starts from a
-	// deterministic base, avoiding non-determinism from map iteration.
+	byKey := make(map[string]*mergedSearchResult)
 	order := make([]string, 0)
 
 	for i, r := range semanticResults {
-		r.SourceEngine = "embedding"
-		r.EngineScore = h.semanticWeight * semNorm[i]
-		if _, exists := byPath[r.FilePath]; !exists {
-			order = append(order, r.FilePath)
-			byPath[r.FilePath] = &merged{}
-		}
-		m := byPath[r.FilePath]
-		m.result = r
-		m.semScore = semNorm[i]
-		m.hasSemantic = true
+		mergeSearchResult(byKey, &order, r, i+1, true)
 	}
 
 	for i, r := range textResults {
-		r.SourceEngine = "zoekt"
-		r.EngineScore = h.textWeight * textNorm[i]
-		if _, exists := byPath[r.FilePath]; !exists {
-			order = append(order, r.FilePath)
-			byPath[r.FilePath] = &merged{}
-		}
-		m := byPath[r.FilePath]
-		if !m.hasSemantic {
-			m.result = r
-		}
-		m.textScore = textNorm[i]
-		m.hasText = true
+		mergeSearchResult(byKey, &order, r, i+1, false)
 	}
 
-	results := make([]dto.SearchResultDTO, 0, len(byPath))
-	for _, path := range order {
-		m := byPath[path]
-		r := m.result
-
-		switch {
-		case m.hasSemantic && m.hasText:
-			r.SourceEngine = "both"
-			r.EngineScore = h.semanticWeight*m.semScore + h.textWeight*m.textScore
-		case m.hasSemantic:
-			r.SourceEngine = "embedding"
-			r.EngineScore = h.semanticWeight * m.semScore
-		default:
-			r.SourceEngine = "zoekt"
-			r.EngineScore = h.textWeight * m.textScore
-		}
-
+	results := make([]dto.SearchResultDTO, 0, len(order))
+	for _, key := range order {
+		m := byKey[key]
+		rrfScore := calculateMergedRRFScore(m)
+		r := buildMergedResult(m)
+		r.EngineScore = rrfScore
+		r.SimilarityScore = rrfScore
 		results = append(results, r)
 	}
 
 	sort.Slice(results, func(i, j int) bool {
-		return results[i].EngineScore > results[j].EngineScore
+		switch {
+		case results[i].EngineScore != results[j].EngineScore:
+			return results[i].EngineScore > results[j].EngineScore
+		case results[i].Repository.Name != results[j].Repository.Name:
+			return results[i].Repository.Name < results[j].Repository.Name
+		case results[i].FilePath != results[j].FilePath:
+			return results[i].FilePath < results[j].FilePath
+		case results[i].StartLine != results[j].StartLine:
+			return results[i].StartLine < results[j].StartLine
+		case results[i].EndLine != results[j].EndLine:
+			return results[i].EndLine < results[j].EndLine
+		case results[i].ChunkID != results[j].ChunkID:
+			return results[i].ChunkID.String() < results[j].ChunkID.String()
+		case results[i].SourceEngine != results[j].SourceEngine:
+			return results[i].SourceEngine < results[j].SourceEngine
+		default:
+			return results[i].Content < results[j].Content
+		}
 	})
 
 	return results
 }
 
-// minMaxNormalize returns per-element normalized scores in [0,1].
-// When all values are equal (or there's only one element), every score is 1.0.
-func minMaxNormalize(results []dto.SearchResultDTO) []float64 {
-	if len(results) == 0 {
-		return nil
+func mergeSearchResult(
+	byKey map[string]*mergedSearchResult,
+	order *[]string,
+	result dto.SearchResultDTO,
+	rank int,
+	fromSemantic bool,
+) {
+	key := dedupKeyForResult(result)
+	m, exists := byKey[key]
+	if !exists {
+		*order = append(*order, key)
+		m = &mergedSearchResult{}
+		byKey[key] = m
 	}
 
-	min, max := results[0].EngineScore, results[0].EngineScore
-	for _, r := range results[1:] {
-		if r.EngineScore < min {
-			min = r.EngineScore
+	hit := &engineHit{result: result, rank: rank}
+	if fromSemantic {
+		if m.semantic == nil || rank < m.semantic.rank {
+			m.semantic = hit
 		}
-		if r.EngineScore > max {
-			max = r.EngineScore
-		}
+		m.hasSemantic = true
+		return
 	}
 
-	norms := make([]float64, len(results))
-	span := max - min
-	for i, r := range results {
-		if span == 0 {
-			norms[i] = 1.0
-		} else {
-			norms[i] = (r.EngineScore - min) / span
-		}
+	if m.text == nil || rank < m.text.rank {
+		m.text = hit
 	}
-	return norms
+	m.hasText = true
+}
+
+func dedupKeyForResult(result dto.SearchResultDTO) string {
+	if result.ChunkID != uuid.Nil {
+		return "chunk:" + result.ChunkID.String()
+	}
+
+	if result.Repository.Name != "" {
+		return "file:" + result.Repository.Name + "|" + result.FilePath
+	}
+
+	return "file:" + result.FilePath
+}
+
+func calculateMergedRRFScore(m *mergedSearchResult) float64 {
+	var score float64
+	if m.semantic != nil {
+		score += ranking.CalculateRRFScore(m.semantic.rank)
+	}
+	if m.text != nil {
+		score += ranking.CalculateRRFScore(m.text.rank)
+	}
+	return score
+}
+
+func buildMergedResult(m *mergedSearchResult) dto.SearchResultDTO {
+	var result dto.SearchResultDTO
+	if m.semantic != nil {
+		result = m.semantic.result
+	} else if m.text != nil {
+		result = m.text.result
+	}
+	result.SourceEngine = mergedSourceEngine(m.hasSemantic, m.hasText)
+	return result
+}
+
+func mergedSourceEngine(hasSemantic, hasText bool) string {
+	switch {
+	case hasSemantic && hasText:
+		return "both"
+	case hasSemantic:
+		return "embedding"
+	default:
+		return "zoekt"
+	}
 }

@@ -3,6 +3,7 @@ package service
 import (
 	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/application/dto"
+	"codechunking/internal/application/service/ranking"
 	"codechunking/internal/config"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,11 +26,22 @@ type SearchService struct {
 	config           *config.Config
 	zoektSearcher    outbound.ZoektSearcher
 	hybridRanker     HybridRanker
+
+	zoektChunkCacheMu sync.RWMutex
+	zoektChunkCache   map[string][]ChunkInfo
 }
 
 // ChunkRepository defines the interface for retrieving chunk information.
 type ChunkRepository interface {
 	FindChunksByIDs(ctx context.Context, chunkIDs []uuid.UUID) ([]ChunkInfo, error)
+	FindChunksByRepositoryPath(ctx context.Context, repositoryName string, filePath string) ([]ChunkInfo, error)
+	FindChunksByRepositoryPathAndLineRange(
+		ctx context.Context,
+		repositoryName string,
+		filePath string,
+		startLine int,
+		endLine int,
+	) ([]ChunkInfo, error)
 }
 
 // ChunkInfo represents the information we need about chunks for search results.
@@ -47,36 +60,6 @@ type ChunkInfo struct {
 	QualifiedName string `json:"qualified_name,omitempty"` // Fully qualified name
 	Signature     string `json:"signature,omitempty"`      // Function/method signature
 	Visibility    string `json:"visibility,omitempty"`     // Visibility modifier
-}
-
-const (
-	defaultHybridSemanticWeight = 0.7
-	defaultHybridTextWeight     = 0.3
-)
-
-func normalizeHybridWeights(semanticWeight, textWeight float64) (float64, float64) {
-	if semanticWeight < 0 || textWeight < 0 {
-		return defaultHybridSemanticWeight, defaultHybridTextWeight
-	}
-
-	if semanticWeight == 0 && textWeight == 0 {
-		return defaultHybridSemanticWeight, defaultHybridTextWeight
-	}
-
-	if semanticWeight == 0 && textWeight > 0 && textWeight < 1 {
-		return 1 - textWeight, textWeight
-	}
-
-	if textWeight == 0 && semanticWeight > 0 && semanticWeight < 1 {
-		return semanticWeight, 1 - semanticWeight
-	}
-
-	total := semanticWeight + textWeight
-	if total <= 0 {
-		return defaultHybridSemanticWeight, defaultHybridTextWeight
-	}
-
-	return semanticWeight / total, textWeight / total
 }
 
 // NewSearchService creates a new SearchService instance.
@@ -109,11 +92,7 @@ func NewSearchService(
 	}
 
 	if hybridRanker == nil && zoektSearcher != nil {
-		semanticWeight, textWeight := normalizeHybridWeights(
-			cfg.Search.SemanticWeight,
-			cfg.Search.TextWeight,
-		)
-		hybridRanker = NewHybridRankingService(semanticWeight, textWeight)
+		hybridRanker = NewHybridRankingService()
 	}
 
 	return &SearchService{
@@ -190,7 +169,10 @@ func (s *SearchService) searchText(ctx context.Context, request dto.SearchReques
 		return nil, fmt.Errorf("text search failed: %w", err)
 	}
 
-	results := s.convertZoektResults(zoektResult)
+	results := s.convertZoektResults(ctx, zoektResult, false, "")
+	// Apply RRF scoring to text search results (where semantic_rank is effectively infinity).
+	ranking.ApplyRRFRanks(results)
+
 	s.sortResults(results, request.Sort)
 	paginatedResults, totalResults := s.paginateResults(results, request.Limit, request.Offset)
 	return s.buildResponseFromResults(paginatedResults, totalResults, request, dto.SearchModeText, []string{"zoekt"}, startTime), nil
@@ -221,11 +203,13 @@ func (s *SearchService) searchHybrid(ctx context.Context, request dto.SearchRequ
 	}
 
 	opts := s.buildZoektSearchOptions(request)
+	opts.ChunkMatches = true
 	textResults, zoektOK := s.searchZoektWithFallback(ctx, s.zoektQuery(request), opts)
 	if zoektOK {
 		enginesUsed = []string{"embedding", "zoekt"}
 	}
 
+	textResults = s.filterDuplicateZoektFallbacks(semanticResults, textResults)
 	merged := s.hybridRanker.Rank(semanticResults, textResults)
 
 	// Preserve ranker order when the caller accepted the default sort; only override for explicit sorts.
@@ -244,40 +228,426 @@ func (s *SearchService) searchZoektWithFallback(ctx context.Context, query strin
 		slogger.Info(ctx, "Zoekt search failed in hybrid mode; using semantic only", slogger.Fields{"error": err.Error()})
 		return []dto.SearchResultDTO{}, false
 	}
-	return s.convertZoektResults(result), true
+	return s.convertZoektResults(ctx, result, true, query), true
+}
+
+func (s *SearchService) filterDuplicateZoektFallbacks(
+	semanticResults []dto.SearchResultDTO,
+	textResults []dto.SearchResultDTO,
+) []dto.SearchResultDTO {
+	if len(semanticResults) == 0 || len(textResults) == 0 {
+		return textResults
+	}
+
+	filtered := make([]dto.SearchResultDTO, 0, len(textResults))
+	for _, textResult := range textResults {
+		if textResult.ChunkID != uuid.Nil || !isZoektFileFallbackDuplicate(semanticResults, textResult) {
+			filtered = append(filtered, textResult)
+		}
+	}
+
+	return filtered
+}
+
+func isZoektFileFallbackDuplicate(semanticResults []dto.SearchResultDTO, textResult dto.SearchResultDTO) bool {
+	if textResult.Repository.Name == "" || textResult.FilePath == "" || textResult.StartLine <= 0 || textResult.EndLine <= 0 {
+		return false
+	}
+
+	for _, semanticResult := range semanticResults {
+		if semanticResult.Repository.Name != textResult.Repository.Name {
+			continue
+		}
+		if semanticResult.FilePath != textResult.FilePath {
+			continue
+		}
+		if semanticResult.StartLine <= 0 || semanticResult.EndLine <= 0 {
+			continue
+		}
+		if lineRangesOverlap(semanticResult.StartLine, semanticResult.EndLine, textResult.StartLine, textResult.EndLine) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// normalizeZoektRepoName preserves the repository name as returned by Zoekt.
+// Some code paths and tests store repository names with the host prefix
+// included, so callers that need to match both formats should use
+// zoektRepoNameCandidates instead of relying on lossy normalization.
+func normalizeZoektRepoName(name string) string {
+	return name
+}
+
+func stripZoektRepoHost(name string) string {
+	parts := strings.SplitN(name, "/", 3)
+	if len(parts) == 3 {
+		return parts[1] + "/" + parts[2]
+	}
+	return name
+}
+
+func zoektRepoNameCandidates(name string) []string {
+	normalized := normalizeZoektRepoName(name)
+	stripped := stripZoektRepoHost(normalized)
+	if stripped == normalized {
+		return []string{normalized}
+	}
+	return []string{normalized, stripped}
+}
+
+func lineRangesOverlap(startA, endA, startB, endB int) bool {
+	return startA <= endB && startB <= endA
 }
 
 // convertZoektResults converts ZoektFileMatch results to SearchResultDTO slice.
-func (s *SearchService) convertZoektResults(result *outbound.ZoektSearchResult) []dto.SearchResultDTO {
+func (s *SearchService) convertZoektResults(
+	ctx context.Context,
+	result *outbound.ZoektSearchResult,
+	resolveToChunks bool,
+	query string,
+) []dto.SearchResultDTO {
 	if result == nil {
 		return []dto.SearchResultDTO{}
 	}
 	out := make([]dto.SearchResultDTO, 0, len(result.FileMatches))
 	for _, fm := range result.FileMatches {
-		var content string
-		var startLine, endLine int
-		if len(fm.LineMatches) > 0 {
-			first := fm.LineMatches[0]
-			content = first.LineContent
-			startLine = first.LineNumber
-			endLine = fm.LineMatches[len(fm.LineMatches)-1].LineNumber
+		content, startLine, endLine := extractZoektMatchContent(fm)
+		resultDTO := searchResultFromZoektMatch(fm, content, startLine, endLine)
+
+		if resolveToChunks {
+			if chunk, resolved := s.resolveZoektChunk(ctx, fm, query); resolved {
+				resultDTO = searchResultFromChunk(chunk, fm.Score, "zoekt")
+			} else {
+				resolved := false
+				for _, repoName := range zoektRepoNameCandidates(fm.Repository) {
+					if repoName == fm.Repository {
+						continue
+					}
+
+					alternateMatch := fm
+					alternateMatch.Repository = repoName
+					if chunk, chunkResolved := s.resolveZoektChunk(ctx, alternateMatch, query); chunkResolved {
+						resultDTO = searchResultFromChunk(chunk, fm.Score, "zoekt")
+						resolved = true
+						break
+					}
+				}
+
+				if !resolved && resultDTO.Content == "" && resultDTO.StartLine == 0 && resultDTO.EndLine == 0 && len(fm.ChunkMatches) == 0 {
+					// Drop only if there is truly nothing useful — no content, no line range, no chunk matches.
+					continue
+				}
+			}
 		}
-		out = append(out, dto.SearchResultDTO{
-			FilePath:        fm.FileName,
-			Language:        fm.Language,
-			SourceEngine:    "zoekt",
-			EngineScore:     fm.Score,
-			SimilarityScore: fm.Score,
-			Content:         content,
-			// URL is left empty; callers needing the clone URL must resolve it via RepositoryRepository.
-			Repository: dto.RepositoryInfo{
-				Name: fm.Repository,
-			},
-			StartLine: startLine,
-			EndLine:   endLine,
-		})
+
+		out = append(out, resultDTO)
 	}
 	return out
+}
+
+func (s *SearchService) getZoektChunksForFile(ctx context.Context, repoName, filePath string) ([]ChunkInfo, error) {
+	if s.chunkRepo == nil {
+		return nil, nil
+	}
+
+	cacheKey := repoName + "\x00" + filePath
+
+	s.zoektChunkCacheMu.RLock()
+	if chunks, ok := s.zoektChunkCache[cacheKey]; ok {
+		s.zoektChunkCacheMu.RUnlock()
+		return chunks, nil
+	}
+	s.zoektChunkCacheMu.RUnlock()
+
+	chunks, err := s.chunkRepo.FindChunksByRepositoryPath(ctx, repoName, filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	s.zoektChunkCacheMu.Lock()
+	if s.zoektChunkCache == nil {
+		s.zoektChunkCache = make(map[string][]ChunkInfo)
+	}
+	s.zoektChunkCache[cacheKey] = chunks
+	s.zoektChunkCacheMu.Unlock()
+
+	return chunks, nil
+}
+
+func (s *SearchService) resolveZoektChunk(ctx context.Context, fm outbound.ZoektFileMatch, query string) (ChunkInfo, bool) {
+	if len(fm.ChunkMatches) > 0 {
+		best := fm.ChunkMatches[0]
+		for _, candidate := range fm.ChunkMatches[1:] {
+			if candidate.Score > best.Score {
+				best = candidate
+			}
+		}
+
+		if id, err := uuid.Parse(best.ChunkID); err == nil && id != uuid.Nil {
+			return ChunkInfo{
+				ChunkID:   id,
+				Content:   best.Context,
+				FilePath:  fm.FileName,
+				Language:  fm.Language,
+				StartLine: best.StartLine,
+				EndLine:   best.EndLine,
+				Repository: dto.RepositoryInfo{
+					Name: fm.Repository,
+				},
+			}, true
+		}
+	}
+
+	startLine, endLine, ok := zoektMatchLineRange(fm)
+	if s.chunkRepo == nil {
+		return ChunkInfo{}, false
+	}
+	if !ok {
+		return s.resolveZoektChunkByPath(ctx, fm, query)
+	}
+
+	repoName := normalizeZoektRepoName(fm.Repository)
+	chunks, err := s.getZoektChunksForFile(ctx, repoName, fm.FileName)
+	if err != nil || len(chunks) == 0 {
+		slogger.Debug(ctx, "Unable to resolve Zoekt file match to chunk by line range", slogger.Fields{
+			"repository": repoName,
+			"file_path":  fm.FileName,
+			"start_line": startLine,
+			"end_line":   endLine,
+			"error":      err,
+		})
+		return ChunkInfo{}, false
+	}
+
+	best := selectBestOverlappingChunk(chunks, startLine, endLine)
+	if best == nil || best.ChunkID == uuid.Nil {
+		return ChunkInfo{}, false
+	}
+
+	return *best, true
+}
+
+func (s *SearchService) resolveZoektChunkByPath(ctx context.Context, fm outbound.ZoektFileMatch, query string) (ChunkInfo, bool) {
+	chunks, err := s.chunkRepo.FindChunksByRepositoryPath(ctx, normalizeZoektRepoName(fm.Repository), fm.FileName)
+	if err != nil || len(chunks) == 0 {
+		if err != nil {
+			slogger.Debug(ctx, "Unable to resolve Zoekt file match to chunk by path", slogger.Fields{
+				"repository": fm.Repository,
+				"file_path":  fm.FileName,
+				"error":      err.Error(),
+			})
+		}
+		return ChunkInfo{}, false
+	}
+
+	best := selectBestPathOnlyChunk(chunks, query)
+	if best == nil || best.ChunkID == uuid.Nil {
+		return ChunkInfo{}, false
+	}
+
+	return *best, true
+}
+
+func zoektMatchLineRange(fm outbound.ZoektFileMatch) (int, int, bool) {
+	startLine := 0
+	endLine := 0
+
+	for _, match := range fm.LineMatches {
+		if match.LineNumber <= 0 {
+			continue
+		}
+		if startLine == 0 || match.LineNumber < startLine {
+			startLine = match.LineNumber
+		}
+		if match.LineNumber > endLine {
+			endLine = match.LineNumber
+		}
+	}
+
+	if startLine > 0 && endLine > 0 {
+		return startLine, endLine, true
+	}
+
+	for _, match := range fm.ChunkMatches {
+		if match.StartLine > 0 && match.EndLine > 0 {
+			if startLine == 0 || match.StartLine < startLine {
+				startLine = match.StartLine
+			}
+			if match.EndLine > endLine {
+				endLine = match.EndLine
+			}
+		}
+	}
+
+	if startLine > 0 && endLine > 0 {
+		return startLine, endLine, true
+	}
+
+	return 0, 0, false
+}
+
+func selectBestOverlappingChunk(chunks []ChunkInfo, startLine, endLine int) *ChunkInfo {
+	var best *ChunkInfo
+	bestOverlap := 0
+	bestSpan := 0
+	bestStartLine := 0
+	bestChunkID := ""
+
+	for i := range chunks {
+		chunk := &chunks[i]
+		overlap, span, ok := overlapScoreForRange(*chunk, startLine, endLine)
+		if !ok {
+			continue
+		}
+
+		if best == nil || overlap > bestOverlap || (overlap == bestOverlap && span < bestSpan) ||
+			(overlap == bestOverlap && span == bestSpan && chunk.StartLine < bestStartLine) ||
+			(overlap == bestOverlap && span == bestSpan && chunk.StartLine == bestStartLine &&
+				chunk.ChunkID.String() < bestChunkID) {
+			best = chunk
+			bestOverlap = overlap
+			bestSpan = span
+			bestStartLine = chunk.StartLine
+			bestChunkID = chunk.ChunkID.String()
+		}
+	}
+
+	return best
+}
+
+func selectBestPathOnlyChunk(chunks []ChunkInfo, query string) *ChunkInfo {
+	query = strings.ToLower(strings.TrimSpace(query))
+
+	var best *ChunkInfo
+	bestScore := -1
+	bestSpan := 0
+	bestStartLine := 0
+	bestChunkID := ""
+
+	for i := range chunks {
+		chunk := &chunks[i]
+		if chunk.ChunkID == uuid.Nil {
+			continue
+		}
+
+		score := pathOnlyChunkQueryScore(*chunk, query)
+		span := chunk.EndLine - chunk.StartLine + 1
+		if span <= 0 {
+			span = 1
+		}
+
+		if best == nil || score > bestScore || (score == bestScore && span < bestSpan) ||
+			(score == bestScore && span == bestSpan && chunk.StartLine < bestStartLine) ||
+			(score == bestScore && span == bestSpan && chunk.StartLine == bestStartLine &&
+				chunk.ChunkID.String() < bestChunkID) {
+			best = chunk
+			bestScore = score
+			bestSpan = span
+			bestStartLine = chunk.StartLine
+			bestChunkID = chunk.ChunkID.String()
+		}
+	}
+
+	return best
+}
+
+func pathOnlyChunkQueryScore(chunk ChunkInfo, query string) int {
+	if query == "" {
+		return 0
+	}
+
+	entityName := strings.ToLower(chunk.EntityName)
+	qualifiedName := strings.ToLower(chunk.QualifiedName)
+	signature := strings.ToLower(chunk.Signature)
+	content := strings.ToLower(chunk.Content)
+
+	switch {
+	case entityName == query:
+		return 5
+	case qualifiedName == query || strings.HasSuffix(qualifiedName, "."+query):
+		return 4
+	case strings.Contains(signature, query):
+		return 3
+	case strings.Contains(content, query):
+		return 2
+	case strings.Contains(entityName, query) || strings.Contains(qualifiedName, query):
+		return 1
+	default:
+		return 0
+	}
+}
+
+func overlapScoreForRange(chunk ChunkInfo, startLine, endLine int) (int, int, bool) {
+	overlapStart := max(chunk.StartLine, startLine)
+	overlapEnd := min(chunk.EndLine, endLine)
+	if overlapEnd < overlapStart {
+		return 0, 0, false
+	}
+
+	return overlapEnd - overlapStart + 1, chunk.EndLine - chunk.StartLine + 1, true
+}
+
+func searchResultFromChunk(chunk ChunkInfo, engineScore float64, sourceEngine string) dto.SearchResultDTO {
+	return dto.SearchResultDTO{
+		ChunkID:         chunk.ChunkID,
+		Content:         chunk.Content,
+		SimilarityScore: engineScore,
+		SourceEngine:    sourceEngine,
+		EngineScore:     engineScore,
+		Repository:      chunk.Repository,
+		FilePath:        chunk.FilePath,
+		Language:        chunk.Language,
+		StartLine:       chunk.StartLine,
+		EndLine:         chunk.EndLine,
+		Type:            chunk.Type,
+		EntityName:      chunk.EntityName,
+		ParentEntity:    chunk.ParentEntity,
+		QualifiedName:   chunk.QualifiedName,
+		Signature:       chunk.Signature,
+		Visibility:      chunk.Visibility,
+	}
+}
+
+// extractZoektMatchContent pulls the best content and line range from a file match.
+// When ChunkMatches are present (opts.ChunkMatches=true), LineMatches is empty so
+// we read from the highest-scoring ChunkMatch instead.
+func extractZoektMatchContent(fm outbound.ZoektFileMatch) (string, int, int) {
+	if len(fm.LineMatches) > 0 {
+		first := fm.LineMatches[0]
+		return first.LineContent, first.LineNumber, fm.LineMatches[len(fm.LineMatches)-1].LineNumber
+	}
+	if len(fm.ChunkMatches) > 0 {
+		best := fm.ChunkMatches[0]
+		for _, cm := range fm.ChunkMatches[1:] {
+			if cm.Score > best.Score {
+				best = cm
+			}
+		}
+		return best.Context, best.StartLine, best.EndLine
+	}
+	return "", 0, 0
+}
+
+func searchResultFromZoektMatch(
+	fm outbound.ZoektFileMatch,
+	content string,
+	startLine, endLine int,
+) dto.SearchResultDTO {
+	return dto.SearchResultDTO{
+		FilePath:        fm.FileName,
+		Language:        fm.Language,
+		SourceEngine:    "zoekt",
+		EngineScore:     fm.Score,
+		SimilarityScore: fm.Score,
+		Content:         content,
+		Repository: dto.RepositoryInfo{
+			Name: fm.Repository,
+		},
+		StartLine: startLine,
+		EndLine:   endLine,
+	}
 }
 
 func (s *SearchService) generateQueryEmbedding(ctx context.Context, query string) (*outbound.EmbeddingResult, error) {
@@ -564,26 +934,7 @@ func (s *SearchService) buildSearchResults(
 			continue
 		}
 
-		result := dto.SearchResultDTO{
-			ChunkID:         chunk.ChunkID,
-			Content:         chunk.Content,
-			SimilarityScore: vectorResult.Similarity,
-			SourceEngine:    "embedding",
-			EngineScore:     vectorResult.Similarity,
-			Repository:      chunk.Repository,
-			FilePath:        chunk.FilePath,
-			Language:        chunk.Language,
-			StartLine:       chunk.StartLine,
-			EndLine:         chunk.EndLine,
-			// Include enhanced type information
-			Type:          chunk.Type,
-			EntityName:    chunk.EntityName,
-			ParentEntity:  chunk.ParentEntity,
-			QualifiedName: chunk.QualifiedName,
-			Signature:     chunk.Signature,
-			Visibility:    chunk.Visibility,
-		}
-		results = append(results, result)
+		results = append(results, searchResultFromChunk(chunk, vectorResult.Similarity, "embedding"))
 	}
 
 	return results

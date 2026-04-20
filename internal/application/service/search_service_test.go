@@ -189,6 +189,26 @@ func (m *MockChunkRepository) FindChunksByIDs(ctx context.Context, chunkIDs []uu
 	return args.Get(0).([]ChunkInfo), args.Error(1)
 }
 
+func (m *MockChunkRepository) FindChunksByRepositoryPath(
+	ctx context.Context,
+	repositoryName string,
+	filePath string,
+) ([]ChunkInfo, error) {
+	args := m.Called(ctx, repositoryName, filePath)
+	return args.Get(0).([]ChunkInfo), args.Error(1)
+}
+
+func (m *MockChunkRepository) FindChunksByRepositoryPathAndLineRange(
+	ctx context.Context,
+	repositoryName string,
+	filePath string,
+	startLine int,
+	endLine int,
+) ([]ChunkInfo, error) {
+	args := m.Called(ctx, repositoryName, filePath, startLine, endLine)
+	return args.Get(0).([]ChunkInfo), args.Error(1)
+}
+
 // testConfig creates a minimal test configuration with default values.
 func testConfig() *config.Config {
 	return &config.Config{
@@ -1652,6 +1672,388 @@ func TestSearchService_ZoektRouting(t *testing.T) {
 		assert.Empty(t, r.Repository.URL,
 			"repository URL must be empty; callers must resolve via RepositoryRepository")
 
+		mockZoekt.AssertExpectations(t)
+	})
+
+	t.Run("Text_Mode_SimilarityScore_Uses_RRF_Rank", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+		mockZoekt := new(MockZoektSearcher)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), mockZoekt, nil,
+		)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "rrf ranking",
+			Mode:  dto.SearchModeText,
+			Limit: 10,
+		}
+
+		// Simulate raw Zoekt scores.
+		zoektResult := &outbound.ZoektSearchResult{
+			FileMatches: []outbound.ZoektFileMatch{
+				{
+					Repository: "repo-a",
+					FileName:   "a.go",
+					Language:   "Go",
+					Score:      1000, // Rank 1
+					LineMatches: []outbound.ZoektLineMatch{
+						{LineNumber: 1, LineContent: "func A() {}"},
+					},
+				},
+				{
+					Repository: "repo-b",
+					FileName:   "b.go",
+					Language:   "Go",
+					Score:      500, // Rank 2
+					LineMatches: []outbound.ZoektLineMatch{
+						{LineNumber: 2, LineContent: "func B() {}"},
+					},
+				},
+			},
+			TotalCount: 2,
+		}
+		mockZoekt.On("Search", ctx, req.Query, mock.AnythingOfType("outbound.ZoektSearchOptions")).
+			Return(zoektResult, nil)
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Results, 2)
+
+		// RRF check: 1/(60+rank).
+		// Rank 1: 1/(60+1) ≈ 0.0163934426
+		// Rank 2: 1/(60+2) ≈ 0.0161290323
+		assert.InDelta(t, 1.0/61.0, result.Results[0].SimilarityScore, 0.000001)
+		assert.InDelta(t, 1.0/62.0, result.Results[1].SimilarityScore, 0.000001)
+
+		mockZoekt.AssertExpectations(t)
+	})
+}
+
+func TestSearchService_HybridChunkLevelZoektResolutionContract(t *testing.T) {
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR",
+		Format: "json",
+		Output: "buffer",
+	})
+	require.NoError(t, err)
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
+	t.Run("Hybrid_Zoekt_Line_Match_Resolves_To_Best_Overlapping_Chunk", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+		mockZoekt := new(MockZoektSearcher)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), mockZoekt, nil,
+		)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "ServeHTTP",
+			Mode:  dto.SearchModeHybrid,
+			Limit: 10,
+		}
+		queryVector := []float64{0.1, 0.2, 0.3}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, req.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(&outbound.EmbeddingResult{Vector: queryVector}, nil)
+		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, mock.AnythingOfType("outbound.SimilaritySearchOptions")).
+			Return([]outbound.VectorSimilarityResult{}, nil)
+		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
+			Return([]ChunkInfo{}, nil)
+
+		losingChunkID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+		winningChunkID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+		mockChunkRepo.On(
+			"FindChunksByRepositoryPathAndLineRange",
+			ctx,
+			"example/api",
+			"server/handler.go",
+			12,
+			16,
+		).Return([]ChunkInfo{
+			{
+				ChunkID:   losingChunkID,
+				Content:   "func helper() {}",
+				FilePath:  "server/handler.go",
+				Language:  "Go",
+				StartLine: 1,
+				EndLine:   14,
+				Repository: dto.RepositoryInfo{
+					Name: "github.com/example/api",
+				},
+			},
+			{
+				ChunkID:   winningChunkID,
+				Content:   "func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {}",
+				FilePath:  "server/handler.go",
+				Language:  "Go",
+				StartLine: 10,
+				EndLine:   18,
+				Repository: dto.RepositoryInfo{
+					Name: "github.com/example/api",
+				},
+			},
+		}, nil)
+
+		mockZoekt.On("Search", ctx, req.Query, mock.AnythingOfType("outbound.ZoektSearchOptions")).
+			Return(&outbound.ZoektSearchResult{
+				FileMatches: []outbound.ZoektFileMatch{
+					{
+						Repository: "github.com/example/api",
+						FileName:   "server/handler.go",
+						Language:   "Go",
+						Score:      42,
+						LineMatches: []outbound.ZoektLineMatch{
+							{LineNumber: 12, LineContent: "func (s *Server) ServeHTTP("},
+							{LineNumber: 16, LineContent: "}"},
+						},
+					},
+				},
+				TotalCount: 1,
+			}, nil)
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Results, 1)
+		assert.Equal(t, winningChunkID, result.Results[0].ChunkID)
+		assert.Equal(t, "func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {}", result.Results[0].Content)
+		assert.Equal(t, "zoekt", result.Results[0].SourceEngine)
+		assert.InDelta(t, 1.0/61.0, result.Results[0].SimilarityScore, 0.000001)
+
+		mockChunkRepo.AssertExpectations(t)
+		mockZoekt.AssertExpectations(t)
+	})
+
+	t.Run("Hybrid_Zoekt_Chunk_Match_Resolves_Without_Line_Lookup", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+		mockZoekt := new(MockZoektSearcher)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), mockZoekt, nil,
+		)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "ServeHTTP",
+			Mode:  dto.SearchModeHybrid,
+			Limit: 10,
+		}
+		queryVector := []float64{0.1, 0.2, 0.3}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, req.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(&outbound.EmbeddingResult{Vector: queryVector}, nil)
+		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, mock.AnythingOfType("outbound.SimilaritySearchOptions")).
+			Return([]outbound.VectorSimilarityResult{}, nil)
+		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
+			Return([]ChunkInfo{}, nil)
+
+		winningChunkID := uuid.MustParse("99999999-9999-9999-9999-999999999999")
+		mockZoekt.On("Search", ctx, req.Query, mock.MatchedBy(func(opts outbound.ZoektSearchOptions) bool {
+			return opts.ChunkMatches
+		})).
+			Return(&outbound.ZoektSearchResult{
+				FileMatches: []outbound.ZoektFileMatch{
+					{
+						Repository: "github.com/example/api",
+						FileName:   "server/handler.go",
+						Language:   "Go",
+						Score:      42,
+						ChunkMatches: []outbound.ZoektChunkMatch{
+							{
+								ChunkID:   "11111111-1111-1111-1111-111111111111",
+								Context:   "func helper() {}",
+								StartLine: 1,
+								EndLine:   8,
+								Score:     10,
+							},
+							{
+								ChunkID:   winningChunkID.String(),
+								Context:   "func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {}",
+								StartLine: 10,
+								EndLine:   18,
+								Score:     20,
+							},
+						},
+					},
+				},
+				TotalCount: 1,
+			}, nil)
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Results, 1)
+		assert.Equal(t, winningChunkID, result.Results[0].ChunkID)
+		assert.Equal(t, "func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {}", result.Results[0].Content)
+		assert.Equal(t, "zoekt", result.Results[0].SourceEngine)
+		assert.InDelta(t, 1.0/61.0, result.Results[0].SimilarityScore, 0.000001)
+
+		mockChunkRepo.AssertNotCalled(t, "FindChunksByRepositoryPathAndLineRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		mockChunkRepo.AssertExpectations(t)
+		mockZoekt.AssertExpectations(t)
+	})
+
+	t.Run("Hybrid_Zoekt_File_Match_Resolves_By_Path_And_Query_When_No_Line_Data", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+		mockZoekt := new(MockZoektSearcher)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), mockZoekt, nil,
+		)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "parseIndexOutput",
+			Mode:  dto.SearchModeHybrid,
+			Limit: 10,
+		}
+		queryVector := []float64{0.1, 0.2, 0.3}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, req.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(&outbound.EmbeddingResult{Vector: queryVector}, nil)
+		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, mock.AnythingOfType("outbound.SimilaritySearchOptions")).
+			Return([]outbound.VectorSimilarityResult{}, nil)
+		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
+			Return([]ChunkInfo{}, nil)
+
+		parseChunkID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+		mockChunkRepo.On(
+			"FindChunksByRepositoryPath",
+			ctx,
+			"example/api",
+			"internal/adapter/outbound/zoekt/indexer.go",
+		).Return([]ChunkInfo{
+			{
+				ChunkID:    uuid.MustParse("11111111-1111-1111-1111-111111111111"),
+				Content:    "func buildIndexArgs() []string { return nil }",
+				FilePath:   "internal/adapter/outbound/zoekt/indexer.go",
+				Language:   "Go",
+				StartLine:  10,
+				EndLine:    20,
+				EntityName: "buildIndexArgs",
+				Repository: dto.RepositoryInfo{
+					Name: "github.com/example/api",
+				},
+			},
+			{
+				ChunkID:    parseChunkID,
+				Content:    "func parseIndexOutput(output string) ([]string, error) { return nil, nil }",
+				FilePath:   "internal/adapter/outbound/zoekt/indexer.go",
+				Language:   "Go",
+				StartLine:  30,
+				EndLine:    40,
+				EntityName: "parseIndexOutput",
+				Signature:  "func parseIndexOutput(output string) ([]string, error)",
+				Repository: dto.RepositoryInfo{
+					Name: "github.com/example/api",
+				},
+			},
+		}, nil)
+
+		mockZoekt.On("Search", ctx, req.Query, mock.MatchedBy(func(opts outbound.ZoektSearchOptions) bool {
+			return opts.ChunkMatches
+		})).
+			Return(&outbound.ZoektSearchResult{
+				FileMatches: []outbound.ZoektFileMatch{
+					{
+						Repository: "github.com/example/api",
+						FileName:   "internal/adapter/outbound/zoekt/indexer.go",
+						Language:   "Go",
+						Score:      42,
+					},
+				},
+				TotalCount: 1,
+			}, nil)
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Results, 1)
+		assert.Equal(t, parseChunkID, result.Results[0].ChunkID)
+		assert.Equal(t, "func parseIndexOutput(output string) ([]string, error) { return nil, nil }", result.Results[0].Content)
+		assert.Equal(t, 30, result.Results[0].StartLine)
+		assert.Equal(t, 40, result.Results[0].EndLine)
+		assert.Equal(t, "zoekt", result.Results[0].SourceEngine)
+		assert.InDelta(t, 1.0/61.0, result.Results[0].SimilarityScore, 0.000001)
+
+		mockChunkRepo.AssertNotCalled(t, "FindChunksByRepositoryPathAndLineRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		mockChunkRepo.AssertExpectations(t)
+		mockZoekt.AssertExpectations(t)
+	})
+
+	t.Run("Hybrid_Zoekt_File_Match_Without_Content_Or_Chunk_Is_Omitted", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+		mockZoekt := new(MockZoektSearcher)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), mockZoekt, nil,
+		)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "parseIndexOutput",
+			Mode:  dto.SearchModeHybrid,
+			Limit: 10,
+		}
+		queryVector := []float64{0.1, 0.2, 0.3}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, req.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(&outbound.EmbeddingResult{Vector: queryVector}, nil)
+		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, mock.AnythingOfType("outbound.SimilaritySearchOptions")).
+			Return([]outbound.VectorSimilarityResult{}, nil)
+		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
+			Return([]ChunkInfo{}, nil)
+		mockChunkRepo.On(
+			"FindChunksByRepositoryPath",
+			ctx,
+			"example/api",
+			"internal/adapter/outbound/zoekt/indexer.go",
+		).Return([]ChunkInfo{}, nil)
+
+		mockZoekt.On("Search", ctx, req.Query, mock.MatchedBy(func(opts outbound.ZoektSearchOptions) bool {
+			return opts.ChunkMatches
+		})).
+			Return(&outbound.ZoektSearchResult{
+				FileMatches: []outbound.ZoektFileMatch{
+					{
+						Repository: "github.com/example/api",
+						FileName:   "internal/adapter/outbound/zoekt/indexer.go",
+						Language:   "Go",
+						Score:      42,
+					},
+				},
+				TotalCount: 1,
+			}, nil)
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Empty(t, result.Results)
+		assert.Equal(t, 0, result.Pagination.Total)
+
+		mockChunkRepo.AssertNotCalled(t, "FindChunksByRepositoryPathAndLineRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		mockChunkRepo.AssertExpectations(t)
 		mockZoekt.AssertExpectations(t)
 	})
 }

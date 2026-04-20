@@ -288,17 +288,17 @@ func TestBuildMultiRowChunkInsert_QueryStructure(t *testing.T) {
 			t.Error("UPDATE SET clause should preserve existing chunk ID")
 		}
 
-		// Should use COALESCE to prefer existing token_count
-		if !strings.Contains(updateSetClause, "token_count = COALESCE(code_chunks.token_count, EXCLUDED.token_count)") {
-			t.Error("UPDATE SET clause should use COALESCE to preserve existing token_count")
+		// Should use COALESCE to prefer new token_count
+		if !strings.Contains(updateSetClause, "token_count = COALESCE(EXCLUDED.token_count, code_chunks.token_count)") {
+			t.Error("UPDATE SET clause should use COALESCE to prefer new token_count")
 		}
 
-		// Should use COALESCE to prefer existing token_counted_at
+		// Should use COALESCE to prefer new token_counted_at
 		if !strings.Contains(
 			updateSetClause,
-			"token_counted_at = COALESCE(code_chunks.token_counted_at, EXCLUDED.token_counted_at)",
+			"token_counted_at = COALESCE(EXCLUDED.token_counted_at, code_chunks.token_counted_at)",
 		) {
-			t.Error("UPDATE SET clause should use COALESCE to preserve existing token_counted_at")
+			t.Error("UPDATE SET clause should use COALESCE to prefer new token_counted_at")
 		}
 	}
 }

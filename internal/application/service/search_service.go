@@ -316,35 +316,37 @@ func (s *SearchService) convertZoektResults(
 		content, startLine, endLine := extractZoektMatchContent(fm)
 		resultDTO := searchResultFromZoektMatch(fm, content, startLine, endLine)
 
-		if resolveToChunks {
-			if chunk, resolved := s.resolveZoektChunk(ctx, fm, query); resolved {
-				resultDTO = searchResultFromChunk(chunk, fm.Score, "zoekt")
-			} else {
-				resolved := false
-				for _, repoName := range zoektRepoNameCandidates(fm.Repository) {
-					if repoName == fm.Repository {
-						continue
-					}
-
-					alternateMatch := fm
-					alternateMatch.Repository = repoName
-					if chunk, chunkResolved := s.resolveZoektChunk(ctx, alternateMatch, query); chunkResolved {
-						resultDTO = searchResultFromChunk(chunk, fm.Score, "zoekt")
-						resolved = true
-						break
-					}
-				}
-
-				if !resolved && resultDTO.Content == "" && resultDTO.StartLine == 0 && resultDTO.EndLine == 0 && len(fm.ChunkMatches) == 0 {
-					// Drop only if there is truly nothing useful — no content, no line range, no chunk matches.
-					continue
-				}
-			}
+		if !resolveToChunks {
+			out = append(out, resultDTO)
+			continue
 		}
 
-		out = append(out, resultDTO)
+		resolved, updatedDTO := s.tryResolveZoektFileMatch(ctx, fm, query, resultDTO)
+		if !resolved && resultDTO.Content == "" && resultDTO.StartLine == 0 && resultDTO.EndLine == 0 && len(fm.ChunkMatches) == 0 {
+			continue
+		}
+		out = append(out, updatedDTO)
 	}
 	return out
+}
+
+func (s *SearchService) tryResolveZoektFileMatch(ctx context.Context, fm outbound.ZoektFileMatch, query string, fallback dto.SearchResultDTO) (bool, dto.SearchResultDTO) {
+	if chunk, resolved := s.resolveZoektChunk(ctx, fm, query); resolved {
+		return true, searchResultFromChunk(chunk, fm.Score, "zoekt")
+	}
+
+	for _, repoName := range zoektRepoNameCandidates(fm.Repository) {
+		if repoName == fm.Repository {
+			continue
+		}
+		alternateMatch := fm
+		alternateMatch.Repository = repoName
+		if chunk, resolved := s.resolveZoektChunk(ctx, alternateMatch, query); resolved {
+			return true, searchResultFromChunk(chunk, fm.Score, "zoekt")
+		}
+	}
+
+	return false, fallback
 }
 
 func (s *SearchService) getZoektChunksForFile(ctx context.Context, repoName, filePath string) ([]ChunkInfo, error) {
@@ -423,6 +425,13 @@ func (s *SearchService) resolveZoektChunk(ctx context.Context, fm outbound.Zoekt
 
 	best := selectBestOverlappingChunk(chunks, startLine, endLine)
 	if best == nil || best.ChunkID == uuid.Nil {
+		slogger.Debug(ctx, "No overlapping chunk found for Zoekt line range", slogger.Fields{
+			"repository":   repoName,
+			"file_path":    fm.FileName,
+			"start_line":   startLine,
+			"end_line":     endLine,
+			"chunks_count": len(chunks),
+		})
 		return ChunkInfo{}, false
 	}
 

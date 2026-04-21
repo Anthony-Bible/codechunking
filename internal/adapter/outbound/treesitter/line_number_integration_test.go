@@ -1,4 +1,4 @@
-package treesitter
+package treesitter_test
 
 // RED PHASE - Issue #58: Integration test for end-to-end line number correctness.
 //
@@ -12,6 +12,7 @@ package treesitter
 //   3. startByte >> len(chunk.Content), so estimateLineNumber returns the wrong line.
 
 import (
+	"codechunking/internal/adapter/outbound/treesitter"
 	"codechunking/internal/port/outbound"
 	"context"
 	"os"
@@ -20,7 +21,18 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	goparser "codechunking/internal/adapter/outbound/treesitter/parsers/go"
 )
+
+// TestMain re-registers the real Go parser before each test run. This is needed
+// because internal package tests (treesitter_pipeline_test.go) overwrite the registry
+// with mock parsers via setupTestParsers(), which would cause our integration tests
+// to get zero semantic chunks.
+func TestMain(m *testing.M) {
+	treesitter.RegisterParser("Go", goparser.NewGoParser)
+	m.Run()
+}
 
 // TestParseDirectory_FunctionAtLineFifty_ReportsCorrectStartLine is an end-to-end
 // integration test that parses testdata/multiline.go through the full pipeline and
@@ -29,6 +41,8 @@ import (
 // FAILS because the current pipeline reports wrong line numbers for functions that
 // do not start at the beginning of the file. See bug description in file header.
 func TestParseDirectory_FunctionAtLineFifty_ReportsCorrectStartLine(t *testing.T) {
+	treesitter.RegisterParser("Go", goparser.NewGoParser)
+
 	// Locate testdata/multiline.go relative to this test file.
 	_, thisFile, _, ok := runtime.Caller(0)
 	require.True(t, ok, "runtime.Caller failed")
@@ -40,7 +54,7 @@ func TestParseDirectory_FunctionAtLineFifty_ReportsCorrectStartLine(t *testing.T
 	require.NoError(t, err, "testdata/multiline.go fixture must exist; run from repo root")
 
 	ctx := context.Background()
-	parser, err := NewTreeSitterCodeParser(ctx)
+	parser, err := treesitter.NewTreeSitterCodeParser(ctx)
 	require.NoError(t, err)
 
 	config := outbound.CodeParsingConfig{
@@ -96,6 +110,8 @@ func TestParseDirectory_FunctionAtLineFifty_ReportsCorrectStartLine(t *testing.T
 // FAILS because the buggy byte-scan truncates to chunk content length for all non-first
 // functions, producing identical or wrong line numbers.
 func TestParseDirectory_MultipleGoFunctions_AllHaveCorrectLineNumbers(t *testing.T) {
+	treesitter.RegisterParser("Go", goparser.NewGoParser)
+
 	// Write a temporary file with two functions at known lines.
 	tempDir := t.TempDir()
 	src := "package twofunc\n" + // line 1
@@ -118,7 +134,7 @@ func TestParseDirectory_MultipleGoFunctions_AllHaveCorrectLineNumbers(t *testing
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	parser, err := NewTreeSitterCodeParser(ctx)
+	parser, err := treesitter.NewTreeSitterCodeParser(ctx)
 	require.NoError(t, err)
 
 	config := outbound.CodeParsingConfig{

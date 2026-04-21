@@ -196,6 +196,8 @@ func processFunctionDeclaration(
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
+		StartPosition: valueobject.Position{Row: node.StartPos.Row, Column: node.StartPos.Column},
+		EndPosition:   valueobject.Position{Row: node.EndPos.Row, Column: node.EndPos.Column},
 		Content:       generateFunctionContentFromNode(parseTree, node, name, funcType),
 		Documentation: extractDocumentation(parseTree, node),
 		Parameters:    parameters,
@@ -246,6 +248,8 @@ func processFunctionExpression(
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
+		StartPosition: valueobject.Position{Row: node.StartPos.Row, Column: node.StartPos.Column},
+		EndPosition:   valueobject.Position{Row: node.EndPos.Row, Column: node.EndPos.Column},
 		Content:       generateFunctionContentFromNode(parseTree, node, name, funcType),
 		Parameters:    parameters,
 		ReturnType:    "any",
@@ -291,6 +295,8 @@ func processArrowFunction(
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
+		StartPosition: valueobject.Position{Row: node.StartPos.Row, Column: node.StartPos.Column},
+		EndPosition:   valueobject.Position{Row: node.EndPos.Row, Column: node.EndPos.Column},
 		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructFunction),
 		Parameters:    parameters,
 		ReturnType:    "any",
@@ -382,6 +388,8 @@ func processMethodDefinition(
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
+		StartPosition: valueobject.Position{Row: node.StartPos.Row, Column: node.StartPos.Column},
+		EndPosition:   valueobject.Position{Row: node.EndPos.Row, Column: node.EndPos.Column},
 		Content:       generateFunctionContentFromNode(parseTree, node, name, funcType),
 		Parameters:    parameters,
 		ReturnType:    returnType,
@@ -428,6 +436,8 @@ func processGeneratorFunction(
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
+		StartPosition: valueobject.Position{Row: node.StartPos.Row, Column: node.StartPos.Column},
+		EndPosition:   valueobject.Position{Row: node.EndPos.Row, Column: node.EndPos.Column},
 		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructFunction),
 		Parameters:    parameters,
 		ReturnType:    "any",
@@ -475,6 +485,8 @@ func processGeneratorExpression(
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
+		StartPosition: valueobject.Position{Row: node.StartPos.Row, Column: node.StartPos.Column},
+		EndPosition:   valueobject.Position{Row: node.EndPos.Row, Column: node.EndPos.Column},
 		Content:       generateFunctionContentFromNode(parseTree, node, name, outbound.ConstructFunction),
 		Parameters:    parameters,
 		ReturnType:    "any",
@@ -648,6 +660,8 @@ func processObjectLiteralPairWithName(
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
+		StartPosition: valueobject.Position{Row: node.StartPos.Row, Column: node.StartPos.Column},
+		EndPosition:   valueobject.Position{Row: node.EndPos.Row, Column: node.EndPos.Column},
 		Content:       generateFunctionContentFromNode(parseTree, functionNode, methodName, outbound.ConstructFunction),
 		Parameters:    parameters,
 		ReturnType:    "any",
@@ -754,6 +768,8 @@ func processPrototypeAssignment(
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
+		StartPosition: valueobject.Position{Row: node.StartPos.Row, Column: node.StartPos.Column},
+		EndPosition:   valueobject.Position{Row: node.EndPos.Row, Column: node.EndPos.Column},
 		Content:       generateFunctionContentFromNode(parseTree, functionNode, functionName, constructType),
 		Parameters:    parameters,
 		ReturnType:    "any",
@@ -943,7 +959,7 @@ func isGeneratorMethod(parseTree *valueobject.ParseTree, node *valueobject.Parse
 // isGetterOrSetter checks if a method_definition is a getter or setter.
 // According to tree-sitter JavaScript grammar, getters and setters have anonymous "get" or "set" child nodes.
 func isGetterOrSetter(node *valueobject.ParseNode) bool {
-	if node == nil || node.Type != "method_definition" {
+	if node == nil || node.Type != nodeTypeMethodDef {
 		return false
 	}
 
@@ -1320,6 +1336,23 @@ func createPropertyChunk(
 	// Generate content showing both getter and setter
 	content := generatePropertyContent(parseTree, accessor)
 
+	// Compute positions from whichever accessor node is available
+	var startPos, endPos valueobject.Position
+	startNode := accessor.GetterNode
+	if startNode == nil {
+		startNode = accessor.SetterNode
+	}
+	endNode := accessor.SetterNode
+	if endNode == nil {
+		endNode = accessor.GetterNode
+	}
+	if startNode != nil {
+		startPos = valueobject.Position{Row: startNode.StartPos.Row, Column: startNode.StartPos.Column}
+	}
+	if endNode != nil {
+		endPos = valueobject.Position{Row: endNode.EndPos.Row, Column: endNode.EndPos.Column}
+	}
+
 	return &outbound.SemanticCodeChunk{
 		ChunkID:       utils.GenerateID(string(outbound.ConstructProperty), accessor.Name, nil),
 		Type:          outbound.ConstructProperty,
@@ -1328,6 +1361,8 @@ func createPropertyChunk(
 		Language:      parseTree.Language(),
 		StartByte:     startByte,
 		EndByte:       endByte,
+		StartPosition: startPos,
+		EndPosition:   endPos,
 		Content:       content,
 		Documentation: accessor.Documentation,
 		Parameters:    parameters,
@@ -1374,7 +1409,7 @@ func generatePropertyContent(parseTree *valueobject.ParseTree, accessor *Propert
 
 // isGetter checks if a method_definition node is a getter.
 func isGetter(node *valueobject.ParseNode) bool {
-	if node == nil || node.Type != "method_definition" {
+	if node == nil || node.Type != nodeTypeMethodDef {
 		return false
 	}
 	for _, child := range node.Children {
@@ -1387,7 +1422,7 @@ func isGetter(node *valueobject.ParseNode) bool {
 
 // isSetter checks if a method_definition node is a setter.
 func isSetter(node *valueobject.ParseNode) bool {
-	if node == nil || node.Type != "method_definition" {
+	if node == nil || node.Type != nodeTypeMethodDef {
 		return false
 	}
 	for _, child := range node.Children {

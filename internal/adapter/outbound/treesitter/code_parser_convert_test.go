@@ -72,9 +72,7 @@ func TestConvertSemanticToCodeChunks_PositionPopulated_UsesRowPlusOne(t *testing
 	}
 
 	p := &TreeSitterCodeParser{}
-	// NOTE: When fullContent parameter is added, callers pass it here.
-	// Until then the existing 3-arg signature is used and this test FAILS on assertions.
-	result := p.convertSemanticToCodeChunks("example.go", chunks, "go")
+	result := p.convertSemanticToCodeChunks("example.go", chunks, "go", fullContent)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 CodeChunk, got %d", len(result))
@@ -132,7 +130,7 @@ func TestConvertSemanticToCodeChunks_BothPositionsZero_ByteScanUsesFullContent(t
 	}
 
 	p := &TreeSitterCodeParser{}
-	result := p.convertSemanticToCodeChunks("late.go", chunks, "go")
+	result := p.convertSemanticToCodeChunks("late.go", chunks, "go", fullContent)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 CodeChunk, got %d", len(result))
@@ -179,7 +177,7 @@ func TestConvertSemanticToCodeChunks_EntityAtFileStart_Row0WithNonZeroEndRow(t *
 	}
 
 	p := &TreeSitterCodeParser{}
-	result := p.convertSemanticToCodeChunks("first.go", chunks, "go")
+	result := p.convertSemanticToCodeChunks("first.go", chunks, "go", chunkContent)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 CodeChunk, got %d", len(result))
@@ -227,7 +225,7 @@ func TestConvertSemanticToCodeChunks_ZeroByteOffsets_ReturnsSafeLine1(t *testing
 	}
 
 	p := &TreeSitterCodeParser{}
-	result := p.convertSemanticToCodeChunks("lonely.go", chunks, "go")
+	result := p.convertSemanticToCodeChunks("lonely.go", chunks, "go", fullContent)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 CodeChunk, got %d", len(result))
@@ -336,7 +334,8 @@ func TestConvertSemanticToCodeChunks_MultipleChunks_EachGetsIndependentCorrectLi
 	}
 
 	p := &TreeSitterCodeParser{}
-	result := p.convertSemanticToCodeChunks("multi.go", inputChunks, "go")
+	// All chunks have non-zero positions so fullContent is unused in this test.
+	result := p.convertSemanticToCodeChunks("multi.go", inputChunks, "go", "")
 
 	if len(result) != len(cases) {
 		t.Fatalf("expected %d CodeChunks, got %d", len(cases), len(result))

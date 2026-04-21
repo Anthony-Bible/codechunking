@@ -53,6 +53,13 @@ func extractMainModule(
 	// Sanitize content for PostgreSQL UTF-8 compatibility
 	sanitizedContent := valueobject.SanitizeContent(string(source))
 
+	rootNode := parseTree.RootNode()
+	var startPos, endPos valueobject.Position
+	if rootNode != nil {
+		startPos = valueobject.Position{Row: rootNode.StartPos.Row, Column: rootNode.StartPos.Column}
+		endPos = valueobject.Position{Row: rootNode.EndPos.Row, Column: rootNode.EndPos.Column}
+	}
+
 	return &outbound.SemanticCodeChunk{
 		ChunkID:       utils.GenerateID("module", moduleName, nil),
 		Type:          outbound.ConstructModule,
@@ -61,6 +68,8 @@ func extractMainModule(
 		Language:      parseTree.Language(),
 		StartByte:     0,
 		EndByte:       utils.SafeUint32(len(source)),
+		StartPosition: startPos,
+		EndPosition:   endPos,
 		Content:       sanitizedContent,
 		Documentation: documentation,
 		Visibility:    outbound.Public,

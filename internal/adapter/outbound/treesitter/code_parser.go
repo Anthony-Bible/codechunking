@@ -345,7 +345,7 @@ func (p *TreeSitterCodeParser) parseWithTreeSitter(
 	}
 
 	// Convert semantic chunks to simple code chunks
-	codeChunks := p.convertSemanticToCodeChunks(filePath, semanticChunks, language.Name())
+	codeChunks := p.convertSemanticToCodeChunks(filePath, semanticChunks, language.Name(), content)
 
 	// If we got semantic chunks, use them; otherwise fall back to simple chunking
 	if len(codeChunks) > 0 {
@@ -361,13 +361,26 @@ func (p *TreeSitterCodeParser) convertSemanticToCodeChunks(
 	filePath string,
 	semanticChunks []outbound.SemanticCodeChunk,
 	languageName string,
+	fullContent string,
 ) []outbound.CodeChunk {
 	var codeChunks []outbound.CodeChunk
 
 	for _, semanticChunk := range semanticChunks {
-		// Estimate line numbers from byte positions (approximation)
-		startLine := p.estimateLineNumber(semanticChunk.Content, int(semanticChunk.StartByte))
-		endLine := p.estimateLineNumber(semanticChunk.Content, int(semanticChunk.EndByte))
+		var startLine, endLine int
+		hasPosition := semanticChunk.StartPosition.Row != 0 ||
+			semanticChunk.EndPosition.Row != 0 ||
+			semanticChunk.StartPosition.Column != 0 ||
+			semanticChunk.EndPosition.Column != 0
+		if hasPosition {
+			startLine = int(semanticChunk.StartPosition.Row) + 1
+			endLine = int(semanticChunk.EndPosition.Row) + 1
+		} else {
+			startLine = p.estimateLineNumber(fullContent, int(semanticChunk.StartByte))
+			endLine = p.estimateLineNumber(fullContent, int(semanticChunk.EndByte))
+		}
+		if endLine < startLine {
+			endLine = startLine
+		}
 
 		// Generate hash for the chunk
 		hash := sha256.Sum256([]byte(semanticChunk.Content))

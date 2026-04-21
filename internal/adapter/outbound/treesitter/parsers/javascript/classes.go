@@ -13,7 +13,10 @@ import (
 )
 
 const (
-	nodeTypeIdentifier = "identifier"
+	nodeTypeIdentifier            = "identifier"
+	nodeTypeClassExpression       = "class"
+	nodeTypeStaticModifier        = "static"
+	nodeTypePrivatePropIdentifier = "private_property_identifier"
 )
 
 // ExtractJavaScriptClasses extracts JavaScript classes from the parse tree using real AST analysis.
@@ -44,7 +47,7 @@ func ExtractJavaScriptClasses(
 	slogger.Info(ctx, "Found class declarations", slogger.Fields{"count": len(classDeclarationNodes)})
 
 	// Find all class expressions in the parse tree (tree-sitter uses "class" for expressions too)
-	classExpressionNodes := parseTree.GetNodesByType("class")
+	classExpressionNodes := parseTree.GetNodesByType(nodeTypeClassExpression)
 	slogger.Info(ctx, "Found class expressions", slogger.Fields{"count": len(classExpressionNodes)})
 
 	// Process class declarations
@@ -201,6 +204,8 @@ func extractClassFromNode(
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
+		StartPosition: valueobject.Position{Row: node.StartPos.Row, Column: node.StartPos.Column},
+		EndPosition:   valueobject.Position{Row: node.EndPos.Row, Column: node.EndPos.Column},
 		Content:       generateClassContent(parseTree, node),
 		Visibility:    visibility,
 		Dependencies:  dependencies,
@@ -275,94 +280,28 @@ func extractClassExpressionFromVariable(
 		return nil
 	}
 
-	// Check if this variable declarator contains a class expression
-	var classNode *valueobject.ParseNode
-	for _, child := range node.Children {
-		if child != nil && child.Type == "class" {
-			classNode = child
-			break
-		}
-	}
-
+	classNode := findClassExpressionChild(node)
 	if classNode == nil {
-		slogger.Info(context.Background(), "No class node found in variable declarator children", slogger.Fields{
-			"children_count": len(node.Children),
-		})
-		for i, child := range node.Children {
-			slogger.Info(context.Background(), "Child node", slogger.Fields{
-				"index": i,
-				"type":  child.Type,
-			})
-		}
 		return nil
 	}
 
-	slogger.Info(context.Background(), "Found class node in variable declarator", slogger.Fields{
-		"class_node_type":  classNode.Type,
-		"class_start_byte": classNode.StartByte,
-		"class_end_byte":   classNode.EndByte,
-	})
+	className := extractClassExpressionClassName(parseTree, node, classNode)
 
-	// Extract variable name as class name
-	var className string
-	if len(node.Children) > 0 && node.Children[0].Type == nodeTypeIdentifier {
-		className = parseTree.GetNodeText(node.Children[0])
-		slogger.Info(context.Background(), "Extracted class name from identifier", slogger.Fields{
-			"class_name": className,
-		})
-	} else {
-		className = "(anonymous class)"
-		slogger.Info(context.Background(), "Using default anonymous class name", slogger.Fields{})
-	}
-
-	// Check visibility
 	visibility := getJavaScriptVisibility(className)
 	if !options.IncludePrivate && visibility == outbound.Private {
-		slogger.Info(context.Background(), "Skipping private class", slogger.Fields{
-			"class_name": className,
-		})
+		slogger.Info(context.Background(), "Skipping private class", slogger.Fields{"class_name": className})
 		return nil
 	}
 
 	now := time.Now()
 	qualifiedName := fmt.Sprintf("%s.%s", moduleName, className)
 
-	// Extract inheritance info
 	var dependencies []outbound.DependencyReference
 	if superClass := extractSuperClass(parseTree, classNode); superClass != "" {
-		dependencies = append(dependencies, outbound.DependencyReference{
-			Name: superClass,
-			Type: "inheritance",
-		})
+		dependencies = append(dependencies, outbound.DependencyReference{Name: superClass, Type: "inheritance"})
 	}
 
-	// Analyze static members and patterns
-	metadata := make(map[string]interface{})
-
-	// Always initialize static metadata arrays to prevent nil assertions
-	metadata["static_properties"] = extractStaticProperties(parseTree, classNode)
-	metadata["static_methods"] = extractStaticMethods(parseTree, classNode)
-
-	if hasPrivateStaticMembers(parseTree, classNode) {
-		metadata["has_private_static_members"] = true
-	}
-
-	if hasStaticInitBlock(parseTree, classNode) {
-		metadata["has_static_init_block"] = true
-	}
-
-	if pattern := detectDesignPattern(parseTree, classNode); pattern != "" {
-		metadata["design_pattern"] = pattern
-	}
-
-	if hasPrivateMembers(parseTree, classNode) {
-		metadata["has_private_members"] = true
-	}
-
-	// Add mixin chain detection
-	if mixinChain := extractMixinChain(parseTree, classNode); len(mixinChain) > 0 {
-		metadata["mixin_chain"] = mixinChain
-	}
+	metadata := buildClassMetadata(parseTree, classNode)
 
 	return &outbound.SemanticCodeChunk{
 		ChunkID:       utils.GenerateID(string(outbound.ConstructClass), className, nil),
@@ -372,6 +311,8 @@ func extractClassExpressionFromVariable(
 		Language:      parseTree.Language(),
 		StartByte:     node.StartByte,
 		EndByte:       node.EndByte,
+		StartPosition: valueobject.Position{Row: node.StartPos.Row, Column: node.StartPos.Column},
+		EndPosition:   valueobject.Position{Row: node.EndPos.Row, Column: node.EndPos.Column},
 		Content:       generateClassContent(parseTree, classNode),
 		Visibility:    visibility,
 		Dependencies:  dependencies,
@@ -379,6 +320,66 @@ func extractClassExpressionFromVariable(
 		ExtractedAt:   now,
 		Hash:          utils.GenerateHash(qualifiedName),
 	}
+}
+
+// findClassExpressionChild finds the first "class" child node within a variable declarator.
+func findClassExpressionChild(node *valueobject.ParseNode) *valueobject.ParseNode {
+	for _, child := range node.Children {
+		if child != nil && child.Type == nodeTypeClassExpression {
+			slogger.Info(context.Background(), "Found class node in variable declarator", slogger.Fields{
+				"class_node_type":  child.Type,
+				"class_start_byte": child.StartByte,
+				"class_end_byte":   child.EndByte,
+			})
+			return child
+		}
+	}
+	slogger.Info(context.Background(), "No class node found in variable declarator children", slogger.Fields{
+		"children_count": len(node.Children),
+	})
+	for i, child := range node.Children {
+		slogger.Info(context.Background(), "Child node", slogger.Fields{"index": i, "type": child.Type})
+	}
+	return nil
+}
+
+// extractClassExpressionClassName extracts or defaults the class name from a variable declarator node.
+func extractClassExpressionClassName(
+	parseTree *valueobject.ParseTree,
+	node *valueobject.ParseNode,
+	classNode *valueobject.ParseNode,
+) string {
+	if len(node.Children) > 0 && node.Children[0].Type == nodeTypeIdentifier {
+		name := parseTree.GetNodeText(node.Children[0])
+		slogger.Info(context.Background(), "Extracted class name from identifier", slogger.Fields{"class_name": name})
+		return name
+	}
+	_ = classNode // classNode available for future use
+	slogger.Info(context.Background(), "Using default anonymous class name", slogger.Fields{})
+	return "(anonymous class)"
+}
+
+// buildClassMetadata builds the metadata map for a class node.
+func buildClassMetadata(parseTree *valueobject.ParseTree, classNode *valueobject.ParseNode) map[string]interface{} {
+	metadata := make(map[string]interface{})
+	metadata["static_properties"] = extractStaticProperties(parseTree, classNode)
+	metadata["static_methods"] = extractStaticMethods(parseTree, classNode)
+	if hasPrivateStaticMembers(parseTree, classNode) {
+		metadata["has_private_static_members"] = true
+	}
+	if hasStaticInitBlock(parseTree, classNode) {
+		metadata["has_static_init_block"] = true
+	}
+	if pattern := detectDesignPattern(parseTree, classNode); pattern != "" {
+		metadata["design_pattern"] = pattern
+	}
+	if hasPrivateMembers(parseTree, classNode) {
+		metadata["has_private_members"] = true
+	}
+	if mixinChain := extractMixinChain(parseTree, classNode); len(mixinChain) > 0 {
+		metadata["mixin_chain"] = mixinChain
+	}
+	return metadata
 }
 
 // extractMixinFromVariable handles variable declarations with arrow functions that return classes.
@@ -521,7 +522,7 @@ func extractSuperClass(parseTree *valueobject.ParseTree, node *valueobject.Parse
 					return parseTree.GetNodeText(heritageChild)
 				}
 				// Check for call expressions (mixin patterns)
-				if heritageChild != nil && heritageChild.Type == "call_expression" {
+				if heritageChild != nil && heritageChild.Type == nodeTypeCallExpr {
 					return parseTree.GetNodeText(heritageChild)
 				}
 			}
@@ -828,7 +829,7 @@ func hasStaticModifier(parseTree *valueobject.ParseTree, node *valueobject.Parse
 
 	for _, child := range node.Children {
 		if child != nil &&
-			(child.Type == "static" || (child.Type == nodeTypeIdentifier && parseTree.GetNodeText(child) == "static")) {
+			(child.Type == nodeTypeStaticModifier || (child.Type == nodeTypeIdentifier && parseTree.GetNodeText(child) == nodeTypeStaticModifier)) {
 			return true
 		}
 	}
@@ -842,7 +843,7 @@ func extractPropertyName(parseTree *valueobject.ParseTree, node *valueobject.Par
 	}
 
 	for _, child := range node.Children {
-		if child != nil && (child.Type == "property_identifier" || child.Type == "private_property_identifier") {
+		if child != nil && (child.Type == "property_identifier" || child.Type == nodeTypePrivatePropIdentifier) {
 			return parseTree.GetNodeText(child)
 		}
 	}
@@ -856,7 +857,7 @@ func extractClassMethodName(parseTree *valueobject.ParseTree, node *valueobject.
 	}
 
 	for _, child := range node.Children {
-		if child != nil && (child.Type == "property_identifier" || child.Type == "private_property_identifier") {
+		if child != nil && (child.Type == "property_identifier" || child.Type == nodeTypePrivatePropIdentifier) {
 			return parseTree.GetNodeText(child)
 		}
 	}

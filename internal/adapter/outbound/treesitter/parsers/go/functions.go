@@ -283,6 +283,8 @@ func (p *GoParser) parseGoFunction(
 		Hash:              hashStr,
 		StartByte:         node.StartByte,
 		EndByte:           node.EndByte,
+		StartPosition:     valueobject.Position{Row: node.StartPos.Row, Column: node.StartPos.Column},
+		EndPosition:       valueobject.Position{Row: node.EndPos.Row, Column: node.EndPos.Column},
 	}, nil
 }
 
@@ -513,6 +515,8 @@ func (p *GoParser) buildMethodChunk(
 		Hash:              hashStr,
 		StartByte:         node.StartByte,
 		EndByte:           node.EndByte,
+		StartPosition:     valueobject.Position{Row: node.StartPos.Row, Column: node.StartPos.Column},
+		EndPosition:       valueobject.Position{Row: node.EndPos.Row, Column: node.EndPos.Column},
 	}
 }
 

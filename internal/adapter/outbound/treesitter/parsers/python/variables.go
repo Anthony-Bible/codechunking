@@ -143,6 +143,8 @@ func extractVariablesFromAssignment(
 			Language:      parseTree.Language(),
 			StartByte:     assignmentNode.StartByte,
 			EndByte:       assignmentNode.EndByte,
+			StartPosition: valueobject.Position{Row: assignmentNode.StartPos.Row, Column: assignmentNode.StartPos.Column},
+			EndPosition:   valueobject.Position{Row: assignmentNode.EndPos.Row, Column: assignmentNode.EndPos.Column},
 			Content:       content,
 			Visibility:    getPythonVisibility(varName),
 			ReturnType:    returnType,
@@ -192,6 +194,8 @@ func extractVariableFromAnnotatedAssignment(
 		Language:      parseTree.Language(),
 		StartByte:     assignmentNode.StartByte,
 		EndByte:       assignmentNode.EndByte,
+		StartPosition: valueobject.Position{Row: assignmentNode.StartPos.Row, Column: assignmentNode.StartPos.Column},
+		EndPosition:   valueobject.Position{Row: assignmentNode.EndPos.Row, Column: assignmentNode.EndPos.Column},
 		Content:       content,
 		Visibility:    getPythonVisibility(varName),
 		ReturnType:    returnType,
@@ -207,7 +211,7 @@ func extractVariableNameFromAnnotatedAssignment(
 ) string {
 	// Look for the left side of annotated assignment (target)
 	for _, child := range assignmentNode.Children {
-		if child.Type == "identifier" {
+		if child.Type == nodeTypeIdentifier {
 			return parseTree.GetNodeText(child)
 		}
 	}
@@ -305,90 +309,4 @@ func inferTypeFromValue(parseTree *valueobject.ParseTree, assignmentNode *valueo
 		}
 	}
 	return ""
-}
-
-// extractInstanceVariables extracts instance variables from __init__ methods.
-func extractInstanceVariables(
-	parseTree *valueobject.ParseTree,
-	initMethodNode *valueobject.ParseNode,
-	className, moduleName string,
-	options outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	var variables []outbound.SemanticCodeChunk
-
-	if initMethodNode == nil {
-		return variables
-	}
-
-	// Find the method body
-	bodyNode := findChildByType(initMethodNode, "block")
-	if bodyNode == nil {
-		return variables
-	}
-
-	// Look for self.variable assignments
-	for _, child := range bodyNode.Children {
-		if child.Type == "expression_statement" {
-			vars := extractInstanceVariablesFromStatement(parseTree, child, className, moduleName, options, now)
-			variables = append(variables, vars...)
-		}
-	}
-
-	return variables
-}
-
-// extractInstanceVariablesFromStatement extracts instance variables from a statement.
-func extractInstanceVariablesFromStatement(
-	parseTree *valueobject.ParseTree,
-	node *valueobject.ParseNode,
-	className, moduleName string,
-	options outbound.SemanticExtractionOptions,
-	now time.Time,
-) []outbound.SemanticCodeChunk {
-	if node == nil {
-		return nil
-	}
-
-	// Look for assignment within the statement
-	assignmentNode := findChildByType(node, "assignment")
-	if assignmentNode == nil {
-		return nil
-	}
-
-	// Check if it's a self.attribute assignment
-	attributeNode := findChildByType(assignmentNode, "attribute")
-	if attributeNode == nil {
-		return nil
-	}
-
-	// Extract the attribute names
-	varNames := extractVariableNamesFromAssignment(parseTree, assignmentNode)
-	if len(varNames) == 0 {
-		return nil
-	}
-
-	content := parseTree.GetNodeText(assignmentNode)
-	returnType := extractTypeAnnotationFromAssignment(parseTree, assignmentNode)
-
-	var chunks []outbound.SemanticCodeChunk
-	for _, varName := range varNames {
-		chunk := outbound.SemanticCodeChunk{
-			ChunkID:       utils.GenerateID("instance_var", varName, nil),
-			Type:          outbound.ConstructVariable,
-			Name:          varName,
-			QualifiedName: qualifyName(moduleName, className, varName),
-			Language:      parseTree.Language(),
-			StartByte:     assignmentNode.StartByte,
-			EndByte:       assignmentNode.EndByte,
-			Content:       content,
-			Visibility:    getPythonVisibility(varName),
-			ReturnType:    returnType,
-			ExtractedAt:   now,
-			Hash:          utils.GenerateHash(content),
-		}
-		chunks = append(chunks, chunk)
-	}
-
-	return chunks
 }

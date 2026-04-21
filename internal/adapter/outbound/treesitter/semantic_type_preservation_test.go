@@ -31,7 +31,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_PreservesAllTypeInformation(t *t
 				Type:          outbound.ConstructFunction,
 				Name:          "calculateTotal",
 				QualifiedName: "com.example.Calculator.calculateTotal",
-				Language:      mustCreateLanguage("go"),
+				Language:      mustGoLanguage(),
 				StartByte:     100,
 				EndByte:       200,
 				StartPosition: valueobject.Position{Row: 10, Column: 0},
@@ -60,7 +60,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_PreservesAllTypeInformation(t *t
 				Type:          outbound.ConstructMethod,
 				Name:          "validateInput",
 				QualifiedName: "com.example.Calculator.validateInput",
-				Language:      mustCreateLanguage("go"),
+				Language:      mustGoLanguage(),
 				StartByte:     300,
 				EndByte:       400,
 				StartPosition: valueobject.Position{Row: 25, Column: 0},
@@ -89,7 +89,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_PreservesAllTypeInformation(t *t
 				Type:          outbound.ConstructClass,
 				Name:          "Calculator",
 				QualifiedName: "com.example.Calculator",
-				Language:      mustCreateLanguage("go"),
+				Language:      mustGoLanguage(),
 				StartByte:     500,
 				EndByte:       800,
 				StartPosition: valueobject.Position{Row: 5, Column: 0},
@@ -115,7 +115,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_PreservesAllTypeInformation(t *t
 				Type:          outbound.ConstructInterface,
 				Name:          "Calculable",
 				QualifiedName: "com.example.Calculable",
-				Language:      mustCreateLanguage("go"),
+				Language:      mustGoLanguage(),
 				StartByte:     900,
 				EndByte:       1000,
 				StartPosition: valueobject.Position{Row: 55, Column: 0},
@@ -141,7 +141,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_PreservesAllTypeInformation(t *t
 				Type:          outbound.ConstructConstant,
 				Name:          "DefaultPrecision",
 				QualifiedName: "com.example.Calculator.DefaultPrecision",
-				Language:      mustCreateLanguage("go"),
+				Language:      mustGoLanguage(),
 				StartByte:     1100,
 				EndByte:       1150,
 				StartPosition: valueobject.Position{Row: 65, Column: 0},
@@ -174,6 +174,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_PreservesAllTypeInformation(t *t
 				"/test/file.go",
 				[]outbound.SemanticCodeChunk{tt.inputSemanticChunk},
 				"go",
+				"",
 			)
 
 			// Assert: Should return exactly one chunk
@@ -220,7 +221,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_HandlesEmptySemanticFields(t *te
 				Type:          "", // Empty type
 				Name:          "", // Empty name
 				QualifiedName: "", // Empty qualified name
-				Language:      mustCreateLanguage("go"),
+				Language:      mustGoLanguage(),
 				StartByte:     0,
 				EndByte:       50,
 				StartPosition: valueobject.Position{Row: 1, Column: 0},
@@ -246,7 +247,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_HandlesEmptySemanticFields(t *te
 				Type:          outbound.ConstructFunction,
 				Name:          "helperFunc",
 				QualifiedName: "", // Missing qualified name
-				Language:      mustCreateLanguage("go"),
+				Language:      mustGoLanguage(),
 				StartByte:     0,
 				EndByte:       100,
 				StartPosition: valueobject.Position{Row: 1, Column: 0},
@@ -276,6 +277,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_HandlesEmptySemanticFields(t *te
 				"/test/file.go",
 				[]outbound.SemanticCodeChunk{tt.inputSemanticChunk},
 				"go",
+				"",
 			)
 
 			// Assert: Should return exactly one chunk
@@ -314,7 +316,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_HandlesMultipleChunks(t *testing
 			Type:          outbound.ConstructClass,
 			Name:          "User",
 			QualifiedName: "com.example.User",
-			Language:      mustCreateLanguage("go"),
+			Language:      mustGoLanguage(),
 			StartByte:     0,
 			EndByte:       100,
 			Content:       "type User struct { Name string }",
@@ -328,7 +330,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_HandlesMultipleChunks(t *testing
 			Type:          outbound.ConstructMethod,
 			Name:          "GetName",
 			QualifiedName: "com.example.User.GetName",
-			Language:      mustCreateLanguage("go"),
+			Language:      mustGoLanguage(),
 			StartByte:     101,
 			EndByte:       200,
 			Content:       "func (u *User) GetName() string { return u.Name }",
@@ -346,7 +348,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_HandlesMultipleChunks(t *testing
 			Type:          outbound.ConstructConstant,
 			Name:          "DefaultUserRole",
 			QualifiedName: "com.example.DefaultUserRole",
-			Language:      mustCreateLanguage("go"),
+			Language:      mustGoLanguage(),
 			StartByte:     201,
 			EndByte:       250,
 			Content:       "const DefaultUserRole = \"user\"",
@@ -364,6 +366,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_HandlesMultipleChunks(t *testing
 		"/test/user.go",
 		semanticChunks,
 		"go",
+		"",
 	)
 
 	// Assert: Should return exactly three chunks
@@ -444,7 +447,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_HandlesAllSemanticConstructTypes
 				Type:          ct.semanticType,
 				Name:          "TestEntity",
 				QualifiedName: "com.test.TestEntity",
-				Language:      mustCreateLanguage("go"),
+				Language:      mustGoLanguage(),
 				StartByte:     0,
 				EndByte:       100,
 				Content:       "// Test content",
@@ -459,6 +462,7 @@ func TestSemanticCodeChunkToCodeChunkConversion_HandlesAllSemanticConstructTypes
 				"/test/file.go",
 				[]outbound.SemanticCodeChunk{semanticChunk},
 				"go",
+				"",
 			)
 
 			// Assert: Should preserve the construct type correctly
@@ -475,9 +479,9 @@ func TestSemanticCodeChunkToCodeChunkConversion_HandlesAllSemanticConstructTypes
 	}
 }
 
-// mustCreateLanguage is a test helper that creates a Language value object or panics.
-func mustCreateLanguage(langStr string) valueobject.Language {
-	lang, err := valueobject.NewLanguage(langStr)
+// mustGoLanguage is a test helper that creates a Go Language value object or panics.
+func mustGoLanguage() valueobject.Language {
+	lang, err := valueobject.NewLanguage("go")
 	if err != nil {
 		panic(err)
 	}

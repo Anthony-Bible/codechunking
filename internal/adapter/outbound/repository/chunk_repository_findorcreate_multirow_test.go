@@ -785,3 +785,335 @@ func TestFindOrCreateChunks_MultiRow_PreservesExistingTokenCounts(t *testing.T) 
 		pool.Exec(ctx, "DELETE FROM codechunking.repositories WHERE id = $1", repositoryID)
 	})
 }
+
+// TestGetChunkIDsWithEmbeddings_ReturnsOnlyChunksWithEmbeddings tests that the method
+// returns only the IDs of chunks that have non-deleted embeddings for the given model.
+func TestGetChunkIDsWithEmbeddings_ReturnsOnlyChunksWithEmbeddings(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLChunkRepository(pool)
+	ctx := context.Background()
+
+	// Create test repository
+	repositoryID := uuid.New()
+	testURL := "https://github.com/test/get-chunk-ids-embeddings-" + repositoryID.String()[:8]
+
+	_, err := pool.Exec(ctx, `
+		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, repositoryID, testURL, testURL, "get-chunk-ids-embeddings-repo", "Test repo for GetChunkIDsWithEmbeddings", "completed")
+	require.NoError(t, err)
+
+	// Create 3 chunks
+	now := time.Now()
+	chunkIDs := make([]uuid.UUID, 3)
+	for i := range chunkIDs {
+		chunkIDs[i] = uuid.New()
+	}
+
+	for i, cid := range chunkIDs {
+		_, err = pool.Exec(ctx, `
+			INSERT INTO codechunking.code_chunks (id, repository_id, file_path, content, language, start_line, end_line, content_hash, chunk_type, entity_name, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		`, cid, repositoryID, "file.go", "func Chunk"+string(rune('A'+i))+"() {}", "go", i+1, i+1,
+			"hash-embed-"+string(rune('A'+i)), "function", "Chunk"+string(rune('A'+i)), now)
+		require.NoError(t, err)
+	}
+
+	// Insert embeddings for chunks 0 and 1 only
+	modelVersion := "gemini-embedding-001"
+	for _, i := range []int{0, 1} {
+		_, err = pool.Exec(ctx, `
+			INSERT INTO codechunking.embeddings_partitioned (chunk_id, repository_id, embedding, model_version)
+			VALUES ($1, $2, array_fill(0.0, ARRAY[768])::codechunking.vector, $3)
+		`, chunkIDs[i], repositoryID, modelVersion)
+		require.NoError(t, err)
+	}
+
+	// Call GetChunkIDsWithEmbeddings with all 3 IDs
+	result, err := repo.GetChunkIDsWithEmbeddings(ctx, repositoryID, chunkIDs, modelVersion)
+	require.NoError(t, err)
+
+	// Assert: only chunks 0 and 1 are returned
+	assert.Len(t, result, 2, "Should return exactly 2 chunk IDs with embeddings")
+	assert.Contains(t, result, chunkIDs[0], "chunk 0 should be in result")
+	assert.Contains(t, result, chunkIDs[1], "chunk 1 should be in result")
+	assert.NotContains(t, result, chunkIDs[2], "chunk 2 should NOT be in result (no embedding)")
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, "DELETE FROM codechunking.embeddings_partitioned WHERE repository_id = $1", repositoryID)
+		pool.Exec(ctx, "DELETE FROM codechunking.code_chunks WHERE repository_id = $1", repositoryID)
+		pool.Exec(ctx, "DELETE FROM codechunking.repositories WHERE id = $1", repositoryID)
+	})
+}
+
+// TestGetChunkIDsWithEmbeddings_EmptySliceInput_ReturnsEmptyMap tests that the method
+// returns an empty map without error when given an empty slice of IDs.
+func TestGetChunkIDsWithEmbeddings_EmptySliceInput_ReturnsEmptyMap(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLChunkRepository(pool)
+	ctx := context.Background()
+
+	repositoryID := uuid.New()
+
+	// Call with empty slice - should return empty map and nil error
+	result, err := repo.GetChunkIDsWithEmbeddings(ctx, repositoryID, []uuid.UUID{}, "gemini-embedding-001")
+	require.NoError(t, err)
+	assert.Empty(t, result, "Should return empty map for empty input")
+}
+
+// TestGetChunkIDsWithEmbeddings_NoneHaveEmbeddings_ReturnsEmptyMap tests that the method
+// returns an empty map when none of the queried chunks have embeddings.
+func TestGetChunkIDsWithEmbeddings_NoneHaveEmbeddings_ReturnsEmptyMap(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLChunkRepository(pool)
+	ctx := context.Background()
+
+	// Create test repository
+	repositoryID := uuid.New()
+	testURL := "https://github.com/test/no-embeddings-" + repositoryID.String()[:8]
+
+	_, err := pool.Exec(ctx, `
+		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, repositoryID, testURL, testURL, "no-embeddings-repo", "Test repo for no embeddings", "completed")
+	require.NoError(t, err)
+
+	// Create 3 chunks with no embeddings
+	now := time.Now()
+	chunkIDs := make([]uuid.UUID, 3)
+	for i := range chunkIDs {
+		chunkIDs[i] = uuid.New()
+		_, err = pool.Exec(ctx, `
+			INSERT INTO codechunking.code_chunks (id, repository_id, file_path, content, language, start_line, end_line, content_hash, chunk_type, entity_name, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		`, chunkIDs[i], repositoryID, "noembeds.go", "func NoEmbed"+string(rune('A'+i))+"() {}", "go", i+1, i+1,
+			"hash-noembed-"+string(rune('A'+i)), "function", "NoEmbed"+string(rune('A'+i)), now)
+		require.NoError(t, err)
+	}
+
+	// Query - no embeddings inserted, so result should be empty
+	result, err := repo.GetChunkIDsWithEmbeddings(ctx, repositoryID, chunkIDs, "gemini-embedding-001")
+	require.NoError(t, err)
+	assert.Empty(t, result, "Should return empty map when no chunks have embeddings")
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, "DELETE FROM codechunking.code_chunks WHERE repository_id = $1", repositoryID)
+		pool.Exec(ctx, "DELETE FROM codechunking.repositories WHERE id = $1", repositoryID)
+	})
+}
+
+// TestGetChunkIDsWithEmbeddings_AllHaveEmbeddings_ReturnsAllIDs tests that the method
+// returns all IDs when all queried chunks have embeddings.
+func TestGetChunkIDsWithEmbeddings_AllHaveEmbeddings_ReturnsAllIDs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLChunkRepository(pool)
+	ctx := context.Background()
+
+	// Create test repository
+	repositoryID := uuid.New()
+	testURL := "https://github.com/test/all-embeddings-" + repositoryID.String()[:8]
+
+	_, err := pool.Exec(ctx, `
+		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, repositoryID, testURL, testURL, "all-embeddings-repo", "Test repo for all embeddings", "completed")
+	require.NoError(t, err)
+
+	// Create 3 chunks and embed all of them
+	now := time.Now()
+	modelVersion := "gemini-embedding-001"
+	chunkIDs := make([]uuid.UUID, 3)
+	for i := range chunkIDs {
+		chunkIDs[i] = uuid.New()
+		_, err = pool.Exec(ctx, `
+			INSERT INTO codechunking.code_chunks (id, repository_id, file_path, content, language, start_line, end_line, content_hash, chunk_type, entity_name, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		`, chunkIDs[i], repositoryID, "allembed.go", "func AllEmbed"+string(rune('A'+i))+"() {}", "go", i+1, i+1,
+			"hash-allembed-"+string(rune('A'+i)), "function", "AllEmbed"+string(rune('A'+i)), now)
+		require.NoError(t, err)
+
+		_, err = pool.Exec(ctx, `
+			INSERT INTO codechunking.embeddings_partitioned (chunk_id, repository_id, embedding, model_version)
+			VALUES ($1, $2, array_fill(0.0, ARRAY[768])::codechunking.vector, $3)
+		`, chunkIDs[i], repositoryID, modelVersion)
+		require.NoError(t, err)
+	}
+
+	// All 3 should be returned
+	result, err := repo.GetChunkIDsWithEmbeddings(ctx, repositoryID, chunkIDs, modelVersion)
+	require.NoError(t, err)
+	assert.Len(t, result, 3, "Should return all 3 chunk IDs")
+	for _, cid := range chunkIDs {
+		assert.Contains(t, result, cid, "chunk %s should be in result", cid)
+	}
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, "DELETE FROM codechunking.embeddings_partitioned WHERE repository_id = $1", repositoryID)
+		pool.Exec(ctx, "DELETE FROM codechunking.code_chunks WHERE repository_id = $1", repositoryID)
+		pool.Exec(ctx, "DELETE FROM codechunking.repositories WHERE id = $1", repositoryID)
+	})
+}
+
+// TestGetChunkIDsWithEmbeddings_ModelVersionFilter_OnlyMatchingModelReturned tests that
+// the method filters by model version, only returning chunks with the queried model's embeddings.
+func TestGetChunkIDsWithEmbeddings_ModelVersionFilter_OnlyMatchingModelReturned(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLChunkRepository(pool)
+	ctx := context.Background()
+
+	// Create test repository
+	repositoryID := uuid.New()
+	testURL := "https://github.com/test/model-filter-" + repositoryID.String()[:8]
+
+	_, err := pool.Exec(ctx, `
+		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, repositoryID, testURL, testURL, "model-filter-repo", "Test repo for model filter", "completed")
+	require.NoError(t, err)
+
+	// Create 2 chunks
+	now := time.Now()
+	chunkA := uuid.New()
+	chunkB := uuid.New()
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO codechunking.code_chunks (id, repository_id, file_path, content, language, start_line, end_line, content_hash, chunk_type, entity_name, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, chunkA, repositoryID, "model_filter.go", "func ChunkA() {}", "go", 1, 1, "hash-model-A", "function", "ChunkA", now)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO codechunking.code_chunks (id, repository_id, file_path, content, language, start_line, end_line, content_hash, chunk_type, entity_name, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, chunkB, repositoryID, "model_filter.go", "func ChunkB() {}", "go", 5, 5, "hash-model-B", "function", "ChunkB", now)
+	require.NoError(t, err)
+
+	// Chunk A has embedding with model "gemini-embedding-001"
+	_, err = pool.Exec(ctx, `
+		INSERT INTO codechunking.embeddings_partitioned (chunk_id, repository_id, embedding, model_version)
+		VALUES ($1, $2, array_fill(0.0, ARRAY[768])::codechunking.vector, $3)
+	`, chunkA, repositoryID, "gemini-embedding-001")
+	require.NoError(t, err)
+
+	// Chunk B has embedding with a different model "text-embedding-004"
+	_, err = pool.Exec(ctx, `
+		INSERT INTO codechunking.embeddings_partitioned (chunk_id, repository_id, embedding, model_version)
+		VALUES ($1, $2, array_fill(0.0, ARRAY[768])::codechunking.vector, $3)
+	`, chunkB, repositoryID, "text-embedding-004")
+	require.NoError(t, err)
+
+	// Query for "gemini-embedding-001" only
+	result, err := repo.GetChunkIDsWithEmbeddings(ctx, repositoryID, []uuid.UUID{chunkA, chunkB}, "gemini-embedding-001")
+	require.NoError(t, err)
+
+	// Only chunk A should be returned
+	assert.Len(t, result, 1, "Should return only 1 chunk matching the model")
+	assert.Contains(t, result, chunkA, "chunkA should be in result (has matching model)")
+	assert.NotContains(t, result, chunkB, "chunkB should NOT be in result (different model)")
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, "DELETE FROM codechunking.embeddings_partitioned WHERE repository_id = $1", repositoryID)
+		pool.Exec(ctx, "DELETE FROM codechunking.code_chunks WHERE repository_id = $1", repositoryID)
+		pool.Exec(ctx, "DELETE FROM codechunking.repositories WHERE id = $1", repositoryID)
+	})
+}
+
+// TestGetChunkIDsWithEmbeddings_RespectsDeletedAt_ExcludesDeleted tests that the method
+// excludes chunks whose embeddings have been soft-deleted (deleted_at IS NOT NULL).
+func TestGetChunkIDsWithEmbeddings_RespectsDeletedAt_ExcludesDeleted(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestPool(t)
+	defer pool.Close()
+
+	repo := NewPostgreSQLChunkRepository(pool)
+	ctx := context.Background()
+
+	// Create test repository
+	repositoryID := uuid.New()
+	testURL := "https://github.com/test/deleted-at-filter-" + repositoryID.String()[:8]
+
+	_, err := pool.Exec(ctx, `
+		INSERT INTO codechunking.repositories (id, url, normalized_url, name, description, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, repositoryID, testURL, testURL, "deleted-at-filter-repo", "Test repo for deleted_at filter", "completed")
+	require.NoError(t, err)
+
+	// Create 2 chunks
+	now := time.Now()
+	chunkA := uuid.New()
+	chunkB := uuid.New()
+	modelVersion := "gemini-embedding-001"
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO codechunking.code_chunks (id, repository_id, file_path, content, language, start_line, end_line, content_hash, chunk_type, entity_name, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, chunkA, repositoryID, "deleted_at.go", "func ChunkA() {}", "go", 1, 1, "hash-delat-A", "function", "ChunkA", now)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `
+		INSERT INTO codechunking.code_chunks (id, repository_id, file_path, content, language, start_line, end_line, content_hash, chunk_type, entity_name, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, chunkB, repositoryID, "deleted_at.go", "func ChunkB() {}", "go", 5, 5, "hash-delat-B", "function", "ChunkB", now)
+	require.NoError(t, err)
+
+	// Chunk A has a live (non-deleted) embedding
+	_, err = pool.Exec(ctx, `
+		INSERT INTO codechunking.embeddings_partitioned (chunk_id, repository_id, embedding, model_version)
+		VALUES ($1, $2, array_fill(0.0, ARRAY[768])::codechunking.vector, $3)
+	`, chunkA, repositoryID, modelVersion)
+	require.NoError(t, err)
+
+	// Chunk B has a soft-deleted embedding
+	_, err = pool.Exec(ctx, `
+		INSERT INTO codechunking.embeddings_partitioned (chunk_id, repository_id, embedding, model_version, deleted_at)
+		VALUES ($1, $2, array_fill(0.0, ARRAY[768])::codechunking.vector, $3, CURRENT_TIMESTAMP)
+	`, chunkB, repositoryID, modelVersion)
+	require.NoError(t, err)
+
+	// Only chunk A should be returned (chunk B's embedding is soft-deleted)
+	result, err := repo.GetChunkIDsWithEmbeddings(ctx, repositoryID, []uuid.UUID{chunkA, chunkB}, modelVersion)
+	require.NoError(t, err)
+
+	assert.Len(t, result, 1, "Should return only 1 chunk (not the soft-deleted one)")
+	assert.Contains(t, result, chunkA, "chunkA should be in result (live embedding)")
+	assert.NotContains(t, result, chunkB, "chunkB should NOT be in result (embedding is soft-deleted)")
+
+	t.Cleanup(func() {
+		pool.Exec(ctx, "DELETE FROM codechunking.embeddings_partitioned WHERE repository_id = $1", repositoryID)
+		pool.Exec(ctx, "DELETE FROM codechunking.code_chunks WHERE repository_id = $1", repositoryID)
+		pool.Exec(ctx, "DELETE FROM codechunking.repositories WHERE id = $1", repositoryID)
+	})
+}

@@ -147,6 +147,10 @@ func TestJobProcessor_CountTokensForChunks(t *testing.T) {
 		mock.Anything, // chunk
 		mock.Anything, // embedding
 	).Return(nil)
+	mockChunkRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Create processor config
 	processorConfig := JobProcessorConfig{
@@ -355,6 +359,10 @@ func TestJobProcessor_TokenCountingModes(t *testing.T) {
 				mock.Anything,
 				mock.Anything,
 			).Return(nil)
+			mockChunkRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+				Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+			mockChunkRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+				Return(map[uuid.UUID]struct{}{}, nil)
 
 			// Create processor with token counting config
 			processorConfig := JobProcessorConfig{
@@ -522,6 +530,10 @@ func TestJobProcessor_TokenCountingFailsGracefully(t *testing.T) {
 				mock.Anything,
 				mock.Anything,
 			).Return(nil)
+			mockChunkRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+				Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+			mockChunkRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+				Return(map[uuid.UUID]struct{}{}, nil)
 
 			// Create processor
 			processorConfig := JobProcessorConfig{
@@ -657,6 +669,10 @@ func TestJobProcessor_TokenCountingUpdatesPersistence(t *testing.T) {
 		mock.Anything,
 		mock.Anything,
 	).Return(nil)
+	mockChunkRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Create processor
 	processorConfig := JobProcessorConfig{
@@ -813,6 +829,11 @@ func TestJobProcessor_ProgressiveTokenCounting_BatchSaving(t *testing.T) {
 		mock.Anything,
 		mock.Anything,
 	).Return(nil)
+
+	mockChunkRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Create processor config
 	processorConfig := JobProcessorConfig{
@@ -972,6 +993,11 @@ func TestJobProcessor_ProgressiveTokenCounting_FinalPartialBatch(t *testing.T) {
 		mock.Anything,
 	).Return(nil)
 
+	mockChunkRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	// Create processor config
 	processorConfig := JobProcessorConfig{
 		WorkspaceDir:      "/tmp/test-workspace",
@@ -1125,6 +1151,11 @@ func TestJobProcessor_ProgressiveTokenCounting_GracefulDegradation(t *testing.T)
 		mock.Anything,
 		mock.Anything,
 	).Return(nil)
+
+	mockChunkRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Create processor config
 	processorConfig := JobProcessorConfig{

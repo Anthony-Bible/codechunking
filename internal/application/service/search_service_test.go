@@ -1774,12 +1774,10 @@ func TestSearchService_HybridChunkLevelZoektResolutionContract(t *testing.T) {
 		losingChunkID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 		winningChunkID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 		mockChunkRepo.On(
-			"FindChunksByRepositoryPathAndLineRange",
+			"FindChunksByRepositoryPath",
 			ctx,
-			"example/api",
+			"github.com/example/api",
 			"server/handler.go",
-			12,
-			16,
 		).Return([]ChunkInfo{
 			{
 				ChunkID:   losingChunkID,
@@ -1937,7 +1935,7 @@ func TestSearchService_HybridChunkLevelZoektResolutionContract(t *testing.T) {
 		mockChunkRepo.On(
 			"FindChunksByRepositoryPath",
 			ctx,
-			"example/api",
+			"github.com/example/api",
 			"internal/adapter/outbound/zoekt/indexer.go",
 		).Return([]ChunkInfo{
 			{
@@ -2023,6 +2021,12 @@ func TestSearchService_HybridChunkLevelZoektResolutionContract(t *testing.T) {
 			Return([]outbound.VectorSimilarityResult{}, nil)
 		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
 			Return([]ChunkInfo{}, nil)
+		mockChunkRepo.On(
+			"FindChunksByRepositoryPath",
+			ctx,
+			"github.com/example/api",
+			"internal/adapter/outbound/zoekt/indexer.go",
+		).Return([]ChunkInfo{}, nil)
 		mockChunkRepo.On(
 			"FindChunksByRepositoryPath",
 			ctx,

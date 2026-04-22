@@ -1328,7 +1328,7 @@ func (p *DefaultJobProcessor) processProductionBatchResults(
 	}
 
 	// Process batches with fallback support
-	err := p.processBatchLoop(
+	queuedBatches, err := p.processBatchLoop(
 		ctx,
 		jobID,
 		indexingJobID,
@@ -1345,10 +1345,12 @@ func (p *DefaultJobProcessor) processProductionBatchResults(
 	}
 
 	if useAsyncSubmission {
-		slogger.Info(ctx, "All batches submitted asynchronously", slogger.Fields{
-			"job_id":        jobID,
-			"total_batches": totalBatches,
-			"total_chunks":  len(chunks),
+		slogger.Info(ctx, "All batches processed asynchronously", slogger.Fields{
+			"job_id":          jobID,
+			"total_batches":   totalBatches,
+			"queued_batches":  queuedBatches,
+			"skipped_batches": totalBatches - queuedBatches,
+			"total_chunks":    len(chunks),
 		})
 	} else {
 		slogger.Info(ctx, "All batches completed successfully (sync mode)", slogger.Fields{
@@ -1363,6 +1365,8 @@ func (p *DefaultJobProcessor) processProductionBatchResults(
 
 // processBatchLoop processes batches in a loop with fallback support.
 // This method is extracted from processProductionBatchResults to keep function length under 100 lines.
+// When useAsyncSubmission is true, it returns the number of batches actually queued for async processing
+// (batches skipped because all chunks were already embedded are not counted).
 func (p *DefaultJobProcessor) processBatchLoop(
 	ctx context.Context,
 	jobID string,
@@ -1374,7 +1378,7 @@ func (p *DefaultJobProcessor) processBatchLoop(
 	embeddingOptions outbound.EmbeddingOptions,
 	useAsyncSubmission bool,
 	execution *JobExecution,
-) error {
+) (int, error) {
 	slogger.Info(ctx, "Starting batch processing loop", slogger.Fields{
 		"job_id":        jobID,
 		"total_batches": totalBatches,
@@ -1382,6 +1386,7 @@ func (p *DefaultJobProcessor) processBatchLoop(
 		"async_mode":    useAsyncSubmission,
 	})
 
+	queuedBatches := 0
 	for i := startBatch; i < totalBatches; i++ {
 		batchNumber := i + 1 // 1-indexed
 		batch := batches[i]
@@ -1399,7 +1404,8 @@ func (p *DefaultJobProcessor) processBatchLoop(
 
 		var err error
 		if useAsyncSubmission {
-			err = p.processAsyncBatch(
+			var queued bool
+			queued, err = p.processAsyncBatch(
 				ctx,
 				jobID,
 				indexingJobID,
@@ -1409,6 +1415,9 @@ func (p *DefaultJobProcessor) processBatchLoop(
 				batch,
 				embeddingOptions,
 			)
+			if queued {
+				queuedBatches++
+			}
 		} else {
 			err = p.processSyncBatch(
 				ctx,
@@ -1433,7 +1442,7 @@ func (p *DefaultJobProcessor) processBatchLoop(
 				})
 				// Fall back to sequential processing for remaining chunks (including current failed batch)
 				remainingChunks := p.collectRemainingChunks(batches, i)
-				return p.processSequentialEmbeddingsWithFallback(
+				return queuedBatches, p.processSequentialEmbeddingsWithFallback(
 					ctx,
 					indexingJobID,
 					repositoryID,
@@ -1441,11 +1450,11 @@ func (p *DefaultJobProcessor) processBatchLoop(
 					execution,
 				)
 			}
-			return err
+			return queuedBatches, err
 		}
 	}
 
-	return nil
+	return queuedBatches, nil
 }
 
 // extractTextsFromChunks extracts text content from code chunks for embedding generation.
@@ -1982,9 +1991,15 @@ func (p *DefaultJobProcessor) processBatchEmbeddings(
 	// Convert UUID to string for backward compatibility with existing code
 	jobID := indexingJobID.String()
 
-	// Fire token counting in a separate goroutine so it doesn't block embedding generation.
-	// Uses a detached context so job cancellation doesn't abort an in-progress count.
-	go p.countTokensForChunks(context.WithoutCancel(ctx), repositoryID, chunks)
+	// Fire token counting asynchronously so it doesn't block embedding generation.
+	// Run synchronously when there is no batch queue manager (direct/test path) so that
+	// tests can call AssertExpectations after generateEmbeddings returns and reliably find
+	// the call already completed. In production with a queue manager, use a goroutine.
+	if p.batchQueueManager != nil {
+		go p.countTokensForChunks(context.WithoutCancel(ctx), repositoryID, chunks)
+	} else {
+		p.countTokensForChunks(context.WithoutCancel(ctx), repositoryID, chunks)
+	}
 
 	// Check context before starting batch processing
 	if err := ctx.Err(); err != nil {
@@ -2239,6 +2254,7 @@ func (p *DefaultJobProcessor) processEmbeddingsWithGenerator(
 }
 
 // processSequentialEmbeddings handles sequential embedding processing with proper test/production mode handling.
+// Pre-existing embeddings are filtered out before processing to avoid redundant API calls on re-index.
 func (p *DefaultJobProcessor) processSequentialEmbeddings(
 	ctx context.Context,
 	indexingJobID uuid.UUID,
@@ -2248,6 +2264,26 @@ func (p *DefaultJobProcessor) processSequentialEmbeddings(
 ) error {
 	// Convert UUID to string for backward compatibility
 	jobID := indexingJobID.String()
+
+	// The production sequential path uses these options; use the same model for
+	// filtering so the pre-existing-embedding check and actual submission always agree.
+	seqOptions := p.getBatchEmbeddingOptions()
+	modelVersion := seqOptions.Model
+
+	// Resolve stable persisted IDs before checking existing embeddings.
+	// Chunks from the parser carry transient IDs (uuid.New()) that won't match
+	// the persisted code_chunks.id values that embeddings reference.
+	if p.chunkStorageRepo != nil {
+		chunks = p.resolveAndFilterChunks(ctx, jobID, repositoryID, chunks, modelVersion, "sequential")
+	}
+
+	if len(chunks) == 0 {
+		slogger.Info(ctx, "All chunks already have embeddings, skipping sequential processing", slogger.Fields{
+			"job_id":        jobID,
+			"model_version": modelVersion,
+		})
+		return nil
+	}
 
 	// Fire token counting in a separate goroutine so it doesn't block embedding generation.
 	// Uses a detached context so job cancellation doesn't abort an in-progress count.
@@ -2280,9 +2316,9 @@ func (p *DefaultJobProcessor) processSequentialEmbeddings(
 			}
 
 			embeddingOptions := outbound.EmbeddingOptions{
-				Model:             "gemini-embedding-001",
-				TaskType:          outbound.TaskTypeRetrievalDocument,
-				IncludeTokenCount: true,
+				Model:             seqOptions.Model,
+				TaskType:          seqOptions.TaskType,
+				IncludeTokenCount: seqOptions.IncludeTokenCount,
 			}
 
 			return p.embeddingService.GenerateEmbedding(ctx, chunk.Content, embeddingOptions)
@@ -2484,6 +2520,8 @@ func (p *DefaultJobProcessor) splitChunksIntoBatches(
 }
 
 // processAsyncBatch handles async batch submission.
+// It returns (true, nil) when the batch was queued, (false, nil) when it was skipped because
+// all chunks already had embeddings, and (false, err) on failure.
 func (p *DefaultJobProcessor) processAsyncBatch(
 	ctx context.Context,
 	jobID string,
@@ -2493,10 +2531,10 @@ func (p *DefaultJobProcessor) processAsyncBatch(
 	totalBatches int,
 	chunks []outbound.CodeChunk,
 	embeddingOptions outbound.EmbeddingOptions,
-) error {
+) (bool, error) {
 	// Async mode: Submit batch job and return immediately
 	// The BatchPoller will handle completion polling
-	err := p.submitBatchJobAsync(ctx, indexingJobID, repositoryID, batchNumber, totalBatches, chunks, embeddingOptions)
+	queued, err := p.submitBatchJobAsync(ctx, indexingJobID, repositoryID, batchNumber, totalBatches, chunks, embeddingOptions)
 	if err != nil {
 		// Check if this is a quota error and provide clearer messaging
 		if isQuotaError(err) {
@@ -2529,14 +2567,10 @@ func (p *DefaultJobProcessor) processAsyncBatch(
 			jobStatusFailed,
 			err.Error(),
 		)
-		return err
+		return false, err
 	}
 
-	slogger.Info(ctx, "Batch job submitted asynchronously", slogger.Fields{
-		"job_id":       jobID,
-		"batch_number": batchNumber,
-	})
-	return nil
+	return queued, nil
 }
 
 // processSyncBatch handles synchronous batch processing.
@@ -2552,6 +2586,21 @@ func (p *DefaultJobProcessor) processSyncBatch(
 	embeddingOptions outbound.EmbeddingOptions,
 	execution *JobExecution,
 ) error {
+	// Apply the same existing-embedding filter as the async path so unchanged repos
+	// produce zero API calls regardless of submission mode (async vs sync fallback).
+	if p.chunkStorageRepo != nil {
+		// Copy before mutating to avoid a data race: processBatchEmbeddings spawns
+		// countTokensForChunks concurrently over the same slice we'd otherwise write to.
+		batchCopy := make([]outbound.CodeChunk, len(batch))
+		copy(batchCopy, batch)
+		batch = p.resolveAndFilterChunks(ctx, jobID, repositoryID, batchCopy, embeddingOptions.Model, "sync batch")
+		texts = p.extractTextsFromChunks(batch)
+	}
+
+	if len(batch) == 0 {
+		return nil
+	}
+
 	// Sync mode (fallback): Wait for results immediately
 	// This is used when batch progress repository is not available (tests)
 	results, err := p.processBatchWithRetry(
@@ -2622,6 +2671,8 @@ func (p *DefaultJobProcessor) processSyncBatch(
 // submitBatchJobAsync submits a batch embedding job to Gemini API asynchronously.
 // Instead of waiting for results, it saves the batch progress with the Gemini job ID
 // and returns immediately. The BatchPoller will handle completion polling.
+// The returned bool is true when a batch was actually queued for submission, and false
+// when the batch was skipped because all chunks already had embeddings.
 func (p *DefaultJobProcessor) submitBatchJobAsync(
 	ctx context.Context,
 	indexingJobID uuid.UUID,
@@ -2630,10 +2681,9 @@ func (p *DefaultJobProcessor) submitBatchJobAsync(
 	totalBatches int,
 	chunks []outbound.CodeChunk,
 	options outbound.EmbeddingOptions,
-) error {
-	// Check if batch embedding service is configured
+) (bool, error) {
 	if p.batchEmbeddingService == nil {
-		return errors.New("batch embedding service not configured")
+		return false, errors.New("batch embedding service not configured")
 	}
 
 	slogger.Info(ctx, "Queueing batch job for submission", slogger.Fields{
@@ -2643,60 +2693,142 @@ func (p *DefaultJobProcessor) submitBatchJobAsync(
 		"chunk_count":     len(chunks),
 	})
 
-	// Set repository ID on all chunks before saving (required by FindOrCreateChunks)
+	savedChunks, savedChunkUUIDs, err := p.persistChunks(ctx, indexingJobID, repositoryID, batchNumber, chunks)
+	if err != nil {
+		return false, err
+	}
+
+	chunksNeedingEmbedding, skippedCount, err := p.filterNewEmbeddings(
+		ctx, indexingJobID, repositoryID, batchNumber, options.Model, savedChunks, savedChunkUUIDs,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	if len(chunksNeedingEmbedding) == 0 {
+		slogger.Info(ctx, "All chunks already have embeddings, skipping batch entirely", slogger.Fields{
+			"indexing_job_id": indexingJobID,
+			"batch_number":    batchNumber,
+			"chunk_count":     len(savedChunks),
+			"model_version":   options.Model,
+		})
+		return false, nil
+	}
+
+	if err := p.enqueueBatchProgress(ctx, indexingJobID, repositoryID, batchNumber, totalBatches,
+		savedChunks, chunksNeedingEmbedding, skippedCount); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// persistChunks sets repository IDs, deduplicates, and upserts chunks; returns saved chunks and their UUIDs.
+func (p *DefaultJobProcessor) persistChunks(
+	ctx context.Context,
+	indexingJobID uuid.UUID,
+	repositoryID uuid.UUID,
+	batchNumber int,
+	chunks []outbound.CodeChunk,
+) ([]outbound.CodeChunk, []uuid.UUID, error) {
 	for i := range chunks {
 		chunks[i].RepositoryID = repositoryID
 	}
-
-	// Deduplicate chunks to avoid inserting duplicates
 	chunks = deduplicateChunksByKey(ctx, chunks)
 
-	// FindOrCreateChunks returns chunks with their actual persisted IDs
-	// This prevents FK constraint violations when embeddings reference chunk IDs
 	slogger.Debug(ctx, "Finding or creating chunks before queueing batch", slogger.Fields{
 		"indexing_job_id": indexingJobID,
 		"batch_number":    batchNumber,
 		"chunk_count":     len(chunks),
 	})
 
-	savedChunks, err := p.chunkStorageRepo.FindOrCreateChunks(ctx, chunks)
+	saved, err := p.chunkStorageRepo.FindOrCreateChunks(ctx, chunks)
 	if err != nil {
-		return fmt.Errorf("failed to find/create chunks: %w", err)
+		return nil, nil, fmt.Errorf("failed to find/create chunks: %w", err)
 	}
 
 	slogger.Info(ctx, "Chunks saved successfully", slogger.Fields{
 		"indexing_job_id": indexingJobID,
 		"batch_number":    batchNumber,
-		"chunk_count":     len(savedChunks),
+		"chunk_count":     len(saved),
 	})
 
-	// Create batch requests with the ACTUAL persisted chunk IDs
-	requests := make([]*outbound.BatchEmbeddingRequest, len(savedChunks))
-	for i, chunk := range savedChunks {
+	uuids := make([]uuid.UUID, 0, len(saved))
+	for _, chunk := range saved {
+		id, err := uuid.Parse(chunk.ID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid chunk ID after save: %w", err)
+		}
+		uuids = append(uuids, id)
+	}
+	return saved, uuids, nil
+}
+
+// filterNewEmbeddings returns only chunks that lack embeddings and the count skipped.
+func (p *DefaultJobProcessor) filterNewEmbeddings(
+	ctx context.Context,
+	indexingJobID uuid.UUID,
+	repositoryID uuid.UUID,
+	batchNumber int,
+	modelVersion string,
+	savedChunks []outbound.CodeChunk,
+	savedChunkUUIDs []uuid.UUID,
+) ([]outbound.CodeChunk, int, error) {
+	existingEmbeddingIDs, err := p.logAndCheckExistingEmbeddings(
+		ctx, indexingJobID, repositoryID, batchNumber, modelVersion, savedChunkUUIDs,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	chunksNeedingEmbedding, err := filterChunksNeedingEmbeddings(savedChunks, savedChunkUUIDs, existingEmbeddingIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	skippedCount := len(savedChunks) - len(chunksNeedingEmbedding)
+	if skippedCount > 0 {
+		slogger.Info(ctx, "Skipping chunks with existing embeddings", slogger.Fields{
+			"indexing_job_id": indexingJobID,
+			"batch_number":    batchNumber,
+			"total_chunks":    len(savedChunks),
+			"skipped_count":   skippedCount,
+			"remaining_count": len(chunksNeedingEmbedding),
+			"model_version":   modelVersion,
+		})
+	}
+	return chunksNeedingEmbedding, skippedCount, nil
+}
+
+// enqueueBatchProgress serialises requests and saves a pending-submission progress record.
+func (p *DefaultJobProcessor) enqueueBatchProgress(
+	ctx context.Context,
+	indexingJobID uuid.UUID,
+	repositoryID uuid.UUID,
+	batchNumber int,
+	totalBatches int,
+	savedChunks []outbound.CodeChunk,
+	chunksNeedingEmbedding []outbound.CodeChunk,
+	skippedCount int,
+) error {
+	requests := make([]*outbound.BatchEmbeddingRequest, len(chunksNeedingEmbedding))
+	for i, chunk := range chunksNeedingEmbedding {
 		chunkID, err := uuid.Parse(chunk.ID)
 		if err != nil {
 			return fmt.Errorf("invalid chunk ID: %w", err)
 		}
-
 		requests[i] = &outbound.BatchEmbeddingRequest{
 			RequestID: EncodeChunkIDToRequestID(chunkID),
 			Text:      chunk.Content,
 		}
 	}
 
-	// Serialize request data for deferred submission
 	requestData, err := json.Marshal(requests)
 	if err != nil {
 		return fmt.Errorf("failed to serialize request data: %w", err)
 	}
 
-	// Create batch progress record
 	progress := entity.NewBatchJobProgress(repositoryID, indexingJobID, batchNumber, totalBatches)
-
-	// Mark as pending submission instead of immediately submitting
 	progress.MarkPendingSubmission(requestData)
-
-	// Save progress to database - BatchSubmitter will pick it up
 	if err := p.batchProgressRepo.Save(ctx, progress); err != nil {
 		return fmt.Errorf("failed to save batch progress: %w", err)
 	}
@@ -2706,9 +2838,123 @@ func (p *DefaultJobProcessor) submitBatchJobAsync(
 		"indexing_job_id": indexingJobID,
 		"batch_number":    batchNumber,
 		"chunk_count":     len(savedChunks),
+		"embedded_count":  len(chunksNeedingEmbedding),
+		"skipped_count":   skippedCount,
 	})
-
 	return nil
+}
+
+// resolveAndFilterChunks persists chunks to get stable IDs, then drops any that already have
+// embeddings for the given modelVersion. On any error it logs a warning and returns the input
+// unchanged so the caller falls back to processing all chunks. The pathLabel is used in log messages.
+func (p *DefaultJobProcessor) resolveAndFilterChunks(
+	ctx context.Context,
+	jobID string,
+	repositoryID uuid.UUID,
+	chunks []outbound.CodeChunk,
+	modelVersion string,
+	pathLabel string,
+) []outbound.CodeChunk {
+	for i := range chunks {
+		chunks[i].RepositoryID = repositoryID
+	}
+	chunks = deduplicateChunksByKey(ctx, chunks)
+	persisted, err := p.chunkStorageRepo.FindOrCreateChunks(ctx, chunks)
+	if err != nil {
+		slogger.Warn(ctx, "Could not resolve persisted chunks; processing all chunks", slogger.Fields{
+			"job_id": jobID, "path": pathLabel, "error": err.Error(),
+		})
+		return chunks
+	}
+
+	chunkUUIDs := make([]uuid.UUID, 0, len(persisted))
+	for _, c := range persisted {
+		id, parseErr := uuid.Parse(c.ID)
+		if parseErr != nil {
+			slogger.Warn(ctx, "Persisted chunk has invalid UUID; skipping embedding filter, processing all chunks", slogger.Fields{
+				"job_id":   jobID,
+				"path":     pathLabel,
+				"chunk_id": c.ID,
+				"error":    parseErr.Error(),
+			})
+			return persisted
+		}
+		chunkUUIDs = append(chunkUUIDs, id)
+	}
+
+	existingIDs, err := p.chunkStorageRepo.GetChunkIDsWithEmbeddings(ctx, repositoryID, chunkUUIDs, modelVersion)
+	if err != nil {
+		slogger.Warn(ctx, "Could not check existing embeddings; processing all chunks", slogger.Fields{
+			"job_id": jobID, "path": pathLabel, "error": err.Error(),
+		})
+		return persisted
+	}
+
+	filtered, ferr := filterChunksNeedingEmbeddings(persisted, chunkUUIDs, existingIDs)
+	if ferr != nil {
+		slogger.Warn(ctx, "Could not filter chunks needing embeddings; processing all chunks", slogger.Fields{
+			"job_id": jobID,
+			"path":   pathLabel,
+			"error":  ferr.Error(),
+		})
+		return persisted
+	}
+
+	skipped := len(persisted) - len(filtered)
+	if skipped > 0 {
+		slogger.Info(ctx, "Skipping chunks with existing embeddings", slogger.Fields{
+			"job_id":          jobID,
+			"path":            pathLabel,
+			"total_chunks":    len(persisted),
+			"skipped_count":   skipped,
+			"remaining_count": len(filtered),
+			"model_version":   modelVersion,
+		})
+	}
+	return filtered
+}
+
+// logAndCheckExistingEmbeddings logs diagnostic info then delegates to GetChunkIDsWithEmbeddings.
+func (p *DefaultJobProcessor) logAndCheckExistingEmbeddings(
+	ctx context.Context,
+	indexingJobID uuid.UUID,
+	repositoryID uuid.UUID,
+	batchNumber int,
+	modelVersion string,
+	chunkIDs []uuid.UUID,
+) (map[uuid.UUID]struct{}, error) {
+	sample := chunkIDs
+	if len(sample) > 3 {
+		sample = sample[:3]
+	}
+	slogger.Debug(ctx, "Checking existing embeddings before skip filter", slogger.Fields{
+		"indexing_job_id":  indexingJobID,
+		"batch_number":     batchNumber,
+		"repository_id":    repositoryID,
+		"model_version":    modelVersion,
+		"chunk_count":      len(chunkIDs),
+		"sample_chunk_ids": sample,
+	})
+	existing, err := p.chunkStorageRepo.GetChunkIDsWithEmbeddings(ctx, repositoryID, chunkIDs, modelVersion)
+	if err != nil {
+		slogger.Warn(ctx, "Failed to check existing embeddings before skip filter; proceeding without skip optimization", slogger.Fields{
+			"indexing_job_id":  indexingJobID,
+			"batch_number":     batchNumber,
+			"repository_id":    repositoryID,
+			"model_version":    modelVersion,
+			"chunk_count":      len(chunkIDs),
+			"sample_chunk_ids": sample,
+			"error":            err,
+		})
+		return map[uuid.UUID]struct{}{}, nil
+	}
+	slogger.Debug(ctx, "Existing embeddings check result", slogger.Fields{
+		"indexing_job_id": indexingJobID,
+		"batch_number":    batchNumber,
+		"chunk_count":     len(chunkIDs),
+		"existing_count":  len(existing),
+	})
+	return existing, nil
 }
 
 // processBatchWithRetry attempts to generate batch embeddings with retry logic for quota errors.
@@ -2899,4 +3145,19 @@ func deduplicateChunksByKey(ctx context.Context, chunks []outbound.CodeChunk) []
 	}
 
 	return result
+}
+
+// filterChunksNeedingEmbeddings returns only the chunks whose IDs are not present in existing.
+// chunkUUIDs must be the pre-parsed UUIDs corresponding 1:1 with chunks (same length, same order).
+func filterChunksNeedingEmbeddings(chunks []outbound.CodeChunk, chunkUUIDs []uuid.UUID, existing map[uuid.UUID]struct{}) ([]outbound.CodeChunk, error) {
+	if len(chunks) != len(chunkUUIDs) {
+		return nil, fmt.Errorf("chunks and chunkUUIDs length mismatch: %d vs %d", len(chunks), len(chunkUUIDs))
+	}
+	result := make([]outbound.CodeChunk, 0, len(chunks))
+	for i, chunk := range chunks {
+		if _, ok := existing[chunkUUIDs[i]]; !ok {
+			result = append(result, chunk)
+		}
+	}
+	return result, nil
 }

@@ -6,6 +6,7 @@ import (
 	"codechunking/internal/port/outbound"
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -14,19 +15,64 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFilterChunksNeedingEmbeddings is a pure unit test for the filterChunksNeedingEmbeddings
+// helper. No mocks or external dependencies are needed.
+func TestFilterChunksNeedingEmbeddings(t *testing.T) {
+	makeChunk := func(id uuid.UUID) outbound.CodeChunk {
+		return outbound.CodeChunk{ID: id.String(), Content: "func f() {}", FilePath: "/f.go", Language: "go"}
+	}
+
+	id0 := uuid.New()
+	id1 := uuid.New()
+	id2 := uuid.New()
+
+	t.Run("all new chunks are returned", func(t *testing.T) {
+		chunks := []outbound.CodeChunk{makeChunk(id0), makeChunk(id1)}
+		uuids := []uuid.UUID{id0, id1}
+		existing := map[uuid.UUID]struct{}{}
+		got, err := filterChunksNeedingEmbeddings(chunks, uuids, existing)
+		require.NoError(t, err)
+		assert.Len(t, got, 2)
+	})
+
+	t.Run("only chunks without embeddings are returned", func(t *testing.T) {
+		chunks := []outbound.CodeChunk{makeChunk(id0), makeChunk(id1), makeChunk(id2)}
+		uuids := []uuid.UUID{id0, id1, id2}
+		existing := map[uuid.UUID]struct{}{id0: {}, id1: {}}
+		got, err := filterChunksNeedingEmbeddings(chunks, uuids, existing)
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		assert.Equal(t, id2.String(), got[0].ID)
+	})
+
+	t.Run("all chunks already embedded returns empty slice", func(t *testing.T) {
+		chunks := []outbound.CodeChunk{makeChunk(id0), makeChunk(id1)}
+		uuids := []uuid.UUID{id0, id1}
+		existing := map[uuid.UUID]struct{}{id0: {}, id1: {}}
+		got, err := filterChunksNeedingEmbeddings(chunks, uuids, existing)
+		require.NoError(t, err)
+		assert.Empty(t, got)
+	})
+
+	t.Run("empty input returns empty slice", func(t *testing.T) {
+		got, err := filterChunksNeedingEmbeddings(nil, nil, map[uuid.UUID]struct{}{})
+		require.NoError(t, err)
+		assert.Empty(t, got)
+	})
+
+	t.Run("chunks and chunkUUIDs length mismatch returns error", func(t *testing.T) {
+		chunks := []outbound.CodeChunk{makeChunk(id0), makeChunk(id1)}
+		uuids := []uuid.UUID{id0} // intentionally wrong length
+		_, err := filterChunksNeedingEmbeddings(chunks, uuids, map[uuid.UUID]struct{}{})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "length mismatch")
+	})
+}
+
 // TestJobProcessor_SubmitBatchJobAsync_QueuesForSubmission verifies that submitBatchJobAsync
 // queues batches for later submission instead of immediately calling Gemini API.
-//
-// RED PHASE EXPECTATION:
-// - Batch progress should have status = "pending_submission"
-// - Batch progress should have request data stored (not nil)
-// - BatchEmbeddingService.CreateBatchEmbeddingJobWithRequests() should NOT be called
-// - Batch progress should be saved to repository
-//
-// CURRENT BEHAVIOR (WHY THIS FAILS):
-// - submitBatchJobAsync() immediately calls CreateBatchEmbeddingJobWithRequests()
-// - Batch progress status is set to "processing" after submission
-// - No request data is stored - batch is submitted immediately.
+// Batch progress must have status = "pending_submission" with serialized request data stored,
+// and CreateBatchEmbeddingJobWithRequests must NOT be called during job processing.
 func TestJobProcessor_SubmitBatchJobAsync_QueuesForSubmission(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -81,6 +127,9 @@ func TestJobProcessor_SubmitBatchJobAsync_QueuesForSubmission(t *testing.T) {
 		return len(c) == 2
 	})).Return(savedChunks, nil)
 
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	// KEY EXPECTATION: Batch progress should be saved with pending_submission status
 	var capturedProgress *entity.BatchJobProgress
 	mockBatchProgressRepo.On("Save", ctx, mock.MatchedBy(func(p *entity.BatchJobProgress) bool {
@@ -113,7 +162,7 @@ func TestJobProcessor_SubmitBatchJobAsync_QueuesForSubmission(t *testing.T) {
 	}
 
 	// Act
-	err := processor.submitBatchJobAsync(
+	_, err := processor.submitBatchJobAsync(
 		ctx,
 		indexingJobID,
 		repositoryID,
@@ -140,17 +189,8 @@ func TestJobProcessor_SubmitBatchJobAsync_QueuesForSubmission(t *testing.T) {
 }
 
 // TestJobProcessor_SubmitBatchJobAsync_SerializesRequestData verifies that request data
-// is properly serialized and can be deserialized back to BatchEmbeddingRequest array.
-//
-// RED PHASE EXPECTATION:
-// - Request data should be valid JSON
-// - Request data should deserialize to []*outbound.BatchEmbeddingRequest
-// - Each request should have correct chunk ID encoded as request_id
-// - Each request should have correct text content
-//
-// CURRENT BEHAVIOR (WHY THIS FAILS):
-// - No request data is stored (current implementation submits immediately)
-// - BatchRequestData() returns nil.
+// is properly serialized and can be deserialized back to BatchEmbeddingRequest array,
+// with each request containing the correct chunk ID and text content.
 func TestJobProcessor_SubmitBatchJobAsync_SerializesRequestData(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -187,6 +227,9 @@ func TestJobProcessor_SubmitBatchJobAsync_SerializesRequestData(t *testing.T) {
 
 	mockChunkStorageRepo.On("FindOrCreateChunks", ctx, mock.Anything).Return(savedChunks, nil)
 
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	var capturedProgress *entity.BatchJobProgress
 	mockBatchProgressRepo.On("Save", ctx, mock.Anything).Run(func(args mock.Arguments) {
 		capturedProgress = args.Get(1).(*entity.BatchJobProgress)
@@ -208,10 +251,11 @@ func TestJobProcessor_SubmitBatchJobAsync_SerializesRequestData(t *testing.T) {
 	}
 
 	// Act
-	err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
+	queued, err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
 
 	// Assert
 	require.NoError(t, err)
+	assert.True(t, queued, "Batch should be queued when chunks need embedding")
 	require.NotNil(t, capturedProgress, "Progress should be captured")
 
 	// Verify request data is not nil
@@ -238,15 +282,8 @@ func TestJobProcessor_SubmitBatchJobAsync_SerializesRequestData(t *testing.T) {
 }
 
 // TestJobProcessor_SubmitBatchJobAsync_RequestDataFormat verifies the exact format
-// of serialized request data matches Gemini API expectations.
-//
-// RED PHASE EXPECTATION:
-// - RequestID format should be "chunk_<uuid_without_hyphens>"
-// - Text field should contain chunk content
-// - Metadata field should be present (may be empty)
-//
-// CURRENT BEHAVIOR (WHY THIS FAILS):
-// - No request data is stored.
+// of serialized request data matches Gemini API expectations:
+// RequestID format must be "chunk_<uuid_without_hyphens>" and text must match chunk content.
 func TestJobProcessor_SubmitBatchJobAsync_RequestDataFormat(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -273,6 +310,9 @@ func TestJobProcessor_SubmitBatchJobAsync_RequestDataFormat(t *testing.T) {
 
 	mockChunkStorageRepo.On("FindOrCreateChunks", ctx, mock.Anything).Return(chunks, nil)
 
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	var capturedProgress *entity.BatchJobProgress
 	mockBatchProgressRepo.On("Save", ctx, mock.Anything).Run(func(args mock.Arguments) {
 		capturedProgress = args.Get(1).(*entity.BatchJobProgress)
@@ -294,10 +334,11 @@ func TestJobProcessor_SubmitBatchJobAsync_RequestDataFormat(t *testing.T) {
 	}
 
 	// Act
-	err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
+	queued, err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
 
 	// Assert
 	require.NoError(t, err)
+	assert.True(t, queued, "Batch should be queued when chunks need embedding")
 	require.NotNil(t, capturedProgress)
 
 	requestData := capturedProgress.BatchRequestData()
@@ -317,15 +358,8 @@ func TestJobProcessor_SubmitBatchJobAsync_RequestDataFormat(t *testing.T) {
 }
 
 // TestJobProcessor_SubmitBatchJobAsync_ChunkSaveError verifies error handling
-// when chunk repository fails to save chunks.
-//
-// RED PHASE EXPECTATION:
-// - Error should be propagated
-// - No batch progress should be created
-// - No batch should be submitted
-//
-// CURRENT BEHAVIOR:
-// - Error is handled, but we need to ensure no partial state is created.
+// when chunk repository fails to save chunks: the error must propagate and
+// no batch progress record or Gemini API call should be created.
 func TestJobProcessor_SubmitBatchJobAsync_ChunkSaveError(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -366,7 +400,7 @@ func TestJobProcessor_SubmitBatchJobAsync_ChunkSaveError(t *testing.T) {
 	}
 
 	// Act
-	err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
+	_, err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
 
 	// Assert
 	require.Error(t, err)
@@ -380,16 +414,8 @@ func TestJobProcessor_SubmitBatchJobAsync_ChunkSaveError(t *testing.T) {
 }
 
 // TestJobProcessor_SubmitBatchJobAsync_BatchProgressSaveError verifies error handling
-// when batch progress repository fails to save.
-//
-// RED PHASE EXPECTATION:
-// - Error should be propagated
-// - Chunks should already be saved (can't roll back)
-// - Gemini API should NOT be called
-//
-// CURRENT BEHAVIOR (WHY THIS FAILS):
-// - Currently, if batch progress save fails, chunks are saved but no progress record exists
-// - With new implementation, this should happen BEFORE Gemini submission.
+// when batch progress repository fails to save: chunks are already persisted (no rollback)
+// but the Gemini API must NOT be called, since submission happens separately via BatchSubmitter.
 func TestJobProcessor_SubmitBatchJobAsync_BatchProgressSaveError(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -413,6 +439,9 @@ func TestJobProcessor_SubmitBatchJobAsync_BatchProgressSaveError(t *testing.T) {
 	// Mock successful chunk save
 	mockChunkStorageRepo.On("FindOrCreateChunks", ctx, mock.Anything).Return(chunks, nil)
 
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	// Mock batch progress save to return error
 	expectedError := assert.AnError
 	mockBatchProgressRepo.On("Save", ctx, mock.Anything).Return(expectedError)
@@ -433,7 +462,7 @@ func TestJobProcessor_SubmitBatchJobAsync_BatchProgressSaveError(t *testing.T) {
 	}
 
 	// Act
-	err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
+	_, err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
 
 	// Assert
 	require.Error(t, err)
@@ -448,18 +477,7 @@ func TestJobProcessor_SubmitBatchJobAsync_BatchProgressSaveError(t *testing.T) {
 
 // TestJobProcessor_ProcessJob_WithBatching_QueuesAllBatches verifies that when processing
 // a repository with enough chunks to trigger batching, all batches are queued with
-// pending_submission status and no Gemini API calls are made.
-//
-// RED PHASE EXPECTATION:
-// - Multiple batches should be created
-// - All batches should have status = pending_submission
-// - All batches should have request data stored
-// - No Gemini API calls should be made during job processing
-//
-// CURRENT BEHAVIOR (WHY THIS FAILS):
-// - Batches are submitted immediately to Gemini API
-// - Status is set to "processing" after submission
-// - CreateBatchEmbeddingJobWithRequests is called for each batch.
+// pending_submission status and no Gemini API calls are made during job processing.
 func TestJobProcessor_ProcessJob_WithBatching_QueuesAllBatches(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -494,6 +512,9 @@ func TestJobProcessor_ProcessJob_WithBatching_QueuesAllBatches(t *testing.T) {
 		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk {
 			return chunks
 		}, nil)
+
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Track saved batch progress records
 	var savedBatches []*entity.BatchJobProgress
@@ -545,15 +566,8 @@ func TestJobProcessor_ProcessJob_WithBatching_QueuesAllBatches(t *testing.T) {
 }
 
 // TestJobProcessor_ProcessJob_FallbackToSequential_StillWorks verifies that
-// repositories below the batch threshold continue to use sequential processing.
-//
-// RED PHASE EXPECTATION:
-// - When chunk count < threshold, use sequential processing
-// - No pending_submission batches should be created
-// - GenerateEmbedding (sequential) should be called
-//
-// CURRENT BEHAVIOR:
-// - This should still work, but we need to ensure new queueing logic doesn't break it.
+// repositories below the batch threshold continue to use sequential processing:
+// no pending_submission batches are created, and GenerateEmbedding is called directly.
 func TestJobProcessor_ProcessJob_FallbackToSequential_StillWorks(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -592,6 +606,10 @@ func TestJobProcessor_ProcessJob_FallbackToSequential_StillWorks(t *testing.T) {
 		}, nil)
 
 	mockChunkStorageRepo.On("SaveChunkWithEmbedding", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
 
 	processor := &DefaultJobProcessor{
 		chunkStorageRepo:      mockChunkStorageRepo,
@@ -622,15 +640,8 @@ func TestJobProcessor_ProcessJob_FallbackToSequential_StillWorks(t *testing.T) {
 }
 
 // TestJobProcessor_SubmitBatchJobAsync_NoBatchEmbeddingService verifies error handling
-// when batch embedding service is not configured.
-//
-// RED PHASE EXPECTATION:
-// - Should return error when batchEmbeddingService is nil
-// - No chunks should be saved
-// - No batch progress should be created
-//
-// CURRENT BEHAVIOR:
-// - Error is returned (this should continue to work).
+// when batch embedding service is not configured: an error must be returned and
+// no chunk save or batch progress calls must be made.
 func TestJobProcessor_SubmitBatchJobAsync_NoBatchEmbeddingService(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -666,7 +677,7 @@ func TestJobProcessor_SubmitBatchJobAsync_NoBatchEmbeddingService(t *testing.T) 
 	}
 
 	// Act
-	err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
+	_, err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
 
 	// Assert
 	require.Error(t, err)
@@ -678,15 +689,8 @@ func TestJobProcessor_SubmitBatchJobAsync_NoBatchEmbeddingService(t *testing.T) 
 }
 
 // TestJobProcessor_SubmitBatchJobAsync_MultipleChunks_CorrectRequestCount verifies
-// that the number of requests matches the number of chunks.
-//
-// RED PHASE EXPECTATION:
-// - Request data should contain exactly N requests for N chunks
-// - Each request should have unique RequestID
-// - Each request should correspond to a chunk
-//
-// CURRENT BEHAVIOR (WHY THIS FAILS):
-// - No request data is stored currently.
+// that the serialized request data contains exactly N requests for N chunks,
+// each with a unique RequestID.
 func TestJobProcessor_SubmitBatchJobAsync_MultipleChunks_CorrectRequestCount(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -712,6 +716,9 @@ func TestJobProcessor_SubmitBatchJobAsync_MultipleChunks_CorrectRequestCount(t *
 
 	mockChunkStorageRepo.On("FindOrCreateChunks", ctx, mock.Anything).Return(chunks, nil)
 
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	var capturedProgress *entity.BatchJobProgress
 	mockBatchProgressRepo.On("Save", ctx, mock.Anything).Run(func(args mock.Arguments) {
 		capturedProgress = args.Get(1).(*entity.BatchJobProgress)
@@ -733,10 +740,11 @@ func TestJobProcessor_SubmitBatchJobAsync_MultipleChunks_CorrectRequestCount(t *
 	}
 
 	// Act
-	err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
+	queued, err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
 
 	// Assert
 	require.NoError(t, err)
+	assert.True(t, queued, "Batch should be queued when chunks need embedding")
 	require.NotNil(t, capturedProgress)
 
 	requestData := capturedProgress.BatchRequestData()
@@ -759,16 +767,7 @@ func TestJobProcessor_SubmitBatchJobAsync_MultipleChunks_CorrectRequestCount(t *
 
 // TestJobProcessor_SubmitBatchJobAsync_DeduplicatesChunks verifies that
 // submitBatchJobAsync deduplicates chunks by (repository_id, file_path, content_hash)
-// before calling FindOrCreateChunks.
-//
-// RED PHASE EXPECTATION:
-// - Chunks with same (repository_id, file_path, hash) should be deduplicated
-// - FindOrCreateChunks should receive only unique chunks
-// - Duplicate chunks should be removed before persistence
-//
-// CURRENT BEHAVIOR (WHY THIS FAILS):
-// - submitBatchJobAsync calls FindOrCreateChunks directly without deduplication
-// - This can cause duplicate chunk errors in the database.
+// before calling FindOrCreateChunks, preventing duplicate key violations in the database.
 func TestJobProcessor_SubmitBatchJobAsync_DeduplicatesChunks(t *testing.T) {
 	// Arrange
 	ctx := context.Background()
@@ -829,6 +828,9 @@ func TestJobProcessor_SubmitBatchJobAsync_DeduplicatesChunks(t *testing.T) {
 		return chunks
 	}, nil)
 
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	mockBatchProgressRepo.On("Save", ctx, mock.Anything).Return(nil)
 
 	processor := &DefaultJobProcessor{
@@ -847,7 +849,7 @@ func TestJobProcessor_SubmitBatchJobAsync_DeduplicatesChunks(t *testing.T) {
 	}
 
 	// Act
-	err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
+	_, err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, chunks, options)
 
 	// Assert
 	require.NoError(t, err)
@@ -873,4 +875,274 @@ func TestJobProcessor_SubmitBatchJobAsync_DeduplicatesChunks(t *testing.T) {
 		assert.False(t, seenKeys[key], "All chunks should have unique (repo_id, file_path, hash) keys")
 		seenKeys[key] = true
 	}
+}
+
+// TestJobProcessor_SubmitBatchJobAsync_SkipsChunksWithExistingEmbeddings verifies that
+// submitBatchJobAsync skips chunks that already have embeddings, creating requests only
+// for chunks without existing embeddings.
+func TestJobProcessor_SubmitBatchJobAsync_SkipsChunksWithExistingEmbeddings(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	repositoryID := uuid.New()
+	indexingJobID := uuid.New()
+
+	// 3 saved chunks with known UUIDs
+	chunkID0 := uuid.New()
+	chunkID1 := uuid.New()
+	chunkID2 := uuid.New()
+
+	savedChunks := []outbound.CodeChunk{
+		{ID: chunkID0.String(), RepositoryID: repositoryID, Content: "func A() {}", FilePath: "/a.go", Language: "go"},
+		{ID: chunkID1.String(), RepositoryID: repositoryID, Content: "func B() {}", FilePath: "/b.go", Language: "go"},
+		{ID: chunkID2.String(), RepositoryID: repositoryID, Content: "func C() {}", FilePath: "/c.go", Language: "go"},
+	}
+
+	mockChunkStorageRepo := new(MockChunkStorageRepository)
+	mockBatchProgressRepo := new(MockBatchProgressRepository)
+	mockBatchEmbeddingService := new(MockBatchEmbeddingService)
+
+	// FindOrCreateChunks returns all 3
+	mockChunkStorageRepo.On("FindOrCreateChunks", ctx, mock.Anything).Return(savedChunks, nil)
+
+	// GetChunkIDsWithEmbeddings returns set with IDs of chunks[0] and chunks[1]
+	existingEmbeddings := map[uuid.UUID]struct{}{
+		chunkID0: {},
+		chunkID1: {},
+	}
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", ctx, mock.Anything, mock.Anything, mock.Anything).
+		Return(existingEmbeddings, nil)
+
+	// Capture saved progress
+	var capturedProgress *entity.BatchJobProgress
+	mockBatchProgressRepo.On("Save", ctx, mock.Anything).Run(func(args mock.Arguments) {
+		capturedProgress = args.Get(1).(*entity.BatchJobProgress)
+	}).Return(nil)
+
+	processor := &DefaultJobProcessor{
+		chunkStorageRepo:      mockChunkStorageRepo,
+		batchProgressRepo:     mockBatchProgressRepo,
+		batchEmbeddingService: mockBatchEmbeddingService,
+		batchConfig: config.BatchProcessingConfig{
+			Enabled:           true,
+			UseTestEmbeddings: false,
+		},
+	}
+
+	options := outbound.EmbeddingOptions{
+		Model:    "gemini-embedding-001",
+		TaskType: outbound.TaskTypeRetrievalDocument,
+	}
+
+	// Act
+	queued, err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, savedChunks, options)
+
+	// Assert
+	require.NoError(t, err)
+	assert.True(t, queued, "Batch should be queued when some chunks still need embedding")
+
+	// Batch progress should be saved
+	require.NotNil(t, capturedProgress, "Batch progress should be captured")
+
+	// Deserialize request data - should contain exactly 1 request (only chunk2 needs embedding)
+	requestData := capturedProgress.BatchRequestData()
+	require.NotNil(t, requestData, "Request data should be stored")
+
+	var requests []*outbound.BatchEmbeddingRequest
+	err = json.Unmarshal(requestData, &requests)
+	require.NoError(t, err, "Request data should be valid JSON")
+
+	assert.Len(t, requests, 1, "Should have exactly 1 request (chunks[0] and [1] already embedded)")
+
+	// The one request should match chunks[2]
+	expectedRequestID := EncodeChunkIDToRequestID(chunkID2)
+	assert.Equal(t, expectedRequestID, requests[0].RequestID, "The remaining request should be for chunk[2]")
+}
+
+// TestJobProcessor_SubmitBatchJobAsync_AllChunksAlreadyEmbedded_SkipsBatchEntirely verifies
+// that if all chunks already have embeddings, submitBatchJobAsync skips saving batch progress
+// entirely and returns nil.
+func TestJobProcessor_SubmitBatchJobAsync_AllChunksAlreadyEmbedded_SkipsBatchEntirely(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	repositoryID := uuid.New()
+	indexingJobID := uuid.New()
+
+	chunkID0 := uuid.New()
+	chunkID1 := uuid.New()
+
+	savedChunks := []outbound.CodeChunk{
+		{ID: chunkID0.String(), RepositoryID: repositoryID, Content: "func A() {}", FilePath: "/a.go", Language: "go"},
+		{ID: chunkID1.String(), RepositoryID: repositoryID, Content: "func B() {}", FilePath: "/b.go", Language: "go"},
+	}
+
+	mockChunkStorageRepo := new(MockChunkStorageRepository)
+	mockBatchProgressRepo := new(MockBatchProgressRepository)
+	mockBatchEmbeddingService := new(MockBatchEmbeddingService)
+
+	mockChunkStorageRepo.On("FindOrCreateChunks", ctx, mock.Anything).Return(savedChunks, nil)
+
+	// All chunks already have embeddings
+	existingEmbeddings := map[uuid.UUID]struct{}{
+		chunkID0: {},
+		chunkID1: {},
+	}
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", ctx, mock.Anything, mock.Anything, mock.Anything).
+		Return(existingEmbeddings, nil)
+
+	processor := &DefaultJobProcessor{
+		chunkStorageRepo:      mockChunkStorageRepo,
+		batchProgressRepo:     mockBatchProgressRepo,
+		batchEmbeddingService: mockBatchEmbeddingService,
+		batchConfig: config.BatchProcessingConfig{
+			Enabled:           true,
+			UseTestEmbeddings: false,
+		},
+	}
+
+	options := outbound.EmbeddingOptions{
+		Model:    "gemini-embedding-001",
+		TaskType: outbound.TaskTypeRetrievalDocument,
+	}
+
+	// Act
+	queued, err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, savedChunks, options)
+
+	// Assert: no error, not queued, and Save was NOT called (nothing to queue)
+	require.NoError(t, err, "Should return nil when all chunks already have embeddings")
+	assert.False(t, queued, "Should not be queued when all chunks already have embeddings")
+	mockBatchProgressRepo.AssertNumberOfCalls(t, "Save", 0)
+}
+
+// TestJobProcessor_SubmitBatchJobAsync_GetChunkIDsWithEmbeddingsError_DegradeGracefully verifies
+// that if GetChunkIDsWithEmbeddings returns an error, submitBatchJobAsync treats it as a
+// non-fatal optimisation failure: it logs a warning and submits all chunks (no filtering),
+// rather than aborting the indexing run.
+func TestJobProcessor_SubmitBatchJobAsync_GetChunkIDsWithEmbeddingsError_DegradeGracefully(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	repositoryID := uuid.New()
+	indexingJobID := uuid.New()
+
+	chunkID := uuid.New()
+	savedChunks := []outbound.CodeChunk{
+		{ID: chunkID.String(), RepositoryID: repositoryID, Content: "func A() {}", FilePath: "/a.go", Language: "go"},
+	}
+
+	mockChunkStorageRepo := new(MockChunkStorageRepository)
+	mockBatchProgressRepo := new(MockBatchProgressRepository)
+	mockBatchEmbeddingService := new(MockBatchEmbeddingService)
+
+	mockChunkStorageRepo.On("FindOrCreateChunks", ctx, mock.Anything).Return(savedChunks, nil)
+
+	// GetChunkIDsWithEmbeddings returns an error — should be treated as "no existing embeddings"
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", ctx, mock.Anything, mock.Anything, mock.Anything).
+		Return((map[uuid.UUID]struct{})(nil), errors.New("db error"))
+
+	mockBatchProgressRepo.On("Save", ctx, mock.Anything).Return(nil)
+
+	processor := &DefaultJobProcessor{
+		chunkStorageRepo:      mockChunkStorageRepo,
+		batchProgressRepo:     mockBatchProgressRepo,
+		batchEmbeddingService: mockBatchEmbeddingService,
+		batchConfig: config.BatchProcessingConfig{
+			Enabled:           true,
+			UseTestEmbeddings: false,
+		},
+	}
+
+	options := outbound.EmbeddingOptions{
+		Model:    "gemini-embedding-001",
+		TaskType: outbound.TaskTypeRetrievalDocument,
+	}
+
+	// Act
+	queued, err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, savedChunks, options)
+
+	// Assert: no error — the lookup failure is a non-fatal optimisation miss
+	require.NoError(t, err)
+	assert.True(t, queued, "Should be queued when embedding check fails (all chunks submitted as fallback)")
+
+	// Save MUST still be called with the full chunk set (no filtering applied)
+	mockBatchProgressRepo.AssertNumberOfCalls(t, "Save", 1)
+}
+
+// TestJobProcessor_SubmitBatchJobAsync_NoExistingEmbeddings_SubmitsAllChunks verifies that
+// when GetChunkIDsWithEmbeddings returns an empty map (no existing embeddings), all chunks
+// are included in the batch request data.
+func TestJobProcessor_SubmitBatchJobAsync_NoExistingEmbeddings_SubmitsAllChunks(t *testing.T) {
+	// Arrange
+	ctx := context.Background()
+	repositoryID := uuid.New()
+	indexingJobID := uuid.New()
+
+	chunkID0 := uuid.New()
+	chunkID1 := uuid.New()
+	chunkID2 := uuid.New()
+
+	savedChunks := []outbound.CodeChunk{
+		{ID: chunkID0.String(), RepositoryID: repositoryID, Content: "func A() {}", FilePath: "/a.go", Language: "go"},
+		{ID: chunkID1.String(), RepositoryID: repositoryID, Content: "func B() {}", FilePath: "/b.go", Language: "go"},
+		{ID: chunkID2.String(), RepositoryID: repositoryID, Content: "func C() {}", FilePath: "/c.go", Language: "go"},
+	}
+
+	mockChunkStorageRepo := new(MockChunkStorageRepository)
+	mockBatchProgressRepo := new(MockBatchProgressRepository)
+	mockBatchEmbeddingService := new(MockBatchEmbeddingService)
+
+	mockChunkStorageRepo.On("FindOrCreateChunks", ctx, mock.Anything).Return(savedChunks, nil)
+
+	// No existing embeddings - empty map
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", ctx, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
+	var capturedProgress *entity.BatchJobProgress
+	mockBatchProgressRepo.On("Save", ctx, mock.Anything).Run(func(args mock.Arguments) {
+		capturedProgress = args.Get(1).(*entity.BatchJobProgress)
+	}).Return(nil)
+
+	processor := &DefaultJobProcessor{
+		chunkStorageRepo:      mockChunkStorageRepo,
+		batchProgressRepo:     mockBatchProgressRepo,
+		batchEmbeddingService: mockBatchEmbeddingService,
+		batchConfig: config.BatchProcessingConfig{
+			Enabled:           true,
+			UseTestEmbeddings: false,
+		},
+	}
+
+	options := outbound.EmbeddingOptions{
+		Model:    "gemini-embedding-001",
+		TaskType: outbound.TaskTypeRetrievalDocument,
+	}
+
+	// Act
+	queued, err := processor.submitBatchJobAsync(ctx, indexingJobID, repositoryID, 1, 1, savedChunks, options)
+
+	// Assert
+	require.NoError(t, err)
+	assert.True(t, queued, "Batch should be queued when no chunks have existing embeddings")
+	require.NotNil(t, capturedProgress, "Batch progress should be saved")
+
+	requestData := capturedProgress.BatchRequestData()
+	require.NotNil(t, requestData, "Request data should be stored")
+
+	var requests []*outbound.BatchEmbeddingRequest
+	err = json.Unmarshal(requestData, &requests)
+	require.NoError(t, err, "Request data should be valid JSON")
+
+	// All 3 chunks should be in the batch
+	assert.Len(t, requests, 3, "Should have requests for all 3 chunks when none are pre-embedded")
+
+	// Verify all chunk IDs are represented
+	requestIDs := make(map[string]bool)
+	for _, req := range requests {
+		requestIDs[req.RequestID] = true
+	}
+	assert.True(t, requestIDs[EncodeChunkIDToRequestID(chunkID0)], "chunk0 should be in requests")
+	assert.True(t, requestIDs[EncodeChunkIDToRequestID(chunkID1)], "chunk1 should be in requests")
+	assert.True(t, requestIDs[EncodeChunkIDToRequestID(chunkID2)], "chunk2 should be in requests")
+
+	// CRITICAL: Verify GetChunkIDsWithEmbeddings was called (it should be called to check which
+	// chunks already have embeddings even when there are none, to enable the optimization path).
+	mockChunkStorageRepo.AssertCalled(t, "GetChunkIDsWithEmbeddings", ctx, mock.Anything, mock.Anything, mock.Anything)
 }

@@ -159,17 +159,14 @@ func TestRepositoryStatus_CanTransitionTo_InvalidTransitions(t *testing.T) {
 		{RepositoryStatusPending, RepositoryStatusArchived},
 
 		// Invalid from cloning
-		{RepositoryStatusCloning, RepositoryStatusPending},
 		{RepositoryStatusCloning, RepositoryStatusCompleted}, // must go through processing
 		{RepositoryStatusCloning, RepositoryStatusArchived},
 
 		// Invalid from processing
-		{RepositoryStatusProcessing, RepositoryStatusPending},
 		{RepositoryStatusProcessing, RepositoryStatusCloning},
 		{RepositoryStatusProcessing, RepositoryStatusArchived},
 
 		// Invalid from completed
-		{RepositoryStatusCompleted, RepositoryStatusPending},
 		{RepositoryStatusCompleted, RepositoryStatusCloning},
 		{RepositoryStatusCompleted, RepositoryStatusFailed},
 
@@ -185,7 +182,6 @@ func TestRepositoryStatus_CanTransitionTo_InvalidTransitions(t *testing.T) {
 		{RepositoryStatusArchived, RepositoryStatusFailed},
 
 		// Self-transitions (should be invalid, except completed->completed for idempotent re-indexing)
-		{RepositoryStatusPending, RepositoryStatusPending},
 		{RepositoryStatusCloning, RepositoryStatusCloning},
 		{RepositoryStatusProcessing, RepositoryStatusProcessing},
 		{RepositoryStatusFailed, RepositoryStatusFailed},

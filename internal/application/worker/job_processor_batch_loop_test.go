@@ -94,6 +94,11 @@ func TestProcessProductionBatchResults_SmallBatch(t *testing.T) {
 		mock.AnythingOfType("*outbound.Embedding"),
 	).Return(nil).Times(100)
 
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	// Act
 	execution := &JobExecution{StartTime: time.Now()}
 	err := processor.processProductionBatchResults(ctx, jobID, repositoryID, chunks, execution)
@@ -202,6 +207,11 @@ func TestProcessProductionBatchResults_MultipleBatches(t *testing.T) {
 		mock.AnythingOfType("*outbound.Embedding"),
 	).Return(nil).Times(1500)
 
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	// Act
 	execution := &JobExecution{StartTime: time.Now()}
 	err := processor.processProductionBatchResults(ctx, jobID, repositoryID, chunks, execution)
@@ -300,6 +310,11 @@ func TestProcessProductionBatchResults_WithRemainder(t *testing.T) {
 		mock.AnythingOfType("*outbound.CodeChunk"),
 		mock.AnythingOfType("*outbound.Embedding"),
 	).Return(nil).Times(1250)
+
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Act
 	execution := &JobExecution{StartTime: time.Now()}
@@ -403,6 +418,11 @@ func TestProcessProductionBatchResults_ResumeFromBatch2(t *testing.T) {
 		mock.AnythingOfType("*outbound.CodeChunk"),
 		mock.AnythingOfType("*outbound.Embedding"),
 	).Return(nil).Times(1500)
+
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Act
 	execution := &JobExecution{StartTime: time.Now()}
@@ -517,6 +537,11 @@ func TestProcessProductionBatchResults_QuotaErrorWithRetry(t *testing.T) {
 		mock.AnythingOfType("*outbound.Embedding"),
 	).Return(nil).Times(1000)
 
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	// Act
 	execution := &JobExecution{StartTime: time.Now()}
 	err := processor.processProductionBatchResults(ctx, jobID, repositoryID, chunks, execution)
@@ -625,6 +650,11 @@ func TestProcessProductionBatchResults_QuotaErrorMaxRetries(t *testing.T) {
 		mock.AnythingOfType("*outbound.Embedding"),
 	).Return(nil).Times(500)
 
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	// Act
 	execution := &JobExecution{StartTime: time.Now()}
 	err := processor.processProductionBatchResults(ctx, jobID, repositoryID, chunks, execution)
@@ -715,6 +745,11 @@ func TestProcessProductionBatchResults_ValidationError(t *testing.T) {
 	).Return(nil, validationError).Once()
 
 	// Should save failed batch progress
+
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Act
 	execution := &JobExecution{StartTime: time.Now()}
@@ -815,6 +850,11 @@ func TestProcessProductionBatchResults_ProgressSaveError(t *testing.T) {
 		mock.AnythingOfType("*outbound.CodeChunk"),
 		mock.AnythingOfType("*outbound.Embedding"),
 	).Return(nil).Times(1000)
+
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Act
 	execution := &JobExecution{StartTime: time.Now()}
@@ -917,6 +957,11 @@ func TestProcessProductionBatchResults_LargeDataset(t *testing.T) {
 		mock.AnythingOfType("*outbound.CodeChunk"),
 		mock.AnythingOfType("*outbound.Embedding"),
 	).Return(nil).Times(8269)
+
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Act
 	execution := &JobExecution{StartTime: time.Now()}

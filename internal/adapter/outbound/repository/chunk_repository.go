@@ -80,6 +80,26 @@ const (
 			embedding = EXCLUDED.embedding,
 			created_at = CURRENT_TIMESTAMP
 	`
+
+	getChunkIDsWithEmbeddingsQuery = `
+		SELECT chunk_id
+		FROM codechunking.embeddings_partitioned
+		WHERE repository_id = $1
+		  AND model_version = $2
+		  AND chunk_id = ANY($3)
+		  AND deleted_at IS NULL
+
+		UNION ALL
+
+		SELECT e.chunk_id
+		FROM codechunking.embeddings e
+		INNER JOIN codechunking.code_chunks c ON c.id = e.chunk_id
+		WHERE c.repository_id = $1
+		  AND e.model_version = $2
+		  AND e.chunk_id = ANY($3)
+		  AND e.deleted_at IS NULL
+		  AND c.deleted_at IS NULL
+	`
 )
 
 // buildMultiRowChunkInsert builds a multi-row INSERT query for code chunks.
@@ -316,29 +336,10 @@ func (r *PostgreSQLChunkRepository) FindChunksByIDs(
 	foundChunkIDs := make(map[uuid.UUID]bool)
 
 	for rows.Next() {
-		var chunk service.ChunkInfo
-
-		err := rows.Scan(
-			&chunk.ChunkID,
-			&chunk.Content,
-			&chunk.FilePath,
-			&chunk.Language,
-			&chunk.StartLine,
-			&chunk.EndLine,
-			&chunk.Type,
-			&chunk.EntityName,
-			&chunk.ParentEntity,
-			&chunk.QualifiedName,
-			&chunk.Signature,
-			&chunk.Visibility,
-			&chunk.Repository.ID,
-			&chunk.Repository.Name,
-			&chunk.Repository.URL,
-		)
+		chunk, err := scanChunkRow(rows)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan chunk row: %w", err)
 		}
-
 		chunks = append(chunks, chunk)
 		foundChunkIDs[chunk.ChunkID] = true
 	}
@@ -1968,6 +1969,42 @@ func (r *PostgreSQLChunkRepository) saveEmbeddingInTx(
 	}
 
 	return nil
+}
+
+// GetChunkIDsWithEmbeddings returns the subset of chunkIDs that already have
+// a non-deleted embedding for the given modelVersion in this repository.
+func (r *PostgreSQLChunkRepository) GetChunkIDsWithEmbeddings(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	chunkIDs []uuid.UUID,
+	modelVersion string,
+) (map[uuid.UUID]struct{}, error) {
+	if len(chunkIDs) == 0 {
+		return map[uuid.UUID]struct{}{}, nil
+	}
+
+	rows, err := r.pool.Query(ctx, getChunkIDsWithEmbeddingsQuery,
+		repositoryID,
+		modelVersion,
+		chunkIDs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query chunk IDs with embeddings: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[uuid.UUID]struct{}, len(chunkIDs))
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan chunk_id with embedding: %w", err)
+		}
+		result[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating chunk IDs with embeddings: %w", err)
+	}
+	return result, nil
 }
 
 // UpdateTokenCounts updates the token count for multiple chunks in a batch operation.

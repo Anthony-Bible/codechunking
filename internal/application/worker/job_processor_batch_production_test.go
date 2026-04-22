@@ -103,6 +103,11 @@ func TestProductionBatchProcessingCreatesRealBatchJob(t *testing.T) {
 		mock.AnythingOfType("*outbound.Embedding"),
 	).Return(nil)
 
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	// Act: Generate embeddings (should use batch processing)
 	err := processor.generateEmbeddings(ctx, jobID, repositoryID, chunks)
 
@@ -210,6 +215,11 @@ func TestProductionBatchProcessingStoresResultsCorrectly(t *testing.T) {
 		storedChunks = append(storedChunks, chunk)
 		storedEmbeddings = append(storedEmbeddings, embedding)
 	}).Return(nil)
+
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Act: Generate embeddings with batch processing
 	err := processor.generateEmbeddings(ctx, jobID, repositoryID, chunks)
@@ -324,6 +334,11 @@ func TestProductionBatchProcessingLogsBatchJobID(t *testing.T) {
 		mock.AnythingOfType("*outbound.Embedding"),
 	).Return(nil)
 
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
+
 	// Act: Generate embeddings
 	err := processor.generateEmbeddings(ctx, jobID, repositoryID, chunks)
 
@@ -436,6 +451,10 @@ func TestProductionBatchFallsBackOnAPIFailure(t *testing.T) {
 		mock.AnythingOfType("*outbound.CodeChunk"),
 		mock.AnythingOfType("*outbound.Embedding"),
 	).Return(nil)
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Act: Generate embeddings (should try batch, then fall back to sequential)
 	err := processor.generateEmbeddings(ctx, jobID, repositoryID, chunks)
@@ -555,6 +574,11 @@ func TestBatchConfigurationWithMissingDirectories(t *testing.T) {
 		mock.AnythingOfType("*outbound.CodeChunk"),
 		mock.AnythingOfType("*outbound.Embedding"),
 	).Return(nil).Maybe()
+
+	mockChunkStorageRepo.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil).Maybe()
+	mockChunkStorageRepo.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil).Maybe()
 
 	// Act: Attempt to generate embeddings
 	err := processor.generateEmbeddings(ctx, jobID, repositoryID, chunks)

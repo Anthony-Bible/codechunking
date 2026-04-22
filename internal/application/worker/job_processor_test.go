@@ -446,6 +446,19 @@ func (m *MockChunkStorageRepository) UpdateTokenCounts(ctx context.Context, upda
 	return args.Error(0)
 }
 
+func (m *MockChunkStorageRepository) GetChunkIDsWithEmbeddings(
+	ctx context.Context,
+	repositoryID uuid.UUID,
+	chunkIDs []uuid.UUID,
+	modelVersion string,
+) (map[uuid.UUID]struct{}, error) {
+	args := m.Called(ctx, repositoryID, chunkIDs, modelVersion)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[uuid.UUID]struct{}), args.Error(1)
+}
+
 func (m *MockChunkStorageRepository) SaveEmbedding(ctx context.Context, embedding *outbound.Embedding) error {
 	args := m.Called(ctx, embedding)
 	return args.Error(0)
@@ -1816,6 +1829,10 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInFailedSta
 
 	mockChunkStorage := &MockChunkStorageRepository{}
 	mockChunkStorage.On("SaveChunkWithEmbedding", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mockChunkStorage.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorage.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Use a config without resource limits to avoid early rejection
 	config := JobProcessorConfig{
@@ -2065,6 +2082,10 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInCloningSt
 
 	mockChunkStorage := &MockChunkStorageRepository{}
 	mockChunkStorage.On("SaveChunkWithEmbedding", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mockChunkStorage.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorage.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Use a config without resource limits to avoid early rejection
 	config := JobProcessorConfig{
@@ -2148,6 +2169,10 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_RepositoryInProcessin
 
 	mockChunkStorage := &MockChunkStorageRepository{}
 	mockChunkStorage.On("SaveChunkWithEmbedding", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	mockChunkStorage.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorage.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil)
 
 	// Use a config without resource limits to avoid early rejection
 	config := JobProcessorConfig{
@@ -2334,6 +2359,10 @@ func (suite *JobProcessorTestSuite) TestExecuteJobPipeline_IdempotentRedelivery_
 
 	mockChunkStorage := &MockChunkStorageRepository{}
 	mockChunkStorage.On("SaveChunkWithEmbedding", mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+	mockChunkStorage.On("FindOrCreateChunks", mock.Anything, mock.Anything).
+		Return(func(ctx context.Context, chunks []outbound.CodeChunk) []outbound.CodeChunk { return chunks }, nil)
+	mockChunkStorage.On("GetChunkIDsWithEmbeddings", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(map[uuid.UUID]struct{}{}, nil).Once()
 
 	// Use a config without resource limits to avoid early rejection
 	config := JobProcessorConfig{

@@ -65,6 +65,15 @@ type ChunkRepository interface {
 
 	// UpdateTokenCounts updates the token count for multiple chunks in a batch operation.
 	UpdateTokenCounts(ctx context.Context, updates []ChunkTokenUpdate) error
+
+	// GetChunkIDsWithEmbeddings returns the subset of chunkIDs that already have
+	// a non-deleted embedding for the given modelVersion in this repository.
+	GetChunkIDsWithEmbeddings(
+		ctx context.Context,
+		repositoryID uuid.UUID,
+		chunkIDs []uuid.UUID,
+		modelVersion string,
+	) (map[uuid.UUID]struct{}, error)
 }
 
 // EmbeddingRepository defines operations for storing and retrieving embeddings.

@@ -284,13 +284,23 @@ func TestRepositoryURL_FullPath(t *testing.T) {
 		},
 		{
 			name:     "GitHub URL with UI tree suffix is truncated to repo root",
-			rawURL:   "https://github.com/owner/repo",
+			rawURL:   "https://github.com/owner/repo/tree/main",
 			expected: "owner/repo",
 		},
 		{
 			name:     "Bitbucket URL returns owner/repo",
 			rawURL:   "https://bitbucket.org/owner/repo",
 			expected: "owner/repo",
+		},
+		{
+			name:     "GitLab nested group with tree sentinel is truncated to repo root",
+			rawURL:   "https://gitlab.com/org/sub/repo/tree/main",
+			expected: "org/sub/repo",
+		},
+		{
+			name:     "GitLab nested group with UI separator is truncated to repo root",
+			rawURL:   "https://gitlab.com/org/sub/repo/-/tree/main",
+			expected: "org/sub/repo",
 		},
 	}
 

@@ -353,7 +353,7 @@ func (p *DefaultJobProcessor) executeJobPipeline(
 			commitHash = unknownCommitHash
 		}
 		repoURL := repo.URL()
-		zoektRepoName := repoURL.Host() + "/" + repoURL.FullName()
+		zoektRepoName := repoURL.Host() + "/" + repoURL.FullPath()
 		result := p.runConcurrentIndexing(
 			ctx,
 			zoektRepoName,

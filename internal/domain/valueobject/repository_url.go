@@ -375,6 +375,14 @@ func (r RepositoryURL) Name() string {
 	return ""
 }
 
+// FullPath returns the full URL path without the host (e.g., "org/sub/repo").
+// Unlike FullName, this preserves all path segments, making it correct for
+// nested GitLab groups and other hosting services with deep paths.
+func (r RepositoryURL) FullPath() string {
+	parsedURL, _ := url.Parse(r.normalized)
+	return strings.Trim(parsedURL.Path, "/")
+}
+
 // FullName returns the full repository name in "owner/name" format (e.g., "golang/go").
 // Returns empty string if either owner or name cannot be determined.
 func (r RepositoryURL) FullName() string {

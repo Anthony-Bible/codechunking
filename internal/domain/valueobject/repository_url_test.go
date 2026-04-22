@@ -261,6 +261,58 @@ func TestRepositoryURL_Methods(t *testing.T) {
 	}
 }
 
+func TestRepositoryURL_FullPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		rawURL   string
+		expected string
+	}{
+		{
+			name:     "standard GitHub repo",
+			rawURL:   "https://github.com/owner/repo",
+			expected: "owner/repo",
+		},
+		{
+			name:     "GitLab nested group",
+			rawURL:   "https://gitlab.com/org/sub/repo",
+			expected: "org/sub/repo",
+		},
+		{
+			name:     "deeply nested group",
+			rawURL:   "https://gitlab.com/a/b/c/repo",
+			expected: "a/b/c/repo",
+		},
+		{
+			name:     "GitHub URL with UI tree suffix is truncated to repo root",
+			rawURL:   "https://github.com/owner/repo/tree/main",
+			expected: "owner/repo",
+		},
+		{
+			name:     "Bitbucket URL returns owner/repo",
+			rawURL:   "https://bitbucket.org/owner/repo",
+			expected: "owner/repo",
+		},
+		{
+			name:     "GitLab nested group with tree sentinel is truncated to repo root",
+			rawURL:   "https://gitlab.com/org/sub/repo/tree/main",
+			expected: "org/sub/repo",
+		},
+		{
+			name:     "GitLab nested group with UI separator is truncated to repo root",
+			rawURL:   "https://gitlab.com/org/sub/repo/-/tree/main",
+			expected: "org/sub/repo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u, err := NewRepositoryURL(tt.rawURL)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, u.FullPath())
+		})
+	}
+}
+
 func TestRepositoryURL_Equal(t *testing.T) {
 	tests := []struct {
 		name      string

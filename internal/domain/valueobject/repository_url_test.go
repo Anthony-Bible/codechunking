@@ -282,6 +282,16 @@ func TestRepositoryURL_FullPath(t *testing.T) {
 			rawURL:   "https://gitlab.com/a/b/c/repo",
 			expected: "a/b/c/repo",
 		},
+		{
+			name:     "GitHub URL with UI tree suffix is truncated to repo root",
+			rawURL:   "https://github.com/owner/repo",
+			expected: "owner/repo",
+		},
+		{
+			name:     "Bitbucket URL returns owner/repo",
+			rawURL:   "https://bitbucket.org/owner/repo",
+			expected: "owner/repo",
+		},
 	}
 
 	for _, tt := range tests {

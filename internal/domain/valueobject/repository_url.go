@@ -375,12 +375,31 @@ func (r RepositoryURL) Name() string {
 	return ""
 }
 
-// FullPath returns the full URL path without the host (e.g., "org/sub/repo").
-// Unlike FullName, this preserves all path segments, making it correct for
-// nested GitLab groups and other hosting services with deep paths.
+// FullPath returns the repository root path without the host
+// (e.g., "org/sub/repo" or "owner/repo").
+// For GitHub and Bitbucket (which use owner/repo with no nested groups) any
+// extra path segments — e.g., from a UI URL like /tree/<branch> — are stripped
+// so callers always receive a clean repository identifier.
+// For GitLab and other hosts the full path is preserved to support nested groups.
 func (r RepositoryURL) FullPath() string {
 	parsedURL, _ := url.Parse(r.normalized)
-	return strings.Trim(parsedURL.Path, "/")
+	trimmedPath := strings.Trim(parsedURL.Path, "/")
+	if trimmedPath == "" {
+		return ""
+	}
+
+	parts := strings.Split(trimmedPath, "/")
+
+	// GitHub and Bitbucket repos are always owner/repo (exactly 2 path segments).
+	// Trim any extra segments that indicate a UI page rather than the repo root.
+	switch strings.ToLower(parsedURL.Hostname()) {
+	case "github.com", "www.github.com", "bitbucket.org", "www.bitbucket.org":
+		if len(parts) > MinPathPartsForRepoURL {
+			return strings.Join(parts[:MinPathPartsForRepoURL], "/")
+		}
+	}
+
+	return trimmedPath
 }
 
 // FullName returns the full repository name in "owner/name" format (e.g., "golang/go").

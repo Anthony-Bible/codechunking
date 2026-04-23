@@ -69,7 +69,7 @@ services:
         published: "6071"
         protocol: tcp
     volumes:
-      - /tmp/zoekt-index:/data/index
+      - ${HOME:-/tmp}/tmp/zoekt-index:/data/index
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:6070/healthz || exit 1"]
       interval: 10s

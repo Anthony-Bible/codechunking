@@ -84,13 +84,12 @@ func decodeRequestIDToChunkID(requestID string) (uuid.UUID, error) {
 
 	// Handle both formats: with hyphens (36 chars) and without hyphens (32 chars)
 	var uuidWithHyphens string
-	if len(uuidPart) == 36 {
-		// UUID already has hyphens
+	switch len(uuidPart) {
+	case 36:
 		uuidWithHyphens = uuidPart
-	} else if len(uuidPart) == 32 {
-		// UUID without hyphens - add them
+	case 32:
 		uuidWithHyphens = uuidPart[0:8] + "-" + uuidPart[8:12] + "-" + uuidPart[12:16] + "-" + uuidPart[16:20] + "-" + uuidPart[20:32]
-	} else {
+	default:
 		return uuid.Nil, fmt.Errorf("invalid format: UUID part must be 32 or 36 characters, got %d", len(uuidPart))
 	}
 
@@ -175,30 +174,70 @@ func (p *BatchPoller) pollLoop(ctx context.Context) {
 	}
 }
 
-// pollOnce performs a single polling cycle.
+// pollOnce performs a single polling cycle using one bulk Gemini List call.
 func (p *BatchPoller) pollOnce(ctx context.Context) error {
-	// Get all pending Gemini batches
 	batches, err := p.batchProgressRepo.GetPendingGeminiBatches(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get pending gemini batches: %w", err)
 	}
-
 	if len(batches) == 0 {
 		slogger.Debug(ctx, "No pending Gemini batches to poll", nil)
 		return nil
 	}
 
-	slogger.Info(ctx, "Polling pending Gemini batches", slogger.Fields{
-		"batch_count": len(batches),
+	validBatches, jobIDs := p.collectValidBatches(ctx, batches)
+	if len(jobIDs) == 0 {
+		return nil
+	}
+
+	statuses, err := p.batchEmbeddingService.GetBatchJobStatuses(ctx, jobIDs)
+	if err != nil {
+		slogger.Error(ctx, "Failed to get bulk batch job statuses", slogger.Fields{"error": err.Error()})
+		return fmt.Errorf("get bulk batch job statuses: %w", err)
+	}
+
+	slogger.Info(ctx, "Polled Gemini batch statuses", slogger.Fields{
+		"pending_count":  len(jobIDs),
+		"returned_count": len(statuses),
+		"missing_count":  len(jobIDs) - len(statuses),
 	})
 
-	// Process batches with concurrency limit
+	return p.fanOutBatchProcessing(ctx, validBatches, statuses)
+}
+
+// collectValidBatches filters batches to those with a valid Gemini job ID prefix.
+func (p *BatchPoller) collectValidBatches(ctx context.Context, batches []*entity.BatchJobProgress) ([]*entity.BatchJobProgress, []string) {
+	validBatches := make([]*entity.BatchJobProgress, 0, len(batches))
+	jobIDs := make([]string, 0, len(batches))
+	for _, batch := range batches {
+		jobID := batch.GeminiBatchJobID()
+		if jobID == nil || *jobID == "" {
+			slogger.Warn(ctx, "Batch has nil or empty Gemini job ID", slogger.Fields{
+				"batch_id":     batch.ID(),
+				"indexing_job": batch.IndexingJobID(),
+			})
+			continue
+		}
+		if !strings.HasPrefix(*jobID, entity.GeminiBatchIDPrefix) {
+			slogger.Error(ctx, "Invalid gemini_job_id format in database", slogger.Fields{
+				"batch_id":      batch.ID(),
+				"gemini_job_id": *jobID,
+			})
+			continue
+		}
+		validBatches = append(validBatches, batch)
+		jobIDs = append(jobIDs, *jobID)
+	}
+	return validBatches, jobIDs
+}
+
+// fanOutBatchProcessing dispatches DB/results work for each batch whose status was returned.
+func (p *BatchPoller) fanOutBatchProcessing(ctx context.Context, validBatches []*entity.BatchJobProgress, statuses map[string]*outbound.BatchEmbeddingJob) error {
 	sem := make(chan struct{}, p.maxConcurrentPolls)
 	var wg sync.WaitGroup
-	errorsCh := make(chan error, len(batches))
+	errorsCh := make(chan error, len(validBatches))
 
-	for _, batch := range batches {
-		// Check if we should stop
+	for _, batch := range validBatches {
 		select {
 		case <-p.stopCh:
 			return errors.New("poller stopped")
@@ -207,41 +246,55 @@ func (p *BatchPoller) pollOnce(ctx context.Context) error {
 		default:
 		}
 
-		// Acquire semaphore
+		jobID := *batch.GeminiBatchJobID()
+		job, ok := statuses[jobID]
+		if !ok {
+			slogger.Debug(ctx, "Batch job not yet visible in Gemini List response", slogger.Fields{
+				"batch_id":      batch.ID(),
+				"gemini_job_id": jobID,
+			})
+			continue
+		}
+
 		sem <- struct{}{}
 		wg.Add(1)
-
-		go func(b *entity.BatchJobProgress) {
+		go func(b *entity.BatchJobProgress, j *outbound.BatchEmbeddingJob) {
 			defer wg.Done()
 			defer func() { <-sem }()
-
-			if err := p.processBatch(ctx, b); err != nil {
+			if err := p.processBatchWithJob(ctx, b, j); err != nil {
 				errorsCh <- err
 			}
-		}(batch)
+		}(batch, job)
 	}
 
-	// Wait for all batches to be processed
 	wg.Wait()
 	close(errorsCh)
 
-	// Collect errors
 	var errs []error
 	for err := range errorsCh {
 		errs = append(errs, err)
 	}
-
 	if len(errs) > 0 {
 		slogger.Warn(ctx, "Some batch polls failed", slogger.Fields{
 			"error_count": len(errs),
-			"total_count": len(batches),
+			"total_count": len(validBatches),
 		})
+		return errors.Join(errs...)
 	}
-
 	return nil
 }
 
-// processBatch processes a single pending batch.
+// processBatchWithJob handles a batch given a pre-fetched Gemini job status (no API call).
+func (p *BatchPoller) processBatchWithJob(ctx context.Context, batch *entity.BatchJobProgress, job *outbound.BatchEmbeddingJob) error {
+	slogger.Debug(ctx, "Processing batch job with pre-fetched status", slogger.Fields{
+		"batch_id":      batch.ID(),
+		"gemini_job_id": job.JobID,
+		"state":         job.State,
+	})
+	return p.dispatchBatchByState(ctx, batch, job)
+}
+
+// processBatch processes a single pending batch by fetching its status from Gemini first.
 func (p *BatchPoller) processBatch(ctx context.Context, batch *entity.BatchJobProgress) error {
 	jobID := batch.GeminiBatchJobID()
 	if jobID == nil || *jobID == "" {
@@ -253,7 +306,7 @@ func (p *BatchPoller) processBatch(ctx context.Context, batch *entity.BatchJobPr
 	}
 
 	// Validate Gemini batch job ID format (defense in depth)
-	if len(*jobID) < 8 || (*jobID)[:8] != "batches/" {
+	if !strings.HasPrefix(*jobID, entity.GeminiBatchIDPrefix) {
 		slogger.Error(ctx, "Invalid gemini_job_id format in database", slogger.Fields{
 			"batch_id":      batch.ID(),
 			"gemini_job_id": *jobID,
@@ -276,8 +329,9 @@ func (p *BatchPoller) processBatch(ctx context.Context, batch *entity.BatchJobPr
 			"gemini_job_id": *jobID,
 			"error":         err.Error(),
 		})
-		// Don't fail permanently - might be transient error
-		return nil
+		// Propagate the status-fetch error to the caller; it may still be transient
+		// and retried by the poller on a later cycle.
+		return err
 	}
 
 	slogger.Debug(ctx, "Batch job status retrieved", slogger.Fields{
@@ -286,15 +340,25 @@ func (p *BatchPoller) processBatch(ctx context.Context, batch *entity.BatchJobPr
 		"state":         job.State,
 	})
 
-	// Handle different job states
+	return p.dispatchBatchByState(ctx, batch, job)
+}
+
+// dispatchBatchByState routes a batch to the appropriate handler based on its Gemini job state.
+// This is the single authoritative switch for all batch state transitions.
+func (p *BatchPoller) dispatchBatchByState(ctx context.Context, batch *entity.BatchJobProgress, job *outbound.BatchEmbeddingJob) error {
 	switch job.State {
 	case outbound.BatchJobStateCompleted:
 		return p.handleCompletedBatch(ctx, batch, job)
 	case outbound.BatchJobStateFailed:
 		return p.handleFailedBatch(ctx, batch, job)
 	case outbound.BatchJobStateProcessing, outbound.BatchJobStatePending:
-		// Still processing - check again next poll
 		slogger.Debug(ctx, "Batch job still processing", slogger.Fields{
+			"batch_id": batch.ID(),
+			"state":    job.State,
+		})
+		return nil
+	case outbound.BatchJobStateCancelled:
+		slogger.Warn(ctx, "Batch job was cancelled", slogger.Fields{
 			"batch_id": batch.ID(),
 			"state":    job.State,
 		})
@@ -313,7 +377,7 @@ func (p *BatchPoller) handleCompletedBatch(
 	ctx context.Context,
 	batch *entity.BatchJobProgress,
 	job *outbound.BatchEmbeddingJob,
-) (returnErr error) {
+) error {
 	fields := slogger.Fields{
 		"batch_id":        batch.ID(),
 		"indexing_job_id": batch.IndexingJobID(),
@@ -443,41 +507,6 @@ func (p *BatchPoller) validateRepositoryID(batch *entity.BatchJobProgress) (*uui
 	return repositoryID, nil
 }
 
-// convertResultsToChunksAndEmbeddings converts batch results to chunks and embeddings with proper repository ID assignment.
-func (p *BatchPoller) convertResultsToChunksAndEmbeddings(
-	results []*outbound.EmbeddingResult,
-	repositoryID *uuid.UUID,
-) ([]outbound.CodeChunk, []outbound.Embedding, error) {
-	chunks := make([]outbound.CodeChunk, len(results))
-	embeddings := make([]outbound.Embedding, len(results))
-
-	for i, result := range results {
-		// Extract chunk ID from request ID
-		chunkID, err := decodeRequestIDToChunkID(result.RequestID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to decode request ID: %w", err)
-		}
-
-		// Create minimal chunk (repository will use ON CONFLICT DO NOTHING if exists)
-		chunks[i] = outbound.CodeChunk{
-			ID:           chunkID.String(),
-			RepositoryID: *repositoryID, // Use repository ID from batch
-		}
-
-		// Create embedding
-		embeddings[i] = outbound.Embedding{
-			ID:           uuid.New(),
-			ChunkID:      chunkID,
-			RepositoryID: *repositoryID, // Use repository ID from batch
-			Vector:       result.Vector,
-			ModelVersion: result.Model,
-			CreatedAt:    result.GeneratedAt.Format(time.RFC3339),
-		}
-	}
-
-	return chunks, embeddings, nil
-}
-
 // convertResultsToEmbeddings converts batch results to embeddings only (chunks already exist in DB).
 // This is used when chunks have been pre-saved before batch submission.
 func (p *BatchPoller) convertResultsToEmbeddings(
@@ -532,7 +561,7 @@ func (p *BatchPoller) handleFailedBatch(
 	maxRetries := 3 // TODO: Make this configurable
 	if batch.RetryCount() < maxRetries {
 		// Schedule retry with exponential backoff
-		backoff := time.Duration(1<<uint(batch.RetryCount())) * time.Minute
+		backoff := time.Duration(1<<uint(batch.RetryCount())) * time.Minute //nolint:gosec // RetryCount is bounded by maxRetries (3), so no overflow risk
 		retryAt := time.Now().Add(backoff)
 		batch.ScheduleRetry(retryAt)
 

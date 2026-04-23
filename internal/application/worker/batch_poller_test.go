@@ -1338,3 +1338,234 @@ func containsAny(s string, substrings []string) bool {
 	}
 	return false
 }
+
+// ========================================
+// Bulk Status Call Tests (RED PHASE)
+// Feature: Switch BatchPoller from per-job GetBatchJobStatus to bulk GetBatchJobStatuses
+// ========================================
+
+// TestPollOnce_IssuesOneBulkStatusCall verifies that pollOnce issues exactly ONE bulk
+// call to GetBatchJobStatuses for all pending batches instead of N individual calls to
+// GetBatchJobStatus. This is the core contract of the bulk-status feature.
+//
+// Preconditions: 3 pending batches exist in the repository.
+// Expected:      GetBatchJobStatuses called once with all 3 IDs; GetBatchJobStatus never called.
+func TestPollOnce_IssuesOneBulkStatusCall(t *testing.T) {
+	ctx := context.Background()
+
+	repositoryID := uuid.New()
+	indexingJobID := uuid.New()
+
+	// Build 3 pending batches with distinct Gemini job IDs.
+	batchJobIDs := []string{
+		"batches/gemini_bulk_test_001",
+		"batches/gemini_bulk_test_002",
+		"batches/gemini_bulk_test_003",
+	}
+
+	batches := make([]*entity.BatchJobProgress, len(batchJobIDs))
+	for i, jobID := range batchJobIDs {
+		b := entity.NewBatchJobProgress(repositoryID, indexingJobID, i+1, len(batchJobIDs))
+		require.NoError(t, b.MarkSubmittedToGemini(jobID))
+		batches[i] = b
+	}
+
+	mockProgressRepo := new(MockBatchProgressRepository)
+	mockBatchService := new(MockBatchEmbeddingService)
+	mockChunkRepo := new(MockChunkStorageRepository)
+
+	// Repo returns our 3 pending batches.
+	mockProgressRepo.On("GetPendingGeminiBatches", ctx).Return(batches, nil)
+
+	// GetBatchJobStatuses must be called EXACTLY ONCE with all three IDs.
+	// The returned map marks all jobs as still processing so no further action is taken.
+	bulkResponse := map[string]*outbound.BatchEmbeddingJob{
+		batchJobIDs[0]: {JobID: batchJobIDs[0], State: outbound.BatchJobStateProcessing},
+		batchJobIDs[1]: {JobID: batchJobIDs[1], State: outbound.BatchJobStateProcessing},
+		batchJobIDs[2]: {JobID: batchJobIDs[2], State: outbound.BatchJobStateProcessing},
+	}
+	mockBatchService.On("GetBatchJobStatuses", ctx,
+		mock.MatchedBy(func(ids []string) bool {
+			if len(ids) != 3 {
+				return false
+			}
+			seen := make(map[string]struct{}, len(ids))
+			for _, id := range ids {
+				seen[id] = struct{}{}
+			}
+			for _, expected := range batchJobIDs {
+				if _, ok := seen[expected]; !ok {
+					return false
+				}
+			}
+			return true
+		}),
+	).Return(bulkResponse, nil).Once()
+
+	// GetBatchJobStatus (singular) must NEVER be called — that is the whole point of this feature.
+	mockBatchService.AssertNotCalled(t, "GetBatchJobStatus", mock.Anything, mock.Anything)
+
+	poller := &BatchPoller{
+		batchProgressRepo:     mockProgressRepo,
+		chunkRepo:             mockChunkRepo,
+		batchEmbeddingService: mockBatchService,
+		pollInterval:          30 * time.Second,
+		maxConcurrentPolls:    5,
+		stopCh:                make(chan struct{}),
+	}
+
+	err := poller.pollOnce(ctx)
+
+	require.NoError(t, err)
+	mockProgressRepo.AssertExpectations(t)
+	// Exactly one bulk call was made.
+	mockBatchService.AssertExpectations(t)
+	// No individual status calls.
+	mockBatchService.AssertNotCalled(t, "GetBatchJobStatus", mock.Anything, mock.Anything)
+}
+
+// TestPollOnce_SkipsMissingBatchesFromBulkResponse verifies that when a batch job ID
+// is present in the database but absent from the bulk-status response map, the poller
+// skips that batch silently (it should log at debug level) without calling
+// handleCompletedBatch or handleFailedBatch for it.
+//
+// Preconditions: 2 pending batches; bulk response only contains 1 of the 2 IDs (the
+//
+//	second one is simply absent, simulating a transient gap in the API response).
+//
+// Expected:      Only the present batch is acted upon; the missing one is skipped.
+func TestPollOnce_SkipsMissingBatchesFromBulkResponse(t *testing.T) {
+	ctx := context.Background()
+
+	repositoryID := uuid.New()
+	indexingJobID := uuid.New()
+
+	presentJobID := "batches/gemini_present_batch"
+	missingJobID := "batches/gemini_missing_batch"
+
+	presentBatch := entity.NewBatchJobProgress(repositoryID, indexingJobID, 1, 2)
+	require.NoError(t, presentBatch.MarkSubmittedToGemini(presentJobID))
+
+	missingBatch := entity.NewBatchJobProgress(repositoryID, indexingJobID, 2, 2)
+	require.NoError(t, missingBatch.MarkSubmittedToGemini(missingJobID))
+
+	mockProgressRepo := new(MockBatchProgressRepository)
+	mockBatchService := new(MockBatchEmbeddingService)
+	mockChunkRepo := new(MockChunkStorageRepository)
+
+	mockProgressRepo.On("GetPendingGeminiBatches", ctx).
+		Return([]*entity.BatchJobProgress{presentBatch, missingBatch}, nil)
+
+	// Bulk response: present batch is still processing; missing batch is absent entirely.
+	bulkResponse := map[string]*outbound.BatchEmbeddingJob{
+		presentJobID: {JobID: presentJobID, State: outbound.BatchJobStateProcessing},
+		// missingJobID intentionally omitted
+	}
+	mockBatchService.On("GetBatchJobStatuses", ctx, mock.Anything).
+		Return(bulkResponse, nil).Once()
+
+	poller := &BatchPoller{
+		batchProgressRepo:     mockProgressRepo,
+		chunkRepo:             mockChunkRepo,
+		batchEmbeddingService: mockBatchService,
+		pollInterval:          30 * time.Second,
+		maxConcurrentPolls:    5,
+		stopCh:                make(chan struct{}),
+	}
+
+	err := poller.pollOnce(ctx)
+
+	require.NoError(t, err, "pollOnce must not return an error when a batch is missing from bulk response")
+	mockProgressRepo.AssertExpectations(t)
+	mockBatchService.AssertExpectations(t)
+	// Verify no completion or failure writes happened for the missing batch.
+	mockBatchService.AssertNotCalled(t, "GetBatchJobResults", mock.Anything, mock.Anything)
+	// The progress repo Save must NOT be called for the missing batch.
+	mockProgressRepo.AssertNotCalled(t, "Save", mock.Anything, mock.MatchedBy(func(b *entity.BatchJobProgress) bool {
+		id := b.GeminiBatchJobID()
+		return id != nil && *id == missingJobID
+	}))
+}
+
+// TestPollOnce_HandlesCompletedBatchFromBulkResponse verifies that when the bulk-status
+// response marks a job as Completed, the poller triggers the completion path — i.e.,
+// GetBatchJobResults is called for that job so its embeddings can be saved.
+//
+// Preconditions: 1 pending batch; bulk response marks it as Completed.
+// Expected:      GetBatchJobResults called for that batch's jobID.
+func TestPollOnce_HandlesCompletedBatchFromBulkResponse(t *testing.T) {
+	ctx := context.Background()
+
+	repositoryID := uuid.New()
+	indexingJobID := uuid.New()
+	completedJobID := "batches/gemini_completed_batch"
+
+	batch := entity.NewBatchJobProgress(repositoryID, indexingJobID, 1, 1)
+	require.NoError(t, batch.MarkSubmittedToGemini(completedJobID))
+
+	// Create one valid embedding result so the completion path succeeds end-to-end.
+	chunkID := uuid.New()
+	completedAt := time.Now()
+	embeddingResults := []*outbound.EmbeddingResult{
+		{
+			Vector:      make([]float64, 768),
+			Dimensions:  768,
+			Model:       "gemini-embedding-001",
+			GeneratedAt: time.Now(),
+			RequestID:   fmt.Sprintf("chunk_%s", chunkID.String()),
+		},
+	}
+
+	mockProgressRepo := new(MockBatchProgressRepository)
+	mockBatchService := new(MockBatchEmbeddingService)
+	mockChunkRepo := new(MockChunkStorageRepository)
+
+	mockProgressRepo.On("GetPendingGeminiBatches", ctx).
+		Return([]*entity.BatchJobProgress{batch}, nil)
+
+	// Bulk response: job is Completed.
+	bulkResponse := map[string]*outbound.BatchEmbeddingJob{
+		completedJobID: {
+			JobID:         completedJobID,
+			State:         outbound.BatchJobStateCompleted,
+			OutputFileURI: "/tmp/output.jsonl",
+			CompletedAt:   &completedAt,
+		},
+	}
+	mockBatchService.On("GetBatchJobStatuses", ctx, mock.Anything).
+		Return(bulkResponse, nil).Once()
+
+	// handleCompletedBatch must call GetBatchJobResults to download the embeddings.
+	mockBatchService.On("GetBatchJobResults", ctx, completedJobID).
+		Return(embeddingResults, nil)
+
+	// SaveEmbeddings should be called with the converted embeddings.
+	mockChunkRepo.On("SaveEmbeddings", ctx,
+		mock.MatchedBy(func(embeddings []outbound.Embedding) bool {
+			return len(embeddings) == 1 && len(embeddings[0].Vector) == 768
+		}),
+	).Return(nil)
+
+	// Batch progress should be persisted as Completed.
+	mockProgressRepo.On("Save", ctx, mock.MatchedBy(func(b *entity.BatchJobProgress) bool {
+		return b.Status() == entity.StatusCompleted
+	})).Return(nil)
+
+	poller := &BatchPoller{
+		batchProgressRepo:     mockProgressRepo,
+		chunkRepo:             mockChunkRepo,
+		batchEmbeddingService: mockBatchService,
+		pollInterval:          30 * time.Second,
+		maxConcurrentPolls:    5,
+		stopCh:                make(chan struct{}),
+	}
+
+	err := poller.pollOnce(ctx)
+
+	require.NoError(t, err)
+	// GetBatchJobResults must have been called — that is the completion signal.
+	mockBatchService.AssertCalled(t, "GetBatchJobResults", ctx, completedJobID)
+	mockProgressRepo.AssertExpectations(t)
+	mockBatchService.AssertExpectations(t)
+	mockChunkRepo.AssertExpectations(t)
+}

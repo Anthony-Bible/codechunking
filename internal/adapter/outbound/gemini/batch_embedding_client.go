@@ -318,7 +318,7 @@ func (c *BatchEmbeddingClient) uploadBatchFile(
 	inputFilePath string,
 	inputFileName string,
 	batchID uuid.UUID,
-) (fileURI string, err error) {
+) (string, error) {
 	genaiClient := c.getGenaiClient()
 
 	// Use UUID for system tracking (file name in Google's system)
@@ -433,19 +433,6 @@ func (c *BatchEmbeddingClient) uploadAndCreateBatchJob(
 
 	// Convert SDK BatchJob to our domain type
 	job := c.convertBatchJobToDomain(batchJob, options, totalCount)
-
-	// DEBUG: Log the COMPLETE batch job structure at creation time
-	// This helps us compare what the API returns at creation vs. retrieval
-	batchJobJSON, _ := json.MarshalIndent(batchJob, "", "  ")
-	slogger.Info(ctx, "=== DEBUG: COMPLETE BatchJob struct at CREATION (JSON) ===", slogger.Fields{
-		"batch_job_json": string(batchJobJSON),
-	})
-
-	// Also log our converted domain object to see the transformation
-	domainJobJSON, _ := json.MarshalIndent(job, "", "  ")
-	slogger.Info(ctx, "=== DEBUG: Converted domain BatchEmbeddingJob at CREATION ===", slogger.Fields{
-		"domain_job_json": string(domainJobJSON),
-	})
 
 	return job, nil
 }
@@ -567,31 +554,6 @@ func (c *BatchEmbeddingClient) GetBatchJobResults(
 			Message:   fmt.Sprintf("job is not completed (current state: %s)", batchJob.State),
 			Retryable: true,
 		}
-	}
-
-	// DEBUG: Log the COMPLETE batch job structure to see everything
-	// Marshal the entire BatchJob to JSON to see all fields
-	batchJobJSON, _ := json.MarshalIndent(batchJob, "", "  ")
-	slogger.Info(ctx, "=== DEBUG: COMPLETE BatchJob struct (JSON) ===", slogger.Fields{
-		"batch_job_json": string(batchJobJSON),
-	})
-
-	// Also log the Dest structure specifically with %+v to see field names
-	if batchJob.Dest != nil {
-		destJSON, _ := json.MarshalIndent(batchJob.Dest, "", "  ")
-		slogger.Info(ctx, "=== DEBUG: COMPLETE Dest struct (JSON) ===", slogger.Fields{
-			"dest_json": string(destJSON),
-		})
-
-		// Log individual interesting fields
-		slogger.Info(ctx, "=== DEBUG: Dest field details ===", slogger.Fields{
-			"format":                       batchJob.Dest.Format,
-			"gcs_uri":                      batchJob.Dest.GCSURI,
-			"bigquery_uri":                 batchJob.Dest.BigqueryURI,
-			"file_name":                    batchJob.Dest.FileName,
-			"inline_responses_count":       len(batchJob.Dest.InlinedResponses),
-			"inline_embed_responses_count": len(batchJob.Dest.InlinedEmbedContentResponses),
-		})
 	}
 
 	// Strategy 1: Check for inline embedding responses first (preferred method)
@@ -833,44 +795,29 @@ func (c *BatchEmbeddingClient) writeRequestsToFile(
 	defer file.Close()
 
 	writer := bufio.NewWriter(file)
-	defer func() {
-		_ = writer.Flush()
-	}()
 
-	// Note: taskType is not used in batch embeddings API format
-
-	// Write each request as a JSONL line
+	// Note: taskType is not used in batch embeddings API format.
+	// Write each request as a JSONL line using the Google Gemini Batch API format:
+	// {"key": "id", "request": {"content": {"parts": [{"text": "..."}]}, "output_dimensionality": 768}}
+	// "content" is singular and an object (not "contents" array).
+	// "output_dimensionality" is at request level (not nested in config).
 	for _, req := range requests {
-		// Create the embedding request structure using Google Gemini Batch API format
-		// Format: {"key": "id", "request": {"content": {"parts": [{"text": "..."}]}, "output_dimensionality": 768}}
-		// Note: "content" is singular and an object (not "contents" array)
-		// Note: "output_dimensionality" is at request level (not nested in config)
-		requestContent := map[string]interface{}{
-			"parts": []map[string]interface{}{
-				{"text": req.Text},
+		requestPayload := map[string]interface{}{
+			"content": map[string]interface{}{
+				"parts": []map[string]interface{}{
+					{"text": req.Text},
+				},
 			},
 		}
-
-		// Create the request payload
-		requestPayload := map[string]interface{}{
-			"content": requestContent, // Singular "content" as object (not array)
-		}
-
-		// Add output_dimensionality directly to request (not nested in config)
 		if c.config.Dimensions > 0 {
 			requestPayload["output_dimensionality"] = c.config.Dimensions
 		}
 
-		// Create the batch request in Google Gemini format
 		embeddingReq := map[string]interface{}{
 			"key":     req.RequestID,
 			"request": requestPayload,
 		}
 
-		// Note: task_type is not included as it may not be supported in batch embeddings API
-		// If needed in the future, it should be at request level, not nested in config
-
-		// Marshal to JSON and write
 		jsonData, err := json.Marshal(embeddingReq)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to marshal request: %w", err)
@@ -893,6 +840,58 @@ func (c *BatchEmbeddingClient) writeRequestsToFile(
 	return fullPath, displayName, nil
 }
 
+// isBatchFileReference returns true only for Gemini Files API references (files/...).
+// GCS URIs (gs://...) and local paths are explicitly excluded.
+func isBatchFileReference(outputFileURI string) bool {
+	return strings.HasPrefix(outputFileURI, "files/")
+}
+
+// downloadBatchFileReference attempts to download a Gemini batch output file reference
+// to the local output directory. It returns the local file path on success, or an empty
+// string if the download failed (caller should fall back to the local path logic).
+func (c *BatchEmbeddingClient) downloadBatchFileReference(ctx context.Context, outputFileURI string) (string, error) {
+	slogger.Info(ctx, "Output is a batch file reference, attempting direct download", slogger.Fields{
+		"file_ref": outputFileURI,
+	})
+
+	// Manually construct File object to bypass 40-character file ID limitation.
+	var sizeBytes int64
+	constructedFile := &genai.File{
+		Name:        outputFileURI,
+		DisplayName: filepath.Base(outputFileURI),
+		SizeBytes:   &sizeBytes,
+		DownloadURI: outputFileURI,
+	}
+
+	slogger.Info(ctx, "Attempting to download batch output file using constructed File object", slogger.Fields{
+		"file_ref":     outputFileURI,
+		"display_name": constructedFile.DisplayName,
+	})
+
+	downloadUri := genai.NewDownloadURIFromFile(constructedFile)
+	fileBytes, err := c.getGenaiClient().Files.Download(ctx, downloadUri, nil)
+	if err != nil {
+		slogger.Error(ctx, "Failed to download batch output file with constructed reference", slogger.Fields{
+			"file_ref": outputFileURI,
+			"error":    err.Error(),
+		})
+		return "", fmt.Errorf("download failed for %s: %w", outputFileURI, err)
+	}
+
+	localFilePath := filepath.Join(c.outputDir, filepath.Base(outputFileURI))
+	if err := os.WriteFile(localFilePath, fileBytes, 0o600); err != nil {
+		return "", fmt.Errorf("failed to write downloaded file: %w", err)
+	}
+
+	slogger.Info(ctx, "Successfully downloaded batch output file", slogger.Fields{
+		"file_ref":   outputFileURI,
+		"local_path": localFilePath,
+		"file_size":  len(fileBytes),
+	})
+
+	return localFilePath, nil
+}
+
 // downloadAndParseResults downloads and parses batch job results.
 func (c *BatchEmbeddingClient) downloadAndParseResults(
 	ctx context.Context,
@@ -900,92 +899,20 @@ func (c *BatchEmbeddingClient) downloadAndParseResults(
 ) ([]*outbound.EmbeddingResult, error) {
 	var localFilePath string
 
-	// Check if this is a file reference (not a local path)
-	// Batch job outputs are special references that need direct download
-	if !filepath.IsAbs(outputFileURI) && !strings.Contains(outputFileURI, "/tmp/") {
-		slogger.Info(ctx, "Output is a batch file reference, attempting direct download", slogger.Fields{
-			"file_ref": outputFileURI,
-		})
+	if strings.HasPrefix(outputFileURI, "gs://") {
+		return nil, fmt.Errorf("GCS output URIs are not supported: %q — configure a Gemini Files API output destination instead", outputFileURI)
+	}
 
-		downloadSuccess := false
-
-		// For batch output files with references like "files/batch-xxx"
-		// These are NOT accessible via the standard Files API due to:
-		// 1. File ID length exceeds 40-character limit
-		// 2. They are batch-specific resources that don't exist as regular files
-		//
-		// According to Google's Batch API documentation, batch output files
-		// should either be:
-		// - Written to a GCS bucket (if configured)
-		// - Available as inline results in the batch job response
-		// - Downloaded using a batch-specific method
-		//
-		// Since none of these are currently implemented, we'll return a clear error
-		// if strings.HasPrefix(outputFileURI, "files/batch-") {
-		//	return nil, fmt.Errorf(
-		//		"batch output file '%s' cannot be downloaded: "+
-		//			"Google's Batch API returns file references (files/batch-xxx) that exceed the Files API 40-character limit "+
-		//			"and are not accessible as regular files. "+
-		//			"This appears to be an API design issue with Google Gemini Batches API. "+
-		//			"Possible solutions: "+
-		//			"(1) Configure GCS bucket for batch outputs in job creation, "+
-		//			"(2) Check if results are embedded inline in BatchJob response, "+
-		//			"(3) Use a different output configuration when creating the batch job. "+
-		//			"See https://ai.google.dev/gemini-api/docs/batch-api for more details.",
-		//		outputFileURI,
-		//	)
-		//}
-		// Validate file reference format before proceeding
-		if !strings.HasPrefix(outputFileURI, "files/") {
-			return nil, fmt.Errorf("invalid file reference format: '%s' - must start with 'files/'", outputFileURI)
-		}
-
-		// Manually construct File object to bypass 40-character file ID limitation
-		// This replaces the need for files.Get() call which fails with long batch file IDs
-		var sizeBytes int64 = 0 // Will be determined after download if needed
-		constructedFile := &genai.File{
-			Name:        outputFileURI,
-			DisplayName: filepath.Base(outputFileURI),
-			SizeBytes:   &sizeBytes,
-			DownloadURI: outputFileURI,
-		}
-
-		slogger.Info(ctx, "Attempting to download batch output file using constructed File object", slogger.Fields{
-			"file_ref":     outputFileURI,
-			"display_name": constructedFile.DisplayName,
-		})
-		downloadUri := genai.NewDownloadURIFromFile(constructedFile)
-		// Attempt download with the constructed file object
-		fileBytes, err := c.getGenaiClient().Files.Download(ctx, downloadUri, nil)
-		if err != nil {
-			slogger.Error(ctx, "Failed to download batch output file with constructed reference", slogger.Fields{
-				"file_ref": outputFileURI,
-				"error":    err.Error(),
-			})
-		} else {
-			downloadSuccess = true
-			localFilePath = filepath.Join(c.outputDir, filepath.Base(outputFileURI))
-			if err := os.WriteFile(localFilePath, fileBytes, 0o644); err != nil {
-				return nil, fmt.Errorf("failed to write downloaded file: %w", err)
-			}
-			slogger.Info(ctx, "Successfully downloaded batch output file", slogger.Fields{
-				"file_ref":   outputFileURI,
-				"local_path": localFilePath,
-				"file_size":  len(fileBytes),
-			})
-		}
-
-		// If download succeeded, update localFilePath for parsing
-		if downloadSuccess && localFilePath == "" {
-			filename := filepath.Base(outputFileURI)
-			localFilePath = filepath.Join(c.outputDir, filename)
+	if isBatchFileReference(outputFileURI) {
+		var dlErr error
+		localFilePath, dlErr = c.downloadBatchFileReference(ctx, outputFileURI)
+		if dlErr != nil {
+			return nil, fmt.Errorf("batch file reference download failed for %q: %w", outputFileURI, dlErr)
 		}
 	}
 
-	// If it wasn't a file reference or download failed, try local file path
+	// If it wasn't a file reference, treat outputFileURI as a local path.
 	if localFilePath == "" {
-		// Use original logic for local file paths
-		// outputFileURI from Gemini API might be a relative path like "files/batch-xxx"
 		localFilePath = filepath.Join(c.outputDir, outputFileURI)
 	}
 
@@ -1212,4 +1139,73 @@ func (c *BatchEmbeddingClient) matchesFilter(job *outbound.BatchEmbeddingJob, fi
 	}
 
 	return true
+}
+
+// GetBatchJobStatuses retrieves statuses for multiple batch jobs in bulk via List pagination.
+// Returns a map keyed by jobID; IDs not found are absent from the map.
+func (c *BatchEmbeddingClient) GetBatchJobStatuses(ctx context.Context, jobIDs []string) (map[string]*outbound.BatchEmbeddingJob, error) {
+	if len(jobIDs) == 0 {
+		return make(map[string]*outbound.BatchEmbeddingJob), nil
+	}
+
+	// Validate and build lookup set in one pass
+	wanted := make(map[string]struct{}, len(jobIDs))
+	for _, id := range jobIDs {
+		if strings.TrimSpace(id) == "" {
+			return nil, &outbound.EmbeddingError{
+				Code:      "empty_job_id",
+				Type:      "validation",
+				Message:   "job ID cannot be empty",
+				Retryable: false,
+			}
+		}
+		wanted[id] = struct{}{}
+	}
+
+	result := make(map[string]*outbound.BatchEmbeddingJob, len(jobIDs))
+	genaiClient := c.getGenaiClient()
+
+	const scanWarnThreshold = 500
+	scanned := 0
+
+	// Paginate through List until we have all wanted IDs or exhaust pages
+	iter := genaiClient.Batches.All(ctx)
+	for batchJob, err := range iter {
+		if err != nil {
+			return nil, c.convertSDKError(err)
+		}
+		scanned++
+		job := c.convertBatchJobToDomain(batchJob, outbound.EmbeddingOptions{}, 0)
+		if _, ok := wanted[job.JobID]; ok {
+			result[job.JobID] = job
+			if len(result) == len(wanted) {
+				break // found all we need
+			}
+		}
+	}
+
+	slogger.Info(ctx, "Bulk batch job statuses retrieved", slogger.Fields{
+		"requested": len(jobIDs),
+		"found":     len(result),
+	})
+
+	if len(result) < len(wanted) && scanned >= scanWarnThreshold {
+		missing := make([]string, 0, len(wanted)-len(result))
+		for id := range wanted {
+			if _, ok := result[id]; !ok {
+				missing = append(missing, id)
+				if len(missing) >= 10 {
+					break
+				}
+			}
+		}
+		slogger.Warn(ctx, "Full batch history scan exceeded threshold with missing IDs — consider server-side filtering", slogger.Fields{
+			"wanted_count":  len(wanted),
+			"found_count":   len(result),
+			"scanned_count": scanned,
+			"missing_ids":   missing,
+		})
+	}
+
+	return result, nil
 }

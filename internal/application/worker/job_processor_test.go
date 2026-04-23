@@ -740,6 +740,20 @@ func (m *MockBatchEmbeddingService) WaitForBatchJob(
 	return args.Get(0).(*outbound.BatchEmbeddingJob), args.Error(1)
 }
 
+// GetBatchJobStatuses retrieves statuses for multiple batch jobs in a single bulk call,
+// returning a map keyed by jobID. IDs absent from the response are simply omitted from
+// the returned map; callers treat that as "unknown — retry next cycle".
+func (m *MockBatchEmbeddingService) GetBatchJobStatuses(
+	ctx context.Context,
+	jobIDs []string,
+) (map[string]*outbound.BatchEmbeddingJob, error) {
+	args := m.Called(ctx, jobIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]*outbound.BatchEmbeddingJob), args.Error(1)
+}
+
 // StreamingProcessingConfig holds configuration for streaming processing.
 type StreamingProcessingConfig struct {
 	MaxConcurrency     int

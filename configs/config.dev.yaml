@@ -6,7 +6,7 @@ zoekt:
     port: 6070
   indexing:
     git_index_path: zoekt-git-index
-    index_dir: /tmp/zoekt-index
+    index_dir: /home/anthony/tmp/zoekt-index
     timeout: 10m
   concurrent_indexing:
     enabled: true
@@ -70,6 +70,6 @@ batch_processing:
   # Token counting configuration
   token_counting:
     enabled: true                    # Enable token counting
-    mode: "sample"                   # Mode: "all", "sample", or "on_demand"
+    mode: "on_demand"                   # Mode: "all", "sample", or "on_demand"
     sample_percent: 10               # Percentage of chunks to sample (for "sample" mode)
     max_tokens_per_chunk: 8192       # Maximum tokens per chunk (Gemini embedding model limit)

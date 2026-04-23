@@ -100,6 +100,11 @@ type BatchEmbeddingService interface {
 		jobID string,
 	) (*BatchEmbeddingJob, error)
 
+	// GetBatchJobStatuses retrieves statuses for multiple batch jobs in bulk,
+	// returning a map keyed by jobID. IDs not present in the response are simply
+	// absent from the map (callers treat that as "unknown — retry next cycle").
+	GetBatchJobStatuses(ctx context.Context, jobIDs []string) (map[string]*BatchEmbeddingJob, error)
+
 	// ListBatchJobs lists all batch embedding jobs with optional filtering
 	ListBatchJobs(
 		ctx context.Context,

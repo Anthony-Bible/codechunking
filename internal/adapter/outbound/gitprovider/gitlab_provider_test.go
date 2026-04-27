@@ -532,6 +532,116 @@ func TestListGroupProjects_GroupPathIsURLEncoded(t *testing.T) {
 		"group path with slash must be URL-encoded in the request path; got %s", receivedURIs[0])
 }
 
+// TestListGroupProjects_OneGroupFailsOtherSucceeds verifies that when one group returns
+// a 404 and another group succeeds, the function returns the repos from the successful
+// group without error. The failing group should be skipped (logged as a warning) rather
+// than aborting the entire operation.
+func TestListGroupProjects_OneGroupFailsOtherSucceeds(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "missing-group") {
+			// Simulate a 404 for the first group - it doesn't exist.
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"404 Group Not Found"}`))
+			return
+		}
+		// The second group returns successfully.
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(encodeJSON(t, []stubProject{
+			publicProject("surviving-repo", "https://gl.example.com/good-group/surviving-repo.git"),
+		}))
+	}))
+	defer srv.Close()
+
+	provider := NewGitLabProvider(srv.Client())
+	// missing-group will 404; good-group will succeed.
+	connector := newTestConnector(t, srv.URL, nil, []string{"missing-group", "good-group"})
+
+	got, err := provider.ListRepositories(context.Background(), connector)
+
+	// Partial success: no error because at least one group worked.
+	require.NoError(t, err, "a single 404 group must not abort the whole operation when another group succeeds")
+	require.Len(t, got, 1, "only the repos from the successful group must be returned")
+	assert.Equal(t, "surviving-repo", got[0].Name)
+}
+
+// TestListGroupProjects_SuccessfulGroupBeforeFailingGroup verifies that repos from a
+// successful group are returned even when a subsequent group fails, confirming that
+// iteration order does not affect partial-success behaviour.
+func TestListGroupProjects_SuccessfulGroupBeforeFailingGroup(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "broken-group") {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"404 Group Not Found"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(encodeJSON(t, []stubProject{
+			publicProject("first-repo", "https://gl.example.com/working-group/first-repo.git"),
+		}))
+	}))
+	defer srv.Close()
+
+	provider := NewGitLabProvider(srv.Client())
+	// working-group succeeds first, then broken-group fails.
+	connector := newTestConnector(t, srv.URL, nil, []string{"working-group", "broken-group"})
+
+	got, err := provider.ListRepositories(context.Background(), connector)
+
+	require.NoError(t, err, "a trailing 404 group must not discard repos already fetched from earlier groups")
+	require.Len(t, got, 1)
+	assert.Equal(t, "first-repo", got[0].Name)
+}
+
+// TestListGroupProjects_AllGroupsFailReturnsError verifies that when every configured
+// group returns an error, ListRepositories itself returns an error (and no repositories).
+func TestListGroupProjects_AllGroupsFailReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Every group gets a 404.
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"404 Group Not Found"}`))
+	}))
+	defer srv.Close()
+
+	provider := NewGitLabProvider(srv.Client())
+	connector := newTestConnector(t, srv.URL, nil, []string{"ghost-group-a", "ghost-group-b"})
+
+	got, err := provider.ListRepositories(context.Background(), connector)
+
+	require.Error(t, err, "all groups failing must produce an error")
+	assert.Empty(t, got, "no repositories must be returned when every group fails")
+}
+
+// TestListGroupProjects_MultipleFailingGroupsPartialSuccessReturnsAll verifies that
+// when two out of three groups fail, the repos from the one successful group are
+// returned and no error is raised.
+func TestListGroupProjects_MultipleFailingGroupsPartialSuccessReturnsAll(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "alive-group") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(encodeJSON(t, []stubProject{
+				publicProject("alive-repo", "https://gl.example.com/alive-group/alive-repo.git"),
+			}))
+			return
+		}
+		// dead-group-1 and dead-group-2 both 404.
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"404 Group Not Found"}`))
+	}))
+	defer srv.Close()
+
+	provider := NewGitLabProvider(srv.Client())
+	connector := newTestConnector(t, srv.URL, nil, []string{"dead-group-1", "alive-group", "dead-group-2"})
+
+	got, err := provider.ListRepositories(context.Background(), connector)
+
+	require.NoError(t, err, "partial success (one working group out of three) must not return an error")
+	require.Len(t, got, 1)
+	assert.Equal(t, "alive-repo", got[0].Name)
+}
+
 // TestListGroupProjects_MultipleGroupsAggregated verifies that when a connector has
 // multiple groups, repositories from each group are all returned in a single result set.
 func TestListGroupProjects_MultipleGroupsAggregated(t *testing.T) {
@@ -565,4 +675,41 @@ func TestListGroupProjects_MultipleGroupsAggregated(t *testing.T) {
 	}
 	assert.Contains(t, names, "a1")
 	assert.Contains(t, names, "b1")
+}
+
+// TestListGroupProjects_AllGroupsFail_ProjectsNonEmpty_DoesNotAbortEarly locks in the
+// third condition of the partial-fail guard: when every group errors but the connector
+// also lists an individual project, ListRepositories must return that project without
+// error instead of surfacing the group errors.
+func TestListGroupProjects_AllGroupsFail_ProjectsNonEmpty_DoesNotAbortEarly(t *testing.T) {
+	project := publicProject("my-project", "https://gitlab.example.com/my-group/my-project.git")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/groups/") {
+			http.Error(w, `{"message":"404 Not found"}`, http.StatusNotFound)
+			return
+		}
+		// Individual project endpoint — serves the project payload.
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(encodeJSON(t, project))
+	}))
+	defer srv.Close()
+
+	connector, err := entity.NewConnector(
+		"test-connector",
+		valueobject.ConnectorTypeGitLab,
+		srv.URL,
+		nil,
+		[]string{"my-group"},            // will 404
+		[]string{"my-group/my-project"}, // individual project that succeeds
+	)
+	require.NoError(t, err)
+
+	provider := NewGitLabProvider(srv.Client())
+	got, gotErr := provider.ListRepositories(context.Background(), connector)
+
+	require.NoError(t, gotErr, "group failures must not surface as an error when projects are non-empty")
+	require.Len(t, got, 1, "the individual project must be returned despite the group failure")
+	assert.Equal(t, "my-project", got[0].Name)
 }

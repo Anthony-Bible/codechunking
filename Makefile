@@ -2,7 +2,7 @@
 
 # Variables
 BINARY_NAME=codechunking
-DOCKER_COMPOSE=docker compose
+DOCKER_COMPOSE ?= docker compose
 GO_CMD=go
 MIGRATE_CMD=migrate
 
@@ -144,11 +144,11 @@ install-client: build-client
 
 ## migrate-up: Apply all database migrations
 migrate-up:
-	$(GO_CMD) run main.go migrate up --config configs/config.dev.yaml
+	CGO_ENABLED=1 CGO_CXXFLAGS="-std=c++11" $(GO_CMD) run main.go migrate up --config configs/config.dev.yaml
 
 ## migrate-down: Rollback all database migrations
 migrate-down:
-	$(GO_CMD) run main.go migrate down
+	CGO_ENABLED=1 CGO_CXXFLAGS="-std=c++11" $(GO_CMD) run main.go migrate down --config configs/config.dev.yaml
 
 ## migrate-create: Create a new migration (usage: make migrate-create name=migration_name)
 migrate-create:

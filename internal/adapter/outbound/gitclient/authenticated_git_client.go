@@ -97,12 +97,32 @@ func NewAuthenticatedGitClient() outbound.AuthenticatedGitClient {
 
 // Basic GitClient methods (minimal implementation)
 
-// Clone performs a basic git clone.
+// Clone performs a git clone, delegating to the appropriate authenticated variant
+// when credentials are available in the environment. Falls through to a plain
+// unauthenticated clone only when no credentials are found.
 func (c *AuthenticatedGitClientImpl) Clone(ctx context.Context, repoURL, targetPath string) error {
-	// Execute real git clone command
-	cmd := exec.CommandContext(ctx, "git", "clone", repoURL, targetPath)
-	output, err := cmd.CombinedOutput()
+	authConfig, err := c.LoadCredentialsFromEnvironment(ctx, repoURL)
 	if err != nil {
+		var gitErr *outbound.GitOperationError
+		if !errors.As(err, &gitErr) || gitErr.Type != "env_credentials_not_found" {
+			return err
+		}
+		// env_credentials_not_found sentinel — fall through to plain clone below.
+	} else {
+		opts := valueobject.CloneOptions{}
+		switch cfg := authConfig.(type) {
+		case *outbound.TokenAuthConfig:
+			_, err := c.CloneWithTokenAuth(ctx, repoURL, targetPath, opts, cfg)
+			return err
+		case *outbound.SSHAuthConfig:
+			_, err := c.CloneWithSSHAuth(ctx, repoURL, targetPath, opts, cfg)
+			return err
+		}
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "clone", repoURL, targetPath)
+	output, cmdErr := cmd.CombinedOutput()
+	if cmdErr != nil {
 		return &outbound.GitOperationError{
 			Type:    "clone_failed",
 			Message: fmt.Sprintf("git clone failed: %s", string(output)),
@@ -473,9 +493,9 @@ func (c *AuthenticatedGitClientImpl) DiscoverSSHKeys(
 
 	for _, key := range keyPriority {
 		keyPath := filepath.Join(sshDir, key.name)
-		if _, err := os.Stat(keyPath); err == nil {
+		if _, err := os.Stat(keyPath); err == nil { //nolint:gosec // keyPath is constructed from a fixed list of known key names joined with a validated ssh dir
 			// Check if this is a private key (not .pub file)
-			content, err := os.ReadFile(keyPath)
+			content, err := os.ReadFile(keyPath) //nolint:gosec // keyPath is constructed from a fixed list of known key names joined with a validated ssh dir
 			if err != nil {
 				continue
 			}

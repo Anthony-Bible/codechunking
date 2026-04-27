@@ -55,10 +55,11 @@ services:
       - tools
 
   zoekt-webserver:
-    image: ghcr.io/sourcegraph/zoekt:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.zoekt
     container_name: codechunking-zoekt-webserver
-    user: "1000:1000"
-    command: ["zoekt-webserver", "-index", "/data/index", "-pprof", "-rpc" ]  # HTTP on 6070, gRPC on 6071
+    command: ["-index", "/data/index", "-pprof", "-rpc"]  # HTTP on 6070, gRPC on 6071
     ports:
       - name: zoekt-http
         target: 6070
@@ -69,7 +70,7 @@ services:
         published: "6071"
         protocol: tcp
     volumes:
-      - ${HOME:-/tmp}/tmp/zoekt-index:/data/index
+      - zoekt_data:/data/index
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:6070/healthz || exit 1"]
       interval: 10s
@@ -91,7 +92,8 @@ services:
       - CODECHUNK_DATABASE_USER=dev
       - CODECHUNK_DATABASE_PASSWORD=dev
       - CODECHUNK_NATS_URL=nats://nats:4222
-      # Gemini API key for search functionality
+      - CODECHUNK_GEMINI_API_KEY=${CODECHUNK_GEMINI_API_KEY}
+      - GITLAB_TOKEN=${GITLAB_TOKEN}
     ports:
       - "8080:8080"
     command: ["api", "--config", "configs/config.dev.yaml"]
@@ -132,7 +134,8 @@ services:
       - CODECHUNK_DATABASE_USER=dev
       - CODECHUNK_DATABASE_PASSWORD=dev
       - CODECHUNK_NATS_URL=nats://nats:4222
-      # - CODECHUNK_GEMINI_API_KEY=your-api-key
+      - CODECHUNK_GEMINI_API_KEY=${CODECHUNK_GEMINI_API_KEY}
+      - GITLAB_TOKEN=${GITLAB_TOKEN}
     command: ["worker", "--config", "configs/config.dev.yaml"]
     restart: unless-stopped
     volumes:

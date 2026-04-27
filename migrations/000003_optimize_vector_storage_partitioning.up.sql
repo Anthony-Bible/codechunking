@@ -44,65 +44,57 @@ CREATE TABLE embeddings_partitioned_3 PARTITION OF embeddings_partitioned
 
 -- Create HNSW indexes on each partition for optimal vector search
 -- Using optimal parameters: m=16, ef_construction=64, cosine similarity
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_0_vector 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_0_vector 
     ON embeddings_partitioned_0 
     USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_1_vector 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_1_vector 
     ON embeddings_partitioned_1 
     USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_2_vector 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_2_vector 
     ON embeddings_partitioned_2 
     USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_3_vector 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_3_vector 
     ON embeddings_partitioned_3 
     USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
 -- Create supporting indexes on each partition
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_0_chunk_id 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_0_chunk_id 
     ON embeddings_partitioned_0 (chunk_id);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_0_repository_id 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_0_repository_id 
     ON embeddings_partitioned_0 (repository_id);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_0_deleted_at 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_0_deleted_at 
     ON embeddings_partitioned_0 (deleted_at);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_1_chunk_id 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_1_chunk_id 
     ON embeddings_partitioned_1 (chunk_id);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_1_repository_id 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_1_repository_id 
     ON embeddings_partitioned_1 (repository_id);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_1_deleted_at 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_1_deleted_at 
     ON embeddings_partitioned_1 (deleted_at);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_2_chunk_id 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_2_chunk_id 
     ON embeddings_partitioned_2 (chunk_id);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_2_repository_id 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_2_repository_id 
     ON embeddings_partitioned_2 (repository_id);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_2_deleted_at 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_2_deleted_at 
     ON embeddings_partitioned_2 (deleted_at);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_3_chunk_id 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_3_chunk_id 
     ON embeddings_partitioned_3 (chunk_id);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_3_repository_id 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_3_repository_id 
     ON embeddings_partitioned_3 (repository_id);
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_embeddings_partitioned_3_deleted_at 
+CREATE INDEX IF NOT EXISTS idx_embeddings_partitioned_3_deleted_at 
     ON embeddings_partitioned_3 (deleted_at);
 
 -- ==============================================================================
--- 3. PERFORMANCE TUNING CONFIGURATION
--- ==============================================================================
-
--- Optimize HNSW search parameters for better recall
--- These can be adjusted at runtime based on performance requirements
-ALTER SYSTEM SET hnsw.ef_search = 100; -- Higher recall, slightly slower queries
-
--- ==============================================================================
--- 4. PARTITION MANAGEMENT FUNCTIONS
+-- 3. PARTITION MANAGEMENT FUNCTIONS
 -- ==============================================================================
 
 -- Function to add new partitions dynamically
@@ -117,20 +109,20 @@ BEGIN
     EXECUTE sql_statement;
     
     -- Add HNSW vector index
-    sql_statement := format('CREATE INDEX CONCURRENTLY %I ON %I USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)', 
+    sql_statement := format('CREATE INDEX %I ON %I USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)', 
                            'idx_' || partition_name || '_vector', partition_name);
     EXECUTE sql_statement;
     
     -- Add supporting indexes
-    sql_statement := format('CREATE INDEX CONCURRENTLY %I ON %I (chunk_id)', 
+    sql_statement := format('CREATE INDEX %I ON %I (chunk_id)', 
                            'idx_' || partition_name || '_chunk_id', partition_name);
     EXECUTE sql_statement;
     
-    sql_statement := format('CREATE INDEX CONCURRENTLY %I ON %I (repository_id)', 
+    sql_statement := format('CREATE INDEX %I ON %I (repository_id)', 
                            'idx_' || partition_name || '_repository_id', partition_name);
     EXECUTE sql_statement;
     
-    sql_statement := format('CREATE INDEX CONCURRENTLY %I ON %I (deleted_at)', 
+    sql_statement := format('CREATE INDEX %I ON %I (deleted_at)', 
                            'idx_' || partition_name || '_deleted_at', partition_name);
     EXECUTE sql_statement;
 END;
@@ -147,21 +139,18 @@ RETURNS TABLE(
 BEGIN
     RETURN QUERY
     SELECT 
-        -- NOTE: `tablename` is the original column name used here but pg_stat_user_tables
-        -- actually exposes this column as `relname`. This query will return no rows on
-        -- standard PostgreSQL. The column reference is corrected in migration 000019.
-        schemaname||'.'||tablename as partition_name,
+        schemaname||'.'||relname as partition_name,
         n_tup_ins - n_tup_del as row_count,
-        pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size_pretty,
-        pg_size_pretty(pg_indexes_size(schemaname||'.'||tablename)) as index_size_pretty
+        pg_size_pretty(pg_total_relation_size(schemaname||'.'||relname)) as size_pretty,
+        pg_size_pretty(pg_indexes_size(schemaname||'.'||relname)) as index_size_pretty
     FROM pg_stat_user_tables 
-    WHERE tablename LIKE 'embeddings_partitioned_%'  -- fixed to `relname` in migration 000019
-    ORDER BY tablename;                              -- fixed to `relname` in migration 000019
+    WHERE relname LIKE 'embeddings_partitioned_%'
+    ORDER BY relname;
 END;
 $$ LANGUAGE plpgsql;
 
 -- ==============================================================================
--- 5. FOREIGN KEY CONSTRAINTS (DEFERRED FOR PERFORMANCE)
+-- 4. FOREIGN KEY CONSTRAINTS (DEFERRED FOR PERFORMANCE)
 -- ==============================================================================
 
 -- Note: The FK constraint fk_embeddings_partitioned_chunk_id was intentionally
@@ -170,7 +159,7 @@ $$ LANGUAGE plpgsql;
 -- the same constraint with proper DEFERRABLE semantics.
 
 -- ==============================================================================
--- 6. COMMENTS AND DOCUMENTATION
+-- 5. COMMENTS AND DOCUMENTATION
 -- ==============================================================================
 
 COMMENT ON TABLE embeddings_partitioned IS 
@@ -186,18 +175,16 @@ COMMENT ON FUNCTION get_embeddings_partition_stats() IS
 'Monitoring function to track partition sizes and row counts for capacity planning.';
 
 -- ==============================================================================
--- 7. PERFORMANCE MONITORING VIEW
+-- 6. PERFORMANCE MONITORING VIEW
 -- ==============================================================================
 
 -- Create view for monitoring partition performance
--- NOTE: `tablename` below is the original (non-functional) column reference;
--- pg_stat_user_tables exposes this as `relname`. The view is corrected in migration 000019.
 CREATE OR REPLACE VIEW embeddings_partition_monitoring AS
 SELECT 
-    schemaname||'.'||tablename as partition_name,   -- fixed to `relname` in migration 000019
+    schemaname||'.'||relname as partition_name,
     n_tup_ins - n_tup_del as row_count,
-    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size_pretty,
-    pg_size_pretty(pg_indexes_size(schemaname||'.'||tablename)) as index_size_pretty,
+    pg_size_pretty(pg_total_relation_size(schemaname||'.'||relname)) as size_pretty,
+    pg_size_pretty(pg_indexes_size(schemaname||'.'||relname)) as index_size_pretty,
     seq_scan,
     seq_tup_read,
     idx_scan,
@@ -206,8 +193,8 @@ SELECT
     n_tup_upd,
     n_tup_del
 FROM pg_stat_user_tables 
-WHERE tablename LIKE 'embeddings_partitioned_%'  -- fixed to `relname` in migration 000019
-ORDER BY tablename;                              -- fixed to `relname` in migration 000019
+WHERE relname LIKE 'embeddings_partitioned_%'
+ORDER BY relname;
 
 COMMENT ON VIEW embeddings_partition_monitoring IS 
 'Performance monitoring view for embeddings partitions showing size, usage, and access patterns.';

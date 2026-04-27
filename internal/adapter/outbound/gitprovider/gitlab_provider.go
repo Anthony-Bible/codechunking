@@ -1,10 +1,12 @@
 package gitprovider
 
 import (
+	"codechunking/internal/application/common/slogger"
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/port/outbound"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -41,11 +43,15 @@ func (p *GitLabProvider) ListRepositories(
 	seen := make(map[string]struct{})
 	var result []outbound.GitProviderRepository
 
-	// List projects from each group.
+	// List projects from each group, skipping groups that fail so one bad group
+	// (e.g. a moved/deleted group) doesn't abort the entire sync.
+	var groupErrs []error
 	for _, group := range connector.Groups() {
 		repos, err := p.listGroupProjects(ctx, baseURL, group, connector.AuthToken())
 		if err != nil {
-			return nil, fmt.Errorf("listing group %q: %w", group, err)
+			slogger.Warn(ctx, "Skipping group due to error", slogger.Fields{"group": group, "error": err.Error()})
+			groupErrs = append(groupErrs, fmt.Errorf("listing group %q: %w", group, err))
+			continue
 		}
 		for _, repo := range repos {
 			if _, dup := seen[repo.URL]; dup {
@@ -54,6 +60,13 @@ func (p *GitLabProvider) ListRepositories(
 			seen[repo.URL] = struct{}{}
 			result = append(result, repo)
 		}
+	}
+	// Only declare a hard failure when groups are the *only* configured signal: at least one
+	// group erred (1), nothing succeeded (2), and there's no individual project that might
+	// still produce a result (3). If any of those escape hatches exist, prefer partial success
+	// — the per-group warnings were already logged above.
+	if len(groupErrs) > 0 && len(result) == 0 && len(connector.Projects()) == 0 {
+		return nil, errors.Join(groupErrs...)
 	}
 
 	// Fetch individually specified projects.

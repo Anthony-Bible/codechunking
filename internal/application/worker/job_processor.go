@@ -842,7 +842,8 @@ func (p *DefaultJobProcessor) setupWorkspace(workspacePath string) error {
 	return nil
 }
 
-// cloneRepository clones the repository.
+// cloneRepository clones the repository. If GITLAB_TOKEN is set, it is passed
+// to git as an HTTP extra header so that credentials are never embedded in the URL.
 func (p *DefaultJobProcessor) cloneRepository(
 	ctx context.Context,
 	message messaging.EnhancedIndexingJobMessage,

@@ -6,7 +6,7 @@ zoekt:
     port: 6070
   indexing:
     git_index_path: zoekt-git-index
-    index_dir: /home/anthony/tmp/zoekt-index
+    index_dir: /data/index
     timeout: 10m
   concurrent_indexing:
     enabled: true
@@ -31,6 +31,7 @@ log:
 #     auth_token: "${GITLAB_TOKEN}"
 #     groups:
 #       - my-group
+#       - my-group/subgroup
 # Gemini API key should be set via environment variable:
 # export CODECHUNK_GEMINI_API_KEY=your-api-key
 

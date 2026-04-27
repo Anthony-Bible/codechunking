@@ -236,6 +236,10 @@ slogger.Error(ctx, "Database error", slogger.Fields{"error": err})
 
 ## Development Best Practices
 
+### Database Migrations
+- **`CREATE INDEX CONCURRENTLY`** must always live in its own dedicated migration file — golang-migrate runs migrations inside a transaction by default, and `CONCURRENTLY` cannot execute inside a transaction (it will error). Only use `CONCURRENTLY` when adding indexes to existing tables with live data; for new tables created in the same migration, non-concurrent indexes are fine (empty table = no lock contention).
+- Never use `ALTER SYSTEM` in migrations — it writes to `postgresql.conf` and affects all databases on the instance. It belongs in ops config, not schema migrations.
+
 ### Code Organization
 - Keep files under 500 lines (preferred), max 1000 lines for readability and parsability
 - Follow hexagonal architecture patterns (domain, application, port, adapter layers)

@@ -1,0 +1,35 @@
+# Build zoekt from source for multi-arch compatibility (including arm64)
+FROM golang:1.25-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Pin to the same version used in go.mod
+ARG ZOEKT_VERSION=v0.0.0-20260410121455-f469edd14f92
+RUN go install github.com/sourcegraph/zoekt/cmd/zoekt-webserver@${ZOEKT_VERSION} && \
+    go install github.com/sourcegraph/zoekt/cmd/zoekt-git-index@${ZOEKT_VERSION}
+
+# Runtime image
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git wget && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1000 zoekt && \
+    useradd -u 1000 -g zoekt -m -s /bin/bash zoekt
+
+COPY --from=builder /go/bin/zoekt-webserver /usr/local/bin/zoekt-webserver
+COPY --from=builder /go/bin/zoekt-git-index /usr/local/bin/zoekt-git-index
+
+RUN mkdir -p /data/index && chown -R zoekt:zoekt /data
+
+USER zoekt
+
+EXPOSE 6070 6071
+
+ENTRYPOINT ["zoekt-webserver"]
+CMD ["-index", "/data/index", "-pprof", "-rpc"]

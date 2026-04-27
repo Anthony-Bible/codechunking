@@ -14,6 +14,7 @@ import (
 	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/adapter/outbound/zoekt"
 	"codechunking/internal/application/common/slogger"
+	"codechunking/internal/application/dto"
 	"codechunking/internal/application/registry"
 	appservice "codechunking/internal/application/service"
 	"codechunking/internal/config"
@@ -40,6 +41,13 @@ const (
 	// Server timeout constants.
 	serverStartTimeoutSeconds    = 10
 	serverShutdownTimeoutSeconds = 30
+
+	// syncConnectorConcurrency is the maximum number of connector syncs that run in parallel
+	// at startup to avoid overloading the database, GitLab API, and NATS.
+	syncConnectorConcurrency = 5
+
+	// syncConnectorTimeout is the per-connector sync timeout.
+	syncConnectorTimeout = 10 * time.Minute
 )
 
 // ServiceFactory creates and manages service instances with memoized database connection pooling.
@@ -257,6 +265,71 @@ func (sf *ServiceFactory) ReconcileConnectors(ctx context.Context) {
 	if err := reconciler.Reconcile(ctx, sf.config.Connectors); err != nil {
 		slogger.Error(ctx, "Connector reconciliation failed", slogger.Fields{"error": err.Error()})
 	}
+}
+
+// SyncAllConnectors triggers a background sync for every active connector using
+// paginated listing to avoid fetching unlimited rows in a single query.
+// Syncs run through a bounded worker pool to avoid overloading downstream services.
+// The caller should pass a fully-initialized ConnectorService (e.g., the same one used
+// by the server) to avoid creating a duplicate NATS connection at startup.
+// Non-fatal: errors per connector are logged and skipped.
+// The returned channel closes when all in-flight syncs have drained; callers may
+// select on it during graceful shutdown. Cancelling ctx stops fetching new pages
+// but lets already-dispatched syncs complete.
+func (sf *ServiceFactory) SyncAllConnectors(ctx context.Context, connectorSvc inbound.ConnectorService) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done) // runs LAST (registered first, LIFO)
+		sem := make(chan struct{}, syncConnectorConcurrency)
+		var wg sync.WaitGroup
+		defer wg.Wait() // runs FIRST (registered last, LIFO) — blocks until all workers done
+
+		offset := 0
+		for {
+			page, err := connectorSvc.ListConnectors(ctx, dto.ConnectorListQuery{
+				Limit:  dto.MaxLimitValue,
+				Offset: offset,
+				Status: "active",
+			})
+			if err != nil {
+				slogger.Error(ctx, "SyncAllConnectors: list page failed",
+					slogger.Fields{"offset": offset, "error": err.Error()})
+				break
+			}
+			slogger.Info(ctx, "SyncAllConnectors: dispatching page", slogger.Fields{
+				"offset": offset,
+				"count":  len(page.Connectors),
+			})
+			for _, c := range page.Connectors {
+				id := c.ID
+				sem <- struct{}{}
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					defer func() { <-sem }()
+					syncCtx, cancel := context.WithTimeout(ctx, syncConnectorTimeout)
+					defer cancel()
+					resp, err := connectorSvc.SyncConnector(syncCtx, id)
+					if err != nil {
+						slogger.Error(syncCtx, "SyncAllConnectors: sync failed", slogger.Fields{
+							"connector_id": id,
+							"error":        err.Error(),
+						})
+						return
+					}
+					slogger.Info(syncCtx, "SyncAllConnectors: sync completed", slogger.Fields{
+						"connector_id":       id,
+						"repositories_found": resp.RepositoriesFound,
+					})
+				}()
+			}
+			if !page.Pagination.HasMore || ctx.Err() != nil {
+				break
+			}
+			offset += dto.MaxLimitValue
+		}
+	}()
+	return done
 }
 
 // CreateRepositoryService creates a repository service instance with fail-fast error handling.
@@ -602,20 +675,24 @@ Configuration is loaded from config files and environment variables.`,
 }
 
 func runAPIServer(_ *cobra.Command, _ []string) {
-	// Load configuration
 	cfg := GetConfig()
-
-	// Create service factory
 	serviceFactory := NewServiceFactory(cfg)
 
-	serviceFactory.ReconcileConnectors(context.Background())
+	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	// Create server using the factory
+	serviceFactory.ReconcileConnectors(rootCtx)
+
+	// Create server using the factory - this also initializes the NATS connection.
 	server, err := serviceFactory.CreateServer()
 	if err != nil {
 		slogger.ErrorNoCtx("Failed to create server", slogger.Field("error", err))
-		os.Exit(1)
+		os.Exit(1) //nolint:gocritic // intentional exit without defer in error path
 	}
+
+	// Trigger background sync after the server's NATS connection is established, reusing
+	// the same fully-initialized connector service rather than creating a separate one.
+	syncDone := serviceFactory.SyncAllConnectors(rootCtx, serviceFactory.CreateConnectorService())
 
 	// Start server with timeout
 	startCtx, startCancel := context.WithTimeout(context.Background(), serverStartTimeoutSeconds*time.Second)
@@ -623,37 +700,38 @@ func runAPIServer(_ *cobra.Command, _ []string) {
 
 	if startErr := server.Start(startCtx); startErr != nil {
 		slogger.ErrorNoCtx("Failed to start server", slogger.Field("error", startErr.Error()))
-		os.Exit(1) //nolint:gocritic // intentional exit without defer in error path
+		os.Exit(1)
 	}
 
 	slogger.InfoNoCtx("API server started successfully", slogger.Field("address", server.Address()))
 	slogger.InfoNoCtx("Server configuration", slogger.Fields2("host", server.Host(), "port", server.Port()))
 	slogger.InfoNoCtx("Middleware enabled", slogger.Field("count", server.MiddlewareCount()))
 
-	// Create a graceful shutdown handler
-	gracefulShutdown(server)
+	gracefulShutdown(server, rootCtx, syncDone)
 }
 
-// gracefulShutdown handles graceful server shutdown with proper signal handling.
-func gracefulShutdown(server *api.Server) {
-	// Create a channel to receive OS signals
-	sigChan := make(chan os.Signal, 1)
+// gracefulShutdown handles graceful server shutdown, waiting for rootCtx cancellation
+// (i.e. SIGINT/SIGTERM delivered via signal.NotifyContext in the caller). After the
+// HTTP server shuts down it waits for in-flight connector syncs to drain or for the
+// shutdown timeout to expire, whichever comes first.
+func gracefulShutdown(server *api.Server, rootCtx context.Context, syncDone <-chan struct{}) {
+	<-rootCtx.Done()
+	slogger.InfoNoCtx("Received shutdown signal. Initiating graceful shutdown", nil)
 
-	// Register the channel to receive specific signals
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// Wait for a signal
-	sig := <-sigChan
-	slogger.InfoNoCtx("Received signal. Initiating graceful shutdown", slogger.Field("signal", sig))
-
-	// Create a context with timeout for shutdown
+	// Derive shutdown timeout from a fresh background context — rootCtx is already
+	// cancelled at this point so we must not inherit from it.
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), serverShutdownTimeoutSeconds*time.Second)
 	defer shutdownCancel()
 
-	// Attempt graceful shutdown
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		slogger.ErrorNoCtx("Error during server shutdown", slogger.Field("error", err))
 		os.Exit(1) //nolint:gocritic // intentional exit without defer in error path
+	}
+
+	// Wait for in-flight connector syncs to drain (or timeout).
+	select {
+	case <-syncDone:
+	case <-shutdownCtx.Done():
 	}
 
 	slogger.InfoNoCtx("API server shut down gracefully", nil)

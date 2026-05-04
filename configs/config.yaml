@@ -67,6 +67,34 @@ zoekt:
     max_concurrent_jobs: 5
     retry_attempts: 3
 
+# Embedding provider selection.
+# Provider can be "gemini" (default, uses the gemini: block below) or "openai"
+# (uses embedding.openai). The openai provider also works with any
+# OpenAI-compatible server (Azure OpenAI, vLLM, Ollama, LM Studio, Together.ai)
+# by setting embedding.openai.base_url.
+#
+# Important: dimensions MUST be 768 to match the vector(768) pgvector column.
+# OpenAI's text-embedding-3-small / text-embedding-3-large support arbitrary
+# dimensions via the dimensions parameter (Matryoshka). text-embedding-ada-002
+# is locked at 1536 and is rejected at config-validation time.
+embedding:
+  provider: gemini   # gemini | openai
+  # openai:
+  #   api_key: "${OPENAI_API_KEY}"
+  #   base_url: "https://api.openai.com/v1"   # default; override for compatible servers
+  #   model: text-embedding-3-small
+  #   dimensions: 768
+  #   max_retries: 3
+  #   timeout: 60s
+  #   batch_size: 256                         # max 2048 per OpenAI sync API
+  #   # Opt-in: when true, prefix-truncate + L2-renormalize the response vector
+  #   # to `dimensions` if the server returned more. Use this for MRL-trained
+  #   # models served behind backends that ignore the `dimensions` request
+  #   # parameter (e.g. LM Studio always returns the model's native dim).
+  #   # Leave false for OpenAI proper or any server that honors `dimensions` —
+  #   # the default strict-equality check catches typo'd model/dim configs.
+  #   truncate_dimensions: false
+
 gemini:
   model: gemini-embedding-001
   max_retries: 3

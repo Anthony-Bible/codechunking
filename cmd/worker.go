@@ -8,6 +8,7 @@ import (
 	"codechunking/internal/adapter/inbound/messaging"
 	"codechunking/internal/adapter/outbound/gemini"
 	"codechunking/internal/adapter/outbound/gitclient"
+	"codechunking/internal/adapter/outbound/openai"
 	"codechunking/internal/adapter/outbound/queue"
 	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/adapter/outbound/treesitter"
@@ -77,7 +78,7 @@ func runWorkerService() {
 	}
 	defer dbPool.Close()
 
-	workerService, batchProgressRepo, _, batchEmbeddingService, chunkRepo, err := createWorkerService(
+	workerService, batchProgressRepo, _, batchEmbeddingService, chunkRepo, asyncBatchSupported, err := createWorkerService(
 		cfg,
 		dbPool,
 	)
@@ -95,8 +96,19 @@ func runWorkerService() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	if !asyncBatchSupported {
+		slogger.InfoNoCtx(
+			"File-based async batch API not supported by current embedding provider; embeddings will be generated synchronously via JobProcessor's sync batch path",
+			nil,
+		)
+		startRetryBatchPolling(ctx, batchProgressRepo)
+		waitForShutdownAndStop(workerService)
+		return
+	}
+
 	// Create and start BatchSubmitter for rate-limited batch submissions
 	submitterConfig := worker.BatchSubmitterConfig{
+		EmbeddingConfig:          cfg.Embedding,
 		PollInterval:             cfg.BatchProcessing.SubmitterPollInterval,
 		MaxConcurrentSubmissions: cfg.BatchProcessing.MaxConcurrentSubmissions,
 		InitialBackoff:           cfg.BatchProcessing.SubmissionInitialBackoff,
@@ -315,10 +327,12 @@ func createBatchQueueManager(
 }
 
 // createWorkerService creates and configures the worker service with all dependencies.
+//
+//nolint:funlen // wires together many adapters; splitting yields an artificial helper without clearer boundaries.
 func createWorkerService(
 	cfg *config.Config,
 	dbPool *pgxpool.Pool,
-) (inbound.WorkerService, *repository.PostgreSQLBatchProgressRepository, outbound.EmbeddingService, outbound.BatchEmbeddingService, outbound.ChunkStorageRepository, error) {
+) (inbound.WorkerService, *repository.PostgreSQLBatchProgressRepository, outbound.EmbeddingService, outbound.BatchEmbeddingService, outbound.ChunkStorageRepository, bool, error) {
 	// Create repository implementations
 	repoRepository := repository.NewPostgreSQLRepositoryRepository(dbPool)
 	indexingJobRepository := repository.NewPostgreSQLIndexingJobRepository(dbPool)
@@ -332,11 +346,14 @@ func createWorkerService(
 	codeParser, err := treesitter.NewTreeSitterCodeParser(context.Background())
 	if err != nil {
 		slogger.ErrorNoCtx("Failed to create TreeSitter code parser", slogger.Fields{"error": err.Error()})
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, false, err
 	}
 
-	// Create embedding service and batch embedding service
-	embeddingService, batchEmbeddingService := createEmbeddingService(cfg)
+	// Create embedding service and batch embedding service.
+	// asyncBatchSupported tells runWorkerService whether to launch the
+	// BatchSubmitter / BatchPoller goroutines or fall through to the
+	// JobProcessor's synchronous batch path.
+	embeddingService, batchEmbeddingService, asyncBatchSupported := createEmbeddingService(cfg)
 
 	// Create NATS connection for batch queue manager
 	natsConn, err := createNATSConnection(cfg)
@@ -366,6 +383,7 @@ func createWorkerService(
 		WorkspaceDir:      "/tmp/codechunking-workspace",
 		MaxConcurrentJobs: cfg.Worker.Concurrency,
 		JobTimeout:        cfg.Worker.JobTimeout,
+		EmbeddingConfig:   cfg.Embedding,
 	}
 
 	// Conditionally create ZoektIndexer when concurrent indexing is enabled.
@@ -387,9 +405,9 @@ func createWorkerService(
 		indexingJobRepository,
 		repoRepository,
 		gitClient,
-		codeParser,             // Now using real TreeSitter CodeParser
-		embeddingService,       // Using Gemini embedding service
-		chunkStorageRepository, // Repository for storing chunks and embeddings
+		codeParser,
+		embeddingService,
+		chunkStorageRepository,
 		&worker.JobProcessorBatchOptions{
 			BatchConfig:           &cfg.BatchProcessing,
 			BatchQueueManager:     batchQueueManager,
@@ -411,7 +429,7 @@ func createWorkerService(
 
 	consumer, err := messaging.NewNATSConsumer(consumerConfig, cfg.NATS, jobProcessor)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, false, err
 	}
 
 	// Create worker service
@@ -430,10 +448,10 @@ func createWorkerService(
 
 	// Add consumer to service
 	if err := workerService.AddConsumer(consumer); err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, false, err
 	}
 
-	return workerService, batchProgressRepo, embeddingService, batchEmbeddingService, chunkStorageRepository, nil
+	return workerService, batchProgressRepo, embeddingService, batchEmbeddingService, chunkStorageRepository, asyncBatchSupported, nil
 }
 
 // startWorkerService starts the worker service.
@@ -532,9 +550,38 @@ func waitForShutdownAndStop(workerService inbound.WorkerService) {
 	}
 }
 
-// createEmbeddingService creates an embedding service using Gemini API.
-// The worker service requires a valid Gemini API key to function properly.
-func createEmbeddingService(cfg *config.Config) (outbound.EmbeddingService, outbound.BatchEmbeddingService) {
+// createEmbeddingService dispatches on cfg.Embedding.Provider. An empty
+// Provider falls through to Gemini for backward compatibility; unknown
+// providers are rejected upstream by config validation. The returned bool
+// reports whether the BatchEmbeddingService implements the file-based async
+// Batches API; when false, runWorkerService skips the BatchSubmitter and
+// BatchPoller goroutines and embedding work flows through the synchronous
+// path on JobProcessor.
+func createEmbeddingService(
+	cfg *config.Config,
+) (outbound.EmbeddingService, outbound.BatchEmbeddingService, bool) {
+	if cfg.Embedding.Provider == config.EmbeddingProviderOpenAI {
+		return createOpenAIEmbeddingService(cfg)
+	}
+	return createGeminiEmbeddingService(cfg)
+}
+
+func createOpenAIEmbeddingService(
+	cfg *config.Config,
+) (outbound.EmbeddingService, outbound.BatchEmbeddingService, bool) {
+	client := openai.NewClient(cfg.Embedding.OpenAI)
+	slogger.InfoNoCtx("Using OpenAI embedding service", slogger.Fields{
+		"base_url":   cfg.Embedding.OpenAI.BaseURL,
+		"model":      cfg.Embedding.OpenAI.Model,
+		"dimensions": cfg.Embedding.OpenAI.Dimensions,
+		"batch_size": cfg.Embedding.OpenAI.BatchSize,
+	})
+	return client, openai.NewBatchStub(), false
+}
+
+func createGeminiEmbeddingService(
+	cfg *config.Config,
+) (outbound.EmbeddingService, outbound.BatchEmbeddingService, bool) {
 	// Try to create Gemini client first using Viper configuration
 	geminiAPIKey := cfg.Gemini.APIKey
 
@@ -600,7 +647,8 @@ func createEmbeddingService(cfg *config.Config) (outbound.EmbeddingService, outb
 		"model":             config.Model,
 		"batch_api_enabled": batchClient != nil,
 	})
-	return client, batchClient
+	// async batch API is supported only when a real batch client was constructed
+	return client, batchClient, batchClient != nil
 }
 
 func init() { //nolint:gochecknoinits // Standard Cobra CLI pattern for command registration

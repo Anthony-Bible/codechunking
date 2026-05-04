@@ -79,6 +79,7 @@ type JobProcessorConfig struct {
 	CleanupInterval   time.Duration
 	RetryAttempts     int
 	RetryBackoff      time.Duration
+	EmbeddingConfig   config.EmbeddingConfig
 }
 
 // JobProcessorBatchOptions contains optional batch processing dependencies.
@@ -1004,7 +1005,7 @@ func (p *DefaultJobProcessor) generateSingleEmbedding(
 	})
 
 	options := outbound.EmbeddingOptions{
-		Model:    "gemini-embedding-001",
+		Model:    p.embeddingModelName(),
 		TaskType: outbound.TaskTypeRetrievalDocument,
 		Timeout:  120 * time.Second,
 	}
@@ -1066,7 +1067,7 @@ func (p *DefaultJobProcessor) storeSingleEmbedding(
 		ChunkID:      chunkUUID,
 		RepositoryID: repositoryID,
 		Vector:       result.Vector,
-		ModelVersion: "gemini-embedding-001",
+		ModelVersion: result.Model,
 		CreatedAt:    time.Now().Format(time.RFC3339),
 	}
 
@@ -1470,7 +1471,7 @@ func (p *DefaultJobProcessor) extractTextsFromChunks(chunks []outbound.CodeChunk
 // getBatchEmbeddingOptions returns the standard configuration for batch embedding operations.
 func (p *DefaultJobProcessor) getBatchEmbeddingOptions() outbound.EmbeddingOptions {
 	return outbound.EmbeddingOptions{
-		Model:             "gemini-embedding-001",
+		Model:             p.embeddingModelName(),
 		TaskType:          outbound.TaskTypeRetrievalDocument,
 		IncludeTokenCount: true,
 	}
@@ -1644,7 +1645,7 @@ func (p *DefaultJobProcessor) storeSingleEmbeddingWithErrorHandling(
 		ChunkID:      chunkUUID,
 		RepositoryID: repositoryID,
 		Vector:       result.Vector,
-		ModelVersion: "gemini-embedding-001",
+		ModelVersion: result.Model,
 		CreatedAt:    time.Now().Format(time.RFC3339),
 	}
 
@@ -1759,7 +1760,7 @@ func (p *DefaultJobProcessor) countTokensForChunks(
 	}
 
 	// Process all chunks with callback
-	err := p.embeddingService.CountTokensWithCallback(ctx, chunksToCount, "gemini-embedding-001", callback)
+	err := p.embeddingService.CountTokensWithCallback(ctx, chunksToCount, p.embeddingModelName(), callback)
 	if err != nil {
 		slogger.Warn(
 			ctx,
@@ -2128,10 +2129,15 @@ func (p *DefaultJobProcessor) generateRequestID(jobID, chunkID string) string {
 	return fmt.Sprintf("%s-%s", jobID, chunkID)
 }
 
+// embeddingModelName returns the configured embedding model name derived from the provider config.
+func (p *DefaultJobProcessor) embeddingModelName() string {
+	return p.config.EmbeddingConfig.ModelName()
+}
+
 // getEmbeddingOptions returns the configured embedding options.
 func (p *DefaultJobProcessor) getEmbeddingOptions() outbound.EmbeddingOptions {
 	return outbound.EmbeddingOptions{
-		Model:            "gemini-embedding-001",
+		Model:            p.embeddingModelName(),
 		TaskType:         outbound.TaskTypeRetrievalDocument,
 		TruncateStrategy: outbound.TruncateEnd,
 		MaxTokens:        8192,
@@ -2170,10 +2176,10 @@ func (p *DefaultJobProcessor) createTestEmbeddingResult(content string) *outboun
 	}
 
 	return &outbound.EmbeddingResult{
-		Vector:      vector, // Proper 768-dimensional vector for gemini-embedding-001
+		Vector:      vector,
 		Dimensions:  768,
 		TokenCount:  len(content) / 4, // Rough estimate
-		Model:       "gemini-embedding-001",
+		Model:       p.embeddingModelName(),
 		GeneratedAt: time.Now(),
 	}
 }
@@ -2774,12 +2780,9 @@ func (p *DefaultJobProcessor) filterNewEmbeddings(
 	savedChunks []outbound.CodeChunk,
 	savedChunkUUIDs []uuid.UUID,
 ) ([]outbound.CodeChunk, int, error) {
-	existingEmbeddingIDs, err := p.logAndCheckExistingEmbeddings(
+	existingEmbeddingIDs := p.logAndCheckExistingEmbeddings(
 		ctx, indexingJobID, repositoryID, batchNumber, modelVersion, savedChunkUUIDs,
 	)
-	if err != nil {
-		return nil, 0, err
-	}
 
 	chunksNeedingEmbedding, err := filterChunksNeedingEmbeddings(savedChunks, savedChunkUUIDs, existingEmbeddingIDs)
 	if err != nil {
@@ -2923,7 +2926,7 @@ func (p *DefaultJobProcessor) logAndCheckExistingEmbeddings(
 	batchNumber int,
 	modelVersion string,
 	chunkIDs []uuid.UUID,
-) (map[uuid.UUID]struct{}, error) {
+) map[uuid.UUID]struct{} {
 	sample := chunkIDs
 	if len(sample) > 3 {
 		sample = sample[:3]
@@ -2947,7 +2950,7 @@ func (p *DefaultJobProcessor) logAndCheckExistingEmbeddings(
 			"sample_chunk_ids": sample,
 			"error":            err,
 		})
-		return map[uuid.UUID]struct{}{}, nil
+		return map[uuid.UUID]struct{}{}
 	}
 	slogger.Debug(ctx, "Existing embeddings check result", slogger.Fields{
 		"indexing_job_id": indexingJobID,
@@ -2955,7 +2958,7 @@ func (p *DefaultJobProcessor) logAndCheckExistingEmbeddings(
 		"chunk_count":     len(chunkIDs),
 		"existing_count":  len(existing),
 	})
-	return existing, nil
+	return existing
 }
 
 // processBatchWithRetry attempts to generate batch embeddings with retry logic for quota errors.

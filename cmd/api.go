@@ -11,6 +11,7 @@ import (
 	"codechunking/internal/adapter/outbound/gitprovider"
 	"codechunking/internal/adapter/outbound/messaging"
 	"codechunking/internal/adapter/outbound/mock"
+	"codechunking/internal/adapter/outbound/openai"
 	"codechunking/internal/adapter/outbound/repository"
 	"codechunking/internal/adapter/outbound/zoekt"
 	"codechunking/internal/application/common/slogger"
@@ -465,8 +466,7 @@ func (sf *ServiceFactory) CreateSearchService() (inbound.SearchService, error) {
 	// Create repository repository
 	repoRepo := repository.NewPostgreSQLRepositoryRepository(dbPool)
 
-	// Create Gemini embedding client
-	embeddingService, err := sf.createGeminiEmbeddingClient()
+	embeddingService, err := sf.createEmbeddingClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create embedding service: %w", err)
 	}
@@ -485,6 +485,19 @@ func (sf *ServiceFactory) CreateSearchService() (inbound.SearchService, error) {
 	searchService := appservice.NewSearchService(vectorRepo, embeddingService, chunkRepo, repoRepo, sf.config, zoektSearcher, nil)
 
 	return searchService, nil
+}
+
+// createEmbeddingClient dispatches on the configured embedding provider.
+// Defaults to Gemini for backward compatibility when provider is unset.
+func (sf *ServiceFactory) createEmbeddingClient() (outbound.EmbeddingService, error) {
+	switch sf.config.Embedding.Provider {
+	case config.EmbeddingProviderOpenAI:
+		return openai.NewClient(sf.config.Embedding.OpenAI), nil
+	case config.EmbeddingProviderGemini, "":
+		return sf.createGeminiEmbeddingClient()
+	default:
+		return nil, fmt.Errorf("unknown embedding.provider: %q", sf.config.Embedding.Provider)
+	}
 }
 
 // createGeminiEmbeddingClient creates a Gemini embedding client.

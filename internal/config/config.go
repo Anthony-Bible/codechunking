@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"time"
 
 	"github.com/spf13/viper"
@@ -30,8 +31,43 @@ type Config struct {
 	Zoekt           ZoektConfig           `mapstructure:"zoekt"`
 	Gemini          GeminiConfig          `mapstructure:"gemini"`
 	BatchProcessing BatchProcessingConfig `mapstructure:"batch_processing"`
+	Embedding       EmbeddingConfig       `mapstructure:"embedding"`
 	Log             LogConfig             `mapstructure:"log"`
 	Connectors      []ConnectorConfig     `mapstructure:"connectors"`
+}
+
+// Embedding provider identifiers.
+const (
+	EmbeddingProviderGemini = "gemini"
+	EmbeddingProviderOpenAI = "openai"
+)
+
+// EmbeddingConfig selects and configures the embedding provider.
+// When Provider is empty, the system defaults to "gemini" for backward
+// compatibility with deployments that pre-date the provider switch.
+type EmbeddingConfig struct {
+	Provider string       `mapstructure:"provider"` // "gemini" | "openai"
+	OpenAI   OpenAIConfig `mapstructure:"openai"`
+}
+
+// OpenAIConfig holds configuration for the OpenAI embeddings adapter.
+// BaseURL is configurable so the same adapter can target Azure OpenAI,
+// vLLM, Ollama, LM Studio, Together.ai, and other OpenAI-compatible servers.
+type OpenAIConfig struct {
+	APIKey     string        `mapstructure:"api_key"`
+	BaseURL    string        `mapstructure:"base_url"`
+	Model      string        `mapstructure:"model"`
+	Dimensions int           `mapstructure:"dimensions"`
+	MaxRetries int           `mapstructure:"max_retries"`
+	Timeout    time.Duration `mapstructure:"timeout"`
+	BatchSize  int           `mapstructure:"batch_size"`
+	// TruncateDimensions enables client-side prefix-truncation +
+	// L2-renormalization when the server returns a vector larger than
+	// Dimensions. Required for MRL-trained models served by backends that
+	// ignore the OpenAI `dimensions` request parameter (e.g. LM Studio).
+	// Default false: strict equality is enforced and a mismatch is a hard
+	// error, preserving the load-bearing footgun guard for typo'd configs.
+	TruncateDimensions bool `mapstructure:"truncate_dimensions"`
 }
 
 // APIConfig holds API server configuration.
@@ -215,6 +251,101 @@ type QueueLimitsConfig struct {
 	MaxWaitTime  time.Duration `mapstructure:"max_wait_time"`  // Maximum time waiting in queue
 }
 
+// applyDefaultsAndValidate applies defaults to the embedding config and
+// validates it. Defaults are applied in-place so callers see the resolved
+// values after Validate() returns.
+//
+// Provider-selection rules:
+//   - "" or "gemini" → use the existing Gemini path; no OpenAI fields required.
+//   - "openai"       → require api_key + model + dimensions=768; default base_url and batch_size.
+//   - anything else  → reject.
+//
+// The 768-dimension hard requirement exists because the pgvector column is
+// vector(768). OpenAI's text-embedding-3-* models support arbitrary dimensions
+// via the `dimensions` request parameter (Matryoshka), so users must opt into
+// that to remain schema-compatible. text-embedding-ada-002 is locked at 1536
+// and is rejected explicitly to give users a clearer error than a runtime
+// dimension mismatch.
+func (e *EmbeddingConfig) applyDefaultsAndValidate() error {
+	if e.Provider == "" {
+		e.Provider = EmbeddingProviderGemini
+	}
+	switch e.Provider {
+	case EmbeddingProviderGemini:
+		return nil
+	case EmbeddingProviderOpenAI:
+		return e.OpenAI.applyDefaultsAndValidate()
+	default:
+		return fmt.Errorf("embedding.provider %q is not supported (valid: gemini, openai)", e.Provider)
+	}
+}
+
+// defaultOpenAIBaseURL is the canonical OpenAI endpoint base. We require an
+// api_key when the configured BaseURL resolves to the same host — self-hosted
+// OpenAI-compatible servers (vLLM, Ollama, LM Studio, etc.) run with no auth.
+const defaultOpenAIBaseURL = "https://api.openai.com/v1"
+
+// openAIHost is the hostname extracted from defaultOpenAIBaseURL, used for
+// host-based comparison so path variants like "/v1/embeddings/" still match.
+const openAIHost = "api.openai.com"
+
+// isOpenAIHost reports whether rawURL targets the official OpenAI API host.
+// It returns false for any URL that cannot be parsed.
+func isOpenAIHost(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	return err == nil && u.Host == openAIHost
+}
+
+func (o *OpenAIConfig) applyDefaultsAndValidate() error {
+	if o.BaseURL == "" {
+		o.BaseURL = defaultOpenAIBaseURL
+	}
+	// Reject negatives BEFORE defaulting so a negative value is never
+	// silently replaced with a default (and never reaches the runtime where
+	// it would, e.g., disable HTTP timeouts or break the chunking loop).
+	if o.BatchSize < 0 {
+		return fmt.Errorf("embedding.openai.batch_size must be >= 0, got %d", o.BatchSize)
+	}
+	if o.MaxRetries < 0 {
+		return fmt.Errorf("embedding.openai.max_retries must be >= 0, got %d", o.MaxRetries)
+	}
+	if o.Timeout < 0 {
+		return fmt.Errorf("embedding.openai.timeout must be >= 0, got %s", o.Timeout)
+	}
+	if o.BatchSize == 0 {
+		o.BatchSize = 256
+	}
+	if o.MaxRetries == 0 {
+		o.MaxRetries = 3
+	}
+	if o.APIKey == "" && isOpenAIHost(o.BaseURL) {
+		return errors.New("embedding.openai.api_key is required when targeting api.openai.com (set base_url for self-hosted/no-auth servers)")
+	}
+	if o.Model == "" {
+		return errors.New("embedding.openai.model is required when provider=openai")
+	}
+	if o.Model == "text-embedding-ada-002" {
+		return errors.New("embedding.openai.model text-embedding-ada-002 is not supported: it is locked at 1536 dimensions and cannot match the vector(768) schema; use text-embedding-3-small or text-embedding-3-large with dimensions=768")
+	}
+	if o.Dimensions != 768 {
+		return fmt.Errorf("embedding.openai.dimensions must be 768 to match the vector(768) schema, got %d", o.Dimensions)
+	}
+	if o.BatchSize > 2048 {
+		return fmt.Errorf("embedding.openai.batch_size must be <= 2048 (OpenAI API limit), got %d", o.BatchSize)
+	}
+	return nil
+}
+
+// ModelName returns the embedding model identifier for the configured provider.
+// For gemini (or empty provider), it returns the canonical gemini model name.
+// For openai, it returns the configured model from OpenAIConfig.
+func (e *EmbeddingConfig) ModelName() string {
+	if e.Provider == EmbeddingProviderOpenAI {
+		return e.OpenAI.Model
+	}
+	return "gemini-embedding-001"
+}
+
 // LogConfig holds logging configuration.
 type LogConfig struct {
 	Level  string `mapstructure:"level"`
@@ -249,8 +380,9 @@ func (c *Config) Validate() error {
 		return errors.New("database.name is required")
 	}
 
-	// Validate Gemini config when in production
-	if c.Log.Level == "error" || c.Log.Level == "fatal" {
+	// Validate Gemini config when in production (only required when provider is gemini)
+	if (c.Embedding.Provider == "" || c.Embedding.Provider == "gemini") &&
+		(c.Log.Level == "error" || c.Log.Level == "fatal") {
 		if c.Gemini.APIKey == "" {
 			return errors.New("gemini.api_key is required in production")
 		}
@@ -266,6 +398,10 @@ func (c *Config) Validate() error {
 	}
 
 	if err := c.Search.Validate(); err != nil {
+		return err
+	}
+
+	if err := c.Embedding.applyDefaultsAndValidate(); err != nil {
 		return err
 	}
 

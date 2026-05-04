@@ -2,6 +2,7 @@ package worker
 
 import (
 	"codechunking/internal/application/common/slogger"
+	"codechunking/internal/config"
 	"codechunking/internal/domain/entity"
 	"codechunking/internal/port/outbound"
 	"context"
@@ -15,6 +16,7 @@ import (
 
 // BatchSubmitterConfig holds configuration for batch submission.
 type BatchSubmitterConfig struct {
+	EmbeddingConfig          config.EmbeddingConfig
 	PollInterval             time.Duration
 	MaxConcurrentSubmissions int
 	InitialBackoff           time.Duration
@@ -169,7 +171,6 @@ func (s *BatchSubmitter) submitOneBatch(ctx context.Context) error {
 			"batch_id": batch.ID().String(),
 		})
 
-		// Mark batch as failed
 		errorMsg := fmt.Sprintf("JSON deserialization failed: %v", err)
 		batch.MarkFailed(errorMsg)
 
@@ -183,81 +184,22 @@ func (s *BatchSubmitter) submitOneBatch(ctx context.Context) error {
 		return nil
 	}
 
-	// Submit to API
 	options := outbound.EmbeddingOptions{
-		Model:          "gemini-embedding-001",
+		Model:          s.config.EmbeddingConfig.ModelName(),
 		Dimensionality: 768,
 	}
 
-	var job *outbound.BatchEmbeddingJob
-
-	// Check if file was already uploaded (for retry scenarios)
-	if !batch.HasUploadedFile() {
-		// First time - upload file and create batch job in one step
-		slogger.Info(ctx, "First submission attempt - uploading file and creating batch job", slogger.Fields{
-			"batch_id": batch.ID().String(),
-		})
-
-		var createErr error
-		job, createErr = s.batchEmbeddingService.CreateBatchEmbeddingJobWithRequests(
-			ctx,
-			requests,
-			options,
-			batch.ID(),
-		)
-		if createErr != nil {
-			return s.handleSubmissionError(ctx, batch, createErr)
-		}
-
-		// Save the file URI to the database for potential retry scenarios
-		// The uploadBatchFile method handles ALREADY_EXISTS internally, and we persist
-		// the file URI here so that if batch job creation fails, we can skip re-upload on retry
-		if job.InputFileURI != "" {
-			batch.SetGeminiFileURI(job.InputFileURI)
-			slogger.Info(ctx, "File uploaded successfully, saving file URI", slogger.Fields{
-				"batch_id": batch.ID().String(),
-				"file_uri": job.InputFileURI,
-			})
-
-			// Save the batch with the file URI before proceeding with job creation status update
-			// This ensures that even if the next steps fail, we have the file URI persisted
-			if saveErr := s.batchProgressRepo.Save(ctx, batch); saveErr != nil {
-				slogger.Error(ctx, "Failed to save batch after file upload", slogger.Fields{
-					"error":    saveErr.Error(),
-					"batch_id": batch.ID().String(),
-					"file_uri": job.InputFileURI,
-				})
-				// Don't fail the whole operation, continue with batch job tracking
-			}
-		}
-	} else {
-		// Retry scenario - file was already uploaded, just create the batch job
-		slogger.Info(ctx, "Retry attempt - using existing uploaded file", slogger.Fields{
-			"batch_id": batch.ID().String(),
-			"file_uri": *batch.GeminiFileURI(),
-		})
-
-		var createErr error
-		job, createErr = s.batchEmbeddingService.CreateBatchEmbeddingJobWithFile(
-			ctx,
-			requests,
-			options,
-			batch.ID(),
-			*batch.GeminiFileURI(),
-		)
-		if createErr != nil {
-			return s.handleSubmissionError(ctx, batch, createErr)
-		}
+	job, err := s.submitBatch(ctx, batch, requests, options)
+	if err != nil {
+		return nil
 	}
 
-	// Update batch status with validated Gemini job ID
 	if err := batch.MarkSubmittedToGemini(job.JobID); err != nil {
 		slogger.Error(ctx, "Failed to mark batch as submitted - invalid job ID", slogger.Fields{
 			"error":    err.Error(),
 			"batch_id": batch.ID().String(),
 			"job_id":   job.JobID,
 		})
-		// Mark as failed since we can't track this batch without a valid job ID
 		errorMsg := fmt.Sprintf("invalid Gemini batch job ID: %v", err)
 		batch.MarkFailed(errorMsg)
 		if saveErr := s.batchProgressRepo.Save(ctx, batch); saveErr != nil {
@@ -276,17 +218,87 @@ func (s *BatchSubmitter) submitOneBatch(ctx context.Context) error {
 			"status":              batch.Status(),
 			"gemini_batch_job_id": job.JobID,
 		})
-		return nil
 	}
 
 	return nil
 }
 
+// submitBatch dispatches to upload+create or reuse-existing-file paths.
+func (s *BatchSubmitter) submitBatch(
+	ctx context.Context,
+	batch *entity.BatchJobProgress,
+	requests []*outbound.BatchEmbeddingRequest,
+	options outbound.EmbeddingOptions,
+) (*outbound.BatchEmbeddingJob, error) {
+	if !batch.HasUploadedFile() {
+		return s.submitNewBatch(ctx, batch, requests, options)
+	}
+	return s.submitWithExistingFile(ctx, batch, requests, options)
+}
+
+// submitNewBatch uploads a file and creates a new batch job.
+func (s *BatchSubmitter) submitNewBatch(
+	ctx context.Context,
+	batch *entity.BatchJobProgress,
+	requests []*outbound.BatchEmbeddingRequest,
+	options outbound.EmbeddingOptions,
+) (*outbound.BatchEmbeddingJob, error) {
+	slogger.Info(ctx, "First submission attempt - uploading file and creating batch job", slogger.Fields{
+		"batch_id": batch.ID().String(),
+	})
+
+	job, err := s.batchEmbeddingService.CreateBatchEmbeddingJobWithRequests(ctx, requests, options, batch.ID())
+	if err != nil {
+		s.handleSubmissionError(ctx, batch, err)
+		return nil, err
+	}
+
+	if job.InputFileURI != "" {
+		batch.SetGeminiFileURI(job.InputFileURI)
+		slogger.Info(ctx, "File uploaded successfully, saving file URI", slogger.Fields{
+			"batch_id": batch.ID().String(),
+			"file_uri": job.InputFileURI,
+		})
+
+		if saveErr := s.batchProgressRepo.Save(ctx, batch); saveErr != nil {
+			slogger.Error(ctx, "Failed to save batch after file upload", slogger.Fields{
+				"error":    saveErr.Error(),
+				"batch_id": batch.ID().String(),
+				"file_uri": job.InputFileURI,
+			})
+		}
+	}
+
+	return job, nil
+}
+
+// submitWithExistingFile reuses an already-uploaded file to create a batch job.
+func (s *BatchSubmitter) submitWithExistingFile(
+	ctx context.Context,
+	batch *entity.BatchJobProgress,
+	requests []*outbound.BatchEmbeddingRequest,
+	options outbound.EmbeddingOptions,
+) (*outbound.BatchEmbeddingJob, error) {
+	slogger.Info(ctx, "Retry attempt - using existing uploaded file", slogger.Fields{
+		"batch_id": batch.ID().String(),
+		"file_uri": *batch.GeminiFileURI(),
+	})
+
+	job, err := s.batchEmbeddingService.CreateBatchEmbeddingJobWithFile(
+		ctx, requests, options, batch.ID(), *batch.GeminiFileURI(),
+	)
+	if err != nil {
+		s.handleSubmissionError(ctx, batch, err)
+		return nil, err
+	}
+
+	return job, nil
+}
+
 // handleSubmissionError handles errors during batch submission.
-func (s *BatchSubmitter) handleSubmissionError(ctx context.Context, batch *entity.BatchJobProgress, err error) error {
+func (s *BatchSubmitter) handleSubmissionError(ctx context.Context, batch *entity.BatchJobProgress, err error) {
 	retryable := isRateLimitError(err)
 
-	// If rate limit error, set global backoff
 	if retryable {
 		backoffDuration := calculateBackoff(s.config, batch.SubmissionAttempts())
 		backoffUntil := time.Now().Add(backoffDuration)
@@ -301,7 +313,6 @@ func (s *BatchSubmitter) handleSubmissionError(ctx context.Context, batch *entit
 	}
 
 	s.handleSubmissionFailure(ctx, batch, err, retryable)
-	return nil
 }
 
 // handleSubmissionFailure updates batch state after submission failure.
@@ -311,15 +322,11 @@ func (s *BatchSubmitter) handleSubmissionFailure(
 	err error,
 	retryable bool,
 ) {
-	// This submission attempt failed, so we count it
 	attemptNumber := batch.SubmissionAttempts() + 1
 
-	// Check if max attempts exceeded
-	if attemptNumber >= s.config.MaxSubmissionAttempts {
+	switch {
+	case attemptNumber >= s.config.MaxSubmissionAttempts:
 		errorMsg := fmt.Sprintf("max attempts (%d) exceeded: %v", s.config.MaxSubmissionAttempts, err)
-		// Increment submission attempts counter, then mark as permanently failed
-		// Note: MarkSubmissionFailed updates submission_attempts and error_message but keeps status as pending_submission
-		// Then MarkFailed changes the status to failed, making this a permanent failure
 		batch.MarkSubmissionFailed(errorMsg, time.Now())
 		batch.MarkFailed(errorMsg)
 
@@ -328,8 +335,8 @@ func (s *BatchSubmitter) handleSubmissionFailure(
 			"batch_id": batch.ID().String(),
 			"attempts": batch.SubmissionAttempts(),
 		})
-	} else if retryable {
-		// Schedule retry with exponential backoff
+
+	case retryable:
 		backoffDuration := calculateBackoff(s.config, batch.SubmissionAttempts())
 		nextSubmissionAt := time.Now().Add(backoffDuration)
 
@@ -342,8 +349,8 @@ func (s *BatchSubmitter) handleSubmissionFailure(
 			"attempts":           batch.SubmissionAttempts(),
 			"next_submission_at": nextSubmissionAt.Format(time.RFC3339),
 		})
-	} else {
-		// Non-retryable error, mark as failed
+
+	default:
 		errorMsg := fmt.Sprintf("Non-retryable error: %v", err)
 		batch.MarkFailed(errorMsg)
 
@@ -363,7 +370,6 @@ func (s *BatchSubmitter) handleSubmissionFailure(
 
 // calculateBackoff calculates exponential backoff duration.
 func calculateBackoff(config BatchSubmitterConfig, attempts int) time.Duration {
-	// Calculate 2^attempts * InitialBackoff
 	backoff := config.InitialBackoff
 	for range attempts {
 		backoff *= 2
@@ -380,7 +386,6 @@ func isRateLimitError(err error) bool {
 		return false
 	}
 
-	// Check if it's an EmbeddingError with quota issue
 	embErr := &outbound.EmbeddingError{}
 	if errors.As(err, &embErr) {
 		if embErr.IsQuotaError() {
@@ -388,7 +393,6 @@ func isRateLimitError(err error) bool {
 		}
 	}
 
-	// Check error message for rate limit indicators (case-insensitive)
 	errMsg := strings.ToLower(err.Error())
 	indicators := []string{"quota", "rate limit", "429", "resource exhausted"}
 
@@ -413,11 +417,4 @@ func (s *BatchSubmitter) isInGlobalBackoff() bool {
 	s.globalBackoffMu.RLock()
 	defer s.globalBackoffMu.RUnlock()
 	return time.Now().Before(s.globalBackoffUntil)
-}
-
-// getGlobalBackoffUntil returns the global backoff time.
-func (s *BatchSubmitter) getGlobalBackoffUntil() time.Time {
-	s.globalBackoffMu.RLock()
-	defer s.globalBackoffMu.RUnlock()
-	return s.globalBackoffUntil
 }

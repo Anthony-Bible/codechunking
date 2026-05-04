@@ -663,7 +663,7 @@ func (s *SearchService) generateQueryEmbedding(ctx context.Context, query string
 	slogger.Info(ctx, "Starting embedding generation for search query", slogger.Fields{"query": query})
 
 	embeddingOptions := outbound.EmbeddingOptions{
-		Model:    "gemini-embedding-001",
+		Model:    s.config.Embedding.ModelName(),
 		TaskType: outbound.TaskTypeCodeRetrievalQuery,
 		Timeout:  30 * time.Second,
 	}

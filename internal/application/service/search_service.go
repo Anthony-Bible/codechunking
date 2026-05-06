@@ -280,21 +280,38 @@ func normalizeZoektRepoName(name string) string {
 	return name
 }
 
-func stripZoektRepoHost(name string) string {
-	parts := strings.SplitN(name, "/", 3)
-	if len(parts) == 3 {
-		return parts[1] + "/" + parts[2]
-	}
-	return name
-}
-
+// zoektRepoNameCandidates returns all plausible DB repository name variants for
+// a zoekt repo name, ordered from most to least specific. It strips one leading
+// path segment at a time, stopping before single-segment results to avoid
+// false-positive matches.
+//
+// Examples:
+//
+//	"github.com/owner/repo"     → ["github.com/owner/repo", "owner/repo"]
+//	"gitlab.com/org/sub/repo"  → ["gitlab.com/org/sub/repo", "org/sub/repo", "sub/repo"]
+//	"owner/repo"               → ["owner/repo"]
 func zoektRepoNameCandidates(name string) []string {
 	normalized := normalizeZoektRepoName(name)
-	stripped := stripZoektRepoHost(normalized)
-	if stripped == normalized {
-		return []string{normalized}
+	seen := map[string]bool{normalized: true}
+	candidates := []string{normalized}
+	current := normalized
+	for {
+		idx := strings.Index(current, "/")
+		if idx < 0 {
+			break
+		}
+		next := current[idx+1:]
+		// Stop before adding single-segment candidates — too ambiguous.
+		if !strings.Contains(next, "/") {
+			break
+		}
+		if !seen[next] {
+			candidates = append(candidates, next)
+			seen[next] = true
+		}
+		current = next
 	}
-	return []string{normalized, stripped}
+	return candidates
 }
 
 func lineRangesOverlap(startA, endA, startB, endB int) bool {

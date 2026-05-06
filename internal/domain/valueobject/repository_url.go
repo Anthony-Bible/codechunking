@@ -375,6 +375,69 @@ func (r RepositoryURL) Name() string {
 	return ""
 }
 
+// hostingUISentinels is the set of path segments that mark the start of a
+// hosting-service UI route following the repository root. Any path segments
+// from the first match onward are stripped by FullPath.
+var hostingUISentinels = map[string]bool{
+	"tree": true, "blob": true, "raw": true, "blame": true,
+	"commit": true, "commits": true, "compare": true,
+	"issues": true, "pull": true, "pulls": true,
+	"releases": true, "tags": true, "branches": true,
+	"wiki": true, "actions": true, "settings": true,
+	"graphs": true, "network": true, "security": true,
+}
+
+// FullPath returns the repository root path without the host
+// (e.g., "org/sub/repo" or "owner/repo").
+//
+// For GitHub and Bitbucket (owner/repo only, no nested groups) any extra path
+// segments — e.g., from a UI URL like /tree/<branch> — are stripped by
+// limiting to 2 segments.
+//
+// For GitLab and other hosts the path is kept in full to support nested groups,
+// but known hosting-service UI sentinels (tree, blob, commit, …) truncate the
+// result at the repository root. The URL normalizer rewrites "/-" to "-", so a
+// GitLab UI separator "/-/" is also handled by stripping the resulting trailing
+// dash from the last retained segment.
+func (r RepositoryURL) FullPath() string {
+	parsedURL, _ := url.Parse(r.normalized)
+	trimmedPath := strings.Trim(parsedURL.Path, "/")
+	if trimmedPath == "" {
+		return ""
+	}
+
+	parts := strings.Split(trimmedPath, "/")
+
+	// GitHub and Bitbucket repos are always owner/repo (exactly 2 path segments).
+	// Trim any extra segments that indicate a UI page rather than the repo root.
+	switch strings.ToLower(parsedURL.Hostname()) {
+	case "github.com", "www.github.com", "bitbucket.org", "www.bitbucket.org":
+		if len(parts) > MinPathPartsForRepoURL {
+			return strings.Join(parts[:MinPathPartsForRepoURL], "/")
+		}
+		return trimmedPath
+	}
+
+	// For GitLab and other hosts: strip at the first known UI sentinel segment.
+	// Require at least MinPathPartsForRepoURL leading segments so that a group or
+	// repo legitimately named with a sentinel word is not accidentally truncated.
+	for i, part := range parts {
+		if i < MinPathPartsForRepoURL {
+			continue
+		}
+		if hostingUISentinels[strings.ToLower(part)] {
+			repoPath := make([]string, i)
+			copy(repoPath, parts[:i])
+			// The normalizer transforms "/-" → "-", leaving a trailing dash on
+			// the segment that preceded the GitLab "/-/" route separator.
+			repoPath[len(repoPath)-1] = strings.TrimSuffix(repoPath[len(repoPath)-1], "-")
+			return strings.Join(repoPath, "/")
+		}
+	}
+
+	return trimmedPath
+}
+
 // FullName returns the full repository name in "owner/name" format (e.g., "golang/go").
 // Returns empty string if either owner or name cannot be determined.
 func (r RepositoryURL) FullName() string {

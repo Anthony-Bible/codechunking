@@ -2061,3 +2061,124 @@ func TestSearchService_HybridChunkLevelZoektResolutionContract(t *testing.T) {
 		mockZoekt.AssertExpectations(t)
 	})
 }
+
+func TestZoektRepoNameCandidates(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "standard GitHub 3-segment",
+			input:    "github.com/owner/repo",
+			expected: []string{"github.com/owner/repo", "owner/repo"},
+		},
+		{
+			name:     "GitLab nested group 4-segment",
+			input:    "gitlab.com/org/sub/repo",
+			expected: []string{"gitlab.com/org/sub/repo", "org/sub/repo", "sub/repo"},
+		},
+		{
+			name:     "no host 2-segment",
+			input:    "owner/repo",
+			expected: []string{"owner/repo"},
+		},
+		{
+			name:  "deeply nested 5-segment",
+			input: "gitlab.com/a/b/c/d",
+			expected: []string{"gitlab.com/a/b/c/d", "a/b/c/d", "b/c/d", "c/d"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := zoektRepoNameCandidates(tt.input)
+			assert.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+func TestSearchService_HybridChunkResolution_GitLabNestedGroup(t *testing.T) {
+	silentLogger, err := logging.NewApplicationLogger(logging.Config{
+		Level:  "ERROR",
+		Format: "json",
+		Output: "buffer",
+	})
+	require.NoError(t, err)
+	slogger.SetGlobalLogger(silentLogger)
+	defer slogger.SetGlobalLogger(nil)
+
+	t.Run("Resolves_Chunk_Via_Third_Candidate_For_Nested_Group", func(t *testing.T) {
+		mockVectorRepo := new(MockVectorStorageRepository)
+		mockEmbeddingService := new(MockEmbeddingService)
+		mockChunkRepo := new(MockChunkRepository)
+		mockZoekt := new(MockZoektSearcher)
+
+		svc := NewSearchService(
+			mockVectorRepo, mockEmbeddingService, mockChunkRepo,
+			new(MockRepositoryRepository), testConfig(), mockZoekt, nil,
+		)
+
+		ctx := context.Background()
+		req := dto.SearchRequestDTO{
+			Query: "ProcessRequest",
+			Mode:  dto.SearchModeHybrid,
+			Limit: 10,
+		}
+		queryVector := []float64{0.1, 0.2, 0.3}
+		mockEmbeddingService.On("GenerateEmbedding", ctx, req.Query, mock.AnythingOfType("outbound.EmbeddingOptions")).
+			Return(&outbound.EmbeddingResult{Vector: queryVector}, nil)
+		mockVectorRepo.On("VectorSimilaritySearch", ctx, queryVector, mock.AnythingOfType("outbound.SimilaritySearchOptions")).
+			Return([]outbound.VectorSimilarityResult{}, nil)
+		mockChunkRepo.On("FindChunksByIDs", ctx, []uuid.UUID{}).
+			Return([]ChunkInfo{}, nil)
+
+		targetChunkID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+		// DB stores name as "sub/repo" (ExtractRepositoryNameFromURL returns last-two URL segments).
+		// Candidates tried in order: "gitlab.com/org/sub/repo", "org/sub/repo", "sub/repo".
+		mockChunkRepo.On("FindChunksByRepositoryPath", ctx, "gitlab.com/org/sub/repo", "handler.go").
+			Return([]ChunkInfo{}, nil)
+		mockChunkRepo.On("FindChunksByRepositoryPath", ctx, "org/sub/repo", "handler.go").
+			Return([]ChunkInfo{}, nil)
+		mockChunkRepo.On("FindChunksByRepositoryPath", ctx, "sub/repo", "handler.go").
+			Return([]ChunkInfo{
+				{
+					ChunkID:    targetChunkID,
+					Content:    "func ProcessRequest(r *http.Request) {}",
+					FilePath:   "handler.go",
+					Language:   "Go",
+					StartLine:  10,
+					EndLine:    20,
+					EntityName: "ProcessRequest",
+					Repository: dto.RepositoryInfo{Name: "sub/repo"},
+				},
+			}, nil)
+
+		mockZoekt.On("Search", ctx, req.Query, mock.AnythingOfType("outbound.ZoektSearchOptions")).
+			Return(&outbound.ZoektSearchResult{
+				FileMatches: []outbound.ZoektFileMatch{
+					{
+						Repository: "gitlab.com/org/sub/repo",
+						FileName:   "handler.go",
+						Language:   "Go",
+						Score:      30,
+						LineMatches: []outbound.ZoektLineMatch{
+							{LineNumber: 12, LineContent: "func ProcessRequest(r *http.Request) {"},
+						},
+					},
+				},
+				TotalCount: 1,
+			}, nil)
+
+		result, err := svc.Search(ctx, req)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, result.Results, 1)
+		assert.Equal(t, targetChunkID, result.Results[0].ChunkID)
+		assert.Equal(t, "zoekt", result.Results[0].SourceEngine)
+
+		mockChunkRepo.AssertExpectations(t)
+		mockZoekt.AssertExpectations(t)
+	})
+}
